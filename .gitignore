@@ -1,0 +1,42 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend builds
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Runtime data, caches, databases, and logs
+*.log
+logs/
+*.sqlite*
+*.db
+data/raw/
+data/processed/
+cache/
+.cache/
