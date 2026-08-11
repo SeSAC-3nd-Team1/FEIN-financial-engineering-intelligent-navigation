@@ -21,6 +21,35 @@ docker compose exec data python pipelines/example.py
 docker compose exec data python --version
 ```
 
+## VS Code Dev Container
+
+Host Python 없이 VS Code에서 Data Container의 Python 3.13으로 Script와 Notebook을 실행할 수 있습니다.
+
+1. Docker Desktop을 실행합니다.
+2. VS Code에 Microsoft의 **Dev Containers** Extension을 설치하고 저장소 루트를 엽니다.
+3. Command Palette(macOS `Cmd + Shift + P`, Windows `Ctrl + Shift + P`)에서 `Dev Containers: Reopen in Container`를 실행합니다.
+4. `SeSAC Data Dev`를 선택합니다. 선택 화면이 없으면 `Dev Containers: Open Folder in Container...`로 저장소 루트를 다시 엽니다.
+5. 연결된 터미널에서 다음을 확인합니다.
+
+   ```bash
+   python --version
+   which python
+   ```
+
+   Python 3.13.x와 `/usr/local/bin/python`이 출력되어야 합니다.
+6. `.py` 파일은 Microsoft Python Extension의 **Run Python File** 버튼으로 실행합니다. Code Runner의 **Run Code**는 사용하지 않습니다.
+7. `notebooks/`의 `.ipynb` 파일은 셀의 Run 버튼으로 실행합니다. 필요하면 `Select Kernel` → `Python Environments`에서 Container Python 3.13을 선택합니다.
+
+VS Code 터미널은 Data Container의 shell이므로 다음처럼 직접 실행할 수도 있습니다.
+
+```bash
+python scripts/example.py
+python pipelines/example.py
+python -c "import ipykernel; print(ipykernel.__version__)"
+```
+
+Dev Container는 VS Code Window 단위로 연결됩니다. AI도 함께 작업한다면 저장소를 별도 창에서 열고 `SeSAC AI Dev`에 연결합니다.
+
 ## Dependency 추가
 
 `data/requirements.txt`에 필요한 패키지와 버전을 추가한 뒤 이미지를 다시 빌드합니다.
@@ -30,7 +59,15 @@ docker compose build data
 docker compose --profile data up -d
 ```
 
-JupyterLab은 초기 환경을 가볍게 유지하기 위해 포함하지 않았습니다. 필요해지면 팀에서 버전을 정해 `requirements.txt`에 추가합니다.
+Dev Container를 사용 중이면 `data/requirements.txt` 수정 후 Command Palette의 `Dev Containers: Rebuild Container`로 이미지를 다시 빌드합니다. VS Code Notebook 실행에는 `ipykernel`을 사용하며, 브라우저 기반 JupyterLab은 포함하지 않습니다.
+
+기존 CLI 방식도 그대로 지원합니다.
+
+```bash
+docker compose --profile data up -d
+docker compose exec data python scripts/example.py
+docker compose exec data python pipelines/example.py
+```
 
 ## PostgreSQL / Redis 접근
 
