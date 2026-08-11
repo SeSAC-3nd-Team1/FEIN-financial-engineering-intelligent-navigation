@@ -102,6 +102,52 @@ docker compose --profile ai up -d
 
 PyTorch나 TensorFlow 같은 대용량 AI 패키지는 초기 환경에 포함하지 않습니다. 실제 모델과 필요한 버전이 확정된 뒤 `ai/requirements.txt`에 추가합니다.
 
+## VS Code Dev Container
+
+Dev Container를 사용하면 VS Code의 Python과 Jupyter Extension이 Host Python이 아니라 역할별 Docker Container의 Python 3.13을 직접 사용합니다. 기존 Docker Compose 명령을 대체하지 않으며, 편집기에서 실행과 디버깅, Notebook 사용을 편리하게 만드는 선택 사항입니다.
+
+### 준비
+
+1. Docker Desktop을 설치하고 실행합니다.
+2. VS Code에 Microsoft의 [Dev Containers Extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)을 설치합니다.
+3. VS Code에서 저장소 루트를 엽니다.
+4. Command Palette를 엽니다. macOS는 `Cmd + Shift + P`, Windows는 `Ctrl + Shift + P`입니다.
+5. `Dev Containers: Reopen in Container`를 실행하고 `SeSAC Data Dev` 또는 `SeSAC AI Dev`를 선택합니다.
+
+처음 연결하거나 `requirements.txt`가 변경된 경우 이미지 빌드와 Extension 설치에 시간이 걸릴 수 있습니다. 설정 선택 화면이 나타나지 않으면 `Dev Containers: Open Folder in Container...`로 저장소 루트를 다시 선택합니다.
+
+### Data 작업자
+
+1. `SeSAC Data Dev`를 선택해 새 VS Code 창을 엽니다.
+2. Container 터미널에서 interpreter를 확인합니다.
+
+   ```bash
+   python --version
+   which python
+   ```
+
+   Python 3.13.x와 `/usr/local/bin/python`이 출력되어야 합니다.
+3. `scripts/` 또는 `pipelines/`의 `.py` 파일을 열고 Microsoft Python Extension의 **Run Python File** 버튼을 사용합니다.
+4. `notebooks/`의 `.ipynb` 파일을 열고 셀의 Run 버튼을 사용합니다. Kernel 선택이 필요하면 `Select Kernel` → `Python Environments`에서 Container의 Python 3.13을 선택합니다.
+
+### AI 작업자
+
+1. `SeSAC AI Dev`를 선택해 새 VS Code 창을 엽니다.
+2. 터미널에서 `python --version`과 `which python`을 실행해 Python 3.13.x와 `/usr/local/bin/python`을 확인합니다.
+3. `training/` 또는 `inference/`의 `.py` 파일에서 Microsoft Python Extension의 **Run Python File** 버튼을 사용합니다.
+4. `.ipynb` 파일에서는 셀의 Run 버튼을 사용하고, 필요하면 Container Python 3.13 kernel을 선택합니다.
+
+### 역할별 창과 일반 Docker 실행의 차이
+
+Dev Container 연결 대상은 파일이 아니라 **VS Code Window 단위**입니다. Data와 AI를 동시에 작업할 때는 저장소를 두 창으로 열어 Window 1은 `SeSAC Data Dev`, Window 2는 `SeSAC AI Dev`에 연결합니다. 파일을 열 때마다 Container가 자동 전환되지는 않습니다.
+
+- 일반 Docker 실행: VS Code는 Host에서 실행되고 Docker는 애플리케이션과 실행 환경을 담당합니다.
+- Dev Container: VS Code의 Extension과 터미널이 Container에 연결되어 Container Python을 직접 사용합니다.
+
+기존 `docker compose up -d`, profile 실행, `docker compose exec` 방식은 그대로 사용할 수 있습니다. VS Code에 Code Runner Extension이 설치되어 있더라도 Python은 Code Runner의 **Run Code**가 아닌 Microsoft Python Extension의 **Run Python File**로 실행해야 interpreter 혼동을 피할 수 있습니다.
+
+의존성을 변경했다면 역할별 `requirements.txt` 수정 후 Command Palette에서 `Dev Containers: Rebuild Container`를 실행합니다.
+
 ## 개발 중 Hot Reload
 
 `frontend/`와 `backend/`는 컨테이너에 마운트됩니다.

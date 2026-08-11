@@ -21,6 +21,35 @@ docker compose exec ai python inference/example.py
 docker compose exec ai python --version
 ```
 
+## VS Code Dev Container
+
+Host Python 없이 VS Code에서 AI Container의 Python 3.13으로 Training, Inference 및 Notebook 코드를 실행할 수 있습니다.
+
+1. Docker Desktop을 실행합니다.
+2. VS Code에 Microsoft의 **Dev Containers** Extension을 설치하고 저장소 루트를 엽니다.
+3. Command Palette(macOS `Cmd + Shift + P`, Windows `Ctrl + Shift + P`)에서 `Dev Containers: Reopen in Container`를 실행합니다.
+4. `SeSAC AI Dev`를 선택합니다. 선택 화면이 없으면 `Dev Containers: Open Folder in Container...`로 저장소 루트를 다시 엽니다.
+5. 연결된 터미널에서 다음을 확인합니다.
+
+   ```bash
+   python --version
+   which python
+   ```
+
+   Python 3.13.x와 `/usr/local/bin/python`이 출력되어야 합니다.
+6. `training/` 또는 `inference/`의 `.py` 파일은 Microsoft Python Extension의 **Run Python File** 버튼으로 실행합니다. Code Runner의 **Run Code**는 사용하지 않습니다.
+7. `.ipynb` 파일은 셀의 Run 버튼으로 실행합니다. 필요하면 `Select Kernel` → `Python Environments`에서 Container Python 3.13을 선택합니다.
+
+VS Code 터미널은 AI Container의 shell이므로 다음처럼 직접 실행할 수도 있습니다.
+
+```bash
+python training/example.py
+python inference/example.py
+python -c "import ipykernel; print(ipykernel.__version__)"
+```
+
+Dev Container는 VS Code Window 단위로 연결됩니다. Data도 함께 작업한다면 저장소를 별도 창에서 열고 `SeSAC Data Dev`에 연결합니다.
+
 ## Dependency 추가
 
 `ai/requirements.txt`에 필요한 패키지와 버전을 추가한 뒤 이미지를 다시 빌드합니다.
@@ -31,6 +60,16 @@ docker compose --profile ai up -d
 ```
 
 PyTorch와 TensorFlow 같은 대용량 패키지는 초기 환경에 포함하지 않습니다. 실제 모델, CPU/GPU 실행 방식 및 호환 버전이 확정된 뒤 추가합니다.
+
+Dev Container를 사용 중이면 `ai/requirements.txt` 수정 후 Command Palette의 `Dev Containers: Rebuild Container`로 이미지를 다시 빌드합니다. VS Code Notebook 실행에는 `ipykernel`을 사용하며, 브라우저 기반 JupyterLab은 포함하지 않습니다.
+
+기존 CLI 방식도 그대로 지원합니다.
+
+```bash
+docker compose --profile ai up -d
+docker compose exec ai python training/example.py
+docker compose exec ai python inference/example.py
+```
 
 ## PostgreSQL / Redis 접근
 

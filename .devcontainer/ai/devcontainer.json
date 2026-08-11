@@ -1,0 +1,26 @@
+{
+  "name": "SeSAC AI Dev",
+  "dockerComposeFile": "../../compose.yaml",
+  "service": "ai",
+  "workspaceFolder": "/app",
+  "runServices": [
+    "frontend",
+    "backend",
+    "postgres",
+    "redis",
+    "ai"
+  ],
+  "shutdownAction": "stopCompose",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "ms-toolsai.jupyter"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      }
+    }
+  }
+}
