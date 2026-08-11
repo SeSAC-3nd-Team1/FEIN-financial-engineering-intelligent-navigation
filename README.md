@@ -34,13 +34,13 @@ Copy-Item .env.example .env
 
 외부 API를 사용하는 작업이라면 `.env`의 빈 Secret 항목을 채웁니다. `.env`는 Git에서 제외되며 실제 키를 소스, Dockerfile, Compose 파일, 문서에 기록하면 안 됩니다.
 
-### 3. 전체 환경 실행
+### 3. 기본 개발환경 실행
 
 ```bash
-docker compose up --build
+docker compose up -d
 ```
 
-최초 빌드가 끝나고 모든 서비스가 healthy 상태가 되면 개발을 시작할 수 있습니다.
+최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, PostgreSQL, Redis만 포함되며 Data와 AI는 실행되지 않습니다. 모든 서비스가 healthy 상태가 되면 개발을 시작할 수 있습니다.
 
 | 서비스 | 접속/확인 위치 |
 | --- | --- |
@@ -53,6 +53,54 @@ docker compose up --build
 | Redis | `localhost:6379` |
 
 호스트 포트가 이미 사용 중이면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`만 변경합니다. 컨테이너 간 통신은 항상 `postgres:5432`, `redis:6379`, `backend:8000`을 사용합니다.
+
+## 역할별 Python 개발환경
+
+Data와 AI 환경은 Docker Compose profile로 분리되어 있습니다. 각 컨테이너는 일회성 작업이 아니라 개발 중 계속 Running 상태를 유지하며, 로컬의 `data/` 또는 `ai/` 코드가 `/app`에 bind mount되어 저장 즉시 반영됩니다. Host PC에 Python 3.13을 설치할 필요가 없으며 Python은 `docker compose exec`로 실행합니다.
+
+### Data 작업자
+
+기본 서비스와 Data 환경을 함께 실행합니다.
+
+```bash
+docker compose --profile data up -d
+docker compose exec data bash
+docker compose exec data python scripts/example.py
+docker compose exec data python pipelines/example.py
+```
+
+### AI 작업자
+
+기본 서비스와 AI 환경을 함께 실행합니다.
+
+```bash
+docker compose --profile ai up -d
+docker compose exec ai bash
+docker compose exec ai python training/example.py
+docker compose exec ai python inference/example.py
+```
+
+### Data + AI 전체 환경
+
+```bash
+docker compose --profile data --profile ai up -d
+```
+
+### Dependency 변경
+
+각 역할의 `requirements.txt`를 수정한 후 해당 이미지를 다시 빌드합니다.
+
+```bash
+# Data
+docker compose build data
+docker compose --profile data up -d
+
+# AI
+docker compose build ai
+docker compose --profile ai up -d
+```
+
+PyTorch나 TensorFlow 같은 대용량 AI 패키지는 초기 환경에 포함하지 않습니다. 실제 모델과 필요한 버전이 확정된 뒤 `ai/requirements.txt`에 추가합니다.
 
 ## 개발 중 Hot Reload
 
@@ -89,6 +137,8 @@ docker compose ps
 docker compose logs
 docker compose logs -f backend
 docker compose logs -f frontend
+docker compose logs -f data
+docker compose logs -f ai
 
 # 한 서비스만 재시작
 docker compose restart backend
@@ -109,5 +159,7 @@ docker compose down -v
 
 - Frontend: Node.js 24, React, Vite
 - Backend: Python 3.13, FastAPI
+- Data: Python 3.13 (Compose profile: `data`)
+- AI: Python 3.13 (Compose profile: `ai`)
 - Database: PostgreSQL 17
 - Cache: Redis 8

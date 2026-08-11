@@ -1,0 +1,6 @@
+numpy==2.3.3
+pandas==2.3.2
+psycopg[binary]==3.2.9
+redis==6.4.0
+scikit-learn==1.7.1
+SQLAlchemy==2.0.43

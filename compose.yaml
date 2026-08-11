@@ -56,6 +56,40 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  data:
+    build:
+      context: ./data
+    profiles:
+      - data
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - ./data:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["sleep", "infinity"]
+
+  ai:
+    build:
+      context: ./ai
+    profiles:
+      - ai
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - ./ai:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["sleep", "infinity"]
+
   postgres:
     image: postgres:17-alpine
     environment:
