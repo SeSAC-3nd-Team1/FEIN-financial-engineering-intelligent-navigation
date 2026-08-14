@@ -23,6 +23,7 @@ def main() -> None:
                 StockPriceDaily.trade_date.between(date(2026, 8, 1), backtest_date)
             )
             .order_by(StockPriceDaily.trade_date, StockMaster.stock_code)
+            .limit(20)
         ).all()
         statements = session.execute(
             select(
@@ -34,6 +35,7 @@ def main() -> None:
             .join(StockMaster, StockMaster.stock_id == FinancialStatement.stock_id)
             .where(FinancialStatement.available_date <= backtest_date)
             .order_by(FinancialStatement.available_date.desc())
+            .limit(20)
         ).all()
     print("prices:", prices)
     print("point-in-time financial statements:", statements)

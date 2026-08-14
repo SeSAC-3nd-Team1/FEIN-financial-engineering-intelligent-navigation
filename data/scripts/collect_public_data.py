@@ -44,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         action="append",
         help="Limit collection to an exact operation name; repeat as needed.",
     )
+    parser.add_argument(
+        "--exclude-operation",
+        action="append",
+        help="Exclude an exact operation name; repeat as needed.",
+    )
     dates = parser.add_mutually_exclusive_group()
     dates.add_argument(
         "--date", type=date.fromisoformat, help="Reference date in YYYY-MM-DD."
@@ -149,6 +154,14 @@ def main() -> None:
         found = {item.name for item in operations}
         if missing := requested - found:
             raise ValueError(f"Unknown operation for selected datasets: {sorted(missing)}")
+    if args.exclude_operation:
+        excluded = set(args.exclude_operation)
+        available = {item.name for item in operations}
+        if missing := excluded - available:
+            raise ValueError(
+                f"Unknown excluded operation for selected datasets: {sorted(missing)}"
+            )
+        operations = [item for item in operations if item.name not in excluded]
     if args.date:
         filters = {"basDt": args.date.strftime("%Y%m%d")}
     elif args.start_date:

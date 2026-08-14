@@ -86,6 +86,23 @@ docker compose exec data python scripts/backfill_issuance_status.py \
   --rows 10000 --progress-every 25
 ```
 
+### 기존 5년을 10년으로 확장
+
+이미 적재한 기간을 다시 호출하지 않고 부족한 과거 구간만 지정합니다. 다음 명령은
+일반 51개 operation을 먼저 적재한 뒤, 확보된 주가 거래일을 이용해 발행현황을
+일자별로 적재합니다. 두 단계 모두 Azure를 포함해 현재 `DATABASE_URL`이 가리키는
+PostgreSQL에 직접 UPSERT하고 DB 체크포인트에서 재개합니다.
+
+```bash
+docker compose --env-file .env.azure run --rm data \
+  python scripts/backfill_public_data_history.py \
+  --start-date 2016-08-14 --end-date 2021-08-13 \
+  --rows 10000 --progress-every 25
+```
+
+기존 범위가 `2021-08-14..2026-08-13`이면 위 구간을 더해 연속된 10년 범위가
+됩니다. 다른 기준일에는 이미 저장된 범위와 겹치지 않는 부족 구간을 명시합니다.
+
 수집 상태는 다음 쿼리로 확인합니다.
 
 ```bash
@@ -149,6 +166,9 @@ docker compose --profile data up -d --build postgres data
 ```bash
 docker compose exec data alembic upgrade head
 docker compose exec data python scripts/check_db.py
+docker compose exec data python scripts/db_inventory.py
+# 대형 landing 테이블까지 전체 스캔하는 정확한 집계(운영 DB에서는 주의)
+docker compose exec data python scripts/db_inventory.py --exact
 ```
 
 Migration 상태와 롤백 SQL은 다음처럼 확인합니다.
