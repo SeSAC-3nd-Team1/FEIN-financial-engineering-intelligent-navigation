@@ -4,8 +4,9 @@
 
 ## 주요 문서
 
+- [Azure PostgreSQL 통합 데이터 명세서](DATABASE_SPECIFICATION.md)
+- [회원가입 PostgreSQL 상세 설계](../data/REGISTRATION_DB.md)
 - API 관련 문서
 - Architecture
-- Database Schema
 - 개발 가이드
 - 기술적 의사결정 기록

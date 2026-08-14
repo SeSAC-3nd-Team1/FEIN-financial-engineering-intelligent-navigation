@@ -118,6 +118,10 @@ docker compose exec postgres psql -U app -d app -c \
 
 ## PostgreSQL 스키마
 
+Azure PostgreSQL에 실제 배포된 모든 업무 테이블의 통합 컬럼 명세와 데이터 현황은 [DATABASE_SPECIFICATION.md](../docs/DATABASE_SPECIFICATION.md)를 참고합니다.
+
+회원가입 영구 데이터(`public.users`, `public.terms`, `public.user_agreements`)의 상세 설계, Redis 경계, seed와 통합 검증 방법은 [REGISTRATION_DB.md](REGISTRATION_DB.md)를 참고합니다.
+
 | 테이블 | PK | FK | UPSERT UNIQUE |
 | --- | --- | --- | --- |
 | `raw.stock_master` | `stock_id` | - | `stock_code`, `isin` |
@@ -128,6 +132,9 @@ docker compose exec postgres psql -U app -d app -c \
 | `raw.macro_indicator` | `macro_indicator_id` | - | `(indicator_code, observation_date, frequency)` |
 | `raw.public_data_record` | `record_id` | - | `(dataset, operation, payload_hash)` |
 | `raw.public_data_collection_checkpoint` | `checkpoint_id` | - | `(dataset, operation, range_start, range_end)` |
+| `public.users` | `id` | - | `user_id`, `email`, `ci_lookup_hash` |
+| `public.terms` | `id` | - | `(term_code, version)` |
+| `public.user_agreements` | `id` | `user_id → users`, `(term_code, term_version) → terms` | `(user_id, term_code, term_version)` |
 
 금액은 최대 28자리 `NUMERIC`, 가격은 소수점/수정계수를 고려한 `NUMERIC`, 수량은 `BIGINT`, 비율은 부동소수 오차를 피하기 위해 `NUMERIC`을 사용합니다. 날짜/종목 및 날짜/지표 양방향 복합 인덱스를 두어 종목별 시계열과 특정 기간 전체 종목 학습 데이터를 모두 조회할 수 있습니다.
 
