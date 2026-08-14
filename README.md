@@ -69,6 +69,8 @@ docker compose exec data python scripts/example.py
 docker compose exec data python pipelines/example.py
 ```
 
+PostgreSQL 데이터 모델, Alembic migration, UPSERT 적재 및 Parquet export 사용법은 [data/README.md](data/README.md)를 참고합니다.
+
 ### AI 작업자
 
 기본 서비스와 AI 환경을 함께 실행합니다.
