@@ -65,6 +65,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PYTHONPATH: /app
+      DATA_GO_KR_API_KEY: ${DATA_GO_KR_API_KEY:-}
     volumes:
       - ./data:/app
     depends_on:

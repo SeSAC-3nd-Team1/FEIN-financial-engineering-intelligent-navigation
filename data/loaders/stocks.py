@@ -31,13 +31,29 @@ STOCK_PRICE_COLUMN_MAPPING = {
 }
 
 
+def normalize_stock_code(value: object) -> str:
+    """Return the canonical KRX short code used for cross-dataset joins.
+
+    Public Data Portal responses sometimes prefix the six-digit KRX code with
+    ``A`` (for example ``A005930``). The unmodified value remains available in
+    each landing-table payload.
+    """
+
+    code = str(value or "").strip()
+    if len(code) == 7 and code.startswith("A"):
+        code = code[1:]
+    if code.isdigit() and len(code) < 6:
+        code = code.zfill(6)
+    return code
+
+
 def load_stock_master(session: Session, frame: pd.DataFrame) -> int:
     """UPSERT a normalized or Korean-column KRX stock master frame."""
 
     normalized = frame.rename(columns=STOCK_MASTER_COLUMN_MAPPING).copy()
     if "stock_code" not in normalized.columns:
         raise ValueError("stock_code is required")
-    normalized["stock_code"] = normalized["stock_code"].astype(str).str.zfill(6)
+    normalized["stock_code"] = normalized["stock_code"].map(normalize_stock_code)
     return upsert_dataframe(
         session,
         StockMaster,
@@ -51,7 +67,7 @@ def attach_stock_ids(session: Session, frame: pd.DataFrame) -> pd.DataFrame:
 
     if "stock_code" not in frame.columns:
         raise ValueError("stock_code is required to resolve stock_id")
-    codes = frame["stock_code"].astype(str).str.zfill(6).unique().tolist()
+    codes = frame["stock_code"].map(normalize_stock_code).unique().tolist()
     stock_ids = dict(
         session.execute(
             select(StockMaster.stock_code, StockMaster.stock_id).where(
@@ -63,7 +79,7 @@ def attach_stock_ids(session: Session, frame: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"stock_master rows must be loaded first: {missing}")
     result = frame.copy()
-    result["stock_code"] = result["stock_code"].astype(str).str.zfill(6)
+    result["stock_code"] = result["stock_code"].map(normalize_stock_code)
     result["stock_id"] = result["stock_code"].map(stock_ids)
     return result.drop(columns=["stock_code"])
 

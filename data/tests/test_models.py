@@ -19,6 +19,7 @@ def _index_columns(model: type) -> set[tuple[str, ...]]:
 def test_stock_master_uses_raw_schema_and_unique_code() -> None:
     assert StockMaster.__table__.schema == "raw"
     assert "uq_stock_master_stock_code" in _constraint_names(StockMaster)
+    assert StockMaster.__table__.c.stock_code.type.length == 12
 
 
 def test_daily_price_has_point_lookup_and_range_indexes() -> None:

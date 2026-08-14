@@ -37,7 +37,7 @@ class MarketIndexDaily(TimestampMixin, Base):
     market_index_id: Mapped[int] = mapped_column(
         BigInteger, Identity(), primary_key=True
     )
-    index_code: Mapped[str] = mapped_column(String(30), nullable=False)
+    index_code: Mapped[str] = mapped_column(String(100), nullable=False)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     open_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
     high_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))

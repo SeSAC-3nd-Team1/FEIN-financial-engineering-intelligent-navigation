@@ -24,6 +24,51 @@ data/
 
 `data/raw/`, `data/processed/`, `data/exports/`는 파일 기반 임시 산출물 경로이며 Git에서 제외됩니다. DB의 원천 테이블은 PostgreSQL `raw` 스키마, 향후 Factor 및 재무비율은 `processed` 스키마에 저장합니다.
 
+## 공공데이터포털 실제 수집
+
+저장소 루트 `.env`에 공공데이터포털의 일반 인증키(Decoding)를 저장합니다. 키를 코드, 명령 인자 또는 문서에 기록하지 않습니다.
+
+```env
+DATA_GO_KR_API_KEY=실제_키
+```
+
+환경변수를 Data 컨테이너에 적용하고 최신 migration을 실행합니다.
+
+```bash
+docker compose --profile data up -d --force-recreate data
+docker compose exec data alembic upgrade head
+```
+
+기본 명령은 상장종목, 주식시세, 주가지수의 대표 operation을 한 페이지씩 시험 수집합니다.
+
+```bash
+docker compose exec data python scripts/collect_public_data.py \
+  --date 2026-08-13 --rows 100 --max-pages 1
+```
+
+상장종목 전체 페이지를 먼저 적재한 뒤 같은 날짜의 주가와 지수를 적재합니다.
+
+```bash
+docker compose exec data python scripts/collect_public_data.py \
+  --dataset stock_master --date 2026-08-13 --rows 1000 --max-pages 10
+
+docker compose exec data python scripts/collect_public_data.py \
+  --dataset stock_price --dataset market_index \
+  --date 2026-08-13 --rows 1000 --max-pages 10
+```
+
+8개 데이터셋의 모든 52개 operation은 호출량과 이용조건을 확인한 뒤 명시적으로 실행합니다.
+
+```bash
+docker compose exec data python scripts/collect_public_data.py \
+  --all-datasets --all-operations \
+  --date 2026-08-13 --rows 100 --max-pages 1 --raw-only
+```
+
+모든 항목은 `raw.public_data_record`에 원문 JSONB로 먼저 저장합니다. 동일 원문은 SHA-256 기반 UNIQUE 제약으로 중복되지 않으며 정정된 응답은 별도 행으로 보존됩니다. 상장종목, 주식 일봉, 주가지수 대표 operation은 기존 정규화 테이블에도 UPSERT합니다.
+
+주식발행·배당 데이터는 공공누리 제2유형으로 안내되어 있으므로 상업 서비스 전환 전에 한국예탁결제원과 이용조건을 확인해야 합니다.
+
 ## PostgreSQL 스키마
 
 | 테이블 | PK | FK | UPSERT UNIQUE |
@@ -34,6 +79,7 @@ data/
 | `raw.stock_issuance` | `issuance_id` | `stock_id → stock_master` | `(stock_id, reference_date)` |
 | `raw.financial_statement` | `financial_statement_id` | `stock_id → stock_master` | `(corp_code, business_year, report_code, fiscal_period, statement_scope)`, `receipt_number` |
 | `raw.macro_indicator` | `macro_indicator_id` | - | `(indicator_code, observation_date, frequency)` |
+| `raw.public_data_record` | `record_id` | - | `(dataset, operation, payload_hash)` |
 
 금액은 최대 28자리 `NUMERIC`, 가격은 소수점/수정계수를 고려한 `NUMERIC`, 수량은 `BIGINT`, 비율은 부동소수 오차를 피하기 위해 `NUMERIC`을 사용합니다. 날짜/종목 및 날짜/지표 양방향 복합 인덱스를 두어 종목별 시계열과 특정 기간 전체 종목 학습 데이터를 모두 조회할 수 있습니다.
 

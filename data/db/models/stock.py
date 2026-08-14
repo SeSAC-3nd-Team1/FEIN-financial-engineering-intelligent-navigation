@@ -41,7 +41,8 @@ class StockMaster(TimestampMixin, Base):
 
     stock_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     reference_date: Mapped[date] = mapped_column(Date, nullable=False)
-    stock_code: Mapped[str] = mapped_column(String(6), nullable=False)
+    # KRX short codes include domestic six-digit values and prefixed foreign codes.
+    stock_code: Mapped[str] = mapped_column(String(12), nullable=False)
     isin: Mapped[str | None] = mapped_column(String(12))
     market_type: Mapped[str] = mapped_column(String(20), nullable=False)
     stock_name: Mapped[str] = mapped_column(String(200), nullable=False)
