@@ -72,3 +72,27 @@ def test_upsert_rejects_unknown_columns() -> None:
         assert "Unknown columns" in str(error)
     else:
         raise AssertionError("unknown columns must fail before executing SQL")
+
+
+def test_upsert_deduplicates_conflict_keys_within_batch() -> None:
+    session = _Session()
+    affected = upsert_rows(
+        session,
+        StockMaster,
+        [
+            {
+                "reference_date": date(2026, 8, 12),
+                "stock_code": "005930",
+                "market_type": "KOSPI",
+                "stock_name": "old",
+            },
+            {
+                "reference_date": date(2026, 8, 13),
+                "stock_code": "005930",
+                "market_type": "KOSPI",
+                "stock_name": "삼성전자",
+            },
+        ],
+        conflict_columns=["stock_code"],
+    )
+    assert affected == 1

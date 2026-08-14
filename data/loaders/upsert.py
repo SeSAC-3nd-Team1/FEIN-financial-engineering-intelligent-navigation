@@ -71,6 +71,14 @@ def upsert_rows(
     if missing := set(conflict_columns) - valid_columns:
         raise ValueError(f"Unknown conflict columns: {sorted(missing)}")
 
+    # PostgreSQL cannot update the same conflict key twice in one INSERT.
+    # Some public APIs return exact duplicate items within a single page.
+    deduplicated: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in rows:
+        key = tuple(row.get(column) for column in conflict_columns)
+        deduplicated[key] = row
+    prepared_rows = list(deduplicated.values())
+
     supplied_columns = set().union(*(row.keys() for row in rows))
     primary_keys = {column.name for column in table.primary_key.columns}
     protected = primary_keys | set(conflict_columns) | IMMUTABLE_COLUMNS
@@ -83,7 +91,7 @@ def upsert_rows(
         raise ValueError(f"Unknown update columns: {sorted(invalid_updates)}")
 
     affected = 0
-    for batch in _chunks(rows, chunk_size):
+    for batch in _chunks(prepared_rows, chunk_size):
         statement = insert(table).values(batch)
         update_values = {
             column_name: statement.excluded[column_name]

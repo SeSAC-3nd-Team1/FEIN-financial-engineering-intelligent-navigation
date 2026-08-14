@@ -1,8 +1,13 @@
 from datetime import date
 
 import pytest
+import requests
 
-from collectors.public_data_client import PublicDataApiError, decode_page
+from collectors.public_data_client import (
+    PublicDataApiError,
+    PublicDataClient,
+    decode_page,
+)
 from collectors.public_data_config import OPERATIONS, select_operations
 from loaders.public_data import (
     landing_rows,
@@ -49,6 +54,25 @@ def test_decode_rejects_api_error_without_leaking_key() -> None:
             },
             requested_page=1,
         )
+
+
+def test_request_failure_does_not_leak_service_key(monkeypatch) -> None:
+    client = PublicDataClient(api_key="super-secret-key")
+
+    def fail_request(*args, **kwargs):
+        raise requests.Timeout(
+            "https://apis.data.go.kr/example?serviceKey=super-secret-key"
+        )
+
+    monkeypatch.setattr(client.session, "get", fail_request)
+    with pytest.raises(PublicDataApiError) as captured:
+        client.fetch_page(
+            OPERATIONS["stock_price"][0],
+            page_number=1,
+            rows_per_page=1,
+        )
+    assert "super-secret-key" not in str(captured.value)
+    assert "Timeout" in str(captured.value)
 
 
 def test_landing_rows_extract_identifiers_and_hash() -> None:

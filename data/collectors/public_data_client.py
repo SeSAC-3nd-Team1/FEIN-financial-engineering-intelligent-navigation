@@ -136,8 +136,19 @@ class PublicDataClient:
             "numOfRows": rows_per_page,
             **(filters or {}),
         }
-        response = self.session.get(operation.url, params=params, timeout=self.timeout)
-        response.raise_for_status()
+        try:
+            response = self.session.get(
+                operation.url, params=params, timeout=self.timeout
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            # requests exception strings may contain the fully rendered URL,
+            # including serviceKey. Never propagate that text to logs.
+            raise PublicDataApiError(
+                f"data.go.kr request failed for "
+                f"{operation.dataset}/{operation.name}: "
+                f"{type(error).__name__}"
+            ) from None
         return decode_page(_parse_response(response), page_number)
 
     def fetch_items(

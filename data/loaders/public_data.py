@@ -148,9 +148,16 @@ def ensure_price_stock_masters(session: Session, items: list[dict[str, Any]]) ->
     ]
     if not rows:
         return 0
-    statement = insert(StockMaster.__table__).values(rows).on_conflict_do_nothing()
-    result = session.execute(statement)
-    return max(result.rowcount, 0)
+    inserted = 0
+    for start in range(0, len(rows), 1_000):
+        statement = (
+            insert(StockMaster.__table__)
+            .values(rows[start : start + 1_000])
+            .on_conflict_do_nothing()
+        )
+        result = session.execute(statement)
+        inserted += max(result.rowcount, 0)
+    return inserted
 
 
 def normalize_market_indices(items: list[dict[str, Any]]) -> pd.DataFrame:

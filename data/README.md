@@ -65,6 +65,36 @@ docker compose exec data python scripts/collect_public_data.py \
   --date 2026-08-13 --rows 100 --max-pages 1 --raw-only
 ```
 
+5년치 최초 적재는 시작일과 종료일을 모두 포함하며, API 페이지마다 커밋하고
+`raw.public_data_collection_checkpoint`에 진행 위치를 저장합니다. 같은 명령을 다시
+실행하면 완료된 operation은 건너뛰고 미완료 operation의 다음 페이지부터 재개합니다.
+
+```bash
+docker compose exec data python scripts/collect_public_data.py \
+  --all-datasets --all-operations --all-pages \
+  --start-date 2021-08-14 --end-date 2026-08-13 \
+  --rows 10000 --progress-every 25 --raw-only
+```
+
+`getStocIssuStat_V3`는 기간 조건 호출 시 공공데이터포털에서 타임아웃될 수 있습니다.
+이 operation만 이미 적재된 주가 거래일을 기준으로 일자별 호출합니다. 일자마다
+체크포인트를 기록하므로 연결 오류 후 같은 명령을 실행하면 이어서 수집합니다.
+
+```bash
+docker compose exec data python scripts/backfill_issuance_status.py \
+  --start-date 2021-08-14 --end-date 2026-08-13 \
+  --rows 10000 --progress-every 25
+```
+
+수집 상태는 다음 쿼리로 확인합니다.
+
+```bash
+docker compose exec postgres psql -U app -d app -c \
+  "SELECT dataset, operation, status, next_page, total_count, received_count
+   FROM raw.public_data_collection_checkpoint
+   ORDER BY dataset, operation;"
+```
+
 모든 항목은 `raw.public_data_record`에 원문 JSONB로 먼저 저장합니다. 동일 원문은 SHA-256 기반 UNIQUE 제약으로 중복되지 않으며 정정된 응답은 별도 행으로 보존됩니다. 상장종목, 주식 일봉, 주가지수 대표 operation은 기존 정규화 테이블에도 UPSERT합니다.
 
 주식발행·배당 데이터는 공공누리 제2유형으로 안내되어 있으므로 상업 서비스 전환 전에 한국예탁결제원과 이용조건을 확인해야 합니다.
@@ -80,6 +110,7 @@ docker compose exec data python scripts/collect_public_data.py \
 | `raw.financial_statement` | `financial_statement_id` | `stock_id → stock_master` | `(corp_code, business_year, report_code, fiscal_period, statement_scope)`, `receipt_number` |
 | `raw.macro_indicator` | `macro_indicator_id` | - | `(indicator_code, observation_date, frequency)` |
 | `raw.public_data_record` | `record_id` | - | `(dataset, operation, payload_hash)` |
+| `raw.public_data_collection_checkpoint` | `checkpoint_id` | - | `(dataset, operation, range_start, range_end)` |
 
 금액은 최대 28자리 `NUMERIC`, 가격은 소수점/수정계수를 고려한 `NUMERIC`, 수량은 `BIGINT`, 비율은 부동소수 오차를 피하기 위해 `NUMERIC`을 사용합니다. 날짜/종목 및 날짜/지표 양방향 복합 인덱스를 두어 종목별 시계열과 특정 기간 전체 종목 학습 데이터를 모두 조회할 수 있습니다.
 
