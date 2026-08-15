@@ -1,5 +1,7 @@
 from db.models import (
     FinancialStatement,
+    RawDataObject,
+    RawMigrationManifest,
     StockMaster,
     StockPriceDaily,
     Term,
@@ -73,3 +75,12 @@ def test_terms_are_versioned_and_agreements_reference_catalog() -> None:
     }
     assert ("users.id",) in foreign_keys
     assert ("terms.term_code", "terms.version") in foreign_keys
+
+
+def test_blob_raw_metadata_does_not_store_payload_json() -> None:
+    assert RawDataObject.__table__.schema == "raw"
+    assert "payload" not in RawDataObject.__table__.columns
+    assert "uq_data_object_blob" in _constraint_names(RawDataObject)
+    assert "uq_public_data_migration_source_chunk" in _constraint_names(
+        RawMigrationManifest
+    )
