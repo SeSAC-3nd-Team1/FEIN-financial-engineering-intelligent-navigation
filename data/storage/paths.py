@@ -25,17 +25,25 @@ def build_raw_path(
     batch_hash: str,
     page_number: int | None = None,
     migration: bool = False,
+    monthly_partition: bool = False,
 ) -> str:
-    """Build a partitioned, content-addressed raw JSONL/gzip path."""
+    """Build a partitioned, content-addressed raw JSONL/gzip path.
+
+    API ingestion keeps the existing day partition by default. Historical Raw
+    repartitioning can opt into a YYYY/MM partition so a blob never implies a
+    day that does not describe every record it contains.
+    """
 
     if len(batch_hash) != 64:
         raise ValueError("batch_hash must be a SHA-256 hex digest")
     suffix = f"page-{page_number:08d}-" if page_number is not None else ""
     origin = "migration/" if migration else ""
+    partition = f"year={partition_date:%Y}/month={partition_date:%m}/"
+    if not monthly_partition:
+        partition += f"day={partition_date:%d}/"
     return (
         f"{origin}{_segment(source)}/{_segment(dataset)}/"
-        f"operation={_segment(operation)}/year={partition_date:%Y}/"
-        f"month={partition_date:%m}/day={partition_date:%d}/"
+        f"operation={_segment(operation)}/{partition}"
         f"{suffix}{batch_hash}.jsonl.gz"
     )
 
