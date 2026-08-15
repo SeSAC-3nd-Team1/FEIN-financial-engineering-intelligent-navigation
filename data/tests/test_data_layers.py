@@ -1,6 +1,7 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from scripts.build_stock_price_features import compute_price_features, feature_path
 from scripts.export_processed_monthly import build_processed_path, month_windows
@@ -60,7 +61,7 @@ def test_price_features_do_not_leak_rolling_values_across_stocks() -> None:
     assert pd.isna(bbb.loc[0, "return_1d"])
     assert pd.isna(aaa.loc[18, "sma_20"])
     assert pd.isna(bbb.loc[18, "sma_20"])
-    assert aaa.loc[19, "sma_20"] == 109.5
-    assert bbb.loc[19, "sma_20"] == 209.5
-    assert aaa.loc[20, "momentum_20"] == 0.2
-    assert bbb.loc[20, "momentum_20"] == 0.1
+    assert aaa.loc[19, "sma_20"] == pytest.approx(109.5)
+    assert bbb.loc[19, "sma_20"] == pytest.approx(209.5)
+    assert aaa.loc[20, "momentum_20"] == pytest.approx(0.2)
+    assert bbb.loc[20, "momentum_20"] == pytest.approx(0.1)
