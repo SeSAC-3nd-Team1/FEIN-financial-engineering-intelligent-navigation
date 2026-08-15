@@ -44,6 +44,24 @@ def test_raw_path_is_partitioned_and_content_addressed() -> None:
     )
 
 
+def test_raw_monthly_partition_omits_day() -> None:
+    path = build_raw_path(
+        source="data-go-kr",
+        dataset="stock_price",
+        operation="getStockPriceInfo",
+        partition_date=date(2026, 1, 1),
+        page_number=None,
+        batch_hash="b" * 64,
+        migration=True,
+        monthly_partition=True,
+    )
+    assert path == (
+        "migration/data-go-kr/stock_price/operation=getstockpriceinfo/"
+        "year=2026/month=01/" + "b" * 64 + ".jsonl.gz"
+    )
+    assert "/day=" not in path
+
+
 def test_processed_and_feature_paths_capture_reproducibility_dimensions() -> None:
     assert build_processed_path(
         "stock_price", partition_date=date(2026, 8, 15), file_name="part-1.parquet"
