@@ -1,19 +1,6 @@
 name: Raw Monthly Repartition Smoke
 
 on:
-  push:
-    branches:
-      - fix/18-raw-monthly-partition
-    paths:
-      - "data/**"
-      - ".github/workflows/raw-monthly-smoke.yml"
-  pull_request:
-    branches:
-      - develop
-    types: [opened, synchronize, reopened]
-    paths:
-      - "data/**"
-      - ".github/workflows/raw-monthly-smoke.yml"
   workflow_dispatch:
 
 permissions:
