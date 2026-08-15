@@ -18,20 +18,31 @@ data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/*.jsonl.gz
 
 Other event dates such as `dvdnBasDt`, `stckIssuDt`, `cashDvdnPayDt` are payload fields and do not determine Raw partitions.
 
+Real Azure Blob access uses Entra ID through `DefaultAzureCredential`. `AZURE_STORAGE_ACCOUNT_NAME` takes precedence over any stale connection string. Connection-string authentication is supported only for local Azurite (`UseDevelopmentStorage=true`).
+
 ## 2. Raw Blob catalog reconciliation
 
 Azure Blob is authoritative. `raw.data_object` is a searchable PostgreSQL catalog, not a second Raw source of truth.
 
-Read-only Blob audit / DB dry run:
+When running against Azure from the repository's `data/` directory, authenticate first:
 
 ```bash
-python scripts/reconcile_raw_blob_catalog.py --expected-minimum 4228
+az login
+```
+
+Read-only Blob audit / DB dry run using the existing Azure environment file:
+
+```bash
+python scripts/reconcile_raw_blob_catalog.py \
+  --env-file ../.env.azure \
+  --expected-minimum 4228
 ```
 
 Apply catalog reconciliation only from an environment that can reach both Azure Blob and Azure PostgreSQL:
 
 ```bash
 python scripts/reconcile_raw_blob_catalog.py \
+  --env-file ../.env.azure \
   --apply \
   --expected-minimum 4228
 ```
@@ -51,13 +62,16 @@ Behavior:
 Read-only readiness audit:
 
 ```bash
-python scripts/audit_legacy_raw_table.py
+python scripts/audit_legacy_raw_table.py \
+  --env-file ../.env.azure
 ```
 
 Optional exact count is expensive:
 
 ```bash
-python scripts/audit_legacy_raw_table.py --exact-count
+python scripts/audit_legacy_raw_table.py \
+  --env-file ../.env.azure \
+  --exact-count
 ```
 
 A DROP is allowed only after all of the following are confirmed:
