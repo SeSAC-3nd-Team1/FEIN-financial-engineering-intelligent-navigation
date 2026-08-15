@@ -20,31 +20,53 @@ Other event dates such as `dvdnBasDt`, `stckIssuDt`, `cashDvdnPayDt` are payload
 
 Real Azure Blob access uses Entra ID through `DefaultAzureCredential`. `AZURE_STORAGE_ACCOUNT_NAME` takes precedence over any stale connection string. Connection-string authentication is supported only for local Azurite (`UseDevelopmentStorage=true`).
 
+### Docker Azure authentication
+
+The `data` image includes Azure CLI and Compose persists `/root/.azure` in the `azure_cli_data` named volume. This means ephemeral `docker compose run --rm` jobs reuse the same Azure CLI login.
+
+The Azure environment file must include the non-secret storage account name:
+
+```env
+AZURE_STORAGE_ACCOUNT_NAME=stfeindata
+```
+
+Build the latest data image once after Dockerfile changes:
+
+```bash
+docker compose --env-file .env.azure --profile data build data
+```
+
+Authenticate from inside the data container:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data az login --use-device-code
+```
+
+Verify the persisted login and Storage account environment before running data jobs:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data az account show --output table
+docker compose --env-file .env.azure --profile data run --rm --no-deps data sh -lc 'echo $AZURE_STORAGE_ACCOUNT_NAME'
+```
+
+Do not enable Azure Storage Shared Key for local development.
+
 ## 2. Raw Blob catalog reconciliation
 
 Azure Blob is authoritative. `raw.data_object` is a searchable PostgreSQL catalog, not a second Raw source of truth.
 
-When running against Azure from the repository's `data/` directory, authenticate first:
+Read-only Blob audit / DB dry run:
 
 ```bash
-az login
-```
-
-Read-only Blob audit / DB dry run using the existing Azure environment file:
-
-```bash
-python -m scripts.reconcile_raw_blob_catalog \
-  --env-file ../.env.azure \
-  --expected-minimum 4228
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.reconcile_raw_blob_catalog --expected-minimum 4228
 ```
 
 Apply catalog reconciliation only from an environment that can reach both Azure Blob and Azure PostgreSQL:
 
 ```bash
-python -m scripts.reconcile_raw_blob_catalog \
-  --env-file ../.env.azure \
-  --apply \
-  --expected-minimum 4228
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.reconcile_raw_blob_catalog --apply --expected-minimum 4228
 ```
 
 Behavior:
@@ -62,16 +84,15 @@ Behavior:
 Read-only readiness audit:
 
 ```bash
-python -m scripts.audit_legacy_raw_table \
-  --env-file ../.env.azure
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.audit_legacy_raw_table
 ```
 
 Optional exact count is expensive:
 
 ```bash
-python -m scripts.audit_legacy_raw_table \
-  --env-file ../.env.azure \
-  --exact-count
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.audit_legacy_raw_table --exact-count
 ```
 
 A DROP is allowed only after all of the following are confirmed:
@@ -97,19 +118,13 @@ Supported first datasets:
 Examples:
 
 ```bash
-python -m scripts.export_processed_monthly \
-  --env-file ../.env.azure \
-  --dataset stock_price \
-  --start 2021-08-14 \
-  --end 2026-08-13 \
-  --schema-version 1
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.export_processed_monthly \
+  --dataset stock_price --start 2021-08-14 --end 2026-08-13 --schema-version 1
 
-python -m scripts.export_processed_monthly \
-  --env-file ../.env.azure \
-  --dataset market_index \
-  --start 2021-08-14 \
-  --end 2026-08-13 \
-  --schema-version 1
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.export_processed_monthly \
+  --dataset market_index --start 2021-08-14 --end 2026-08-13 --schema-version 1
 ```
 
 Output:
@@ -132,12 +147,10 @@ Feature generation reads Processed Parquet, not Raw Blob or PostgreSQL directly.
 Example:
 
 ```bash
-python -m scripts.build_stock_price_features \
-  --env-file ../.env.azure \
-  --start 2021-08-14 \
-  --end 2026-08-13 \
-  --processed-schema-version 1 \
-  --feature-version 1
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.build_stock_price_features \
+  --start 2021-08-14 --end 2026-08-13 \
+  --processed-schema-version 1 --feature-version 1
 ```
 
 Initial feature set:
