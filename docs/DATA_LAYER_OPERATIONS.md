@@ -33,7 +33,7 @@ az login
 Read-only Blob audit / DB dry run using the existing Azure environment file:
 
 ```bash
-python scripts/reconcile_raw_blob_catalog.py \
+python -m scripts.reconcile_raw_blob_catalog \
   --env-file ../.env.azure \
   --expected-minimum 4228
 ```
@@ -41,7 +41,7 @@ python scripts/reconcile_raw_blob_catalog.py \
 Apply catalog reconciliation only from an environment that can reach both Azure Blob and Azure PostgreSQL:
 
 ```bash
-python scripts/reconcile_raw_blob_catalog.py \
+python -m scripts.reconcile_raw_blob_catalog \
   --env-file ../.env.azure \
   --apply \
   --expected-minimum 4228
@@ -62,14 +62,14 @@ Behavior:
 Read-only readiness audit:
 
 ```bash
-python scripts/audit_legacy_raw_table.py \
+python -m scripts.audit_legacy_raw_table \
   --env-file ../.env.azure
 ```
 
 Optional exact count is expensive:
 
 ```bash
-python scripts/audit_legacy_raw_table.py \
+python -m scripts.audit_legacy_raw_table \
   --env-file ../.env.azure \
   --exact-count
 ```
@@ -94,11 +94,19 @@ Supported first datasets:
 - `stock_price`
 - `market_index`
 
-Example:
+Examples:
 
 ```bash
-python scripts/export_processed_monthly.py \
+python -m scripts.export_processed_monthly \
+  --env-file ../.env.azure \
   --dataset stock_price \
+  --start 2021-08-14 \
+  --end 2026-08-13 \
+  --schema-version 1
+
+python -m scripts.export_processed_monthly \
+  --env-file ../.env.azure \
+  --dataset market_index \
   --start 2021-08-14 \
   --end 2026-08-13 \
   --schema-version 1
@@ -124,7 +132,8 @@ Feature generation reads Processed Parquet, not Raw Blob or PostgreSQL directly.
 Example:
 
 ```bash
-python scripts/build_stock_price_features.py \
+python -m scripts.build_stock_price_features \
+  --env-file ../.env.azure \
   --start 2021-08-14 \
   --end 2026-08-13 \
   --processed-schema-version 1 \
@@ -141,7 +150,7 @@ Initial feature set:
 - 20-day return volatility
 - 20-day volume SMA
 
-A 60-calendar-day warm-up is loaded by default so rolling features at the requested range boundary do not start from an empty history.
+A 60-calendar-day warm-up is loaded by default so rolling features at the requested range boundary do not start from an empty history when earlier Processed data exists. At the earliest available Raw/Processed boundary, rolling features remain null until sufficient history accumulates.
 
 Output:
 
