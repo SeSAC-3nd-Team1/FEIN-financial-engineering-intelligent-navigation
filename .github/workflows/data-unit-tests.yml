@@ -1,12 +1,6 @@
 name: Data Unit Tests
 
 on:
-  push:
-    branches:
-      - chore/20-data-layer-operations
-    paths:
-      - "data/**"
-      - ".github/workflows/data-unit-tests.yml"
   pull_request:
     paths:
       - "data/**"
