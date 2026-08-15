@@ -130,14 +130,17 @@ def safe_error_message(error: Exception) -> str:
     return type(error).__name__
 
 
-def group_items_by_month(
-    items: list[dict], *, fallback_date: date
-) -> list[tuple[date, list[dict]]]:
-    """Group one API page by each record's actual YYYY-MM partition."""
+def group_items_by_month(items: list[dict]) -> list[tuple[date, list[dict]]]:
+    """Group one API page strictly by each record's basDt YYYY-MM."""
 
     grouped: dict[date, list[dict]] = {}
-    for item in items:
-        item_date = parse_item_date(item.get("basDt")) or fallback_date
+    for index, item in enumerate(items):
+        item_date = parse_item_date(item.get("basDt"))
+        if item_date is None:
+            raise ValueError(
+                "Raw monthly partition requires a valid basDt; "
+                f"record_index={index} basDt={item.get('basDt')!r}"
+            )
         partition_month = date(item_date.year, item_date.month, 1)
         grouped.setdefault(partition_month, []).append(item)
     return sorted(grouped.items())
@@ -231,10 +234,7 @@ def main() -> None:
                 )
                 blob_results = []
                 if items:
-                    fallback_date = args.date or args.start_date or date.today()
-                    for partition_month, monthly_items in group_items_by_month(
-                        items, fallback_date=fallback_date
-                    ):
+                    for partition_month, monthly_items in group_items_by_month(items):
                         blob_results.append(
                             raw_writer.upload_items(
                                 dataset=operation.dataset,
