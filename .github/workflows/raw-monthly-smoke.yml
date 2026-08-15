@@ -1,6 +1,11 @@
 name: Raw Monthly Repartition Smoke
 
 on:
+  push:
+    branches:
+      - fix/18-raw-monthly-partition
+    paths:
+      - ".github/workflows/raw-monthly-smoke.yml"
   workflow_dispatch:
 
 permissions:
@@ -52,10 +57,11 @@ jobs:
         working-directory: data
         run: python -m pytest tests/test_blob_storage.py tests/test_public_data.py -q
 
-      - name: Repartition one existing real Raw blob
+      - name: Repartition remaining legacy daily Raw blob
         working-directory: data
         run: |
           python scripts/repartition_existing_raw_blobs.py \
+            --source-prefix "data-go-kr/stock_price/operation=getstockpriceinfo/year=2026/month=08/day=13/" \
             --dataset stock_price \
             --operation getStockPriceInfo \
             --max-source-blobs 1
