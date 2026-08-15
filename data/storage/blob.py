@@ -23,28 +23,41 @@ class BlobObject:
 
 
 class BlobStorage:
-    """Identity-first Blob access with optional Azurite connection-string support."""
+    """Identity-first Blob access with Azurite-only connection-string support."""
 
     def __init__(self, service_client: BlobServiceClient) -> None:
         self.service_client = service_client
 
     @classmethod
     def from_env(cls) -> "BlobStorage":
-        connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "").strip()
-        if connection_string:
-            return cls(BlobServiceClient.from_connection_string(connection_string))
         account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME", "").strip()
-        if not account_name:
-            raise RuntimeError("AZURE_STORAGE_ACCOUNT_NAME is required")
-        return cls(
-            BlobServiceClient(
-                account_url=f"https://{account_name}.blob.core.windows.net",
-                credential=DefaultAzureCredential(),
-                retry_total=5,
-                retry_backoff_factor=0.8,
-                retry_backoff_max=30,
+        connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "").strip()
+
+        # Real Azure always uses Entra ID / DefaultAzureCredential. Keeping this
+        # branch first also prevents a stale Shared Key connection string in a
+        # developer env file from bypassing the production authentication policy.
+        if account_name:
+            return cls(
+                BlobServiceClient(
+                    account_url=f"https://{account_name}.blob.core.windows.net",
+                    credential=DefaultAzureCredential(),
+                    retry_total=5,
+                    retry_backoff_factor=0.8,
+                    retry_backoff_max=30,
+                )
             )
-        )
+
+        # Connection strings are intentionally limited to the local Azurite
+        # emulator. Azure account keys/SAS/connection strings are not supported.
+        if connection_string:
+            if connection_string.lower() != "usedevelopmentstorage=true":
+                raise RuntimeError(
+                    "Azure Shared Key/connection-string authentication is disabled; "
+                    "set AZURE_STORAGE_ACCOUNT_NAME and authenticate with Entra ID"
+                )
+            return cls(BlobServiceClient.from_connection_string(connection_string))
+
+        raise RuntimeError("AZURE_STORAGE_ACCOUNT_NAME is required")
 
     def exists(self, container: str, path: str) -> bool:
         return self.service_client.get_blob_client(container, path).exists()
