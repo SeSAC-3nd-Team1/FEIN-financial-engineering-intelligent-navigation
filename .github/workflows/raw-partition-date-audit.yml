@@ -1,11 +1,6 @@
 name: Raw Partition Date Audit
 
 on:
-  push:
-    branches:
-      - fix/18-raw-monthly-partition
-    paths:
-      - ".github/workflows/raw-partition-date-audit.yml"
   workflow_dispatch:
 
 permissions:
