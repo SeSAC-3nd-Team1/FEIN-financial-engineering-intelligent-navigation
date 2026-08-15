@@ -130,6 +130,19 @@ def safe_error_message(error: Exception) -> str:
     return type(error).__name__
 
 
+def group_items_by_month(
+    items: list[dict], *, fallback_date: date
+) -> list[tuple[date, list[dict]]]:
+    """Group one API page by each record's actual YYYY-MM partition."""
+
+    grouped: dict[date, list[dict]] = {}
+    for item in items:
+        item_date = parse_item_date(item.get("basDt")) or fallback_date
+        partition_month = date(item_date.year, item_date.month, 1)
+        grouped.setdefault(partition_month, []).append(item)
+    return sorted(grouped.items())
+
+
 def main() -> None:
     args = parse_args()
     if args.rows < 1 or args.rows > 10_000:
@@ -166,7 +179,6 @@ def main() -> None:
     if args.date:
         filters = {"basDt": args.date.strftime("%Y%m%d")}
     elif args.start_date:
-        # The portal defines endBasDt as exclusive.
         filters = {
             "beginBasDt": args.start_date.strftime("%Y%m%d"),
             "endBasDt": (args.end_date + timedelta(days=1)).strftime("%Y%m%d"),
@@ -205,8 +217,6 @@ def main() -> None:
                 )
                 items = page.items
                 if args.start_date:
-                    # Several disclosure operations ignore beginBasDt/endBasDt.
-                    # Enforce the requested range before any DB write.
                     items = [
                         item
                         for item in page.items
@@ -219,25 +229,25 @@ def main() -> None:
                     not page.items
                     or page_number * args.rows >= page.total_count
                 )
-                blob_result = None
+                blob_results = []
                 if items:
-                    partition_date = (
-                        parse_item_date(items[0].get("basDt"))
-                        or args.date
-                        or args.start_date
-                        or date.today()
-                    )
-                    blob_result = raw_writer.upload_items(
-                        dataset=operation.dataset,
-                        operation=operation.name,
-                        items=items,
-                        partition_date=partition_date,
-                        page_number=page_number,
-                    )
+                    fallback_date = args.date or args.start_date or date.today()
+                    for partition_month, monthly_items in group_items_by_month(
+                        items, fallback_date=fallback_date
+                    ):
+                        blob_results.append(
+                            raw_writer.upload_items(
+                                dataset=operation.dataset,
+                                operation=operation.name,
+                                items=monthly_items,
+                                partition_date=partition_month,
+                                page_number=page_number,
+                                monthly_partition=True,
+                            )
+                        )
                 with session_scope(engine) as session:
                     raw_count = 0
-                    if blob_result:
-                        blob, batch = blob_result
+                    for blob, batch in blob_results:
                         record_raw_data_object(
                             session,
                             operation,
@@ -247,9 +257,7 @@ def main() -> None:
                             range_start=args.start_date or args.date,
                             range_end=args.end_date or args.date,
                         )
-                        raw_count = batch.record_count
-                    # A range master backfill is retained in the landing table;
-                    # do not let older snapshots overwrite the current master.
+                        raw_count += batch.record_count
                     normalize_page = not args.raw_only and not (
                         args.start_date and operation.name == "getItemInfo"
                     )
