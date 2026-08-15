@@ -1,6 +1,20 @@
 # Data 저장 구조와 Docker 개발환경
 
-한국 주식의 과거 분석, 백테스트 및 모델 학습 데이터를 PostgreSQL에 저장하는 Python 3.13 환경입니다. 실시간 현재가·호가·체결·모의투자 상태는 이 DB에 적재하지 않고 필요한 시점에 외부 API를 호출합니다.
+한국 주식의 과거 분석, 백테스트 및 모델 학습 데이터를 수집하는 Python 3.13 환경입니다. 원본은 Azure Blob Storage, 정규화/서비스 데이터와 수집 상태는 PostgreSQL, 대용량 분석 산출물은 Blob Parquet에 저장합니다.
+
+## 데이터 저장 원칙
+
+```text
+Raw        = Azure Blob Storage (JSON Lines + gzip)
+Normalized = Azure PostgreSQL
+Feature    = Azure Blob Storage (Parquet)
+Service    = Azure PostgreSQL
+Temporary  = Redis
+Local      = 작은 Sample과 임시 cache
+GitHub     = Code only
+```
+
+`raw` PostgreSQL schema에는 역사적인 이름 때문에 정규화 금융 table도 남아 있습니다. schema rename은 이번 범위에 포함하지 않으며, Raw 원문의 source of truth는 Azure Blob입니다.
 
 ## 디렉터리 구조
 
@@ -19,10 +33,22 @@ data/
 ├── notebooks/              # 탐색·검증 notebook
 ├── pipelines/              # 수집→정규화→적재 orchestration
 ├── scripts/                # DB 확인, 샘플 적재, 조회, export
+├── storage/                # Blob SDK adapter, 경로, JSONL/gzip 직렬화
 └── tests/                  # DB 구조·UPSERT·export 테스트
 ```
 
-`data/raw/`, `data/processed/`, `data/exports/`는 파일 기반 임시 산출물 경로이며 Git에서 제외됩니다. DB의 원천 테이블은 PostgreSQL `raw` 스키마, 향후 Factor 및 재무비율은 `processed` 스키마에 저장합니다.
+`data/raw/`, `data/processed/`, `data/exports/`는 임시 test/sample/notebook 경로이며 Git에서 제외됩니다. 영구 source of truth로 사용하지 않고 전체 Azure 데이터를 local volume에 복제하지 않습니다. 로컬 개발은 종목 10~50개, 최근 1~3개월 등 작은 sample만 사용합니다.
+
+## Azure Blob 설정과 인증
+
+```env
+AZURE_STORAGE_ACCOUNT_NAME=stfeindata
+AZURE_STORAGE_CONTAINER_RAW=raw
+AZURE_STORAGE_CONTAINER_PROCESSED=processed
+AZURE_STORAGE_CONTAINER_FEATURES=features
+```
+
+운영에서는 Managed Identity, 로컬에서는 `az login`을 통한 `DefaultAzureCredential`을 사용합니다. 실행 identity에는 Storage Account 범위의 `Storage Blob Data Contributor`만 부여합니다. Account Key, SAS, connection string은 commit하지 않습니다. Azurite test에 한해서만 `AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true`를 local `.env`에 둘 수 있습니다.
 
 ## 공공데이터포털 실제 수집
 
@@ -65,7 +91,7 @@ docker compose exec data python scripts/collect_public_data.py \
   --date 2026-08-13 --rows 100 --max-pages 1 --raw-only
 ```
 
-5년치 최초 적재는 시작일과 종료일을 모두 포함하며, API 페이지마다 커밋하고
+5년치 최초 적재는 시작일과 종료일을 모두 포함하며, API 페이지마다 Blob과 DB를 확정하고
 `raw.public_data_collection_checkpoint`에 진행 위치를 저장합니다. 같은 명령을 다시
 실행하면 완료된 operation은 건너뛰고 미완료 operation의 다음 페이지부터 재개합니다.
 
@@ -112,7 +138,9 @@ docker compose exec postgres psql -U app -d app -c \
    ORDER BY dataset, operation;"
 ```
 
-모든 항목은 `raw.public_data_record`에 원문 JSONB로 먼저 저장합니다. 동일 원문은 SHA-256 기반 UNIQUE 제약으로 중복되지 않으며 정정된 응답은 별도 행으로 보존됩니다. 상장종목, 주식 일봉, 주가지수 대표 operation은 기존 정규화 테이블에도 UPSERT합니다.
+신규 Collector의 순서는 `API → Raw Blob → validation/normalize → PostgreSQL UPSERT → checkpoint`입니다. Blob 실패 시 DB transaction과 checkpoint를 시작하지 않습니다. 페이지의 record hash 집합으로 content-addressed 경로를 만들므로 DB commit 뒤 장애가 나도 재실행은 기존 Blob을 재사용합니다. 각 JSONL record의 `payloadHash`는 canonical JSON SHA-256이라 downstream 재처리 시 record 수준 dedupe가 가능합니다.
+
+`raw.public_data_record`는 기존 24,070,779행 migration source로만 유지하며 신규 Collector는 더 이상 이 table에 INSERT하지 않습니다. 정규화 가능한 대표 operation은 기존 관계형 table에 계속 UPSERT합니다.
 
 주식발행·배당 데이터는 공공누리 제2유형으로 안내되어 있으므로 상업 서비스 전환 전에 한국예탁결제원과 이용조건을 확인해야 합니다.
 
@@ -132,6 +160,8 @@ Azure PostgreSQL에 실제 배포된 모든 업무 테이블의 통합 컬럼 �
 | `raw.macro_indicator` | `macro_indicator_id` | - | `(indicator_code, observation_date, frequency)` |
 | `raw.public_data_record` | `record_id` | - | `(dataset, operation, payload_hash)` |
 | `raw.public_data_collection_checkpoint` | `checkpoint_id` | - | `(dataset, operation, range_start, range_end)` |
+| `raw.data_object` | `data_object_id` | - | `(container, blob_path)` |
+| `raw.public_data_migration_manifest` | `manifest_id` | - | `(source_table, dataset, operation, source_min_id, source_max_id)` |
 | `public.users` | `id` | - | `user_id`, `email`, `ci_lookup_hash` |
 | `public.terms` | `id` | - | `(term_code, version)` |
 | `public.user_agreements` | `id` | `user_id → users`, `(term_code, term_version) → terms` | `(user_id, term_code, term_version)` |
@@ -221,6 +251,37 @@ docker compose exec data python scripts/export_parquet.py \
 ```
 
 기본 압축은 `zstd`이며 `exports/`는 Git에서 제외됩니다.
+
+Azure `processed` container로 직접 보낼 때는 temporary directory를 거치며 완료 후 local 파일을 제거합니다.
+
+```bash
+docker compose exec data python scripts/export_parquet.py \
+  --start 2026-08-01 --end 2026-08-31 --blob --schema-version 1
+```
+
+경로는 `processed/stock_price/year=YYYY/month=MM/*.parquet`이고 metadata에 생성 시각, source range, schema version, Git SHA를 기록합니다. Feature는 `features/<dataset>/version=<version>/<train|validation|test>/` 규칙을 사용합니다.
+
+## Legacy Raw migration과 복구
+
+Migration은 dataset/operation별 keyset cursor와 100~50,000행 chunk를 사용합니다. 전체 table을 메모리에 올리지 않으며 완료 chunk를 manifest에 commit하므로 같은 명령으로 이어서 실행할 수 있습니다.
+
+```bash
+PYTHONPATH=data python data/scripts/migrate_public_data_raw_to_blob.py \
+  --chunk-size 50000
+
+PYTHONPATH=data python data/scripts/verify_public_data_blob_migration.py --deep
+```
+
+검증은 전체/dataset별 건수, Blob size, gzip file SHA-256, JSONL 행 수, 각 payload SHA-256을 확인합니다. Blob upload 뒤 DB commit 전에 장애가 나면 content-addressed object를 다음 실행에서 재사용합니다. 기존 `raw.public_data_record`는 검증 직후 자동 삭제하지 않습니다. 팀 승인, Blob 접근/재처리 test, backup/restore 확인 후 read-only 유예 → backup → `TRUNCATE`를 별도 운영 작업으로 수행합니다.
+
+## 보존·비용 정책
+
+- Raw: immutable 원본. hash가 달라진 재수집은 별도 object이며 임의 수정하지 않습니다.
+- Processed: 원천과 code version으로 재생성 가능하고 날짜 partition을 사용합니다.
+- Features: model/formula/schema version과 split을 경로와 metadata에 남깁니다.
+- 현재 프로젝트 기간에는 자동 Archive tier나 복잡한 lakehouse를 도입하지 않습니다.
+
+대용량 immutable JSONB를 PostgreSQL primary storage와 index/backup에 반복 보관하는 대신 Blob의 저비용 object storage를 사용합니다. 관계형 제약과 조회가 필요한 정규화/서비스 데이터만 PostgreSQL에 유지합니다. 실제 금액은 region, transaction, redundancy, retention에 따라 달라지므로 문서에 고정하지 않습니다.
 
 ## 테스트
 

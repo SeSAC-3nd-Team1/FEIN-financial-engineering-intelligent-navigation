@@ -6,7 +6,7 @@
 | --- | --- |
 | 기준 DB | Azure Database for PostgreSQL `pg-db-fein.postgres.database.azure.com` |
 | PostgreSQL | 17.10 |
-| Alembic revision | `20260815_0008` |
+| Alembic revision | `20260815_0009` |
 | 조사 시각 | 2026-08-15 (Asia/Seoul) |
 | 전체 DB 크기 | 약 16 GB |
 | 업무 schema | `public`, `raw`, `processed` |
@@ -17,8 +17,10 @@
 ## 2. Schema와 데이터 흐름
 
 - `public`: 서비스 영구 데이터. 가입 완료 사용자, 약관 catalog, 사용자 동의 이력을 저장한다.
-- `raw`: 외부 금융 데이터 원문과 최소 정규화 결과를 저장한다.
+- `raw`: 역사적 schema 이름이다. 정규화 금융 데이터, Blob metadata/checkpoint, legacy migration source를 저장한다.
 - `processed`: Factor, 재무비율 등 파생 데이터용이며 현재 table이 없다.
+- Azure Blob `raw`: API 원문의 source of truth다.
+- Azure Blob `processed`/`features`: 대용량 Parquet 분석·학습 자료를 저장한다.
 - Redis/Backend: OTP, verification token, pending signup 등 단기 상태를 관리하며 PostgreSQL 명세에서 제외한다.
 
 ```mermaid
@@ -381,9 +383,9 @@ OpenDART 재무제표를 point-in-time 기준으로 저장한다. 백테스트�
 - UNIQUE: `(indicator_code, observation_date, frequency)`
 - INDEX: `(indicator_code, observation_date)`, `(observation_date, indicator_code)`
 
-### 6.7 `raw.public_data_record`
+### 6.7 `raw.public_data_record` (Legacy migration source)
 
-공공데이터포털 API가 반환한 각 item을 손실 없이 먼저 저장하는 landing table이다. `payload_hash`는 동일 원문의 중복 적재를 막고, 수정된 응답은 다른 hash로 새 row가 된다.
+2026-08-15 이전 공공데이터포털 API item을 보관한 legacy landing table이다. 신규 Collector 쓰기는 중단됐고 Blob migration 검증과 유예 기간 동안 read-only source로 유지한다. 자동 DROP/TRUNCATE하지 않는다.
 
 | Column | Type | NULL | Default | 설명 |
 | --- | --- | --- | --- | --- |
@@ -427,9 +429,17 @@ OpenDART 재무제표를 point-in-time 기준으로 저장한다. 백테스트�
 - UNIQUE: `(dataset, operation, range_start, range_end)`
 - INDEX: `(status, updated_at)`
 
+### 6.9 `raw.data_object`
+
+Raw payload 없이 Blob reference, file SHA-256, batch hash, record count, source range, file size, 상태만 저장한다. `(container, blob_path)`가 유일하며 Collector의 DB commit이 재시도돼도 중복 metadata가 생기지 않는다.
+
+### 6.10 `raw.public_data_migration_manifest`
+
+Legacy table의 dataset/operation별 ID chunk 진행을 기록한다. source min/max ID, migrated row count, Blob path/size/SHA-256, started/completed 시각과 상태를 추적하며 완료 chunk는 재실행 시 건너뛴다.
+
 ## 7. 공공데이터 operation catalog
 
-`raw.public_data_record.operation`에 저장될 수 있는 현재 52개 operation이다.
+Legacy table과 Blob raw record에 존재할 수 있는 현재 52개 operation이다.
 
 | Dataset | Operations |
 | --- | --- |
@@ -463,9 +473,10 @@ OpenDART 재무제표를 point-in-time 기준으로 저장한다. 백테스트�
 
 금융 데이터:
 
-- 모든 공공 API item은 `public_data_record`에 먼저 보존한다.
+- 모든 신규 공공 API item은 Azure Blob JSONL/gzip에 먼저 보존한다.
 - 지원되는 대표 operation은 정규화 table에 UPSERT한다.
-- 원문 hash가 같으면 중복 적재하지 않고, 원문이 변경되면 새 row로 이력을 남긴다.
+- 원문 hash가 같으면 content-addressed Blob을 재사용하고, 원문이 변경되면 새 object로 이력을 남긴다.
+- Blob 성공 뒤 정규화 UPSERT와 checkpoint를 같은 DB transaction에서 확정한다.
 - 정규화 금융 FK 삭제는 `RESTRICT`로 이력 손실을 방지한다.
 
 ## 10. 운영상 미확정·주의 사항
@@ -474,7 +485,7 @@ OpenDART 재무제표를 point-in-time 기준으로 저장한다. 백테스트�
 - `users`와 `user_agreements`는 현재 0건이다.
 - `raw.stock_issuance`, `raw.financial_statement`, `raw.macro_indicator` 정규화 table은 각 1건으로, landing data 규모에 비해 정규화 pipeline 적용 범위가 작다.
 - Checkpoint에는 실패 상태가 존재하므로 수집 완료 판정 시 기간·operation별 상태를 확인해야 한다.
-- `raw.public_data_record`가 약 14 GB로 DB 용량 대부분을 차지한다. 보존주기, partitioning, archive tier, autovacuum와 index 사용률을 지속 점검한다.
+- `raw.public_data_record` 약 14 GB는 Blob 검증과 팀 승인 뒤 별도 change로 정리한다. 이번 migration은 원본을 삭제하지 않는다.
 - 사용자 soft delete 후 ID/email/CI 재사용 여부와 `user_agreements ON DELETE CASCADE`가 법적 보존 요건에 맞는지 확정해야 한다.
 - `public_data_record.payload`의 operation별 field dictionary는 외부 API가 변경할 수 있으므로 공식 API 명세 version과 함께 별도 관리해야 한다.
 
