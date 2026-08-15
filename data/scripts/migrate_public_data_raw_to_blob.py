@@ -1,4 +1,4 @@
-"""Stream legacy raw.public_data_record rows into monthly JSONL/gzip blobs."""
+"""Stream legacy raw.public_data_record rows into canonical monthly Raw blobs."""
 
 from __future__ import annotations
 
@@ -15,41 +15,35 @@ from storage import RawBlobWriter
 
 
 SOURCE_TABLE = "raw.public_data_record"
-MANIFEST_SOURCE = "raw.public_data_record:monthly-v2"
+MANIFEST_SOURCE = "raw.public_data_record:monthly-v3"
+
+
+def _parse_month(value: str) -> date:
+    try:
+        parsed = date.fromisoformat(f"{value}-01")
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("--month must be YYYY-MM") from error
+    if value != parsed.strftime("%Y-%m"):
+        raise argparse.ArgumentTypeError("--month must be YYYY-MM")
+    return parsed
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Stream legacy PostgreSQL raw JSONB to Azure Blob Storage by month."
+        description="Stream legacy PostgreSQL raw JSONB to canonical Azure Raw blobs by month."
     )
     parser.add_argument("--chunk-size", type=int, default=50_000)
     parser.add_argument("--dataset")
     parser.add_argument("--operation")
     parser.add_argument(
+        "--month",
+        type=_parse_month,
+        help="Optional single month to migrate in YYYY-MM form.",
+    )
+    parser.add_argument(
         "--max-chunks", type=int, help="Safety limit for smoke tests; omit for all."
     )
     return parser.parse_args()
-
-
-def _legacy_record(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "dataset": row["dataset"],
-        "operation": row["operation"],
-        "source": "data-go-kr",
-        "collectedAt": row["created_at"],
-        "payloadHash": row["payload_hash"],
-        "payload": row["payload"],
-        "legacy": {
-            "sourceTable": SOURCE_TABLE,
-            "recordId": row["record_id"],
-            "referenceDate": row["reference_date"],
-            "stockCode": row["stock_code"],
-            "isin": row["isin"],
-            "corporationRegistrationNumber": row["corporation_registration_number"],
-            "corporationName": row["corporation_name"],
-            "updatedAt": row["updated_at"],
-        },
-    }
 
 
 def _operations(engine, args: argparse.Namespace) -> list[tuple[str, str, date, int]]:
@@ -61,6 +55,13 @@ def _operations(engine, args: argparse.Namespace) -> list[tuple[str, str, date, 
     if args.operation:
         clauses.append("operation = :operation")
         params["operation"] = args.operation
+    if args.month:
+        clauses.append(
+            "COALESCE(reference_date, created_at::date) >= :month_start "
+            "AND COALESCE(reference_date, created_at::date) < :month_end"
+        )
+        params["month_start"] = args.month
+        params["month_end"] = _next_month(args.month)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     partition_expr = "COALESCE(reference_date, created_at::date)"
     query = text(
@@ -89,7 +90,7 @@ def _next_month(value: date) -> date:
 
 def _resume_after(engine, dataset: str, operation: str, partition_month: date) -> int:
     prefix = (
-        f"migration/data-go-kr/{dataset.lower()}/operation={operation.lower()}/"
+        f"data-go-kr/{dataset.lower()}/operation={operation.lower()}/"
         f"year={partition_month:%Y}/month={partition_month:%m}/"
     )
     query = text(
@@ -242,15 +243,16 @@ def main() -> None:
             )
             if not rows:
                 break
-            records = [_legacy_record(row) for row in rows]
+
+            # Preserve each API item exactly as it was stored in legacy Raw JSONB.
+            items = [row["payload"] for row in rows]
             blob, batch = writer.upload_items(
                 dataset=dataset,
                 operation=operation,
-                items=[],
-                extra_records=records,
+                items=items,
                 partition_date=partition_month,
                 page_number=None,
-                migration=True,
+                migration=False,
                 monthly_partition=True,
                 collected_at=rows[0]["created_at"],
             )
