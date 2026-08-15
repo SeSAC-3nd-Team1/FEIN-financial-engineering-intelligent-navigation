@@ -10,10 +10,11 @@ from __future__ import annotations
 import argparse
 import os
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pyarrow.parquet as pq
+from dotenv import load_dotenv
 from sqlalchemy import select
 
 from db.connection import build_engine
@@ -27,6 +28,11 @@ SUPPORTED_DATASETS = ("stock_price", "market_index")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        help="Optional env file such as ../.env.azure; values are never logged.",
+    )
     parser.add_argument("--dataset", choices=SUPPORTED_DATASETS, required=True)
     parser.add_argument("--start", type=date.fromisoformat, required=True)
     parser.add_argument("--end", type=date.fromisoformat, required=True)
@@ -46,7 +52,7 @@ def month_windows(start: date, end: date) -> list[tuple[date, date]]:
         else:
             next_month = date(cursor.year, cursor.month + 1, 1)
         window_start = max(start, cursor)
-        window_end = min(end, next_month.fromordinal(next_month.toordinal() - 1))
+        window_end = min(end, next_month - timedelta(days=1))
         windows.append((window_start, window_end))
         cursor = next_month
     return windows
@@ -99,6 +105,11 @@ def build_query(dataset: str, start: date, end: date):
 
 def main() -> None:
     args = parse_args()
+    if args.env_file:
+        if not args.env_file.is_file():
+            raise FileNotFoundError(f"env file not found: {args.env_file}")
+        load_dotenv(args.env_file, override=False)
+
     engine = build_engine()
     storage = BlobStorage.from_env()
     container = os.getenv("AZURE_STORAGE_CONTAINER_PROCESSED", "processed")
