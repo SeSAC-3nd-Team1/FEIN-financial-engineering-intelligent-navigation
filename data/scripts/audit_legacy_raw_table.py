@@ -8,7 +8,9 @@ human can decide whether the legacy JSONB landing table is safe to remove later.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy import text
 
 from db.connection import build_engine
@@ -19,6 +21,11 @@ TARGET = "raw.public_data_record"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        help="Optional env file such as ../.env.azure; values are never logged.",
+    )
     parser.add_argument(
         "--exact-count",
         action="store_true",
@@ -33,6 +40,11 @@ def scalar(connection, sql: str):
 
 def main() -> None:
     args = parse_args()
+    if args.env_file:
+        if not args.env_file.is_file():
+            raise FileNotFoundError(f"env file not found: {args.env_file}")
+        load_dotenv(args.env_file, override=False)
+
     engine = build_engine()
     with engine.connect() as connection:
         exists = scalar(
