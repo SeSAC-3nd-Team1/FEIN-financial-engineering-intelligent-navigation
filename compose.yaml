@@ -66,6 +66,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PYTHONPATH: /app
       DATA_GO_KR_API_KEY: ${DATA_GO_KR_API_KEY:-}
+      AZURE_CONFIG_DIR: /root/.azure
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_RAW: ${AZURE_STORAGE_CONTAINER_RAW:-raw}
       AZURE_STORAGE_CONTAINER_PROCESSED: ${AZURE_STORAGE_CONTAINER_PROCESSED:-processed}
@@ -73,6 +74,7 @@ services:
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
     volumes:
       - ./data:/app
+      - azure_cli_data:/root/.azure
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,3 +136,4 @@ volumes:
   frontend_node_modules:
   postgres_data:
   redis_data:
+  azure_cli_data:
