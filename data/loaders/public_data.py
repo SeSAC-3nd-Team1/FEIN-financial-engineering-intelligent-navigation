@@ -13,9 +13,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from collectors.public_data_config import ApiOperation
-from db.models import MarketIndexDaily, PublicDataRecord, StockMaster
+from db.models import MarketIndexDaily, PublicDataRecord, RawDataObject, StockMaster
 from loaders.stocks import load_stock_master, load_stock_prices, normalize_stock_code
 from loaders.upsert import upsert_dataframe, upsert_rows
+from storage import BlobObject, RawBatch
 
 
 def parse_date(value: Any) -> date | None:
@@ -83,6 +84,41 @@ def load_landing_items(
         conflict_columns=["dataset", "operation", "payload_hash"],
         update_columns=["reference_date"],
     )
+
+
+def record_raw_data_object(
+    session: Session,
+    operation: ApiOperation,
+    blob: BlobObject,
+    batch: RawBatch,
+    *,
+    source: str,
+    range_start: date | None = None,
+    range_end: date | None = None,
+) -> int:
+    """Record a Blob reference without copying raw payloads into PostgreSQL."""
+
+    statement = (
+        insert(RawDataObject.__table__)
+        .values(
+            dataset=operation.dataset,
+            operation=operation.name,
+            source=source,
+            container=blob.container,
+            blob_path=blob.path,
+            content_sha256=batch.content_sha256,
+            batch_hash=batch.batch_hash,
+            record_count=batch.record_count,
+            range_start=range_start,
+            range_end=range_end,
+            file_size=blob.size,
+            compression="gzip",
+            status="available",
+        )
+        .on_conflict_do_nothing(index_elements=["container", "blob_path"])
+    )
+    result = session.execute(statement)
+    return max(result.rowcount, 0)
 
 
 def normalize_stock_master(items: list[dict[str, Any]]) -> pd.DataFrame:

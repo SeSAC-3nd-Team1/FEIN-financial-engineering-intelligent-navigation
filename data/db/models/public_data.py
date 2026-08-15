@@ -1,10 +1,11 @@
 """Lossless landing storage for heterogeneous public-data API responses."""
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
     Date,
+    DateTime,
     Identity,
     Index,
     Integer,
@@ -100,3 +101,88 @@ class PublicDataCollectionCheckpoint(TimestampMixin, Base):
         String(20), nullable=False, server_default=text("'pending'")
     )
     last_error: Mapped[str | None] = mapped_column(Text)
+
+
+class RawDataObject(TimestampMixin, Base):
+    """Searchable metadata for an immutable raw object stored outside PostgreSQL."""
+
+    __tablename__ = "data_object"
+    __table_args__ = (
+        UniqueConstraint("container", "blob_path", name="uq_data_object_blob"),
+        Index(
+            "ix_data_object_dataset_operation_collected",
+            "dataset",
+            "operation",
+            "collected_at",
+        ),
+        Index("ix_data_object_status_updated", "status", "updated_at"),
+        {"schema": RAW_SCHEMA},
+    )
+
+    data_object_id: Mapped[int] = mapped_column(
+        BigInteger, Identity(), primary_key=True
+    )
+    dataset: Mapped[str] = mapped_column(String(50), nullable=False)
+    operation: Mapped[str] = mapped_column(String(100), nullable=False)
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    container: Mapped[str] = mapped_column(String(63), nullable=False)
+    blob_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    batch_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    record_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    range_start: Mapped[date | None] = mapped_column(Date)
+    range_end: Mapped[date | None] = mapped_column(Date)
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    compression: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'gzip'")
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'available'")
+    )
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class RawMigrationManifest(TimestampMixin, Base):
+    """Resumable chunk ledger for legacy public_data_record migration."""
+
+    __tablename__ = "public_data_migration_manifest"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_table",
+            "dataset",
+            "operation",
+            "source_min_id",
+            "source_max_id",
+            name="uq_public_data_migration_source_chunk",
+        ),
+        Index(
+            "ix_public_data_migration_status",
+            "status",
+            "dataset",
+            "operation",
+        ),
+        {"schema": RAW_SCHEMA},
+    )
+
+    manifest_id: Mapped[int] = mapped_column(
+        BigInteger, Identity(), primary_key=True
+    )
+    source_table: Mapped[str] = mapped_column(String(100), nullable=False)
+    dataset: Mapped[str] = mapped_column(String(50), nullable=False)
+    operation: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_min_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source_max_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    migrated_row_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    container: Mapped[str] = mapped_column(String(63), nullable=False)
+    blob_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    blob_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'complete'")
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
