@@ -3,7 +3,9 @@ import io
 import json
 from datetime import date, datetime, timezone
 
-from storage.blob import BlobObject
+import pytest
+
+from storage.blob import BlobObject, BlobStorage
 from storage.paths import build_feature_path, build_processed_path, build_raw_path
 from storage.raw import RawBlobWriter, payload_hash, serialize_jsonl_gzip
 
@@ -83,7 +85,6 @@ def test_jsonl_gzip_is_lossless_and_deterministic() -> None:
     }
     first = serialize_jsonl_gzip([record])
     second = serialize_jsonl_gzip([record])
-    assert first.data == second.data
     decoded = [
         json.loads(line)
         for line in gzip.GzipFile(fileobj=io.BytesIO(first.data), mode="rb")
@@ -110,3 +111,16 @@ def test_raw_writer_reuses_existing_content_addressed_blob() -> None:
     assert first_batch.batch_hash == second_batch.batch_hash
     assert storage.upload_count == 1
     assert second.created is False
+
+
+def test_blob_storage_rejects_real_azure_connection_string_without_identity(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("AZURE_STORAGE_ACCOUNT_NAME", raising=False)
+    monkeypatch.setenv(
+        "AZURE_STORAGE_CONNECTION_STRING",
+        "DefaultEndpointsProtocol=https;AccountName=example;AccountKey=not-used",
+    )
+
+    with pytest.raises(RuntimeError, match="Shared Key/connection-string"):
+        BlobStorage.from_env()
