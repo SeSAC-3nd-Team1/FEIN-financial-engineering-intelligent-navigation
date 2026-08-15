@@ -1,11 +1,6 @@
 name: Raw Monthly Repartition Smoke
 
 on:
-  push:
-    branches:
-      - fix/18-raw-monthly-partition
-    paths:
-      - ".github/workflows/raw-monthly-smoke.yml"
   workflow_dispatch:
 
 permissions:
@@ -35,10 +30,6 @@ jobs:
           test -n "$AZURE_CLIENT_ID" || { echo "Missing GitHub secret: AZURE_CLIENT_ID"; exit 1; }
           test -n "$AZURE_TENANT_ID" || { echo "Missing GitHub secret: AZURE_TENANT_ID"; exit 1; }
           test -n "$AZURE_SUBSCRIPTION_ID" || { echo "Missing GitHub secret: AZURE_SUBSCRIPTION_ID"; exit 1; }
-          test "$AZURE_CLIENT_ID" = "62df74c5-7dc4-4b2e-9014-a37b09b5a7bd" || { echo "AZURE_CLIENT_ID does not match azure-github-chatgpt-mg"; exit 1; }
-          test "$AZURE_TENANT_ID" = "f2d17c51-f5c8-4e25-a029-7fee401686c2" || { echo "AZURE_TENANT_ID does not match azure-github-chatgpt-mg"; exit 1; }
-          test "$AZURE_SUBSCRIPTION_ID" = "b5a82513-0077-4885-a2d3-6aa00c3cac5b" || { echo "AZURE_SUBSCRIPTION_ID does not match azure-github-chatgpt-mg"; exit 1; }
-          echo "Azure OIDC IDs match azure-github-chatgpt-mg."
 
       - name: Azure login with OIDC
         uses: azure/login@v2
