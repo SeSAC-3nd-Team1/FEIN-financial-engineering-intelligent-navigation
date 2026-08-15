@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
       AZURE_STORAGE_CONTAINER_RAW: raw
       PYTHONPATH: .
@@ -32,10 +31,9 @@ jobs:
           cache: pip
           cache-dependency-path: data/requirements.txt
 
-      - name: Check required secrets
+      - name: Check required secret
         shell: bash
         run: |
-          test -n "$DATABASE_URL" || { echo "Missing GitHub secret: DATABASE_URL"; exit 1; }
           test -n "$AZURE_STORAGE_CONNECTION_STRING" || { echo "Missing GitHub secret: AZURE_STORAGE_CONNECTION_STRING"; exit 1; }
 
       - name: Install data dependencies
@@ -45,12 +43,10 @@ jobs:
         working-directory: data
         run: python -m pytest tests/test_blob_storage.py tests/test_public_data.py -q
 
-      - name: Repartition one real January 2026 stock-price chunk
+      - name: Repartition one existing real Raw blob
         working-directory: data
         run: |
-          python scripts/migrate_public_data_raw_to_blob.py \
+          python scripts/repartition_existing_raw_blobs.py \
             --dataset stock_price \
             --operation getStockPriceInfo \
-            --month 2026-01 \
-            --chunk-size 50000 \
-            --max-chunks 1
+            --max-source-blobs 1
