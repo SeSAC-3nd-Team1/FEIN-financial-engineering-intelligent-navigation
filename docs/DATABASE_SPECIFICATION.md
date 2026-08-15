@@ -84,7 +84,9 @@ erDiagram
 | `raw.financial_statement` | 1 | 112 kB | 재무제표 정규화본 |
 | `raw.macro_indicator` | 1 | 80 kB | 거시지표 정규화본 |
 | `raw.public_data_record` | 24,070,779 | 14 GB | 공공데이터 API 원문 landing |
-| `raw.public_data_collection_checkpoint` | 54 | 72 kB | 수집 재개 checkpoint |
+| `raw.public_data_collection_checkpoint` | 55 | 72 kB | 수집 재개 checkpoint |
+| `raw.data_object` | 526 | - | Blob 객체 metadata/reference |
+| `raw.public_data_migration_manifest` | 525 | - | Legacy Raw 이전 manifest |
 
 `raw.public_data_record` 데이터셋별 현황:
 
@@ -98,6 +100,8 @@ erDiagram
 | `stock_issuance` | 10,135,621 |
 | `stock_master` | 3,211,333 |
 | `stock_price` | 3,502,426 |
+
+2026-08-15 Blob migration은 전체 24,070,779행, dataset별 count, 525개 file checksum, 전체 payload hash를 검증했다. 상세 수치는 [RAW_BLOB_MIGRATION_REPORT.md](RAW_BLOB_MIGRATION_REPORT.md)를 참고한다. 원본 table은 삭제하지 않아 DB/table 크기는 작업 전과 같다.
 
 ## 4. 공통 타입과 규칙
 

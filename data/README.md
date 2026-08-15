@@ -50,6 +50,8 @@ AZURE_STORAGE_CONTAINER_FEATURES=features
 
 운영에서는 Managed Identity, 로컬에서는 `az login`을 통한 `DefaultAzureCredential`을 사용합니다. 실행 identity에는 Storage Account 범위의 `Storage Blob Data Contributor`만 부여합니다. Account Key, SAS, connection string은 commit하지 않습니다. Azurite test에 한해서만 `AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true`를 local `.env`에 둘 수 있습니다.
 
+`azure-storage-blob`은 object upload/download와 metadata/retry를, `azure-identity`는 Managed Identity·Azure CLI 등 passwordless credential chain을 제공하므로 Data image dependency로 고정합니다.
+
 ## 공공데이터포털 실제 수집
 
 저장소 루트 `.env`에 공공데이터포털의 일반 인증키(Decoding)를 저장합니다. 키를 코드, 명령 인자 또는 문서에 기록하지 않습니다.

@@ -6,6 +6,7 @@
 
 - [Azure PostgreSQL 통합 데이터 명세서](DATABASE_SPECIFICATION.md)
 - [Azure Blob + PostgreSQL 데이터 아키텍처](DATA_ARCHITECTURE.md)
+- [Issue #16 Raw Blob migration 검증 결과](RAW_BLOB_MIGRATION_REPORT.md)
 - [회원가입 PostgreSQL 상세 설계](../data/REGISTRATION_DB.md)
 - API 관련 문서
 - Architecture
