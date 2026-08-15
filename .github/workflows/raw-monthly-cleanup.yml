@@ -1,11 +1,6 @@
 name: Raw Monthly Legacy Cleanup
 
 on:
-  push:
-    branches:
-      - fix/18-raw-monthly-partition
-    paths:
-      - ".github/workflows/raw-monthly-cleanup.yml"
   workflow_dispatch:
 
 permissions:
