@@ -7,6 +7,13 @@ on:
     paths:
       - "data/**"
       - ".github/workflows/raw-monthly-smoke.yml"
+  pull_request:
+    branches:
+      - develop
+    types: [opened, synchronize, reopened]
+    paths:
+      - "data/**"
+      - ".github/workflows/raw-monthly-smoke.yml"
   workflow_dispatch:
 
 permissions:
