@@ -92,6 +92,7 @@ class RawBlobWriter:
         collected_at: datetime | None = None,
         extra_records: list[dict[str, Any]] | None = None,
         migration: bool = False,
+        monthly_partition: bool = False,
     ) -> tuple[BlobObject, RawBatch]:
         observed_at = collected_at or datetime.now(timezone.utc)
         records = extra_records or [
@@ -114,6 +115,7 @@ class RawBlobWriter:
             page_number=page_number,
             batch_hash=batch.batch_hash,
             migration=migration,
+            monthly_partition=monthly_partition,
         )
         if self.storage.exists(self.container, path):
             existing = self.storage.properties(self.container, path)
@@ -140,8 +142,6 @@ class RawBlobWriter:
                 "operation": operation,
                 "source": self.source,
             },
-            # Do not set HTTP Content-Encoding. Some clients transparently decode
-            # it, which makes byte-level file checksum verification impossible.
             content_type="application/gzip",
         )
         return blob, batch

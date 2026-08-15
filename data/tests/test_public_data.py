@@ -15,6 +15,7 @@ from loaders.public_data import (
     normalize_stock_prices,
 )
 from loaders.stocks import normalize_stock_code
+from scripts.collect_public_data import group_items_by_month
 
 
 def test_official_operation_catalog_contains_all_datasets() -> None:
@@ -89,6 +90,58 @@ def test_landing_rows_extract_identifiers_and_hash() -> None:
     assert first["reference_date"] == date(2026, 8, 13)
     assert first["payload_hash"] == second["payload_hash"]
     assert first["stock_code"] == "005930"
+
+
+def test_group_items_by_month_splits_api_page_at_basdt_month_boundary() -> None:
+    items = [
+        {"basDt": "20251230", "srtnCd": "005930", "clpr": "100"},
+        {"basDt": "20251231", "srtnCd": "005930", "clpr": "101"},
+        {"basDt": "20260102", "srtnCd": "005930", "clpr": "102"},
+        {"basDt": "20260105", "srtnCd": "005930", "clpr": "103"},
+    ]
+    original = [dict(item) for item in items]
+
+    grouped = group_items_by_month(items)
+
+    assert [month for month, _ in grouped] == [date(2025, 12, 1), date(2026, 1, 1)]
+    assert [item["basDt"] for item in grouped[0][1]] == ["20251230", "20251231"]
+    assert [item["basDt"] for item in grouped[1][1]] == ["20260102", "20260105"]
+    assert items == original
+
+
+def test_group_items_by_month_ignores_other_event_dates() -> None:
+    item = {
+        "basDt": "20260813",
+        "dvdnBasDt": "20191231",
+        "cashDvdnPayDt": "20200401",
+    }
+
+    grouped = group_items_by_month([item])
+
+    assert grouped == [(date(2026, 8, 1), [item])]
+
+
+def test_group_items_by_month_requires_valid_basdt() -> None:
+    with pytest.raises(ValueError, match="requires a valid basDt"):
+        group_items_by_month([{"dvdnBasDt": "20231231"}])
+
+    with pytest.raises(ValueError, match="requires a valid basDt"):
+        group_items_by_month([{"basDt": "not-a-date"}])
+
+
+def test_group_items_by_month_keeps_raw_payload_values_unchanged() -> None:
+    raw_item = {
+        "basDt": "20260120",
+        "srtnCd": "A005930",
+        "corpNm": "삼성전자주식회사",
+        "clpr": "80,700",
+        "customField": {"nested": [1, "원본", None]},
+    }
+
+    grouped = group_items_by_month([raw_item])
+
+    assert grouped == [(date(2026, 1, 1), [raw_item])]
+    assert grouped[0][1][0] is raw_item
 
 
 def test_stock_code_normalizer_removes_public_data_prefix() -> None:

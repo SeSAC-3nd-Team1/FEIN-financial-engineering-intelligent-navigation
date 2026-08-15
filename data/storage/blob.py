@@ -61,6 +61,14 @@ class BlobStorage:
             created=False,
         )
 
+    def list_paths(self, container: str, *, prefix: str = "") -> list[str]:
+        client = self.service_client.get_container_client(container)
+        return [blob.name for blob in client.list_blobs(name_starts_with=prefix)]
+
+    def download_bytes(self, container: str, path: str) -> bytes:
+        client = self.service_client.get_blob_client(container, path)
+        return client.download_blob(max_concurrency=4).readall()
+
     def upload_bytes(
         self,
         container: str,
