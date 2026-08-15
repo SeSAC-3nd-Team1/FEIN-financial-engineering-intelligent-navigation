@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
 
 from storage import BlobStorage
 
@@ -24,6 +25,11 @@ PROCESSED_RE = re.compile(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        help="Optional env file such as ../.env.azure; values are never logged.",
+    )
     parser.add_argument("--start", type=date.fromisoformat, required=True)
     parser.add_argument("--end", type=date.fromisoformat, required=True)
     parser.add_argument("--processed-schema-version", default="1")
@@ -124,6 +130,10 @@ def load_processed(
 
 def main() -> None:
     args = parse_args()
+    if args.env_file:
+        if not args.env_file.is_file():
+            raise FileNotFoundError(f"env file not found: {args.env_file}")
+        load_dotenv(args.env_file, override=False)
     if args.start > args.end:
         raise ValueError("--start must be on or before --end")
     if args.warmup_days < 0:
