@@ -14,8 +14,10 @@ import calendar
 import os
 import re
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 
@@ -37,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         description="Audit/reconcile Azure Raw Blob objects and raw.data_object."
     )
     parser.add_argument(
+        "--env-file",
+        type=Path,
+        help="Optional env file such as ../.env.azure; values are never logged.",
+    )
+    parser.add_argument(
         "--apply",
         action="store_true",
         help="Write catalog changes to PostgreSQL. Without this flag, audit only.",
@@ -49,6 +56,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch-size", type=int, default=500)
     return parser.parse_args()
+
+
+def load_env_file(path: Path | None) -> None:
+    if path is None:
+        return
+    if not path.is_file():
+        raise FileNotFoundError(f"env file not found: {path}")
+    load_dotenv(path, override=False)
 
 
 def _month_bounds(year: int, month: int) -> tuple[date, date]:
@@ -217,6 +232,7 @@ def reconcile_catalog(rows: list[dict[str, Any]], *, batch_size: int) -> tuple[i
 
 def main() -> None:
     args = parse_args()
+    load_env_file(args.env_file)
     if args.expected_minimum < 1:
         raise ValueError("--expected-minimum must be at least 1")
     if args.batch_size < 1:
