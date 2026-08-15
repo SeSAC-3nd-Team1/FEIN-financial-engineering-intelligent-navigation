@@ -15,6 +15,7 @@ from storage import RawBlobWriter
 
 
 SOURCE_TABLE = "raw.public_data_record"
+MANIFEST_SOURCE = "raw.public_data_record:monthly-v2"
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,13 +95,12 @@ def _resume_after(engine, dataset: str, operation: str, partition_month: date) -
     query = text(
         """
         SELECT COALESCE(max(source_max_id), 0)
-        FROM raw.raw_migration_manifest
+        FROM raw.public_data_migration_manifest
         WHERE source_table = :source_table
           AND dataset = :dataset
           AND operation = :operation
           AND status = 'complete'
           AND blob_path LIKE :prefix
-          AND blob_path NOT LIKE '%/day=%'
         """
     )
     with engine.connect() as connection:
@@ -108,7 +108,7 @@ def _resume_after(engine, dataset: str, operation: str, partition_month: date) -
             connection.scalar(
                 query,
                 {
-                    "source_table": SOURCE_TABLE,
+                    "source_table": MANIFEST_SOURCE,
                     "dataset": dataset,
                     "operation": operation,
                     "prefix": prefix + "%",
@@ -191,7 +191,7 @@ def _record_manifest(
         session.execute(
             insert(RawMigrationManifest.__table__)
             .values(
-                source_table=SOURCE_TABLE,
+                source_table=MANIFEST_SOURCE,
                 dataset=dataset,
                 operation=operation,
                 source_min_id=source_min_id,
