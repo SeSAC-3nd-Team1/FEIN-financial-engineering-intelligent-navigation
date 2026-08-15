@@ -92,7 +92,7 @@ def test_landing_rows_extract_identifiers_and_hash() -> None:
     assert first["stock_code"] == "005930"
 
 
-def test_group_items_by_month_splits_api_page_at_month_boundary() -> None:
+def test_group_items_by_month_splits_api_page_at_basdt_month_boundary() -> None:
     items = [
         {"basDt": "20251230", "srtnCd": "005930", "clpr": "100"},
         {"basDt": "20251231", "srtnCd": "005930", "clpr": "101"},
@@ -101,12 +101,32 @@ def test_group_items_by_month_splits_api_page_at_month_boundary() -> None:
     ]
     original = [dict(item) for item in items]
 
-    grouped = group_items_by_month(items, fallback_date=date(2026, 1, 1))
+    grouped = group_items_by_month(items)
 
     assert [month for month, _ in grouped] == [date(2025, 12, 1), date(2026, 1, 1)]
     assert [item["basDt"] for item in grouped[0][1]] == ["20251230", "20251231"]
     assert [item["basDt"] for item in grouped[1][1]] == ["20260102", "20260105"]
     assert items == original
+
+
+def test_group_items_by_month_ignores_other_event_dates() -> None:
+    item = {
+        "basDt": "20260813",
+        "dvdnBasDt": "20191231",
+        "cashDvdnPayDt": "20200401",
+    }
+
+    grouped = group_items_by_month([item])
+
+    assert grouped == [(date(2026, 8, 1), [item])]
+
+
+def test_group_items_by_month_requires_valid_basdt() -> None:
+    with pytest.raises(ValueError, match="requires a valid basDt"):
+        group_items_by_month([{"dvdnBasDt": "20231231"}])
+
+    with pytest.raises(ValueError, match="requires a valid basDt"):
+        group_items_by_month([{"basDt": "not-a-date"}])
 
 
 def test_group_items_by_month_keeps_raw_payload_values_unchanged() -> None:
@@ -118,7 +138,7 @@ def test_group_items_by_month_keeps_raw_payload_values_unchanged() -> None:
         "customField": {"nested": [1, "원본", None]},
     }
 
-    grouped = group_items_by_month([raw_item], fallback_date=date(2026, 1, 1))
+    grouped = group_items_by_month([raw_item])
 
     assert grouped == [(date(2026, 1, 1), [raw_item])]
     assert grouped[0][1][0] is raw_item
