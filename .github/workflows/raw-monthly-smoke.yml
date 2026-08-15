@@ -1,6 +1,11 @@
 name: Raw Monthly Repartition Smoke
 
 on:
+  push:
+    branches:
+      - fix/18-raw-monthly-partition
+    paths:
+      - ".github/workflows/raw-monthly-smoke.yml"
   workflow_dispatch:
 
 permissions:
