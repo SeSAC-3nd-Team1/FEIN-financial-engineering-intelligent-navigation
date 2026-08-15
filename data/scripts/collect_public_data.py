@@ -12,10 +12,11 @@ from collectors.public_data_config import OPERATIONS, select_operations
 from db.connection import build_engine, session_scope
 from db.models import PublicDataCollectionCheckpoint
 from loaders.public_data import (
-    load_landing_items,
     load_normalized_items,
     parse_date as parse_item_date,
+    record_raw_data_object,
 )
+from storage import RawBlobWriter
 
 
 DEFAULT_DATASETS = ["stock_master", "stock_price", "market_index"]
@@ -173,6 +174,7 @@ def main() -> None:
     else:
         filters = None
     client = PublicDataClient()
+    raw_writer = RawBlobWriter.from_env()
     engine = build_engine()
     failures: list[str] = []
     total_received = 0
@@ -217,8 +219,35 @@ def main() -> None:
                     not page.items
                     or page_number * args.rows >= page.total_count
                 )
+                blob_result = None
+                if items:
+                    partition_date = (
+                        parse_item_date(items[0].get("basDt"))
+                        or args.date
+                        or args.start_date
+                        or date.today()
+                    )
+                    blob_result = raw_writer.upload_items(
+                        dataset=operation.dataset,
+                        operation=operation.name,
+                        items=items,
+                        partition_date=partition_date,
+                        page_number=page_number,
+                    )
                 with session_scope(engine) as session:
-                    raw_count = load_landing_items(session, operation, items)
+                    raw_count = 0
+                    if blob_result:
+                        blob, batch = blob_result
+                        record_raw_data_object(
+                            session,
+                            operation,
+                            blob,
+                            batch,
+                            source=raw_writer.source,
+                            range_start=args.start_date or args.date,
+                            range_end=args.end_date or args.date,
+                        )
+                        raw_count = batch.record_count
                     # A range master backfill is retained in the landing table;
                     # do not let older snapshots overwrite the current master.
                     normalize_page = not args.raw_only and not (
@@ -250,7 +279,7 @@ def main() -> None:
                         f"{operation.dataset}/{operation.name}: "
                         f"page={page.page_number} received={operation_received} "
                         f"total={page.total_count} in_range={len(items)} "
-                        f"raw={raw_count} "
+                        f"raw_blob_records={raw_count} "
                         f"normalized={normalized_count}"
                     )
                 if is_complete:

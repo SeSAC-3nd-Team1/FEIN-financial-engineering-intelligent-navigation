@@ -16,7 +16,8 @@ from collectors.public_data_client import PublicDataClient
 from collectors.public_data_config import OPERATIONS
 from db.connection import build_engine, session_scope
 from db.models import PublicDataCollectionCheckpoint, StockPriceDaily
-from loaders.public_data import load_landing_items
+from loaders.public_data import record_raw_data_object
+from storage import RawBlobWriter
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,6 +38,7 @@ def main() -> None:
     )
     engine = build_engine()
     client = PublicDataClient()
+    raw_writer = RawBlobWriter.from_env()
 
     with session_scope(engine) as session:
         trading_dates = list(
@@ -88,8 +90,27 @@ def main() -> None:
                 rows_per_page=args.rows,
                 filters={"basDt": trade_date.strftime("%Y%m%d")},
             )
+            blob_result = None
+            if page.items:
+                blob_result = raw_writer.upload_items(
+                    dataset=operation.dataset,
+                    operation=operation.name,
+                    items=page.items,
+                    partition_date=trade_date,
+                    page_number=page_number,
+                )
             with session_scope(engine) as session:
-                load_landing_items(session, operation, page.items)
+                if blob_result:
+                    blob, batch = blob_result
+                    record_raw_data_object(
+                        session,
+                        operation,
+                        blob,
+                        batch,
+                        source=raw_writer.source,
+                        range_start=trade_date,
+                        range_end=trade_date,
+                    )
             received += len(page.items)
             if not page.items or received >= page.total_count:
                 break
