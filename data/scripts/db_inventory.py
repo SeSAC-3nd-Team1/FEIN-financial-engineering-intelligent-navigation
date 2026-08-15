@@ -18,6 +18,8 @@ TABLES = (
     "macro_indicator",
     "public_data_record",
     "public_data_collection_checkpoint",
+    "data_object",
+    "public_data_migration_manifest",
 )
 
 
