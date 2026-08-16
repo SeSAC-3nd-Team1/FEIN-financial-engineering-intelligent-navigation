@@ -14,6 +14,22 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/sesac
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: sesac
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sesac"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: data
@@ -33,3 +49,21 @@ jobs:
 
       - name: Run data unit tests
         run: python -m pytest tests -q
+
+      - name: Apply Alembic migrations to PostgreSQL
+        run: alembic upgrade head
+
+      - name: Seed CI signup terms
+        run: >-
+          python -m scripts.seed_signup_terms
+          --version ci-0011
+          --effective-at 2026-08-16T00:00:00+00:00
+
+      - name: Verify 3NF signup schema
+        run: python -m scripts.verify_signup_schema --term-version ci-0011
+
+      - name: Check Alembic schema drift
+        run: alembic check
+
+      - name: Show Alembic head
+        run: alembic current
