@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schema-version", default="1")
     parser.add_argument("--feature-version", default="1")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--markdown-output", type=Path)
     return parser.parse_args()
 
 
@@ -120,6 +121,75 @@ def audit_features(
     }
 
 
+def render_audit_markdown(payload: dict[str, Any]) -> str:
+    """모델 담당자와 데이터 담당자가 빠르게 확인할 수 있는 감사 요약을 만든다."""
+
+    processed = payload["processed"]
+    features = payload["features"]
+    lines = [
+        "# Pipeline Output Audit",
+        "",
+        "## Processed",
+        "",
+        f"- objects: **{processed['total_objects']:,}**",
+        f"- records: **{processed['total_records']:,}**",
+        f"- bytes: **{processed['total_bytes']:,}**",
+        f"- accepted: **{processed['quality']['accepted']:,}**",
+        f"- rejected: **{processed['quality']['rejected']:,}**",
+        f"- quality manifests: **{processed['quality']['manifests']:,}**",
+        "",
+        "| dataset | objects | records | bytes |",
+        "|---|---:|---:|---:|",
+    ]
+    for dataset, stats in processed["datasets"].items():
+        lines.append(
+            f"| `{dataset}` | {stats['objects']:,} | {stats['records']:,} | {stats['bytes']:,} |"
+        )
+
+    if processed["quality"]["reasons"]:
+        lines.extend(["", "### Rejection reasons", "", "| reason | count |", "|---|---:|"])
+        for reason, count in processed["quality"]["reasons"].items():
+            lines.append(f"| `{reason}` | {count:,} |")
+
+    if processed["quality"]["conversion_errors"]:
+        lines.extend(["", "### Conversion errors", "", "| field | count |", "|---|---:|"])
+        for field, count in processed["quality"]["conversion_errors"].items():
+            lines.append(f"| `{field}` | {count:,} |")
+
+    lines.extend(
+        [
+            "",
+            "## Features",
+            "",
+            f"- objects: **{features['total_objects']:,}**",
+            f"- records: **{features['total_records']:,}**",
+            f"- bytes: **{features['total_bytes']:,}**",
+            f"- manifest: `{features['manifest_path']}`",
+            "",
+            "| dataset | objects | records | bytes | status |",
+            "|---|---:|---:|---:|---|",
+        ]
+    )
+    manifest = features.get("manifest", {})
+    for dataset, stats in features["datasets"].items():
+        status = manifest.get(dataset, {}).get("status", "-")
+        lines.append(
+            f"| `{dataset}` | {stats['objects']:,} | {stats['records']:,} | "
+            f"{stats['bytes']:,} | `{status}` |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Modeling safety",
+            "",
+            f"- look-ahead policy: {manifest.get('look_ahead_policy', '-')}",
+            "- `financial_snapshot`과 `financial_company_year_latest`는 실제 공시 availability 시각이 확정되기 전까지 가격 학습 데이터에 자동 JOIN하지 않는다.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
 def main() -> None:
     args = parse_args()
     if args.env_file:
@@ -144,6 +214,12 @@ def main() -> None:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
+    if args.markdown_output:
+        args.markdown_output.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown_output.write_text(
+            render_audit_markdown(payload),
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":
