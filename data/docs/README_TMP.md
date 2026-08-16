@@ -1,1 +1,0 @@
-Temporary placeholder; will be replaced in #28.
