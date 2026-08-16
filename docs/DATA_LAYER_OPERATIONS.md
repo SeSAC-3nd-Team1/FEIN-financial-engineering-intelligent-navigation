@@ -3,67 +3,236 @@
 ## 1. Layer contract
 
 | Layer | Storage | Role | Rebuildable |
-|---|---|---|---|
-| Raw | Azure Blob `raw` | API 원문 source of truth | No |
-| PostgreSQL | Azure Database for PostgreSQL | 서비스/정규화 데이터, checkpoint, searchable metadata | Yes, from Raw where applicable |
-| Processed | Azure Blob `processed` | 분석 친화적 monthly Parquet | Yes |
-| Features | Azure Blob `features` | 버전 관리된 분석/ML feature Parquet | Yes |
+| --- | --- | --- | --- |
+| Raw | Azure Blob `raw` | API payload source of truth | No: preserve source observations |
+| Normalized / Service | Azure PostgreSQL | indexed relational queries and service state | Financial normalized data: Yes, from Raw |
+| Processed | Azure Blob `processed` | monthly columnar analytics datasets | Yes |
+| Features | Azure Blob `features` | versioned ML/model inputs | Yes |
+| Temporary | Redis | OTP, verification, cache, short-lived state | Yes |
 
-## 2. Azure Blob authentication
+Raw API records are partitioned by `payload.basDt` month:
 
-실제 Azure Storage는 `AZURE_STORAGE_ACCOUNT_NAME` + `DefaultAzureCredential`을 사용한다.
-Shared Key 또는 실제 Azure connection string 인증은 코드에서 거부한다.
-`UseDevelopmentStorage=true`는 로컬 Azurite에만 허용한다.
+```text
+data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/*.jsonl.gz
+```
 
-Docker 개발 환경에서는 data 이미지에 Azure CLI가 포함되어 있으며,
-Compose의 `azure_cli_data` named volume이 `/root/.azure`를 영속화한다.
+Other event dates such as `dvdnBasDt`, `stckIssuDt`, `cashDvdnPayDt` are payload fields and do not determine Raw partitions.
+
+Real Azure Blob access uses Entra ID through `DefaultAzureCredential`. `AZURE_STORAGE_ACCOUNT_NAME` takes precedence over any stale connection string. Connection-string authentication is supported only for local Azurite (`UseDevelopmentStorage=true`).
+
+### Docker Azure authentication
+
+The `data` image includes Azure CLI and Compose persists `/root/.azure` in the `azure_cli_data` named volume. This means ephemeral `docker compose run --rm` jobs reuse the same Azure CLI login.
+
+The Azure environment file must include the non-secret storage account name:
+
+```env
+AZURE_STORAGE_ACCOUNT_NAME=stfeindata
+```
+
+Build the latest data image once after Dockerfile changes:
 
 ```bash
 docker compose --env-file .env.azure --profile data build data
+```
+
+Authenticate from inside the data container:
+
+```bash
 docker compose --env-file .env.azure --profile data run --rm --no-deps data az login --use-device-code
 ```
 
-## 3. Raw Blob catalog reconciliation
+Verify the persisted login and Storage account environment before running data jobs:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.reconcile_raw_blob_catalog --expected-minimum 4228
+docker compose --env-file .env.azure --profile data run --rm --no-deps data az account show --output table
+docker compose --env-file .env.azure --profile data run --rm --no-deps data sh -lc 'echo $AZURE_STORAGE_ACCOUNT_NAME'
 ```
 
-기본은 dry-run이다. 실제 반영은 `--apply`를 추가한다.
-canonical `data-go-kr/.../year=YYYY/month=MM/*.jsonl.gz`만 catalog 대상으로 인정하며,
-Blob에서 사라진 legacy catalog row는 삭제하지 않고 `status=deleted`로 표시한다.
+Do not enable Azure Storage Shared Key for local development.
 
-## 4. Legacy PostgreSQL Raw retirement
+## 2. Raw Blob catalog reconciliation
 
-`raw.public_data_record`는 과거 Raw JSONB landing table이며, Raw source of truth를 Blob으로
-전환한 뒤 전수 검증을 거쳐 비운다.
+Azure Blob is authoritative. `raw.data_object` is a searchable PostgreSQL catalog, not a second Raw source of truth.
+
+Read-only Blob audit / DB dry run:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.retire_legacy_raw_data --truncate-after-verify --expected-blob-count 4228
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.reconcile_raw_blob_catalog --expected-minimum 4228
 ```
 
-검증 항목:
-- canonical Raw Blob compressed SHA-256
-- 모든 payload hash 재계산
-- 모든 historical `legacy.recordId` ↔ SQL `record_id` 전수 대조
-- dataset/operation/payload_hash 일치
-- Blob catalog path parity
-- SQL 변경 감지 후 destructive 작업 차단
+Apply catalog reconciliation only from an environment that can reach both Azure Blob and Azure PostgreSQL:
 
-성공 시 `raw.public_data_record`의 row만 TRUNCATE하고 테이블 구조는 유지한다.
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.reconcile_raw_blob_catalog --apply --expected-minimum 4228
+```
 
-## 5. Financial PostgreSQL rebuild gate
+Behavior:
 
-금융 SQL을 Blob Raw에서 재구축하기 전에 SQL에만 남은 API 원문이 없는지 먼저 보존한다.
-회원가입/약관 DB는 이 작업에서 절대 삭제하지 않는다.
+- canonical Blob objects are UPSERTed into `raw.data_object`;
+- existing catalog rows whose Raw Blob no longer exists are marked `status=deleted`;
+- catalog history is not physically deleted;
+- Raw Blob payloads are never changed by this command;
+- `raw.public_data_migration_manifest` remains as migration audit history.
 
-보존 대상:
+## 3. Legacy PostgreSQL Raw landing table
+
+`raw.public_data_record` is the historical JSONB landing table used before Azure Blob became the Raw source of truth. It must not be dropped merely because Blob migration completed.
+
+Read-only readiness audit:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.audit_legacy_raw_table
+```
+
+Optional exact count is expensive:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.audit_legacy_raw_table --exact-count
+```
+
+A DROP is allowed only after all of the following are confirmed:
+
+1. canonical Raw Blob audit passes;
+2. `raw.data_object` reconciliation passes;
+3. application/code references have been reviewed;
+4. DB foreign-key/view dependencies are zero or explicitly handled;
+5. Azure PostgreSQL backup/PITR policy is confirmed;
+6. a human explicitly approves the destructive operation.
+
+No automated workflow in this repository drops `raw.public_data_record`.
+
+For row retirement after full SQL↔Blob parity verification, use:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.retire_legacy_raw_data --truncate-after-verify --expected-blob-count 4228
+```
+
+This command never drops the table. It verifies every canonical Raw object and every historical SQL row before truncating only the duplicated landing rows.
+
+## 4. Processed Parquet
+
+Processed files are derived from normalized PostgreSQL tables and can be regenerated.
+
+Supported first datasets:
+
+- `stock_price`
+- `market_index`
+
+Examples:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.export_processed_monthly \
+  --dataset stock_price --start 2021-08-14 --end 2026-08-13 --schema-version 1
+
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.export_processed_monthly \
+  --dataset market_index --start 2021-08-14 --end 2026-08-13 --schema-version 1
+```
+
+Output:
+
+```text
+processed/
+  stock_price/
+    schema=v1/
+      year=YYYY/
+        month=MM/
+          part-00000.parquet
+```
+
+Existing objects are not overwritten unless `--overwrite` is explicitly supplied.
+
+## 5. Feature Parquet
+
+Feature generation reads Processed Parquet, not Raw Blob or PostgreSQL directly. This keeps feature definitions reproducible and separates storage concerns.
+
+Example:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.build_stock_price_features \
+  --start 2021-08-14 --end 2026-08-13 \
+  --processed-schema-version 1 --feature-version 1
+```
+
+Initial feature set:
+
+- 1-day return
+- 1-day log return
+- 5-day SMA
+- 20-day SMA
+- 20-day momentum
+- 20-day return volatility
+- 20-day volume SMA
+
+A 60-calendar-day warm-up is loaded by default so rolling features at the requested range boundary do not start from an empty history when earlier Processed data exists. At the earliest available Raw/Processed boundary, rolling features remain null until sufficient history accumulates.
+
+Output:
+
+```text
+features/
+  stock_price/
+    version=v1/
+      year=YYYY/
+        month=MM/
+          part-00000.parquet
+```
+
+Feature version must change whenever feature definitions, formulas, preprocessing semantics, or leakage policy changes.
+
+## 6. Operational order
+
+```text
+External API
+  -> Raw Blob
+  -> validation / normalization
+  -> PostgreSQL
+  -> Processed Parquet
+  -> Feature Parquet
+```
+
+For recovery/reprocessing, always start from Raw Blob. PostgreSQL, Processed, and Features are downstream materializations.
+
+## 7. Guarded financial PostgreSQL reset before rebuild
+
+When rebuilding the financial SQL layer from Blob, membership data must survive unchanged.
+
+Always preserve:
+
 - `public.users`
 - `public.terms`
 - `public.user_agreements`
 - `public.alembic_version`
 
-금융/API reset 대상:
+The guarded command is:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.rebuild_financial_sql --sync-missing-to-blob --reset-after-sync
+```
+
+Before any SQL reset it:
+
+1. snapshots membership table counts;
+2. hashes every mapped API-origin normalized `source_payload`;
+3. scans the relevant canonical Raw Blob objects and verifies their compressed checksum and payload hashes;
+4. identifies API payloads that exist only in SQL;
+5. writes only those missing API payloads to canonical monthly Raw Blob;
+6. reads newly written objects back and verifies checksum and payload hashes;
+7. refuses reset when an unmapped non-null `source_payload` exists;
+8. refuses reset when an untouched table has a foreign key into a reset table;
+9. uses `TRUNCATE ... RESTART IDENTITY` only on the known financial/raw tables and never uses `CASCADE`;
+10. verifies every reset table is empty and membership row counts are unchanged.
+
+Financial/raw reset tables:
+
 - `raw.stock_master`
 - `raw.stock_price_daily`
 - `raw.market_index_daily`
@@ -75,53 +244,4 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data pyth
 - `raw.data_object`
 - `raw.public_data_migration_manifest`
 
-실행:
-
-```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.rebuild_financial_sql --sync-missing-to-blob --reset-after-sync
-```
-
-동작 순서:
-1. 회원가입 테이블 row count를 snapshot한다.
-2. 정규화 금융 테이블의 API-origin `source_payload`를 SHA-256으로 인덱싱한다.
-3. 관련 canonical Raw Blob을 전수 스캔해 이미 보존된 payload를 제거한다.
-4. SQL에만 있는 API payload가 있으면 canonical monthly Raw Blob에 추가한다.
-5. 새 Blob을 다시 읽어 checksum과 payload hash를 검증한다.
-6. mapping되지 않은 non-null `source_payload`가 있으면 reset을 거부한다.
-7. untouched table이 금융 reset table을 FK로 참조하면 reset을 거부한다.
-8. `CASCADE` 없이 금융/API 테이블만 `TRUNCATE ... RESTART IDENTITY` 한다.
-9. 회원가입 테이블 row count가 그대로인지 확인하고, reset 대상은 모두 0행인지 검증한다.
-
-현재 `stock_issuance`, `financial_statement`, `macro_indicator`의 1행은
-`scripts.load_sample_data`가 만든 개발 샘플이며 API Raw 원문이 아니다.
-
-## 6. Processed monthly Parquet
-
-PostgreSQL 정규화 데이터가 다시 구성된 뒤 monthly Parquet을 생성한다.
-
-```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.export_processed_monthly --dataset stock_price --start 2021-08-14 --end 2026-08-13 --schema-version 1
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.export_processed_monthly --dataset market_index --start 2021-08-14 --end 2026-08-13 --schema-version 1
-```
-
-경로:
-
-```text
-processed/{dataset}/schema=vN/year=YYYY/month=MM/part-00000.parquet
-```
-
-기존 object는 `--overwrite` 없이는 덮어쓰지 않는다.
-
-## 7. Stock-price features
-
-```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.build_stock_price_features --start 2021-08-14 --end 2026-08-13 --processed-schema-version 1 --feature-version 1
-```
-
-경로:
-
-```text
-features/stock_price/version=vN/year=YYYY/month=MM/part-00000.parquet
-```
-
-종목별 rolling window와 warm-up을 사용해 cross-stock leakage를 방지한다.
+The current one-row `stock_issuance`, `financial_statement`, and `macro_indicator` records were created by `scripts.load_sample_data`; they are development samples, not API Raw observations.
