@@ -1,4 +1,4 @@
-"""Run rollback-only PostgreSQL integration checks for the signup schema."""
+"""회원가입 schema의 제약조건을 실제 PostgreSQL에서 검증하고 모든 test write를 rollback한다."""
 
 import argparse
 import uuid
@@ -11,6 +11,12 @@ from scripts.seed_signup_terms import TERM_TITLES
 
 
 def expect_violation(connection: psycopg.Connection, query: str, params: tuple) -> None:
+    """지정 SQL이 DB 무결성 제약을 실제로 위반하는지 savepoint 안에서 확인한다.
+
+    하나의 실패 검증이 전체 transaction을 abort 상태로 만들지 않도록 각 case마다
+    savepoint를 만들고 그 지점까지만 rollback한다.
+    """
+
     savepoint = sql.Identifier(f"check_{uuid.uuid4().hex}")
     connection.execute(sql.SQL("SAVEPOINT {}").format(savepoint))
     try:
@@ -40,6 +46,8 @@ def main() -> None:
 
     with psycopg.connect(database_url) as connection:
         try:
+            # 실제 terms catalog가 아직 준비되지 않은 개발 DB에서는 검증 transaction 안에서만
+            # 임시 약관을 만들 수 있다. 마지막 rollback으로 이 row도 남지 않는다.
             if args.create_temporary_terms:
                 for code, title in TERM_TITLES.items():
                     connection.execute(
@@ -59,6 +67,8 @@ def main() -> None:
             ).fetchone()[0]
             assert catalog_count == len(TERM_TITLES), "seed all six signup terms first"
 
+            # ORM metadata만 보는 것이 아니라 실제 Azure/local PostgreSQL에 필요한 table이
+            # 생성되었는지 information_schema를 통해 확인한다.
             table_names = {
                 row[0]
                 for row in connection.execute(
@@ -95,6 +105,8 @@ def main() -> None:
                 "ix_user_agreements_user_agreed_at",
             } <= index_names
 
+            # 정상 계정과 약관 동의를 먼저 넣어 FK/UNIQUE 검증의 기준 row를 만든다.
+            # 전체 transaction은 마지막에 rollback되므로 운영 데이터에는 남지 않는다.
             user_id = f"test{suffix}"[:16]
             email = f"{suffix}@example.test"
             user_pk = connection.execute(
@@ -125,6 +137,8 @@ def main() -> None:
             ).rowcount
             assert inserted == len(TERM_TITLES)
 
+            # 아래 case들은 중복 동의, 존재하지 않는 약관/FK, 중복 계정, 형식 오류가
+            # 애플리케이션 검증을 우회해도 DB 제약에서 차단되는지 확인한다.
             expect_violation(
                 connection,
                 """
@@ -202,6 +216,7 @@ def main() -> None:
                 ("bad!id", "hash", "테스트", "990117", "01012345678", f"bad-{email}"),
             )
         finally:
+            # 성공/실패와 관계없이 integration test write를 실제 DB에 남기지 않는다.
             connection.rollback()
 
     print("signup schema verification passed (all test writes rolled back)")

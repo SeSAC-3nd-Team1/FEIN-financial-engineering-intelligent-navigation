@@ -1,8 +1,7 @@
-"""SQLAlchemy engine and session lifecycle.
+"""SQLAlchemy engine 생성과 session transaction lifecycle을 관리한다.
 
-The same ``DATABASE_URL`` contract is used for local Compose and Azure Database for
-PostgreSQL. Azure-specific SSL options should be supplied in the URL, for example
-``?sslmode=require``.
+로컬 Compose와 Azure Database for PostgreSQL은 동일한 ``DATABASE_URL`` 계약을 사용한다.
+Azure SSL 설정은 코드에 분기하지 않고 URL 옵션(예: ``?sslmode=require``)으로 전달한다.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def normalize_database_url(database_url: str) -> str:
-    """Select psycopg 3 while accepting common PostgreSQL URL formats."""
+    """일반 PostgreSQL URL을 psycopg 3 SQLAlchemy URL 형식으로 맞춘다."""
 
     if database_url.startswith("postgres://"):
         database_url = "postgresql://" + database_url.removeprefix("postgres://")
@@ -33,10 +32,11 @@ def normalize_database_url(database_url: str) -> str:
 
 
 def get_database_url() -> str:
-    """Return the configured database URL without embedding credentials in code."""
+    """credential을 코드에 넣지 않고 환경변수에서 DB 연결 URL을 읽는다."""
 
     load_dotenv(PROJECT_ROOT / ".env", override=False)
-    # HOST_DATABASE_URL is an explicit opt-in for scripts run outside Compose.
+    # HOST_DATABASE_URL은 Compose 바깥에서 script를 실행할 때만 명시적으로 사용한다.
+    # 컨테이너 내부에서는 DATABASE_URL의 service hostname을 그대로 사용하는 것이 기본이다.
     database_url = os.getenv("HOST_DATABASE_URL") or os.getenv("DATABASE_URL")
     if not database_url:
         raise RuntimeError(
@@ -46,7 +46,11 @@ def get_database_url() -> str:
 
 
 def build_engine(database_url: str | None = None, *, echo: bool = False) -> Engine:
-    """Build a production-safe SQLAlchemy engine for local or Azure PostgreSQL."""
+    """로컬/Azure PostgreSQL에서 공통으로 사용할 SQLAlchemy engine을 만든다.
+
+    ``pool_pre_ping``으로 끊어진 연결을 checkout 시점에 확인하고, 장시간 살아 있는 연결이
+    Azure 네트워크 정책과 충돌하지 않도록 일정 시간 후 pool connection을 재생성한다.
+    """
 
     url = normalize_database_url(database_url) if database_url else get_database_url()
     return create_engine(
@@ -59,7 +63,11 @@ def build_engine(database_url: str | None = None, *, echo: bool = False) -> Engi
 
 @contextmanager
 def session_scope(engine: Engine | None = None) -> Iterator[Session]:
-    """Commit a unit of work, rolling it back if an exception is raised."""
+    """한 작업 단위를 commit하고 예외가 발생하면 전체 transaction을 rollback한다.
+
+    loader가 중간까지만 저장되는 상태를 만들지 않도록 session의 commit/rollback/close를
+    호출자 대신 한 곳에서 보장한다.
+    """
 
     active_engine = engine or build_engine()
     factory = sessionmaker(bind=active_engine, expire_on_commit=False)

@@ -1,4 +1,4 @@
-"""Official Financial Services Commission data.go.kr operation catalog."""
+"""금융위원회 data.go.kr API의 dataset/operation catalog를 정의한다."""
 
 from __future__ import annotations
 
@@ -7,19 +7,26 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ApiOperation:
+    """하나의 공공데이터 API operation과 소속 dataset 정보를 표현한다."""
+
     dataset: str
     base_url: str
     path: str
 
     @property
     def name(self) -> str:
+        """URL path에서 operation 이름만 반환한다."""
+
         return self.path.removeprefix("/")
 
     @property
     def url(self) -> str:
+        """실제 호출할 전체 endpoint URL을 만든다."""
+
         return f"{self.base_url}{self.path}"
 
 
+# dataset 이름은 Blob 경로와 테스트에서 공통 식별자로 사용하므로 임의로 변경하지 않는다.
 BASE_URLS = {
     "stock_issuance": "https://apis.data.go.kr/1160100/GetStocIssuInfoService_V3",
     "stock_price": "https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService",
@@ -32,6 +39,8 @@ BASE_URLS = {
 }
 
 
+# 공식 서비스가 제공하는 8개 dataset의 전체 operation 목록이다.
+# path는 외부 API 계약이므로 Python식 이름으로 바꾸지 않고 원문 그대로 유지한다.
 OPERATION_PATHS = {
     "stock_issuance": [
         "/getStocIssuInfo_V3",
@@ -108,6 +117,8 @@ OPERATIONS = {
     for dataset, paths in OPERATION_PATHS.items()
 }
 
+# 기본 수집은 호출량을 제한하기 위해 dataset별 대표 operation 하나만 사용한다.
+# 전체 endpoint가 필요할 때만 --all-operations로 명시적으로 확장한다.
 PRIMARY_OPERATION_NAMES = {
     "stock_issuance": "getItemBasiInfo_V3",
     "stock_price": "getStockPriceInfo",
@@ -123,6 +134,8 @@ PRIMARY_OPERATION_NAMES = {
 def select_operations(
     datasets: list[str], *, include_all: bool = False
 ) -> list[ApiOperation]:
+    """선택한 dataset별 대표 operation 또는 전체 operation 목록을 반환한다."""
+
     selected: list[ApiOperation] = []
     for dataset in datasets:
         candidates = OPERATIONS[dataset]

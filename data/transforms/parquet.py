@@ -1,4 +1,4 @@
-"""Parquet exports for model training and offline analysis."""
+"""모델 학습과 오프라인 분석용 Parquet 생성 공통 함수를 제공한다."""
 
 from __future__ import annotations
 
@@ -24,7 +24,12 @@ def export_query_to_parquet(
     compression: str = "zstd",
     chunk_size: int = 100_000,
 ) -> Path:
-    """Stream a bounded query into a columnar Parquet training dataset."""
+    """범위가 제한된 SQL 결과를 chunk 단위로 읽어 하나의 Parquet 파일로 쓴다.
+
+    전체 조회 결과를 DataFrame 하나에 올리지 않고 ``chunksize``로 스트리밍해 대용량
+    데이터에서도 메모리 사용량을 제한한다. 첫 chunk의 Arrow schema를 이후 chunk에도
+    동일하게 적용해 파일 내부 schema를 일관되게 유지한다.
+    """
 
     destination = Path(output_path).expanduser().resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -39,6 +44,9 @@ def export_query_to_parquet(
                     destination, table.schema, compression=compression
                 )
             writer.write_table(table)
+
+    # 조회 결과가 0건이어도 호출 계약상 Parquet 파일은 생성해 downstream이 파일 없음과
+    # 빈 데이터셋을 구분할 수 있게 한다.
     if writer is None:
         pd.DataFrame().to_parquet(destination, index=False, compression=compression)
     else:
@@ -57,7 +65,11 @@ def export_query_to_blob_parquet(
     metadata: dict[str, str] | None = None,
     chunk_size: int = 100_000,
 ) -> BlobObject:
-    """Create Parquet in a temporary directory and upload it to Blob Storage."""
+    """임시 로컬 Parquet을 만든 뒤 Blob에 업로드하고 임시 파일을 자동 정리한다.
+
+    로컬 디스크는 변환 과정의 임시 작업공간일 뿐 source of truth가 아니므로
+    ``TemporaryDirectory``를 사용해 성공/실패와 관계없이 잔여 파일을 남기지 않는다.
+    """
 
     with tempfile.TemporaryDirectory(prefix="fein-parquet-") as directory:
         output = export_query_to_parquet(
