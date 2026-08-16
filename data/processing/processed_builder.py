@@ -62,6 +62,63 @@ def _group_monthly(
     return dict(grouped)
 
 
+def _merge_manifest_summary(
+    summary: dict[str, Any],
+    *,
+    operation: str,
+    manifest: dict[str, Any],
+) -> None:
+    """신규 생성과 resume skip이 동일한 집계 결과를 만들도록 manifest를 누적한다."""
+
+    accepted = int(manifest.get("accepted", 0))
+    rejected = int(manifest.get("rejected", 0))
+    summary["files"] += 1
+    summary["accepted"] += accepted
+    summary["rejected"] += rejected
+    for field, count in manifest.get("conversion_errors", {}).items():
+        summary["conversion_errors"][field] = (
+            summary["conversion_errors"].get(field, 0) + int(count)
+        )
+
+    operation_summary = summary["operations"].setdefault(
+        operation,
+        {"files": 0, "accepted": 0, "rejected": 0},
+    )
+    operation_summary["files"] += 1
+    operation_summary["accepted"] += accepted
+    operation_summary["rejected"] += rejected
+
+
+def _load_completed_manifest(
+    storage,
+    *,
+    container: str,
+    output_path: str,
+    manifest_path: str,
+    dataset: str,
+    operation: str,
+    year: int,
+    month: int,
+    schema_version: str,
+) -> dict[str, Any] | None:
+    """Parquet과 품질 manifest가 모두 존재하고 계약이 일치할 때만 완료 partition으로 인정한다."""
+
+    if not storage.exists(container, output_path) or not storage.exists(container, manifest_path):
+        return None
+    manifest = json.loads(storage.download_bytes(container, manifest_path))
+    expected = {
+        "dataset": dataset,
+        "operation": operation,
+        "year": year,
+        "month": month,
+        "schema_version": schema_version,
+        "output_path": output_path,
+    }
+    if any(manifest.get(key) != value for key, value in expected.items()):
+        return None
+    return manifest
+
+
 def build_processed_dataset(
     storage,
     *,
@@ -72,7 +129,11 @@ def build_processed_dataset(
     schema_version: str = "1",
     overwrite: bool = False,
 ) -> dict[str, Any]:
-    """한 Raw dataset의 모든 operation을 월별 Processed Parquet으로 변환한다."""
+    """한 Raw dataset의 모든 operation을 월별 Processed Parquet으로 변환한다.
+
+    기본 실행은 resume 모드다. 동일 schema version의 Parquet과 품질 manifest가 모두 있으면
+    해당 월을 다시 읽거나 변환하지 않는다. ``overwrite=True``일 때만 강제로 재생성한다.
+    """
 
     grouped = _group_monthly(list_raw_blobs(storage, raw_container, dataset))
     summary: dict[str, Any] = {
@@ -88,6 +149,42 @@ def build_processed_dataset(
         op_profile = profile["operations"].get(operation)
         if not op_profile:
             raise RuntimeError(f"profile missing operation: {dataset}/{operation}")
+
+        output_path = processed_path(
+            dataset,
+            operation,
+            year,
+            month,
+            schema_version,
+        )
+        manifest_path = quality_path(
+            dataset,
+            operation,
+            year,
+            month,
+            schema_version,
+        )
+
+        if not overwrite:
+            completed = _load_completed_manifest(
+                storage,
+                container=processed_container,
+                output_path=output_path,
+                manifest_path=manifest_path,
+                dataset=dataset,
+                operation=operation,
+                year=year,
+                month=month,
+                schema_version=schema_version,
+            )
+            if completed is not None:
+                _merge_manifest_summary(summary, operation=operation, manifest=completed)
+                print(
+                    "PROCESSED SKIP "
+                    f"dataset={dataset} operation={operation} year={year} month={month:02d} "
+                    f"rows={completed.get('accepted', 0)} path={output_path}"
+                )
+                continue
 
         contract = build_operation_contract(op_profile, dataset, operation)
         output_names = [name for name, _ in contract.values()]
@@ -109,14 +206,6 @@ def build_processed_dataset(
         )
 
         quality = QualityResult()
-        output_path = processed_path(
-            dataset,
-            operation,
-            year,
-            month,
-            schema_version,
-        )
-
         with tempfile.TemporaryDirectory(prefix="fein-processed-") as directory:
             local_path = Path(directory) / "part-00000.parquet"
             writer = pq.ParquetWriter(local_path, schema=schema, compression="zstd")
@@ -192,28 +281,13 @@ def build_processed_dataset(
         }
         storage.upload_bytes(
             processed_container,
-            quality_path(dataset, operation, year, month, schema_version),
+            manifest_path,
             json.dumps(manifest, ensure_ascii=False, indent=2).encode(),
             content_type="application/json",
             overwrite=True,
         )
 
-        summary["files"] += 1
-        summary["accepted"] += quality.accepted
-        summary["rejected"] += quality.rejected
-        for field, count in quality.conversion_errors.items():
-            summary["conversion_errors"][field] = (
-                summary["conversion_errors"].get(field, 0) + count
-            )
-
-        operation_summary = summary["operations"].setdefault(
-            operation,
-            {"files": 0, "accepted": 0, "rejected": 0},
-        )
-        operation_summary["files"] += 1
-        operation_summary["accepted"] += quality.accepted
-        operation_summary["rejected"] += quality.rejected
-
+        _merge_manifest_summary(summary, operation=operation, manifest=manifest)
         print(
             "PROCESSED WRITE "
             f"dataset={dataset} operation={operation} year={year} month={month:02d} "
