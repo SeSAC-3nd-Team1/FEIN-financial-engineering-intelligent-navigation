@@ -50,7 +50,6 @@ STOCK_PRICE = CoreOperation(
         "mrktTotAmt": "market_cap",
     },
     {
-        # 종목코드는 선행 0이 의미를 가지므로 숫자처럼 보여도 문자열로 유지한다.
         "srtnCd": "string",
         "isinCd": "string",
     },
@@ -111,7 +110,7 @@ FINANCIAL_SUMMARY = CoreOperation(
         "enpTdbtAmt": "total_liabilities",
         "enpTcptAmt": "total_equity",
         "enpCptlAmt": "capital",
-        "fnclDebtRto": "reported_debt_ratio",
+        "fnclDebtRto": "reported_debt_ratio_pct",
         "iclsPalClcAmt": "comprehensive_income",
     },
     {
