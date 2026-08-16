@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,27 @@ def _pa_type(dtype: str) -> pa.DataType:
         "number": pa.float64(),
         "string": pa.string(),
     }[dtype]
+
+
+def _duration(seconds: float | None) -> str:
+    """터미널 진행 로그에서 읽기 쉬운 HH:MM:SS 형식으로 시간을 표시한다."""
+
+    if seconds is None or seconds < 0:
+        return "--:--:--"
+    total = int(seconds)
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _eta(elapsed: float, done: int, total: int) -> float | None:
+    """현재 처리 속도가 유지된다는 가정으로 남은 시간을 계산한다."""
+
+    if done <= 0 or elapsed <= 0:
+        return None
+    if done >= total:
+        return 0.0
+    return elapsed * (total - done) / done
 
 
 def processed_path(
@@ -119,6 +141,12 @@ def _load_completed_manifest(
     return manifest
 
 
+def _expected_month_rows(profile_operation: dict[str, Any], year: int, month: int) -> int:
+    """Raw profile의 basDt 월별 분포를 ETA용 예상 행 수로 사용한다."""
+
+    return int(profile_operation.get("month_rows", {}).get(f"{year:04d}-{month:02d}", 0))
+
+
 def build_processed_dataset(
     storage,
     *,
@@ -145,6 +173,8 @@ def build_processed_dataset(
         "operations": {},
     }
 
+    # 먼저 실행 계획을 만들면 resume된 월을 제외한 실제 남은 작업량으로 ETA를 계산할 수 있다.
+    plan: list[dict[str, Any]] = []
     for (operation, year, month), month_blobs in sorted(grouped.items()):
         op_profile = profile["operations"].get(operation)
         if not op_profile:
@@ -164,7 +194,7 @@ def build_processed_dataset(
             month,
             schema_version,
         )
-
+        completed = None
         if not overwrite:
             completed = _load_completed_manifest(
                 storage,
@@ -177,14 +207,63 @@ def build_processed_dataset(
                 month=month,
                 schema_version=schema_version,
             )
-            if completed is not None:
-                _merge_manifest_summary(summary, operation=operation, manifest=completed)
-                print(
-                    "PROCESSED SKIP "
-                    f"dataset={dataset} operation={operation} year={year} month={month:02d} "
-                    f"rows={completed.get('accepted', 0)} path={output_path}"
-                )
-                continue
+
+        plan.append(
+            {
+                "operation": operation,
+                "year": year,
+                "month": month,
+                "blobs": month_blobs,
+                "profile": op_profile,
+                "output_path": output_path,
+                "manifest_path": manifest_path,
+                "completed": completed,
+                "expected_rows": _expected_month_rows(op_profile, year, month),
+                "compressed_bytes": sum(item.size for item in month_blobs),
+            }
+        )
+
+    pending = [item for item in plan if item["completed"] is None]
+    pending_total_rows = sum(int(item["expected_rows"]) for item in pending)
+    pending_total_bytes = sum(int(item["compressed_bytes"]) for item in pending)
+    pending_done_rows = 0
+    pending_done_bytes = 0
+    pending_done_partitions = 0
+    started = time.monotonic()
+
+    print(
+        "PROCESSED PLAN "
+        f"dataset={dataset} partitions={len(plan)} pending={len(pending)} "
+        f"resume={len(plan) - len(pending)} expected_rows={pending_total_rows:,} "
+        f"compressed_bytes={pending_total_bytes:,}"
+    )
+
+    for partition_index, item in enumerate(plan, start=1):
+        operation = str(item["operation"])
+        year = int(item["year"])
+        month = int(item["month"])
+        month_blobs = item["blobs"]
+        op_profile = item["profile"]
+        output_path = str(item["output_path"])
+        manifest_path = str(item["manifest_path"])
+        completed = item["completed"]
+
+        if completed is not None:
+            _merge_manifest_summary(summary, operation=operation, manifest=completed)
+            print(
+                "PROCESSED SKIP "
+                f"dataset={dataset} partition={partition_index}/{len(plan)} "
+                f"operation={operation} year={year} month={month:02d} "
+                f"rows={completed.get('accepted', 0)} path={output_path}"
+            )
+            continue
+
+        print(
+            "PROCESSED START "
+            f"dataset={dataset} partition={partition_index}/{len(plan)} "
+            f"operation={operation} year={year} month={month:02d} "
+            f"blobs={len(month_blobs)} expected_rows={int(item['expected_rows']):,}"
+        )
 
         contract = build_operation_contract(op_profile, dataset, operation)
         output_names = [name for name, _ in contract.values()]
@@ -210,10 +289,12 @@ def build_processed_dataset(
             local_path = Path(directory) / "part-00000.parquet"
             writer = pq.ParquetWriter(local_path, schema=schema, compression="zstd")
             try:
-                for blob in month_blobs:
+                for blob_index, blob in enumerate(month_blobs, start=1):
                     # Blob 단위로만 메모리에 올려 2,400만 건 전체 적재를 피한다.
                     rows: list[dict[str, Any]] = []
+                    blob_seen = 0
                     for raw_record in read_blob_records(storage, raw_container, blob):
+                        blob_seen += 1
                         reason = validate_payload(
                             raw_record.payload,
                             dataset,
@@ -242,6 +323,32 @@ def build_processed_dataset(
                     if rows:
                         writer.write_table(pa.Table.from_pylist(rows, schema=schema))
                         quality.accepted += len(rows)
+
+                    pending_done_rows += blob_seen
+                    pending_done_bytes += blob.size
+                    elapsed = time.monotonic() - started
+                    if pending_total_rows > 0:
+                        progress_done = min(pending_done_rows, pending_total_rows)
+                        progress_total = pending_total_rows
+                    else:
+                        progress_done = pending_done_bytes
+                        progress_total = pending_total_bytes
+                    remaining = _eta(elapsed, progress_done, progress_total)
+                    percent = (
+                        progress_done / progress_total * 100.0
+                        if progress_total > 0
+                        else 100.0
+                    )
+                    speed = pending_done_rows / elapsed if elapsed > 0 else 0.0
+                    print(
+                        "PROCESSED PROGRESS "
+                        f"dataset={dataset} partition={partition_index}/{len(plan)} "
+                        f"blob={blob_index}/{len(month_blobs)} "
+                        f"rows={pending_done_rows:,}/{pending_total_rows:,} "
+                        f"percent={percent:.1f}% speed={speed:,.0f}rows/s "
+                        f"elapsed={_duration(elapsed)} eta={_duration(remaining)} "
+                        f"current={operation}/{year:04d}-{month:02d}"
+                    )
             finally:
                 writer.close()
 
@@ -268,7 +375,7 @@ def build_processed_dataset(
             "year": year,
             "month": month,
             "schema_version": schema_version,
-            "source_blobs": [item.path for item in month_blobs],
+            "source_blobs": [blob.path for blob in month_blobs],
             "accepted": quality.accepted,
             "rejected": quality.rejected,
             "reasons": quality.reasons,
@@ -288,12 +395,21 @@ def build_processed_dataset(
         )
 
         _merge_manifest_summary(summary, operation=operation, manifest=manifest)
+        pending_done_partitions += 1
+        elapsed = time.monotonic() - started
         print(
             "PROCESSED WRITE "
-            f"dataset={dataset} operation={operation} year={year} month={month:02d} "
+            f"dataset={dataset} pending_partitions={pending_done_partitions}/{len(pending)} "
+            f"operation={operation} year={year} month={month:02d} "
             f"rows={quality.accepted} rejected={quality.rejected} "
             f"conversion_errors={sum(quality.conversion_errors.values())} "
-            f"path={output_path}"
+            f"elapsed={_duration(elapsed)} path={output_path}"
         )
 
+    elapsed = time.monotonic() - started
+    print(
+        "PROCESSED DATASET COMPLETE "
+        f"dataset={dataset} files={summary['files']} accepted={summary['accepted']:,} "
+        f"rejected={summary['rejected']:,} elapsed={_duration(elapsed)}"
+    )
     return summary
