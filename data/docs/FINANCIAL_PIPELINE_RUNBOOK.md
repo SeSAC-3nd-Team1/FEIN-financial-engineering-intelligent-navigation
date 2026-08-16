@@ -95,6 +95,31 @@ check
 → audit
 ```
 
+### 터미널 진행률과 ETA
+
+대용량 단계는 완료 시점만 출력하지 않고 현재 진행률과 예상 남은 시간을 지속적으로 출력한다.
+
+Raw Profile 예시:
+
+```text
+PROFILE PROGRESS dataset=stock_price blobs=42/314 percent=13.4% rows=410,284 elapsed=00:01:52 eta=00:12:03
+```
+
+Processed 예시:
+
+```text
+PROCESSED PLAN dataset=stock_price partitions=64 pending=51 resume=13 expected_rows=2,810,000 compressed_bytes=...
+PROCESSED PROGRESS dataset=stock_price partition=18/64 blob=2/4 rows=851,204/2,810,000 percent=30.3% speed=3,298rows/s elapsed=00:04:18 eta=00:09:52 current=getstockpriceinfo/2025-08
+```
+
+Feature 입력 로딩 예시:
+
+```text
+FEATURE LOAD PROGRESS dataset=stock_price operation=getstockpriceinfo files=18/60 percent=29.8% rows=1,021,553 elapsed=00:00:42 eta=00:01:39
+```
+
+ETA는 지금까지 처리한 행/압축 바이트 처리량을 기준으로 계산한다. 첫 몇 개 Blob에서는 표본이 적어 ETA가 크게 움직일 수 있으며, 처리량이 누적될수록 안정된다. Azure 네트워크 속도, Parquet 압축, 월별 컬럼 수 차이 때문에 실제 종료 시각과 완전히 일치하는 값은 아니다.
+
 ### Profile resume
 
 `data/reports/raw-profile/{dataset}.json`이 이미 있으면 기본적으로 재사용한다.
