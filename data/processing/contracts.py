@@ -56,6 +56,25 @@ STOCK_PRICE = CoreOperation(
     },
 )
 
+STOCK_MASTER = CoreOperation(
+    "stock_master",
+    "getiteminfo",
+    {
+        "basDt": "reference_date",
+        "srtnCd": "stock_code",
+        "isinCd": "isin_code",
+        "itmsNm": "stock_name",
+        "mrktCtg": "market_category",
+        "corpNm": "corporation_name",
+        "crno": "corporation_number",
+    },
+    {
+        "srtnCd": "string",
+        "isinCd": "string",
+        "crno": "string",
+    },
+)
+
 MARKET_INDEX = CoreOperation(
     "market_index",
     "getstockmarketindex",
@@ -140,6 +159,7 @@ CORE_BY_KEY = {
     (item.dataset, item.operation): item
     for item in (
         STOCK_PRICE,
+        STOCK_MASTER,
         MARKET_INDEX,
         FINANCIAL_SUMMARY,
         BALANCE_SHEET,
@@ -152,6 +172,7 @@ _IDENTIFIER_EXACT = {
     "crno",
     "isinCd",
     "srtnCd",
+    "itmsShrtnCd",
     "corpCode",
     "stockCode",
     "acitId",
