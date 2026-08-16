@@ -73,7 +73,9 @@ JSONL 한 줄 구조:
 - 예시값
 - malformed JSON / invalid payload
 
-2026-08-16 전수 프로파일 기준 8 datasets / 52 operations / 24,073,651 rows에서 malformed JSON과 invalid/missing `payload.basDt`는 0건이었다.
+2026-08-16 전수 프로파일 기준 8 datasets / 24,073,651 rows에서 malformed JSON과 invalid/missing `payload.basDt`는 0건이었다.
+
+실행 시 사람이 보는 Markdown과 후속 전처리가 읽는 JSON을 모두 `data/reports/raw-profile/`에 남긴다.
 
 ## Processed
 
@@ -117,14 +119,24 @@ Manifest에는 다음을 남긴다.
 예:
 
 ```text
-basDt     → trade_date
-srtnCd    → stock_code
-clpr      → close_price
-trqu      → volume
+basDt      → trade_date
+srtnCd     → stock_code
+clpr       → close_price
+trqu       → volume
 mrktTotAmt → market_cap
 ```
 
 비핵심 operation도 데이터를 버리지 않고 camelCase를 snake_case로 바꿔 operation별 Processed Parquet에 보존한다.
+
+### Resume
+
+기본 실행은 resume 방식이다. 동일 schema version에서 월별 Parquet과 quality manifest가 둘 다 존재하고 dataset/operation/year/month/output 계약이 일치하면 해당 Raw를 다시 읽지 않는다.
+
+```text
+PROCESSED SKIP dataset=... operation=... year=... month=... rows=...
+```
+
+`--overwrite`를 명시한 경우에만 완료 partition을 강제로 재생성한다.
 
 ## Features
 
@@ -148,6 +160,8 @@ features/_manifests/model-datasets/version=v1/manifest.json
 - `financial_snapshot`: availability date 해결 전 research only
 - `financial_company_year_latest`: availability date 해결 전 research only
 
+가격 Feature에는 1일 수익률, 5/20/60/120일 momentum, 5/20/60일 이동평균, 20/60일 연환산 변동성, 거래량 20일 평균/비율 등이 포함된다. 미래 5/20 거래일 수익률은 `target_*`으로 분리한다.
+
 ## Look-ahead / Survivorship 방지
 
 ### 가격 Target
@@ -164,51 +178,76 @@ Feature는 현재 및 과거 데이터만 사용한다. 미래 수익률은 `tar
 
 `security_master_latest`는 표시/매핑용이다. 현재 살아 있는 종목만 이용해 과거 Universe를 만들지 않는다.
 
-## 실행
+## 실행 CLI
 
-### 전체 Raw 프로파일
+실제 대용량 실행 절차는 `data/docs/FINANCIAL_PIPELINE_RUNBOOK.md`를 기준으로 한다.
 
-```cmd
-python scripts/profile_raw_data.py --dataset stock_price --output-dir reports/raw-profile
-```
-
-8개 dataset 각각 실행한다. 대용량이므로 CI에서는 dataset matrix 병렬 실행을 권장한다.
-
-### 전체 Processed + Features
+Windows CMD에서 프로젝트 루트 기준 가장 먼저 준비 상태를 확인한다.
 
 ```cmd
-python scripts/run_financial_pipeline.py --profile-dir reports/raw-profile --schema-version 1 --feature-version 1
+run-financial-pipeline.cmd check
 ```
 
-특정 dataset의 Processed만 재생성:
+전체 실행:
 
 ```cmd
-python scripts/run_financial_pipeline.py --dataset stock_price --skip-features --profile-dir reports/raw-profile --schema-version 1 --overwrite
+run-financial-pipeline.cmd all
 ```
 
-Features만 재생성:
+단계별 실행:
 
 ```cmd
-python scripts/run_financial_pipeline.py --skip-processed --schema-version 1 --feature-version 1 --overwrite
+run-financial-pipeline.cmd profile
+run-financial-pipeline.cmd processed
+run-financial-pipeline.cmd features
+run-financial-pipeline.cmd audit
 ```
 
-### Docker + Azure 환경
-
-프로젝트 루트 기준:
+직접 Python CLI를 사용할 수도 있다.
 
 ```cmd
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --profile-dir reports/raw-profile --schema-version 1 --feature-version 1
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage all --schema-version 1 --feature-version 1
 ```
 
-Raw profile JSON이 컨테이너 내부 `data/reports/raw-profile`에 있어야 한다.
-
-### 산출물 감사
+Raw profile을 강제로 다시 만들 때만:
 
 ```cmd
-python scripts/audit_model_data_outputs.py --schema-version 1 --feature-version 1 --output reports/financial-pipeline-output-audit.json
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage profile --refresh-profile --schema-version 1 --feature-version 1
 ```
 
-Processed/Features의 Parquet 객체 수, metadata record count, bytes, quality rejection/conversion error, 최종 manifest를 확인한다.
+동일 version을 강제로 다시 생성해야 할 때만:
+
+```cmd
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage processed --schema-version 1 --overwrite
+```
+
+## 실행/감사 기록
+
+모든 단계는 현재 상태를 로컬에 기록한다.
+
+```text
+data/reports/pipeline-runs/latest.json
+data/reports/pipeline-runs/latest.md
+```
+
+`all` 또는 `audit` 성공 시 다음을 함께 기록한다.
+
+- Processed 객체 수 / records / bytes
+- accepted / rejected
+- reject reasons
+- conversion errors
+- Features 객체 수 / records / bytes
+- 모델 dataset status
+- feature manifest
+- look-ahead 정책
+
+Raw profile 결과는 별도 보존한다.
+
+```text
+data/reports/raw-profile/INDEX.md
+data/reports/raw-profile/{dataset}.md
+data/reports/raw-profile/{dataset}.json
+```
 
 ## 증분 운영 방향
 
