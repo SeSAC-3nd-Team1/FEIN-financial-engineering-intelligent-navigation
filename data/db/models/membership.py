@@ -216,7 +216,11 @@ class RegistrationAgreement(Base):
 
     registration_id: Mapped[PythonUUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("registration_sessions.id", ondelete="CASCADE"),
+        ForeignKey(
+            "registration_sessions.id",
+            name="fk_registration_agreements_session",
+            ondelete="CASCADE",
+        ),
         primary_key=True,
     )
     term_id: Mapped[int] = mapped_column(
