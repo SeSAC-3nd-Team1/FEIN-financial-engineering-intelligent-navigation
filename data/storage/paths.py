@@ -55,12 +55,18 @@ def build_processed_path(
     *,
     partition_date: date,
     schema_version: str,
+    operation: str | None = None,
     file_name: str = "part-00000.parquet",
 ) -> str:
-    """재생성 가능한 Processed Parquet의 schema version + 월 경로를 만든다."""
+    """재생성 가능한 Processed Parquet의 schema version + 월 경로를 만든다.
 
+    신규 금융 파이프라인은 서로 다른 API schema가 섞이지 않도록 ``operation``을 반드시
+    전달한다. ``operation=None``은 기존 호출부 호환을 위해 유지하지만 신규 코드는 사용하지 않는다.
+    """
+
+    operation_part = f"operation={_segment(operation)}/" if operation else ""
     return (
-        f"{_segment(dataset)}/schema=v{_version(schema_version)}/"
+        f"{_segment(dataset)}/{operation_part}schema=v{_version(schema_version)}/"
         f"year={partition_date:%Y}/month={partition_date:%m}/{_segment(file_name)}"
     )
 
