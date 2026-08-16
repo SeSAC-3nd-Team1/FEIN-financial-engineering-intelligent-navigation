@@ -10,8 +10,10 @@ from collections.abc import Sequence
 from alembic import op
 import sqlalchemy as sa
 
-from db.models.stock import RAW_SCHEMA
 
+# Historical migrations must be self-contained. Do not import schema constants
+# from current application models because those models may be renamed or retired.
+RAW_SCHEMA = "raw"
 
 revision: str = "20260814_0007"
 down_revision: str | None = "20260814_0006"

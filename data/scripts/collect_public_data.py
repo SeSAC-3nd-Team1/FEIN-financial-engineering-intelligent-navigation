@@ -1,21 +1,17 @@
-"""Collect Financial Services Commission datasets into local PostgreSQL."""
+"""Collect Financial Services Commission public-data responses into Raw Blob only.
+
+Azure Blob Storage is the authoritative Raw layer. This collector deliberately
+has no PostgreSQL dependency; normalized/service tables are rebuilt separately
+from canonical Raw objects.
+"""
 
 from __future__ import annotations
 
 import argparse
 from datetime import date, timedelta
 
-from sqlalchemy import select
-
 from collectors.public_data_client import PublicDataApiError, PublicDataClient
 from collectors.public_data_config import OPERATIONS, select_operations
-from db.connection import build_engine, session_scope
-from db.models import PublicDataCollectionCheckpoint
-from loaders.public_data import (
-    load_normalized_items,
-    parse_date as parse_item_date,
-    record_raw_data_object,
-)
 from storage import RawBlobWriter
 
 
@@ -24,7 +20,7 @@ DEFAULT_DATASETS = ["stock_master", "stock_price", "market_index"]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Collect data.go.kr FSC data without exposing the API key."
+        description="Collect data.go.kr FSC data into canonical monthly Raw Blob."
     )
     parser.add_argument(
         "--dataset",
@@ -32,106 +28,33 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(OPERATIONS),
         help="Dataset to collect; repeat for multiple datasets.",
     )
-    parser.add_argument(
-        "--all-datasets", action="store_true", help="Collect all eight datasets."
-    )
-    parser.add_argument(
-        "--all-operations",
-        action="store_true",
-        help="Collect every operation, including all disclosure event types.",
-    )
-    parser.add_argument(
-        "--operation",
-        action="append",
-        help="Limit collection to an exact operation name; repeat as needed.",
-    )
-    parser.add_argument(
-        "--exclude-operation",
-        action="append",
-        help="Exclude an exact operation name; repeat as needed.",
-    )
+    parser.add_argument("--all-datasets", action="store_true")
+    parser.add_argument("--all-operations", action="store_true")
+    parser.add_argument("--operation", action="append")
+    parser.add_argument("--exclude-operation", action="append")
     dates = parser.add_mutually_exclusive_group()
-    dates.add_argument(
-        "--date", type=date.fromisoformat, help="Reference date in YYYY-MM-DD."
-    )
-    dates.add_argument(
-        "--start-date",
-        type=date.fromisoformat,
-        help="Inclusive backfill start date in YYYY-MM-DD.",
-    )
-    parser.add_argument(
-        "--end-date",
-        type=date.fromisoformat,
-        help="Inclusive backfill end date; requires --start-date.",
-    )
+    dates.add_argument("--date", type=date.fromisoformat)
+    dates.add_argument("--start-date", type=date.fromisoformat)
+    parser.add_argument("--end-date", type=date.fromisoformat)
     parser.add_argument("--rows", type=int, default=100)
     parser.add_argument("--max-pages", type=int, default=1)
-    parser.add_argument(
-        "--all-pages",
-        action="store_true",
-        help="Read every API page. Date-range runs resume from a DB checkpoint.",
-    )
-    parser.add_argument(
-        "--progress-every",
-        type=int,
-        default=10,
-        help="Print progress every N pages.",
-    )
-    parser.add_argument(
-        "--raw-only", action="store_true", help="Skip normalized domain tables."
-    )
+    parser.add_argument("--all-pages", action="store_true")
+    parser.add_argument("--progress-every", type=int, default=10)
     return parser.parse_args()
 
 
-def get_checkpoint(session, operation, args):
-    checkpoint = session.scalar(
-        select(PublicDataCollectionCheckpoint).where(
-            PublicDataCollectionCheckpoint.dataset == operation.dataset,
-            PublicDataCollectionCheckpoint.operation == operation.name,
-            PublicDataCollectionCheckpoint.range_start == args.start_date,
-            PublicDataCollectionCheckpoint.range_end == args.end_date,
-        )
-    )
-    if checkpoint is None:
-        checkpoint = PublicDataCollectionCheckpoint(
-            dataset=operation.dataset,
-            operation=operation.name,
-            range_start=args.start_date,
-            range_end=args.end_date,
-            rows_per_page=args.rows,
-            next_page=1,
-            received_count=0,
-            status="pending",
-        )
-        session.add(checkpoint)
-        session.flush()
-    elif checkpoint.status != "complete" and checkpoint.rows_per_page != args.rows:
-        raise ValueError(
-            f"checkpoint uses --rows {checkpoint.rows_per_page}; "
-            "resume with the same page size"
-        )
-    return checkpoint
-
-
-def record_failure(engine, operation, args, message: str) -> None:
-    if not args.start_date:
-        return
-    with session_scope(engine) as session:
-        checkpoint = get_checkpoint(session, operation, args)
-        checkpoint.status = "failed"
-        checkpoint.last_error = message[:2_000]
-
-
-def safe_error_message(error: Exception) -> str:
-    """Keep logs concise and prevent request/SQL parameters from leaking."""
-
-    if isinstance(error, (PublicDataApiError, ValueError)):
-        return str(error)
-    return type(error).__name__
+def parse_item_date(value: object) -> date | None:
+    text = str(value or "").strip()
+    if len(text) != 8 or not text.isdigit():
+        return None
+    try:
+        return date(int(text[:4]), int(text[4:6]), int(text[6:8]))
+    except ValueError:
+        return None
 
 
 def group_items_by_month(items: list[dict]) -> list[tuple[date, list[dict]]]:
-    """Group one API page strictly by each record's basDt YYYY-MM."""
+    """Group one API page strictly by payload basDt without mutating payloads."""
 
     grouped: dict[date, list[dict]] = {}
     for index, item in enumerate(items):
@@ -141,9 +64,28 @@ def group_items_by_month(items: list[dict]) -> list[tuple[date, list[dict]]]:
                 "Raw monthly partition requires a valid basDt; "
                 f"record_index={index} basDt={item.get('basDt')!r}"
             )
-        partition_month = date(item_date.year, item_date.month, 1)
-        grouped.setdefault(partition_month, []).append(item)
+        month = date(item_date.year, item_date.month, 1)
+        grouped.setdefault(month, []).append(item)
     return sorted(grouped.items())
+
+
+def _select_operations(args: argparse.Namespace):
+    datasets = sorted(OPERATIONS) if args.all_datasets else (args.dataset or DEFAULT_DATASETS)
+    operations = select_operations(datasets, include_all=args.all_operations)
+    if args.operation:
+        requested = set(args.operation)
+        operations = [item for item in operations if item.name in requested]
+        if missing := requested - {item.name for item in operations}:
+            raise ValueError(f"Unknown operation for selected datasets: {sorted(missing)}")
+    if args.exclude_operation:
+        excluded = set(args.exclude_operation)
+        available = {item.name for item in operations}
+        if missing := excluded - available:
+            raise ValueError(
+                f"Unknown excluded operation for selected datasets: {sorted(missing)}"
+            )
+        operations = [item for item in operations if item.name not in excluded]
+    return operations
 
 
 def main() -> None:
@@ -159,26 +101,7 @@ def main() -> None:
     if args.start_date and args.start_date > args.end_date:
         raise ValueError("--start-date must not be after --end-date")
 
-    datasets = (
-        sorted(OPERATIONS)
-        if args.all_datasets
-        else (args.dataset or DEFAULT_DATASETS)
-    )
-    operations = select_operations(datasets, include_all=args.all_operations)
-    if args.operation:
-        requested = set(args.operation)
-        operations = [item for item in operations if item.name in requested]
-        found = {item.name for item in operations}
-        if missing := requested - found:
-            raise ValueError(f"Unknown operation for selected datasets: {sorted(missing)}")
-    if args.exclude_operation:
-        excluded = set(args.exclude_operation)
-        available = {item.name for item in operations}
-        if missing := excluded - available:
-            raise ValueError(
-                f"Unknown excluded operation for selected datasets: {sorted(missing)}"
-            )
-        operations = [item for item in operations if item.name not in excluded]
+    operations = _select_operations(args)
     if args.date:
         filters = {"basDt": args.date.strftime("%Y%m%d")}
     elif args.start_date:
@@ -188,29 +111,18 @@ def main() -> None:
         }
     else:
         filters = None
+
     client = PublicDataClient()
     raw_writer = RawBlobWriter.from_env()
-    engine = build_engine()
     failures: list[str] = []
     total_received = 0
 
     for operation in operations:
         try:
-            start_page = 1
-            if args.start_date:
-                with session_scope(engine) as session:
-                    checkpoint = get_checkpoint(session, operation, args)
-                    if checkpoint.status == "complete":
-                        print(
-                            f"SKIP {operation.dataset}/{operation.name}: "
-                            f"checkpoint complete rows={checkpoint.received_count}"
-                        )
-                        continue
-                    start_page = checkpoint.next_page
-
-            page_number = start_page
+            page_number = 1
             pages_processed = 0
             operation_received = 0
+            written_records = 0
             while args.all_pages or pages_processed < args.max_pages:
                 page = client.fetch_page(
                     operation,
@@ -228,83 +140,43 @@ def main() -> None:
                             and args.start_date <= item_date <= args.end_date
                         )
                     ]
-                is_complete = (
-                    not page.items
-                    or page_number * args.rows >= page.total_count
-                )
-                blob_results = []
-                if items:
-                    for partition_month, monthly_items in group_items_by_month(items):
-                        blob_results.append(
-                            raw_writer.upload_items(
-                                dataset=operation.dataset,
-                                operation=operation.name,
-                                items=monthly_items,
-                                partition_date=partition_month,
-                                page_number=page_number,
-                                monthly_partition=True,
-                            )
-                        )
-                with session_scope(engine) as session:
-                    raw_count = 0
-                    for blob, batch in blob_results:
-                        record_raw_data_object(
-                            session,
-                            operation,
-                            blob,
-                            batch,
-                            source=raw_writer.source,
-                            range_start=args.start_date or args.date,
-                            range_end=args.end_date or args.date,
-                        )
-                        raw_count += batch.record_count
-                    normalize_page = not args.raw_only and not (
-                        args.start_date and operation.name == "getItemInfo"
+
+                for partition_month, monthly_items in group_items_by_month(items):
+                    _, batch = raw_writer.upload_items(
+                        dataset=operation.dataset,
+                        operation=operation.name,
+                        items=monthly_items,
+                        partition_date=partition_month,
                     )
-                    normalized_count = (
-                        load_normalized_items(session, operation, items)
-                        if normalize_page
-                        else 0
-                    )
-                    if args.start_date:
-                        checkpoint = get_checkpoint(session, operation, args)
-                        checkpoint.next_page = page_number + 1
-                        checkpoint.total_count = page.total_count
-                        checkpoint.received_count += len(page.items)
-                        checkpoint.status = "complete" if is_complete else "running"
-                        checkpoint.last_error = None
+                    written_records += batch.record_count
 
                 pages_processed += 1
-                page_number += 1
                 operation_received += len(page.items)
                 total_received += len(page.items)
+                is_complete = not page.items or page_number * args.rows >= page.total_count
                 if (
                     pages_processed == 1
                     or pages_processed % args.progress_every == 0
                     or is_complete
                 ):
                     print(
-                        f"{operation.dataset}/{operation.name}: "
-                        f"page={page.page_number} received={operation_received} "
-                        f"total={page.total_count} in_range={len(items)} "
-                        f"raw_blob_records={raw_count} "
-                        f"normalized={normalized_count}"
+                        f"{operation.dataset}/{operation.name}: page={page.page_number} "
+                        f"received={operation_received} total={page.total_count} "
+                        f"in_range={len(items)} raw_blob_records={written_records}"
                     )
                 if is_complete:
                     break
+                page_number += 1
 
             print(
                 f"DONE {operation.dataset}/{operation.name}: "
-                f"run_received={operation_received} pages={pages_processed}"
+                f"received={operation_received} pages={pages_processed}"
             )
         except Exception as error:
-            failure = (
-                f"{operation.dataset}/{operation.name}: "
-                f"{safe_error_message(error)}"
-            )
-            record_failure(engine, operation, args, failure)
+            message = str(error) if isinstance(error, (PublicDataApiError, ValueError)) else type(error).__name__
+            failure = f"{operation.dataset}/{operation.name}: {message}"
             failures.append(failure)
-            print(f"FAILED {failures[-1]}")
+            print(f"FAILED {failure}")
 
     print(
         f"collection complete: operations={len(operations)} "

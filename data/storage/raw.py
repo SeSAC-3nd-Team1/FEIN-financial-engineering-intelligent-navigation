@@ -72,9 +72,7 @@ class RawBlobWriter:
         source: str = "data-go-kr",
     ) -> None:
         self.storage = storage
-        self.container = container or os.getenv(
-            "AZURE_STORAGE_CONTAINER_RAW", "raw"
-        )
+        self.container = container or os.getenv("AZURE_STORAGE_CONTAINER_RAW", "raw")
         self.source = source
 
     @classmethod
@@ -88,14 +86,10 @@ class RawBlobWriter:
         operation: str,
         items: list[dict[str, Any]],
         partition_date: date,
-        page_number: int | None,
         collected_at: datetime | None = None,
-        extra_records: list[dict[str, Any]] | None = None,
-        migration: bool = False,
-        monthly_partition: bool = False,
     ) -> tuple[BlobObject, RawBatch]:
         observed_at = collected_at or datetime.now(timezone.utc)
-        records = extra_records or [
+        records = [
             {
                 "dataset": dataset,
                 "operation": operation,
@@ -112,22 +106,15 @@ class RawBlobWriter:
             dataset=dataset,
             operation=operation,
             partition_date=partition_date,
-            page_number=page_number,
             batch_hash=batch.batch_hash,
-            migration=migration,
-            monthly_partition=monthly_partition,
         )
         if self.storage.exists(self.container, path):
             existing = self.storage.properties(self.container, path)
             return existing, RawBatch(
                 data=b"",
-                content_sha256=existing.metadata.get(
-                    "content_sha256", batch.content_sha256
-                ),
+                content_sha256=existing.metadata.get("content_sha256", batch.content_sha256),
                 batch_hash=batch.batch_hash,
-                record_count=int(
-                    existing.metadata.get("record_count", batch.record_count)
-                ),
+                record_count=int(existing.metadata.get("record_count", batch.record_count)),
             )
         blob = self.storage.upload_bytes(
             self.container,
