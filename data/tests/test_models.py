@@ -53,7 +53,10 @@ def test_terms_are_versioned_and_user_agreements_reference_term_id_only() -> Non
         "term_version",
         "is_required",
     }.isdisjoint(UserAgreement.__table__.columns.keys())
-    assert UserAgreement.__table__.columns.user_id.foreign_keys.pop().ondelete == "RESTRICT"
+    user_fk = next(iter(UserAgreement.__table__.columns.user_id.foreign_keys))
+    term_fk = next(iter(UserAgreement.__table__.columns.term_id.foreign_keys))
+    assert user_fk.ondelete == "RESTRICT"
+    assert term_fk.ondelete == "RESTRICT"
 
 
 def test_registration_session_keeps_only_pre_signup_relational_state() -> None:
