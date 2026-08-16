@@ -11,10 +11,21 @@
 - Azure Storage 인증은 Entra ID/DefaultAzureCredential 우선
 - Shared Key 기반 실제 Azure connection string 사용 금지
 
+## 코드 주석 규칙
+
+`data/` 영역은 데이터 의미와 운영 제약을 팀원이 빠르게 이해할 수 있도록 한국어 주석과 도큐스트링을 사용한다. 세부 규칙은 `data/AGENTS.md`를 따른다.
+
+- 모듈, 주요 함수, 클래스의 설명은 한국어로 작성
+- `basDt` 파티셔닝, hash 기반 멱등성, UPSERT 충돌키, transaction, feature window처럼 실수하기 쉬운 규칙은 왜 필요한지 한국어로 설명
+- 단순 대입이나 코드만으로 명확한 부분에는 과도한 주석을 추가하지 않음
+- API 필드명, 함수/변수명, SQL 식별자, 환경변수, Azure 서비스명과 로그 키는 기존 영문 유지
+- 새 코드 생성이나 기존 코드 수정 시에도 동일한 규칙 적용
+
 ## 디렉터리
 
 ```text
 data/
+├─ AGENTS.md         # data 하위 코드 생성/주석 지침
 ├─ collectors/      # data.go.kr API client/config
 ├─ db/
 │  ├─ connection/   # PostgreSQL 연결

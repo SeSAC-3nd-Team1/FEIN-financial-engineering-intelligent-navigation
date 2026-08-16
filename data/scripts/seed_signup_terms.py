@@ -1,4 +1,4 @@
-"""Seed a versioned signup terms catalog without inventing an operating version."""
+"""승인된 version을 명시적으로 받아 회원가입 약관 catalog를 멱등하게 seed한다."""
 
 import argparse
 from datetime import datetime
@@ -9,6 +9,7 @@ from db.connection import build_engine, session_scope
 from db.models import Term
 
 
+# term_code는 사용자 동의 이력과 FK로 연결되는 식별자이므로 title 변경과 분리해 유지한다.
 TERM_TITLES = {
     "A1_THIRD_PARTY": "제3자 정보 제공 동의",
     "A2_UNIQUE_ID": "고유식별정보 처리 동의",
@@ -20,6 +21,8 @@ TERM_TITLES = {
 
 
 def parse_timestamp(value: str) -> datetime:
+    """약관 효력 시각에 timezone offset이 반드시 포함되도록 검증한다."""
+
     timestamp = datetime.fromisoformat(value)
     if timestamp.tzinfo is None:
         raise argparse.ArgumentTypeError("timestamp must include a UTC offset")
@@ -52,6 +55,7 @@ def main() -> None:
     for code, title in TERM_TITLES.items():
         content_reference = None
         if args.content_base_url:
+            # 약관 본문 URL도 code/version을 포함시켜 과거 동의 당시 내용을 재현할 수 있게 한다.
             content_reference = (
                 f"{args.content_base_url.rstrip('/')}/{code}/{args.version}"
             )
@@ -68,6 +72,7 @@ def main() -> None:
 
     engine = build_engine()
     statement = insert(Term).values(rows)
+    # 같은 term_code/version을 다시 실행해도 기존 약관 row를 덮어쓰지 않는다.
     statement = statement.on_conflict_do_nothing(
         index_elements=[Term.term_code, Term.version]
     ).returning(Term.id)

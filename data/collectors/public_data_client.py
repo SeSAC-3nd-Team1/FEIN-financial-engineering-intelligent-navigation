@@ -1,4 +1,4 @@
-"""Resilient client for data.go.kr JSON/XML pagination."""
+"""data.go.kr 응답의 JSON/XML 차이와 pagination을 안전하게 처리하는 API client다."""
 
 from __future__ import annotations
 
@@ -21,17 +21,21 @@ SUCCESS_CODES = {"00", "0", "NORMAL_SERVICE"}
 
 
 class PublicDataApiError(RuntimeError):
-    """The public API returned an error header or unreadable response."""
+    """공공데이터 API가 오류 header 또는 해석 불가능한 응답을 반환했을 때 사용한다."""
 
 
 @dataclass(frozen=True)
 class ApiPage:
+    """한 API page에서 downstream 수집 로직에 필요한 값만 보관한다."""
+
     items: list[dict[str, Any]]
     page_number: int
     total_count: int
 
 
 def get_public_data_api_key() -> str:
+    """저장소 root의 환경설정에서 API key를 읽고 코드에는 secret을 남기지 않는다."""
+
     load_dotenv(PROJECT_ROOT / ".env", override=False)
     api_key = os.getenv("DATA_GO_KR_API_KEY", "").strip()
     if not api_key:
@@ -42,6 +46,8 @@ def get_public_data_api_key() -> str:
 
 
 def _element_to_value(element: ElementTree.Element) -> Any:
+    """XML 응답을 JSON 응답과 유사한 중첩 dict/list 구조로 변환한다."""
+
     children = list(element)
     if not children:
         return element.text or ""
@@ -59,6 +65,8 @@ def _element_to_value(element: ElementTree.Element) -> Any:
 
 
 def _parse_response(response: requests.Response) -> dict[str, Any]:
+    """JSON을 우선 해석하고 실패할 때만 XML fallback을 사용한다."""
+
     try:
         parsed = response.json()
         if not isinstance(parsed, dict):
@@ -74,6 +82,8 @@ def _parse_response(response: requests.Response) -> dict[str, Any]:
 
 
 def _as_items(value: Any) -> list[dict[str, Any]]:
+    """API별로 다른 단일 item/list 응답을 항상 list[dict] 형태로 맞춘다."""
+
     if value in (None, ""):
         return []
     if isinstance(value, dict):
@@ -88,6 +98,8 @@ def _as_items(value: Any) -> list[dict[str, Any]]:
 
 
 def decode_page(payload: dict[str, Any], requested_page: int) -> ApiPage:
+    """data.go.kr의 공통 header/body 구조를 검증하고 한 page로 정규화한다."""
+
     response = payload.get("response", payload)
     if not isinstance(response, dict):
         raise PublicDataApiError("API response field is not an object")
@@ -109,10 +121,13 @@ def decode_page(payload: dict[str, Any], requested_page: int) -> ApiPage:
 
 
 class PublicDataClient:
+    """공공데이터 API 호출에 timeout과 일시적 오류 retry 정책을 공통 적용한다."""
+
     def __init__(self, api_key: str | None = None, *, timeout: int = 30) -> None:
         self.api_key = api_key or get_public_data_api_key()
         self.timeout = timeout
         self.session = requests.Session()
+        # 429와 일시적인 5xx만 재시도한다. 잘못된 요청/인증 오류를 반복 호출하지 않는다.
         retry = Retry(
             total=3,
             backoff_factor=0.5,
@@ -129,6 +144,8 @@ class PublicDataClient:
         rows_per_page: int,
         filters: dict[str, str] | None = None,
     ) -> ApiPage:
+        """operation의 지정 page를 호출하되 secret이 오류 로그에 섞이지 않게 한다."""
+
         params = {
             "serviceKey": self.api_key,
             "resultType": "json",
@@ -142,8 +159,8 @@ class PublicDataClient:
             )
             response.raise_for_status()
         except requests.RequestException as error:
-            # requests exception strings may contain the fully rendered URL,
-            # including serviceKey. Never propagate that text to logs.
+            # requests 예외 문자열에는 serviceKey가 포함된 완성 URL이 들어갈 수 있다.
+            # 따라서 원문 예외 메시지는 버리고 예외 타입만 운영 로그에 남긴다.
             raise PublicDataApiError(
                 f"data.go.kr request failed for "
                 f"{operation.dataset}/{operation.name}: "
@@ -159,6 +176,8 @@ class PublicDataClient:
         max_pages: int = 1,
         filters: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
+        """여러 page를 읽되 API의 totalCount에 도달하면 불필요한 호출을 중단한다."""
+
         collected: list[dict[str, Any]] = []
         for page_number in range(1, max_pages + 1):
             page = self.fetch_page(

@@ -1,4 +1,4 @@
-"""Build versioned monthly stock-price features from processed Parquet files."""
+"""Processed Parquet에서 월별 주가 Feature를 계산해 versioned Blob으로 저장한다."""
 
 from __future__ import annotations
 
@@ -36,6 +36,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def _safe_version(value: str) -> str:
+    """Blob 경로에 안전한 schema/feature version 형식만 허용한다."""
+
     cleaned = value.strip()
     if not cleaned or any(ch not in "0123456789._-" for ch in cleaned):
         raise ValueError("version contains unsafe characters")
@@ -43,6 +45,8 @@ def _safe_version(value: str) -> str:
 
 
 def feature_path(*, month: date, version: str) -> str:
+    """주가 Feature의 version + 월 partition 경로를 생성한다."""
+
     return build_feature_path(
         "stock_price",
         partition_date=month,
@@ -51,6 +55,12 @@ def feature_path(*, month: date, version: str) -> str:
 
 
 def compute_price_features(frame: pd.DataFrame) -> pd.DataFrame:
+    """종목별 과거 시계열만 사용해 기본 가격/거래량 Feature를 계산한다.
+
+    모든 rolling/shift 연산은 ``stock_code``별 group 안에서 수행한다. 다른 종목의 값이
+    window에 섞이면 학습 데이터가 오염되므로 정렬 후 종목 경계를 명시적으로 유지한다.
+    """
+
     required = {"stock_code", "trade_date", "close_price", "volume"}
     missing = required - set(frame.columns)
     if missing:
@@ -60,6 +70,8 @@ def compute_price_features(frame: pd.DataFrame) -> pd.DataFrame:
     data["close_price"] = pd.to_numeric(data["close_price"], errors="coerce")
     data["volume"] = pd.to_numeric(data["volume"], errors="coerce")
     data = data.sort_values(["stock_code", "trade_date"]).reset_index(drop=True)
+
+    # 미래값을 사용하지 않도록 현재 행 이전까지의 시계열을 shift/rolling으로만 참조한다.
     close = data.groupby("stock_code", sort=False)["close_price"]
     data["return_1d"] = close.pct_change(fill_method=None)
     previous_close = close.shift(1)
@@ -77,6 +89,8 @@ def compute_price_features(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _month_key(value: date) -> tuple[int, int]:
+    """월 단위 비교를 위한 (year, month) key를 만든다."""
+
     return value.year, value.month
 
 
@@ -88,6 +102,8 @@ def load_processed(
     start: date,
     end: date,
 ) -> pd.DataFrame:
+    """요청 기간과 겹치는 Processed stock_price 월 partition만 읽는다."""
+
     schema_version = _safe_version(schema_version)
     client = storage.service_client.get_container_client(container)
     frames: list[pd.DataFrame] = []
@@ -122,6 +138,9 @@ def main() -> None:
     storage = BlobStorage.from_env()
     processed_container = os.getenv("AZURE_STORAGE_CONTAINER_PROCESSED", "processed")
     features_container = os.getenv("AZURE_STORAGE_CONTAINER_FEATURES", "features")
+
+    # 20일 rolling/momentum 값을 요청 시작일부터 계산하려면 시작일 이전 관측치가 필요하다.
+    # warm-up 구간은 계산에만 사용하고 최종 Feature 출력에서는 다시 제거한다.
     source = load_processed(
         storage,
         container=processed_container,
@@ -143,6 +162,7 @@ def main() -> None:
     for (year, month), monthly in features.groupby(["year", "month"], sort=True):
         output = monthly.drop(columns=["year", "month"]).reset_index(drop=True)
         partition_date = date(int(year), int(month), 1)
+        # Parquet 생성용 임시 파일은 업로드가 끝나는 즉시 제거해 로컬을 영구 저장소로 쓰지 않는다.
         with tempfile.TemporaryDirectory(prefix="fein-features-") as directory:
             local = Path(directory) / "part-00000.parquet"
             output.to_parquet(local, index=False, compression="zstd")

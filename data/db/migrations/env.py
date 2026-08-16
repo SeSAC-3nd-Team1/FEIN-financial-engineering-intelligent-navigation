@@ -1,4 +1,4 @@
-"""Alembic runtime configured from the same DATABASE_URL as the application."""
+"""애플리케이션과 동일한 ``DATABASE_URL``을 사용하는 Alembic runtime 설정이다."""
 
 from logging.config import fileConfig
 
@@ -7,17 +7,21 @@ from sqlalchemy import engine_from_config, pool
 
 from db.base import Base
 from db.connection.session import get_database_url
-from db import models  # noqa: F401 - registers ORM metadata
+from db import models  # noqa: F401 - ORM metadata 등록을 위해 import
 
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Alembic config parser가 '%'를 interpolation 문자로 처리하므로 URL 안의 '%'를 escape한다.
 config.set_main_option("sqlalchemy.url", get_database_url().replace("%", "%%"))
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """DB 연결 없이 SQL script 생성용 offline migration context를 실행한다."""
+
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
@@ -31,6 +35,9 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """실제 PostgreSQL 연결에서 transaction 단위로 migration을 실행한다."""
+
+    # migration 실행은 장시간 유지되는 application pool이 필요하지 않으므로 NullPool을 사용한다.
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

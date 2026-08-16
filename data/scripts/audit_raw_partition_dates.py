@@ -1,4 +1,4 @@
-"""Read-only audit of canonical Raw Blob partition months versus payload date fields."""
+"""canonical Raw Blob의 월 partition과 payload 날짜 필드가 일치하는지 읽기 전용으로 점검한다."""
 
 from __future__ import annotations
 
@@ -28,6 +28,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def parse_date(value: Any) -> date | None:
+    """감사 대상의 여러 날짜 표기를 ``date``로 읽되 해석 불가 값은 None으로 둔다."""
+
     if value is None:
         return None
     text = str(value).strip()
@@ -47,6 +49,8 @@ def parse_date(value: Any) -> date | None:
 
 
 def decode(data: bytes) -> list[dict[str, Any]]:
+    """gzip JSONL object 하나를 레코드 목록으로 복원한다."""
+
     return [
         json.loads(line)
         for line in gzip.decompress(data).splitlines()
@@ -55,6 +59,8 @@ def decode(data: bytes) -> list[dict[str, Any]]:
 
 
 def is_dateish_key(key: str) -> bool:
+    """payload schema 탐색용으로 날짜 의미가 있을 가능성이 높은 key를 찾는다."""
+
     lower = key.lower()
     return any(hint in lower for hint in _DATE_KEY_HINTS)
 
@@ -64,6 +70,9 @@ def main() -> None:
     storage = BlobStorage.from_env()
     container = os.getenv("AZURE_STORAGE_CONTAINER_RAW", "raw")
     prefix = f"data-go-kr/{args.dataset}/"
+
+    # canonical monthly layout과 정확히 일치하는 object만 감사한다. legacy 경로나 다른
+    # 파생 파일이 섞이면 현재 Raw 규칙 검증 결과를 왜곡할 수 있기 때문이다.
     paths = []
     for path in storage.list_paths(container, prefix=prefix):
         match = _MONTHLY_PATH.match(path)
@@ -93,6 +102,10 @@ def main() -> None:
         for record in rows:
             records += 1
             payload = record.get("payload") or {}
+
+            # 현재 Raw partition의 authoritative date는 payload.basDt 하나뿐이다.
+            # legacy.referenceDate는 과거 migration 상태를 관찰하기 위한 비교값일 뿐
+            # 현재 partition 정합성 판정에는 사용하지 않는다.
             basdt = parse_date(payload.get("basDt"))
             if basdt is None:
                 basdt_missing += 1
@@ -112,6 +125,8 @@ def main() -> None:
                 if (legacy_date.year, legacy_date.month) != path_month:
                     legacy_mismatch += 1
 
+            # 향후 schema profiling에 참고할 수 있도록 날짜처럼 보이는 필드의 빈도와
+            # 소수의 대표값만 수집한다. 모든 고유값을 메모리에 쌓지 않는다.
             for key, value in payload.items():
                 if not is_dateish_key(str(key)):
                     continue

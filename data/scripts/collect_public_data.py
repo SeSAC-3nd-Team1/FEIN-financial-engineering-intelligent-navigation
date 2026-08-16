@@ -1,8 +1,8 @@
-"""Collect Financial Services Commission public-data responses into Raw Blob only.
+"""금융위원회 공공데이터 응답을 PostgreSQL을 거치지 않고 Raw Blob에 수집한다.
 
-Azure Blob Storage is the authoritative Raw layer. This collector deliberately
-has no PostgreSQL dependency; normalized/service tables are rebuilt separately
-from canonical Raw objects.
+Azure Blob Storage가 API Raw 원문의 source of truth다. 수집 단계는 PostgreSQL과
+의도적으로 분리하며, 관계형 정규화나 서비스용 테이블은 canonical Raw Blob을 기준으로
+별도 재구축한다.
 """
 
 from __future__ import annotations
@@ -44,6 +44,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def parse_item_date(value: object) -> date | None:
+    """data.go.kr의 YYYYMMDD 날짜 값을 안전하게 ``date``로 변환한다."""
+
     text = str(value or "").strip()
     if len(text) != 8 or not text.isdigit():
         return None
@@ -54,7 +56,12 @@ def parse_item_date(value: object) -> date | None:
 
 
 def group_items_by_month(items: list[dict]) -> list[tuple[date, list[dict]]]:
-    """Group one API page strictly by payload basDt without mutating payloads."""
+    """payload를 수정하지 않고 ``basDt`` 기준 월 단위로만 묶는다.
+
+    Raw 경로의 월 파티션은 다른 날짜 필드나 수집 시각으로 추정하지 않는다. ``basDt``가
+    없거나 잘못된 레코드는 잘못된 월에 저장하는 대신 수집을 실패시켜 원본 품질 문제를
+    드러낸다.
+    """
 
     grouped: dict[date, list[dict]] = {}
     for index, item in enumerate(items):
@@ -70,6 +77,8 @@ def group_items_by_month(items: list[dict]) -> list[tuple[date, list[dict]]]:
 
 
 def _select_operations(args: argparse.Namespace):
+    """CLI 선택값을 실제 수집할 API operation 목록으로 확정한다."""
+
     datasets = sorted(OPERATIONS) if args.all_datasets else (args.dataset or DEFAULT_DATASETS)
     operations = select_operations(datasets, include_all=args.all_operations)
     if args.operation:
@@ -105,6 +114,8 @@ def main() -> None:
     if args.date:
         filters = {"basDt": args.date.strftime("%Y%m%d")}
     elif args.start_date:
+        # API의 endBasDt 경계 차이를 피하기 위해 종료일 다음 날까지 요청하고,
+        # 실제 저장 대상은 아래에서 payload.basDt로 다시 inclusive 필터링한다.
         filters = {
             "beginBasDt": args.start_date.strftime("%Y%m%d"),
             "endBasDt": (args.end_date + timedelta(days=1)).strftime("%Y%m%d"),
@@ -132,6 +143,8 @@ def main() -> None:
                 )
                 items = page.items
                 if args.start_date:
+                    # 일부 operation이 서버 측 기간 필터를 완전히 지키지 않을 수 있으므로
+                    # Raw에 쓰기 직전 authoritative date인 basDt로 요청 범위를 다시 보장한다.
                     items = [
                         item
                         for item in page.items
@@ -141,6 +154,8 @@ def main() -> None:
                         )
                     ]
 
+                # 한 API page에 월 경계가 섞여 있어도 파일 하나가 여러 달을 포함하지 않도록
+                # basDt 월별로 분리한 뒤 각각 content-addressed Raw object로 저장한다.
                 for partition_month, monthly_items in group_items_by_month(items):
                     _, batch = raw_writer.upload_items(
                         dataset=operation.dataset,
@@ -173,6 +188,7 @@ def main() -> None:
                 f"received={operation_received} pages={pages_processed}"
             )
         except Exception as error:
+            # API key나 전체 URL이 로그에 노출되지 않도록 알려진 안전한 오류만 원문을 사용한다.
             message = str(error) if isinstance(error, (PublicDataApiError, ValueError)) else type(error).__name__
             failure = f"{operation.dataset}/{operation.name}: {message}"
             failures.append(failure)

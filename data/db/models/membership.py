@@ -1,4 +1,4 @@
-"""Persistent membership and registration-consent models."""
+"""회원가입 이후 영구 보존되는 계정과 약관 동의 관계형 모델을 정의한다."""
 
 from datetime import datetime
 
@@ -25,7 +25,11 @@ from db.models.common import TimestampMixin
 
 
 class User(TimestampMixin, Base):
-    """Registered account; pre-signup verification state is deliberately absent."""
+    """가입 완료 계정만 저장하며 가입 전 인증 상태는 영구 DB에 두지 않는다.
+
+    형식 검증과 상태 일관성은 애플리케이션 코드에만 의존하지 않고 DB CheckConstraint로도
+    보장한다. CI/DI 원문은 평문으로 저장하지 않고 암호화 값과 lookup hash를 분리한다.
+    """
 
     __tablename__ = "users"
     __table_args__ = (
@@ -84,6 +88,7 @@ class User(TimestampMixin, Base):
         Boolean, server_default=text("false"), nullable=False
     )
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # CI/DI는 민감 식별정보이므로 검색용 hash와 복호화가 필요한 encrypted value를 분리한다.
     ci_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     ci_lookup_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     di_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
@@ -100,7 +105,11 @@ class User(TimestampMixin, Base):
 
 
 class Term(Base):
-    """Versioned catalog of terms that may be accepted during registration."""
+    """회원가입에서 동의할 수 있는 약관을 code + version 단위로 보존한다.
+
+    약관 내용이 바뀌어도 과거 사용자가 어느 version에 동의했는지 재현할 수 있도록
+    기존 row를 덮어쓰지 않고 새 version을 추가하는 구조다.
+    """
 
     __tablename__ = "terms"
     __table_args__ = (
@@ -122,7 +131,11 @@ class Term(Base):
 
 
 class UserAgreement(Base):
-    """Immutable-style audit row for one user and one versioned term."""
+    """사용자와 특정 약관 version의 동의 사실을 감사 가능한 형태로 보존한다.
+
+    동의 시각/IP/User-Agent를 함께 남기고, 같은 사용자·약관·version 조합은 한 번만
+    기록되도록 UNIQUE 제약을 둔다.
+    """
 
     __tablename__ = "user_agreements"
     __table_args__ = (

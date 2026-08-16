@@ -1,4 +1,4 @@
-"""Chunked PostgreSQL UPSERT utilities for rows and pandas DataFrames."""
+"""행 목록과 pandas DataFrame을 PostgreSQL에 chunk 단위로 UPSERT하는 공통 유틸이다."""
 
 from __future__ import annotations
 
@@ -15,11 +15,15 @@ IMMUTABLE_COLUMNS = {"created_at"}
 
 
 def _chunks(rows: Sequence[dict[str, Any]], size: int) -> Iterable[list[dict[str, Any]]]:
+    """대량 INSERT가 지나치게 큰 statement가 되지 않도록 row를 고정 크기로 나눈다."""
+
     for start in range(0, len(rows), size):
         yield list(rows[start : start + size])
 
 
 def _python_value(value: Any) -> Any:
+    """pandas/numpy scalar를 psycopg가 처리할 수 있는 Python 기본 타입으로 변환한다."""
+
     if isinstance(value, pd.Timestamp):
         return value.date() if value == value.normalize() else value.to_pydatetime()
     if value is None:
@@ -35,7 +39,7 @@ def _python_value(value: Any) -> Any:
 
 
 def dataframe_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
-    """Convert pandas/numpy scalar values to DBAPI-compatible Python values."""
+    """DataFrame row를 DBAPI 호환 Python 값으로 구성된 dict 목록으로 변환한다."""
 
     return [
         {column: _python_value(value) for column, value in row.items()}
@@ -52,10 +56,10 @@ def upsert_rows(
     update_columns: Sequence[str] | None = None,
     chunk_size: int = 1_000,
 ) -> int:
-    """UPSERT rows with PostgreSQL ``ON CONFLICT DO UPDATE``.
+    """PostgreSQL ``ON CONFLICT DO UPDATE``로 row를 멱등하게 적재한다.
 
-    ``conflict_columns`` must match a primary key or UNIQUE constraint. By default,
-    all supplied non-key columns except creation timestamps are refreshed.
+    ``conflict_columns``는 실제 PK 또는 UNIQUE 제약과 일치해야 한다. 별도 지정이 없으면
+    충돌키, PK, ``created_at``을 제외한 입력 컬럼을 갱신한다.
     """
 
     if not rows:
@@ -71,8 +75,8 @@ def upsert_rows(
     if missing := set(conflict_columns) - valid_columns:
         raise ValueError(f"Unknown conflict columns: {sorted(missing)}")
 
-    # PostgreSQL cannot update the same conflict key twice in one INSERT.
-    # Some public APIs return exact duplicate items within a single page.
+    # PostgreSQL은 하나의 INSERT statement 안에서 같은 conflict key를 두 번 update할 수 없다.
+    # 공공 API 한 page에 완전히 같은 key가 중복될 수 있으므로 마지막 row를 남겨 먼저 정리한다.
     deduplicated: dict[tuple[Any, ...], dict[str, Any]] = {}
     for row in rows:
         key = tuple(row.get(column) for column in conflict_columns)
@@ -104,8 +108,8 @@ def upsert_rows(
             set_=update_values,
         )
         session.execute(statement)
-        # psycopg may report -1 for INSERT .. ON CONFLICT batches; attempted rows
-        # are deterministic and the transaction still controls final persistence.
+        # psycopg는 INSERT .. ON CONFLICT batch의 rowcount를 -1로 돌려줄 수 있다.
+        # 실제 transaction 성공 여부는 session이 관리하므로 여기서는 시도한 row 수를 반환한다.
         affected += len(batch)
     return affected
 
@@ -120,7 +124,7 @@ def upsert_dataframe(
     update_columns: Sequence[str] | None = None,
     chunk_size: int = 1_000,
 ) -> int:
-    """Rename source columns and UPSERT a DataFrame into a mapped ORM table."""
+    """입력 컬럼명을 ORM 컬럼에 맞춘 뒤 DataFrame 전체를 공통 UPSERT 경로로 적재한다."""
 
     if frame.empty:
         return 0
