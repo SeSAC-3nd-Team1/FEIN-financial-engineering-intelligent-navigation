@@ -10,15 +10,25 @@ from features.model_dataset import (
 )
 from processing.contracts import canonical_name, snake_case
 from processing.normalize import build_operation_contract, normalize_payload
+from processing.profile_contract import infer_dtype
 from processing.quality import validate_payload
 
 
-def _field_profile(*, date: bool = False, integer: bool = False, numeric: bool = False):
+def _field_profile(
+    *,
+    date: bool = False,
+    integer: bool = False,
+    numeric: bool = False,
+    minimum: str = "0",
+    maximum: str = "100000",
+):
     return {
         "nonempty": 1,
         "yyyymmdd_rate_nonempty": 1.0 if date else 0.0,
         "integer_rate_nonempty": 1.0 if integer else 0.0,
         "numeric_rate_nonempty": 1.0 if numeric else 0.0,
+        "min_number": minimum if numeric or integer or date else None,
+        "max_number": maximum if numeric or integer or date else None,
     }
 
 
@@ -32,7 +42,13 @@ def test_snake_case_and_core_aliases_use_path_operation_case():
 def test_profile_payload_contract_and_normalization():
     profile = {
         "payload_fields": {
-            "basDt": _field_profile(date=True, integer=True, numeric=True),
+            "basDt": _field_profile(
+                date=True,
+                integer=True,
+                numeric=True,
+                minimum="20260814",
+                maximum="20260814",
+            ),
             "clpr": _field_profile(integer=True, numeric=True),
         }
     }
@@ -49,8 +65,19 @@ def test_profile_payload_contract_and_normalization():
 def test_numeric_looking_identifiers_remain_strings():
     profile = {
         "payload_fields": {
-            "basDt": _field_profile(date=True, integer=True, numeric=True),
-            "srtnCd": _field_profile(integer=True, numeric=True),
+            "basDt": _field_profile(
+                date=True,
+                integer=True,
+                numeric=True,
+                minimum="20260814",
+                maximum="20260814",
+            ),
+            "srtnCd": _field_profile(
+                integer=True,
+                numeric=True,
+                minimum="0",
+                maximum="999999",
+            ),
             "isinCd": _field_profile(),
         }
     }
@@ -67,8 +94,19 @@ def test_numeric_looking_identifiers_remain_strings():
 def test_financial_corporation_number_remains_string():
     profile = {
         "payload_fields": {
-            "basDt": _field_profile(date=True, integer=True, numeric=True),
-            "crno": _field_profile(integer=True, numeric=True),
+            "basDt": _field_profile(
+                date=True,
+                integer=True,
+                numeric=True,
+                minimum="20251231",
+                maximum="20251231",
+            ),
+            "crno": _field_profile(
+                integer=True,
+                numeric=True,
+                minimum="0",
+                maximum="9999999999999",
+            ),
         }
     }
     contract = build_operation_contract(
@@ -77,16 +115,40 @@ def test_financial_corporation_number_remains_string():
         "getsummfinastat_v2",
     )
     output, _ = normalize_payload(
-        {"basDt": "20251231", "crno": "001101110018138"},
+        {"basDt": "20251231", "crno": "0011011100181"},
         contract,
     )
-    assert output["corporation_number"] == "001101110018138"
+    assert output["corporation_number"] == "0011011100181"
+
+
+def test_integer_like_field_outside_int64_is_preserved_as_string():
+    field = _field_profile(
+        integer=True,
+        numeric=True,
+        minimum="0",
+        maximum=str(2**63),
+    )
+    assert infer_dtype(field) == "string"
 
 
 def test_quality_is_applied_to_nested_payload_semantics():
     assert validate_payload({"basDt": "20260814"}) is None
     assert validate_payload({"basDt": ""}) == "missing_basDt"
     assert validate_payload({"basDt": "20260230"}) == "invalid_basDt"
+    assert (
+        validate_payload(
+            {
+                "basDt": "20260814",
+                "srtnCd": "",
+                "isinCd": "KR7005930003",
+                "clpr": "72100",
+                "trqu": "1000",
+            },
+            "stock_price",
+            "getstockpriceinfo",
+        )
+        == "missing_required:srtnCd"
+    )
 
 
 def _price_frame(days: int = 180) -> pd.DataFrame:
@@ -140,5 +202,6 @@ def test_financial_features_are_not_marked_ready_for_point_in_time_join():
         }
     )
     result = compute_financial_features(frame)
-    assert result.iloc[0]["debt_ratio"] == pytest.approx(80 / 120)
+    assert result.iloc[0]["debt_to_equity"] == pytest.approx(80 / 120)
+    assert result.iloc[0]["debt_ratio_pct_calculated"] == pytest.approx((80 / 120) * 100)
     assert not bool(result.iloc[0]["point_in_time_join_ready"])
