@@ -1,46 +1,74 @@
 # Data
 
-데이터 수집, Raw Blob 저장, PostgreSQL 모델/마이그레이션, Parquet 변환과 Feature 생성을 담당한다.
+데이터 수집, Azure Blob Raw 저장, Raw profiling, Processed Parquet, 모델용 Features, PostgreSQL 회원가입/약관 migration을 담당한다.
+
+## 현재 구조
+
+```text
+Public Data API
+  ↓
+Azure Blob raw (JSONL.gz)
+  ↓
+Raw Profile / Validation / Normalization
+  ↓
+Azure Blob processed (Parquet)
+  ↓
+Feature Engineering
+  ↓
+Azure Blob features (Parquet)
+```
+
+금융 Raw/Processed/Features 파이프라인은 PostgreSQL을 경유하지 않는다. PostgreSQL은 현재 회원가입/약관/가입 진행 상태 등 관계형 서비스 데이터를 담당한다.
 
 ## 현재 원칙
 
 - API Raw 원문 source of truth: Azure Blob Storage
-- PostgreSQL: 현재 회원가입/약관 데이터만 영구 보존
-- 금융/API PostgreSQL: 기존 구조 폐기 완료, 8개 Raw dataset 기준으로 재설계 예정
-- Raw 원문을 PostgreSQL JSONB에 중복 저장하지 않음
+- Canonical Raw는 immutable
+- PostgreSQL에 금융 Raw JSON 전체를 중복 저장하지 않음
+- Processed/Features는 Raw에서 재생성 가능
 - Azure Storage 인증은 Entra ID/DefaultAzureCredential 우선
 - Shared Key 기반 실제 Azure connection string 사용 금지
+- 숫자처럼 보이는 종목코드/법인번호/ID는 문자열 보존
+- 결측값을 임의의 0/평균값으로 일괄 보정하지 않음
+- 재무 `base_date`는 실제 공개일이 아니므로 availability timestamp 확보 전 가격과 PIT JOIN 금지
 
 ## 코드 주석 규칙
 
 `data/` 영역은 데이터 의미와 운영 제약을 팀원이 빠르게 이해할 수 있도록 한국어 주석과 도큐스트링을 사용한다. 세부 규칙은 `data/AGENTS.md`를 따른다.
 
-- 모듈, 주요 함수, 클래스의 설명은 한국어로 작성
-- `basDt` 파티셔닝, hash 기반 멱등성, UPSERT 충돌키, transaction, feature window처럼 실수하기 쉬운 규칙은 왜 필요한지 한국어로 설명
-- 단순 대입이나 코드만으로 명확한 부분에는 과도한 주석을 추가하지 않음
-- API 필드명, 함수/변수명, SQL 식별자, 환경변수, Azure 서비스명과 로그 키는 기존 영문 유지
-- 새 코드 생성이나 기존 코드 수정 시에도 동일한 규칙 적용
+- 모듈, 주요 함수, 클래스 설명은 한국어
+- `basDt`, hash 기반 멱등성, transaction, feature window처럼 실수하기 쉬운 규칙은 왜 필요한지 설명
+- 단순 대입 등 코드만으로 명확한 부분에는 과도한 주석을 추가하지 않음
+- API 필드명, 함수/변수명, SQL 식별자, 환경변수, Azure 서비스명과 로그 키는 영문 유지
 
 ## 디렉터리
 
 ```text
 data/
-├─ AGENTS.md         # data 하위 코드 생성/주석 지침
-├─ collectors/      # data.go.kr API client/config
+├─ AGENTS.md
+├─ collectors/          # data.go.kr API client/config
 ├─ db/
-│  ├─ connection/   # PostgreSQL 연결
-│  ├─ migrations/   # Alembic
-│  └─ models/       # 현재 membership 모델
-├─ loaders/         # 범용 PostgreSQL UPSERT 유틸
+│  ├─ connection/       # PostgreSQL 연결
+│  ├─ migrations/       # Alembic history
+│  └─ models/           # membership/registration ORM
+├─ docs/                # 금융 pipeline/model 문서
+├─ features/            # 모델용 Dataset/Feature 생성
+├─ loaders/             # 범용 PostgreSQL UPSERT 유틸
+├─ notebooks/           # 분석 Notebook 공간
+├─ processing/          # Raw → Processed 정규화/품질/계약
+├─ reports/
+│  └─ raw-profile/      # 기계용 JSON + 사람용 Markdown
 ├─ scripts/
 │  ├─ collect_public_data.py
+│  ├─ profile_raw_data.py
+│  ├─ run_financial_pipeline.py
+│  ├─ audit_model_data_outputs.py
 │  ├─ audit_raw_partition_dates.py
-│  ├─ build_stock_price_features.py
 │  ├─ check_db.py
 │  ├─ seed_signup_terms.py
 │  └─ verify_signup_schema.py
-├─ storage/         # Blob auth/path/Raw serialization
-├─ transforms/      # Parquet helper
+├─ storage/             # Blob auth/path/Raw serialization
+├─ transforms/          # 범용 분석 export helper
 └─ tests/
 ```
 
@@ -53,7 +81,7 @@ raw/
 └─ data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/{sha256}.jsonl.gz
 ```
 
-`basDt`가 Raw partition의 유일한 기준일이다. `day=DD`, `migration/` prefix, page-number filename은 새 수집 코드에서 지원하지 않는다.
+`payload.basDt`가 Raw partition/filter의 권위 있는 기준일이다. `day=DD`, `migration/` prefix, page-number filename은 신규 canonical 경로에서 사용하지 않는다.
 
 Raw 수집 예시:
 
@@ -61,28 +89,84 @@ Raw 수집 예시:
 docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --date 2026-08-16 --all-pages --rows 10000
 ```
 
+## 금융 데이터 파이프라인
+
+Windows CMD, 프로젝트 루트 기준:
+
+```cmd
+run-financial-pipeline.cmd check
+run-financial-pipeline.cmd profile
+run-financial-pipeline.cmd processed
+run-financial-pipeline.cmd features
+run-financial-pipeline.cmd audit
+```
+
+전체 실행:
+
+```cmd
+run-financial-pipeline.cmd all
+```
+
+직접 Python CLI:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage all --schema-version 1 --feature-version 1
+```
+
+### Raw Profile
+
+```text
+data/reports/raw-profile/INDEX.md
+data/reports/raw-profile/{dataset}.json
+data/reports/raw-profile/{dataset}.md
+```
+
+JSON은 Processed 타입 계약 입력으로 실제 코드가 사용한다. Markdown은 사람이 확인하는 리포트다. 둘은 중복 파일이 아니라 역할이 다르다.
+
+### Processed
+
+```text
+processed/{dataset}/operation={operation}/schema=v1/year=YYYY/month=MM/part-00000.parquet
+processed/_quality/{dataset}/operation={operation}/schema=v1/year=YYYY/month=MM/manifest.json
+```
+
+### Features
+
+```text
+features/{dataset}/version=v1/year=YYYY/month=MM/part-00000.parquet
+features/_manifests/model-datasets/version=v1/manifest.json
+```
+
 ## PostgreSQL
 
-현재 보존 대상:
+현재 구현 기준 Alembic head는 `20260816_0011`이다.
+
+현재 membership/registration 관계:
 
 ```text
 public.users
 public.terms
 public.user_agreements
+public.registration_sessions
+public.registration_agreements
 public.alembic_version
 ```
 
-기존 금융/API `raw` 구조는 제거되었다. `20260816_0010` migration이 이 상태를 공식 migration history로 기록한다.
+과거 금융/API PostgreSQL `raw`, `processed` schema는 retire되었으며 정상 금융 batch 실행에는 필요하지 않다.
+
+Migration 적용:
 
 ```bash
 docker compose --env-file .env.azure --profile data run --rm --no-deps data alembic upgrade head
 ```
 
-연결/상태 확인:
+DB 확인:
 
 ```bash
 docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.check_db
 ```
+
+회원가입 상세 구현 가이드는 `data/REGISTRATION_DB.md`를 본다.
 
 ## 테스트
 
@@ -90,6 +174,12 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data pyth
 docker compose --profile data run --rm --no-deps data python -m pytest tests -q
 ```
 
-## 다음 작업
+## 주요 문서
 
-금융 DB를 만들기 전에 Blob의 8개 dataset(`disclosure`, `financial_statement`, `market_index`, `security_product`, `stock_dividend`, `stock_issuance`, `stock_master`, `stock_price`)의 실제 payload schema를 먼저 profiling한다. 그 결과를 기준으로 새 PostgreSQL 모델과 migration을 설계한다.
+- `data/docs/FINANCIAL_DATA_PIPELINE.md`
+- `data/docs/FINANCIAL_PIPELINE_RUNBOOK.md`
+- `data/docs/MODELING_DATASET_CARD.md`
+- `data/docs/FEATURE_DICTIONARY.md`
+- `docs/DATA_ARCHITECTURE.md`
+- `docs/DATA_LAYER_OPERATIONS.md`
+- `docs/DATABASE_SPECIFICATION.md`

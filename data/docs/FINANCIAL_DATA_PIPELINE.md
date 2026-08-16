@@ -6,7 +6,7 @@
 공공데이터 API
       ↓
 Azure Blob raw
-JSONL.GZ envelope
+JSONL.gz envelope
       ↓
 Raw Profile
 field/type/null/cardinality/range/distribution
@@ -21,10 +21,10 @@ Feature Engineering
 Azure Blob features
 모델용 Parquet + dataset manifest
       ↓
-Modeling
+Modeling / Backtest
 ```
 
-한투 API는 이 파이프라인 범위에 포함하지 않는다. 서비스 단계의 실시간/최신 시세 공급원으로 별도 연결한다.
+KIS는 이 오프라인 학습 파이프라인 범위에 포함하지 않는다. 서비스 단계의 실시간/최신 시세 및 모의투자 경로로 별도 연결한다.
 
 ## Raw
 
@@ -34,13 +34,12 @@ Canonical path:
 raw/data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/{sha256}.jsonl.gz
 ```
 
-JSONL 한 줄 구조:
+신규 collector가 저장하는 JSONL 한 줄:
 
 ```json
 {
   "collectedAt": "...",
   "dataset": "stock_price",
-  "legacy": {},
   "operation": "getStockPriceInfo",
   "payload": {
     "basDt": "20260813",
@@ -52,7 +51,9 @@ JSONL 한 줄 구조:
 }
 ```
 
-`payload`만 business data이며 나머지는 lineage다.
+`payload`가 business data이며 나머지는 lineage다. 과거 SQL→Blob migration 과정에서 만들어진 일부 envelope에는 복원용 `legacy` metadata가 존재할 수 있지만 신규 collector는 이를 추가하지 않는다.
+
+Raw payload는 수정하지 않는다. `payload.basDt`를 canonical 월 partition/filter의 권위 있는 날짜로 사용한다.
 
 ## Raw Profile
 
@@ -64,18 +65,22 @@ JSONL 한 줄 구조:
 - `basDt` 범위와 월별 row 분포
 - field 목록
 - present / missing / null / empty
-- 숫자 변환 가능률
-- 정수 변환 가능률
-- YYYYMMDD 변환 가능률
-- cardinality(상한 적용)
+- 숫자/정수/YYYYMMDD 변환 가능률
+- cardinality 상한
 - 문자열 길이
 - 숫자 min/max
 - 예시값
 - malformed JSON / invalid payload
 
-2026-08-16 전수 프로파일 기준 8 datasets / 24,073,651 rows에서 malformed JSON과 invalid/missing `payload.basDt`는 0건이었다.
+2026-08-16 전수 프로파일 기준 8 datasets / 52 operations / 4,228 blobs / 24,073,651 rows에서 malformed JSON과 invalid/missing `payload.basDt`는 0건이었다.
 
-실행 시 사람이 보는 Markdown과 후속 전처리가 읽는 JSON을 모두 `data/reports/raw-profile/`에 남긴다.
+```text
+data/reports/raw-profile/INDEX.md
+data/reports/raw-profile/{dataset}.json
+data/reports/raw-profile/{dataset}.md
+```
+
+JSON은 Processed 타입 계약 입력으로 실제 코드가 읽고, Markdown은 사람이 검토한다.
 
 ## Processed
 
@@ -91,16 +96,7 @@ Quality manifest:
 processed/_quality/{dataset}/operation={operation}/schema=v1/year=YYYY/month=MM/manifest.json
 ```
 
-Manifest에는 다음을 남긴다.
-
-- 원본 source blob 목록
-- accepted / rejected row 수
-- reject reason
-- field conversion error
-- output bytes/path
-- 생성 시각
-- Git SHA
-- `raw_immutable=true`
+Manifest에는 source blob 목록, accepted/rejected, reject reason, conversion error, output bytes/path, 생성 시각, Git SHA, `raw_immutable=true`를 기록한다.
 
 ### 타입 규칙
 
@@ -108,13 +104,13 @@ Manifest에는 다음을 남긴다.
 - 정수 100%이며 int64 범위 내 → `int64`
 - 숫자 100%이며 float64 범위 내 → `float64`
 - 그 외 → `string`
-- 종목코드/법인번호/ISIN/각종 코드/ID → 무조건 `string`
+- 종목코드/법인번호/ISIN/코드/ID → 문자열 보존
 - 빈 문자열 → NULL
-- 범위를 초과하는 숫자형 문자열 → 원문 `string` 보존
+- 범위를 초과하는 숫자형 문자열 → 원문 string 보존
+
+평균/중앙값 대체, 일괄 0 대체, StandardScaler/MinMaxScaler 같은 모델 종속 전처리는 이 단계의 기본 책임이 아니다.
 
 ### Core operation 표준 이름
-
-핵심 모델링 source는 사람이 이해하기 쉬운 표준 컬럼명으로 변환한다.
 
 예:
 
@@ -130,13 +126,13 @@ mrktTotAmt → market_cap
 
 ### Resume
 
-기본 실행은 resume 방식이다. 동일 schema version에서 월별 Parquet과 quality manifest가 둘 다 존재하고 dataset/operation/year/month/output 계약이 일치하면 해당 Raw를 다시 읽지 않는다.
+동일 schema version에서 월별 Parquet과 quality manifest가 모두 존재하고 manifest 계약이 일치하면 해당 월을 다시 읽지 않는다.
 
 ```text
 PROCESSED SKIP dataset=... operation=... year=... month=... rows=...
 ```
 
-`--overwrite`를 명시한 경우에만 완료 partition을 강제로 재생성한다.
+`--overwrite`는 의도적 재생성에만 사용한다.
 
 ## Features
 
@@ -152,70 +148,66 @@ features/{dataset}/version=v1/year=YYYY/month=MM/part-00000.parquet
 features/_manifests/model-datasets/version=v1/manifest.json
 ```
 
-생성 Dataset:
+현재 생성 Dataset:
 
-- `model_stock_daily`: 학습 가능
-- `market_index_daily`: 학습 가능
+- `model_stock_daily`: training ready
+- `market_index_daily`: training ready
 - `security_master_latest`: reference only
 - `financial_snapshot`: availability date 해결 전 research only
 - `financial_company_year_latest`: availability date 해결 전 research only
 
-가격 Feature에는 1일 수익률, 5/20/60/120일 momentum, 5/20/60일 이동평균, 20/60일 연환산 변동성, 거래량 20일 평균/비율 등이 포함된다. 미래 5/20 거래일 수익률은 `target_*`으로 분리한다.
+가격 Feature에는 1개 관측치 수익률, 5/20/60/120개 관측치 momentum, 5/20/60개 관측치 이동평균, 20/60개 관측치 변동성, 거래량 평균/비율 등이 포함된다. 미래 5/20번째 관측치 수익률은 `target_*`으로 분리한다.
+
+### Horizon 의미 주의
+
+현재 구현은 종목별 DataFrame에서 `shift(N)`/`rolling(N)`을 사용한다. 따라서 `N`은 해당 종목의 N번째 관측치를 의미한다.
+
+거래가 매일 존재하는 일반 종목에서는 대체로 N거래일과 같지만, 거래정지/관측 누락이 있으면 독립적인 KRX 시장 N거래일 calendar와 다를 수 있다. 문서에서 이를 무조건 '시장 N거래일'이라고 해석하지 않는다.
 
 ## Look-ahead / Survivorship 방지
 
 ### 가격 Target
 
-Feature는 현재 및 과거 데이터만 사용한다. 미래 수익률은 `target_*`로 분리하고 입력 X에 넣지 않는다.
-
-시간순 70/15/15 split을 만들며 Target의 미래 날짜가 split 경계를 넘는 행은 `eligible_target_* = false`로 표시한다.
+미래 수익률은 `target_*`로 분리하며 입력 X에 넣지 않는다. 시간순 70/15/15 split을 만들고 Target 날짜가 split 경계를 넘는 행은 `eligible_target_* = false`로 표시한다.
 
 ### 재무 데이터
 
-회계 `base_date`를 실제 정보 공개일로 간주하지 않는다. OpenDART 접수일 등 실제 public availability timestamp를 확보하기 전에는 가격과 point-in-time JOIN하지 않는다.
+회계 `base_date`를 실제 공개일로 간주하지 않는다. OpenDART 접수일 등 실제 public availability timestamp를 확보하기 전에는 가격과 point-in-time JOIN하지 않는다.
 
 ### 종목 기준정보
 
-`security_master_latest`는 표시/매핑용이다. 현재 살아 있는 종목만 이용해 과거 Universe를 만들지 않는다.
+`security_master_latest`는 표시/매핑용이다. 최신 종목 목록만 이용해 과거 Universe를 재구성하지 않는다.
+
+### 수정주가
+
+현재 가격 Feature는 원천 `close_price` 기반이다. 액면분할/권리락 등 corporate action을 완전히 반영한 수정주가 계열이 별도 보강되기 전에는 장기 수익률/백테스트 해석에 주의한다.
 
 ## 실행 CLI
 
-실제 대용량 실행 절차는 `data/docs/FINANCIAL_PIPELINE_RUNBOOK.md`를 기준으로 한다.
-
-Windows CMD에서 프로젝트 루트 기준 가장 먼저 준비 상태를 확인한다.
+Windows CMD, 프로젝트 루트:
 
 ```cmd
 run-financial-pipeline.cmd check
-```
-
-전체 실행:
-
-```cmd
-run-financial-pipeline.cmd all
-```
-
-단계별 실행:
-
-```cmd
 run-financial-pipeline.cmd profile
 run-financial-pipeline.cmd processed
 run-financial-pipeline.cmd features
 run-financial-pipeline.cmd audit
+run-financial-pipeline.cmd all
 ```
 
-직접 Python CLI를 사용할 수도 있다.
+직접 Python CLI:
 
 ```cmd
 docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage all --schema-version 1 --feature-version 1
 ```
 
-Raw profile을 강제로 다시 만들 때만:
+Raw profile 강제 재생성:
 
 ```cmd
 docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage profile --refresh-profile --schema-version 1 --feature-version 1
 ```
 
-동일 version을 강제로 다시 생성해야 할 때만:
+Processed 강제 재생성:
 
 ```cmd
 docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage processed --schema-version 1 --overwrite
@@ -223,41 +215,20 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data pyth
 
 ## 실행/감사 기록
 
-모든 단계는 현재 상태를 로컬에 기록한다.
-
 ```text
 data/reports/pipeline-runs/latest.json
 data/reports/pipeline-runs/latest.md
 ```
 
-`all` 또는 `audit` 성공 시 다음을 함께 기록한다.
-
-- Processed 객체 수 / records / bytes
-- accepted / rejected
-- reject reasons
-- conversion errors
-- Features 객체 수 / records / bytes
-- 모델 dataset status
-- feature manifest
-- look-ahead 정책
-
-Raw profile 결과는 별도 보존한다.
-
-```text
-data/reports/raw-profile/INDEX.md
-data/reports/raw-profile/{dataset}.md
-data/reports/raw-profile/{dataset}.json
-```
+Audit은 Processed/Features 객체 수, metadata record count, quality manifest, status 등을 집계한다. 현재 구현을 모든 Parquet row를 독립적으로 재스캔하는 완전한 integrity gate로 과장하지 않는다.
 
 ## 증분 운영 방향
 
-v1은 전체 historical build를 위한 구조다. 이후 정기 운영은 다음처럼 바꾼다.
-
 ```text
 새 Raw month 수집
-→ 해당 dataset/operation/month만 Processed 재생성
-→ 영향을 받는 Feature 최근 lookback 구간만 재계산
+→ 영향 operation/month Processed 재생성
+→ 충분한 lookback을 포함해 Feature 재계산
 → manifest/version 갱신
 ```
 
-120일 모멘텀/60일 변동성 등이 있으므로 Feature 증분 계산 시 현재 월만 읽지 않고 충분한 lookback 기간을 함께 읽어야 한다.
+120개 관측치 momentum/60개 관측치 변동성 등이 있으므로 Feature 증분 계산은 현재 월만 읽어서는 안 된다.

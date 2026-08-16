@@ -4,20 +4,24 @@
 
 - Azure Blob Storage `raw` is the authoritative, immutable API source layer.
 - Canonical Raw path: `data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/{hash}.jsonl.gz`.
-- PostgreSQL currently persists membership/registration data only.
-- Financial/API PostgreSQL schemas were retired and will be redesigned from the eight canonical Raw datasets.
-- Processed and Features are derived Blob layers and may be rebuilt.
+- Financial/API Raw JSON is not duplicated into PostgreSQL.
+- `processed` and `features` are derived Blob layers and may be rebuilt from Raw.
+- PostgreSQL currently serves membership/registration relational data, not the financial bulk pipeline.
 
-## PostgreSQL state
+## Current PostgreSQL state
 
-Persistent public tables:
+Current membership/registration tables are defined by Alembic `20260816_0011` and the SQLAlchemy models.
 
-- `public.users`
-- `public.terms`
-- `public.user_agreements`
-- `public.alembic_version`
+```text
+public.users
+public.terms
+public.user_agreements
+public.registration_sessions
+public.registration_agreements
+public.alembic_version
+```
 
-Migration `20260816_0010` formally retires the old `raw` and `processed` PostgreSQL schemas. It is intentionally irreversible; future financial schemas must be created with forward migrations.
+The legacy financial/API PostgreSQL `raw` and `processed` schemas were retired in the `20260816_0010` migration. Historical migrations remain in Alembic history so a database can be reproduced from the beginning; they are not current runtime models.
 
 Apply migrations from the data container:
 
@@ -33,7 +37,7 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data pyth
 
 ## Raw collection
 
-The collector writes only to Azure Blob and has no PostgreSQL dependency.
+The public-data collector writes canonical Raw to Azure Blob and has no financial PostgreSQL dependency.
 
 Example one-day collection:
 
@@ -41,23 +45,67 @@ Example one-day collection:
 docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --all-datasets --all-operations --date 2026-08-16 --all-pages --rows 10000
 ```
 
-Historical collection uses `--start-date` and `--end-date`. Payload `basDt` is the sole authoritative partition/filter date. Invalid or missing `basDt` aborts that operation rather than falling back to another date.
+Historical collection uses `--start-date` and `--end-date`. `payload.basDt` is the authoritative partition/filter date. Invalid or missing `basDt` aborts the affected operation rather than using another date as fallback.
+
+## Financial batch pipeline
+
+The supported bulk path is:
+
+```text
+Raw Blob
+→ profile
+→ validation / normalization
+→ Processed Parquet
+→ Feature Engineering
+→ Features Parquet
+→ audit
+```
+
+Windows CMD wrapper from repository root:
+
+```cmd
+run-financial-pipeline.cmd check
+run-financial-pipeline.cmd profile
+run-financial-pipeline.cmd processed
+run-financial-pipeline.cmd features
+run-financial-pipeline.cmd audit
+```
+
+Full build:
+
+```cmd
+run-financial-pipeline.cmd all
+```
+
+Processed uses monthly resume semantics: a partition is skipped only when both Parquet and its quality manifest exist and the manifest contract matches. Use `--overwrite` only for an intentional rebuild.
+
+Raw profiling reports live in:
+
+```text
+data/reports/raw-profile/INDEX.md
+data/reports/raw-profile/{dataset}.json
+data/reports/raw-profile/{dataset}.md
+```
+
+The JSON reports are machine-readable profile contracts used by Processed generation; Markdown is the human-readable view. Do not remove the JSON files as documentation duplicates.
 
 ## Authentication
 
-Azure Storage uses `AZURE_STORAGE_ACCOUNT_NAME` with `DefaultAzureCredential`. Shared Key and real Azure connection strings are intentionally rejected. Azurite remains the only connection-string exception for local development.
+Azure Storage uses `AZURE_STORAGE_ACCOUNT_NAME` with `DefaultAzureCredential`/Azure CLI credentials. Shared Key and real Azure connection strings are intentionally rejected. Azurite remains the local-development exception when explicitly configured.
 
 ## Historical migration utilities
 
-The SQL-Raw migration, repartition, legacy cleanup, parity verification, and financial reset scripts were removed after successful completion. Their execution evidence remains in Git history, Issue #20, PR history, and the Raw migration report. Production code should not retain one-time destructive migration entrypoints after retirement.
+One-time SQL-Raw migration, repartition, cleanup and destructive retirement entrypoints were removed after completion. Their evidence remains in Git history, issues/PRs and archived reports. Do not reintroduce retired migration scripts into the normal runtime path.
 
-## Next financial data step
+## Modeling safety
 
-Before creating new PostgreSQL financial tables:
+- Raw is immutable.
+- Numeric-looking identifiers stay strings.
+- Missing/empty values are not blindly replaced with zero.
+- `security_master_latest` is reference-only and must not reconstruct a historical universe.
+- Financial `base_date` is not an availability timestamp; price JOIN remains blocked until actual public disclosure time is known.
+- Price targets and rolling windows must be interpreted according to the implementation. Current `shift(N)` logic uses the N-th observed row per security, not an independently reconstructed KRX session calendar.
 
-1. profile all eight canonical Raw datasets and operations;
-2. define relational entities, keys, temporal semantics, and indexes;
-3. create new ORM models and a forward Alembic migration;
-4. build a Blob-only-to-PostgreSQL loader;
-5. validate normalized counts, uniqueness, and date ranges;
-6. only then materialize Processed and Features.
+## Next data work
+
+The next additions should enrich the Blob pipeline rather than recreate the retired financial PostgreSQL landing layer. Examples include OpenDART disclosure availability timestamps, historical KOSPI200 constituents, valuation/corporate-action data, and optional ECOS/customs features.
