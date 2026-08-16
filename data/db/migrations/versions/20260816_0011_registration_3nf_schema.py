@@ -218,7 +218,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["registration_id"],
             ["registration_sessions.id"],
-            name="fk_registration_agreements_registration_id_registration_sessions",
+            name="fk_registration_agreements_session",
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
