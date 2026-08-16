@@ -1,6 +1,7 @@
-"""회원가입 이후 영구 보존되는 계정과 약관 동의 관계형 모델을 정의한다."""
+"""회원가입의 영구/임시 관계형 데이터를 제3정규형으로 정의한다."""
 
 from datetime import datetime
+from uuid import UUID as PythonUUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
@@ -8,7 +9,6 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
-    ForeignKeyConstraint,
     Identity,
     Index,
     LargeBinary,
@@ -17,7 +17,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import INET
+from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base
@@ -25,10 +25,10 @@ from db.models.common import TimestampMixin
 
 
 class User(TimestampMixin, Base):
-    """가입 완료 계정만 저장하며 가입 전 인증 상태는 영구 DB에 두지 않는다.
+    """가입이 완료되고 휴대폰/이메일 검증까지 끝난 계정만 저장한다.
 
-    형식 검증과 상태 일관성은 애플리케이션 코드에만 의존하지 않고 DB CheckConstraint로도
-    보장한다. CI/DI 원문은 평문으로 저장하지 않고 암호화 값과 lookup hash를 분리한다.
+    인증 여부는 `*_verified_at`의 NULL 여부에서 파생한다. 같은 사실을 boolean으로
+    중복 저장하지 않아 갱신 시 상태가 어긋나는 문제를 막는다.
     """
 
     __tablename__ = "users"
@@ -36,26 +36,13 @@ class User(TimestampMixin, Base):
         UniqueConstraint("user_id", name="uq_users_user_id"),
         UniqueConstraint("email", name="uq_users_email"),
         UniqueConstraint("ci_lookup_hash", name="uq_users_ci_lookup_hash"),
-        CheckConstraint(
-            "user_id ~ '^[a-z0-9]{6,16}$'",
-            name="user_id_format",
-        ),
+        CheckConstraint("user_id ~ '^[a-z0-9]{6,16}$'", name="user_id_format"),
         CheckConstraint("email = lower(email)", name="email_lowercase"),
         CheckConstraint("length(trim(name)) BETWEEN 1 AND 30", name="name_length"),
         CheckConstraint("birthdate ~ '^[0-9]{6}$'", name="birthdate_format"),
         CheckConstraint(
             "phone_number ~ '^0[0-9]{9,10}$'",
             name="phone_number_format",
-        ),
-        CheckConstraint(
-            "(phone_verified AND phone_verified_at IS NOT NULL) OR "
-            "(NOT phone_verified AND phone_verified_at IS NULL)",
-            name="phone_verification_consistency",
-        ),
-        CheckConstraint(
-            "(email_verified AND email_verified_at IS NOT NULL) OR "
-            "(NOT email_verified AND email_verified_at IS NULL)",
-            name="email_verification_consistency",
         ),
         CheckConstraint(
             "member_type IN ('ASSOCIATE', 'FULL')",
@@ -79,16 +66,15 @@ class User(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(30), nullable=False)
     birthdate: Mapped[str] = mapped_column(String(6), nullable=False)
     phone_number: Mapped[str] = mapped_column(String(11), nullable=False)
-    phone_verified: Mapped[bool] = mapped_column(
-        Boolean, server_default=text("false"), nullable=False
+    phone_verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
     )
-    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     email: Mapped[str] = mapped_column(String(255), nullable=False)
-    email_verified: Mapped[bool] = mapped_column(
-        Boolean, server_default=text("false"), nullable=False
+    email_verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
     )
-    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # CI/DI는 민감 식별정보이므로 검색용 hash와 복호화가 필요한 encrypted value를 분리한다.
+
+    # CI/DI는 민감 식별정보이므로 복호화용 ciphertext와 중복 탐색용 keyed HMAC을 분리한다.
     ci_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     ci_lookup_hash: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     di_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
@@ -105,11 +91,7 @@ class User(TimestampMixin, Base):
 
 
 class Term(Base):
-    """회원가입에서 동의할 수 있는 약관을 code + version 단위로 보존한다.
-
-    약관 내용이 바뀌어도 과거 사용자가 어느 version에 동의했는지 재현할 수 있도록
-    기존 row를 덮어쓰지 않고 새 version을 추가하는 구조다.
-    """
+    """약관을 code + version 단위의 불변 catalog로 보존한다."""
 
     __tablename__ = "terms"
     __table_args__ = (
@@ -131,25 +113,18 @@ class Term(Base):
 
 
 class UserAgreement(Base):
-    """사용자와 특정 약관 version의 동의 사실을 감사 가능한 형태로 보존한다.
+    """가입 완료 회원과 특정 약관 version의 동의 사실만 저장한다.
 
-    동의 시각/IP/User-Agent를 함께 남기고, 같은 사용자·약관·version 조합은 한 번만
-    기록되도록 UNIQUE 제약을 둔다.
+    약관 code/version/필수 여부는 `terms`에 종속되므로 이 테이블에 복제하지 않는다.
+    회원은 soft delete가 원칙이며 감사 행의 물리 삭제를 막기 위해 FK는 RESTRICT다.
     """
 
     __tablename__ = "user_agreements"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["term_code", "term_version"],
-            ["terms.term_code", "terms.version"],
-            name="fk_user_agreements_term_terms",
-            ondelete="RESTRICT",
-        ),
         UniqueConstraint(
             "user_id",
-            "term_code",
-            "term_version",
-            name="uq_user_agreements_user_term_version",
+            "term_id",
+            name="uq_user_agreements_user_term_id",
         ),
         CheckConstraint(
             "(is_agreed AND agreed_at IS NOT NULL) OR "
@@ -162,12 +137,93 @@ class UserAgreement(Base):
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    term_code: Mapped[str] = mapped_column(String(30), nullable=False)
-    term_version: Mapped[str] = mapped_column(String(20), nullable=False)
-    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    term_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("terms.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    is_agreed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    agreed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    agreed_ip: Mapped[str | None] = mapped_column(INET)
+    user_agent: Mapped[str | None] = mapped_column(String(512))
+
+
+class RegistrationSession(Base):
+    """가입 완료 전 개인정보와 검증 완료 시각을 짧게 보관하는 임시 관계다.
+
+    OTP/비밀번호/token은 저장하지 않는다. 기본 TTL은 30분이며 가입 완료 후에는
+    별도 정리 작업으로 개인정보를 신속히 제거하는 것을 전제로 한다.
+    """
+
+    __tablename__ = "registration_sessions"
+    __table_args__ = (
+        CheckConstraint("length(trim(name)) BETWEEN 1 AND 30", name="name_length"),
+        CheckConstraint("birthdate ~ '^[0-9]{6}$'", name="birthdate_format"),
+        CheckConstraint(
+            "phone_number ~ '^0[0-9]{9,10}$'",
+            name="phone_number_format",
+        ),
+        CheckConstraint(
+            "email IS NULL OR email = lower(email)",
+            name="email_lowercase",
+        ),
+        CheckConstraint(
+            "email_verified_at IS NULL OR email IS NOT NULL",
+            name="email_verification_has_target",
+        ),
+        CheckConstraint("expires_at > created_at", name="expires_after_created"),
+        CheckConstraint(
+            "completed_at IS NULL OR completed_at >= created_at",
+            name="completion_after_created",
+        ),
+        Index("ix_registration_sessions_phone_number", "phone_number"),
+    )
+
+    id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True), default=uuid4, primary_key=True
+    )
+    name: Mapped[str] = mapped_column(String(30), nullable=False)
+    birthdate: Mapped[str] = mapped_column(String(6), nullable=False)
+    phone_number: Mapped[str] = mapped_column(String(11), nullable=False)
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    email: Mapped[str | None] = mapped_column(String(255))
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("(now() + interval '30 minutes')"),
+        nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RegistrationAgreement(Base):
+    """가입 세션과 특정 약관 version 사이의 선택 상태를 저장한다."""
+
+    __tablename__ = "registration_agreements"
+    __table_args__ = (
+        CheckConstraint(
+            "(is_agreed AND agreed_at IS NOT NULL) OR "
+            "(NOT is_agreed AND agreed_at IS NULL)",
+            name="agreement_timestamp_consistency",
+        ),
+    )
+
+    registration_id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("registration_sessions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    term_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("terms.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
     is_agreed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     agreed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     agreed_ip: Mapped[str | None] = mapped_column(INET)
