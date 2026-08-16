@@ -1,9 +1,9 @@
-"""Deterministic Azure Blob object path conventions."""
+"""Canonical Azure Blob object path conventions."""
 
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timezone
+from datetime import date
 
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -16,6 +16,13 @@ def _segment(value: str) -> str:
     return cleaned.lower()
 
 
+def _version(value: str) -> str:
+    cleaned = value.strip()
+    if not cleaned or any(ch not in "0123456789._-" for ch in cleaned):
+        raise ValueError("version contains unsafe characters")
+    return cleaned
+
+
 def build_raw_path(
     *,
     source: str,
@@ -23,28 +30,14 @@ def build_raw_path(
     operation: str,
     partition_date: date,
     batch_hash: str,
-    page_number: int | None = None,
-    migration: bool = False,
-    monthly_partition: bool = False,
 ) -> str:
-    """Build a partitioned, content-addressed raw JSONL/gzip path.
+    """Build the only supported Raw layout: source/dataset/operation/YYYY/MM/hash."""
 
-    API ingestion keeps the existing day partition by default. Historical Raw
-    repartitioning can opt into a YYYY/MM partition so a blob never implies a
-    day that does not describe every record it contains.
-    """
-
-    if len(batch_hash) != 64:
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", batch_hash):
         raise ValueError("batch_hash must be a SHA-256 hex digest")
-    suffix = f"page-{page_number:08d}-" if page_number is not None else ""
-    origin = "migration/" if migration else ""
-    partition = f"year={partition_date:%Y}/month={partition_date:%m}/"
-    if not monthly_partition:
-        partition += f"day={partition_date:%d}/"
     return (
-        f"{origin}{_segment(source)}/{_segment(dataset)}/"
-        f"operation={_segment(operation)}/{partition}"
-        f"{suffix}{batch_hash}.jsonl.gz"
+        f"{_segment(source)}/{_segment(dataset)}/operation={_segment(operation)}/"
+        f"year={partition_date:%Y}/month={partition_date:%m}/{batch_hash.lower()}.jsonl.gz"
     )
 
 
@@ -52,26 +45,23 @@ def build_processed_path(
     dataset: str,
     *,
     partition_date: date,
-    file_name: str,
+    schema_version: str,
+    file_name: str = "part-00000.parquet",
 ) -> str:
     return (
-        f"{_segment(dataset)}/year={partition_date:%Y}/"
-        f"month={partition_date:%m}/{_segment(file_name)}"
+        f"{_segment(dataset)}/schema=v{_version(schema_version)}/"
+        f"year={partition_date:%Y}/month={partition_date:%m}/{_segment(file_name)}"
     )
 
 
 def build_feature_path(
     dataset: str,
     *,
+    partition_date: date,
     version: str,
-    split: str,
-    file_name: str,
+    file_name: str = "part-00000.parquet",
 ) -> str:
     return (
-        f"{_segment(dataset)}/version={_segment(version)}/"
-        f"{_segment(split)}/{_segment(file_name)}"
+        f"{_segment(dataset)}/version=v{_version(version)}/"
+        f"year={partition_date:%Y}/month={partition_date:%m}/{_segment(file_name)}"
     )
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)

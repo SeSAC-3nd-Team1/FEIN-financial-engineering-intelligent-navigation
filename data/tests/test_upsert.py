@@ -1,9 +1,9 @@
-from datetime import date
+from datetime import datetime, timezone
 
 import pandas as pd
 from sqlalchemy.dialects import postgresql
 
-from db.models import StockMaster
+from db.models import Term
 from loaders.upsert import dataframe_records, upsert_rows
 
 
@@ -20,43 +20,33 @@ class _Session:
         return _Result()
 
 
+def _term_row(title: str = "서비스 이용약관") -> dict:
+    return {
+        "term_code": "SERVICE",
+        "version": "1.0",
+        "title": title,
+        "is_required": True,
+        "effective_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
+    }
+
+
 def test_dataframe_records_converts_nat_and_timestamp() -> None:
-    records = dataframe_records(
-        pd.DataFrame(
-            [
-                {
-                    "reference_date": pd.Timestamp("2026-08-13"),
-                    "optional": pd.NaT,
-                }
-            ]
-        )
-    )
-    assert records == [{"reference_date": date(2026, 8, 13), "optional": None}]
+    records = dataframe_records(pd.DataFrame([{"at": pd.Timestamp("2026-08-13"), "optional": pd.NaT}]))
+    assert records[0]["at"].isoformat() == "2026-08-13"
+    assert records[0]["optional"] is None
 
 
 def test_upsert_compiles_on_conflict() -> None:
     session = _Session()
     affected = upsert_rows(
         session,
-        StockMaster,
-        [
-            {
-                "reference_date": date(2026, 8, 13),
-                "stock_code": "005930",
-                "market_type": "KOSPI",
-                "stock_name": "삼성전자",
-            }
-        ],
-        conflict_columns=["stock_code"],
+        Term,
+        [_term_row()],
+        conflict_columns=["term_code", "version"],
     )
-    sql = str(
-        session.statement.compile(
-            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": False}
-        )
-    )
+    sql = str(session.statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": False}))
     assert affected == 1
-    assert "ON CONFLICT (stock_code) DO UPDATE" in sql
-    assert "updated_at = now()" in sql
+    assert "ON CONFLICT (term_code, version) DO UPDATE" in sql
 
 
 def test_upsert_rejects_unknown_columns() -> None:
@@ -64,9 +54,9 @@ def test_upsert_rejects_unknown_columns() -> None:
     try:
         upsert_rows(
             session,
-            StockMaster,
-            [{"stock_code": "005930", "unknown": "value"}],
-            conflict_columns=["stock_code"],
+            Term,
+            [{**_term_row(), "unknown": "value"}],
+            conflict_columns=["term_code", "version"],
         )
     except ValueError as error:
         assert "Unknown columns" in str(error)
@@ -78,21 +68,8 @@ def test_upsert_deduplicates_conflict_keys_within_batch() -> None:
     session = _Session()
     affected = upsert_rows(
         session,
-        StockMaster,
-        [
-            {
-                "reference_date": date(2026, 8, 12),
-                "stock_code": "005930",
-                "market_type": "KOSPI",
-                "stock_name": "old",
-            },
-            {
-                "reference_date": date(2026, 8, 13),
-                "stock_code": "005930",
-                "market_type": "KOSPI",
-                "stock_name": "삼성전자",
-            },
-        ],
-        conflict_columns=["stock_code"],
+        Term,
+        [_term_row("old"), _term_row("new")],
+        conflict_columns=["term_code", "version"],
     )
     assert affected == 1

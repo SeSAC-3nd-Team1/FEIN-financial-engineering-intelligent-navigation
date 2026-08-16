@@ -20,9 +20,7 @@ class FakeBlobStorage:
 
     def properties(self, container: str, path: str) -> BlobObject:
         item = self.objects[(container, path)]
-        return BlobObject(
-            item.container, item.path, item.size, item.etag, item.metadata, False
-        )
+        return BlobObject(item.container, item.path, item.size, item.etag, item.metadata, False)
 
     def upload_bytes(self, container, path, data, *, metadata, **kwargs):
         self.upload_count += 1
@@ -31,46 +29,33 @@ class FakeBlobStorage:
         return result
 
 
-def test_raw_path_is_partitioned_and_content_addressed() -> None:
+def test_raw_path_is_monthly_and_content_addressed() -> None:
     path = build_raw_path(
         source="data-go-kr",
         dataset="stock_price",
         operation="getStockPriceInfo",
-        partition_date=date(2026, 8, 15),
-        page_number=12,
+        partition_date=date(2026, 8, 1),
         batch_hash="a" * 64,
     )
     assert path == (
         "data-go-kr/stock_price/operation=getstockpriceinfo/"
-        "year=2026/month=08/day=15/page-00000012-" + "a" * 64 + ".jsonl.gz"
-    )
-
-
-def test_raw_monthly_partition_omits_day() -> None:
-    path = build_raw_path(
-        source="data-go-kr",
-        dataset="stock_price",
-        operation="getStockPriceInfo",
-        partition_date=date(2026, 1, 1),
-        page_number=None,
-        batch_hash="b" * 64,
-        migration=True,
-        monthly_partition=True,
-    )
-    assert path == (
-        "migration/data-go-kr/stock_price/operation=getstockpriceinfo/"
-        "year=2026/month=01/" + "b" * 64 + ".jsonl.gz"
+        "year=2026/month=08/" + "a" * 64 + ".jsonl.gz"
     )
     assert "/day=" not in path
+    assert "migration/" not in path
 
 
-def test_processed_and_feature_paths_capture_reproducibility_dimensions() -> None:
+def test_processed_and_feature_paths_are_versioned_monthly() -> None:
     assert build_processed_path(
-        "stock_price", partition_date=date(2026, 8, 15), file_name="part-1.parquet"
-    ) == "stock_price/year=2026/month=08/part-1.parquet"
+        "stock_price",
+        partition_date=date(2026, 8, 1),
+        schema_version="1",
+    ) == "stock_price/schema=v1/year=2026/month=08/part-00000.parquet"
     assert build_feature_path(
-        "stock_prediction", version="v1", split="train", file_name="part.parquet"
-    ) == "stock_prediction/version=v1/train/part.parquet"
+        "stock_price",
+        partition_date=date(2026, 8, 1),
+        version="2",
+    ) == "stock_price/version=v2/year=2026/month=08/part-00000.parquet"
 
 
 def test_jsonl_gzip_is_lossless_and_deterministic() -> None:
@@ -85,10 +70,7 @@ def test_jsonl_gzip_is_lossless_and_deterministic() -> None:
     }
     first = serialize_jsonl_gzip([record])
     second = serialize_jsonl_gzip([record])
-    decoded = [
-        json.loads(line)
-        for line in gzip.GzipFile(fileobj=io.BytesIO(first.data), mode="rb")
-    ]
+    decoded = [json.loads(line) for line in gzip.GzipFile(fileobj=io.BytesIO(first.data), mode="rb")]
     assert decoded[0]["payload"] == payload
     assert decoded[0]["payloadHash"] == payload_hash(payload)
     assert first.content_sha256 == second.content_sha256
@@ -101,8 +83,7 @@ def test_raw_writer_reuses_existing_content_addressed_blob() -> None:
         "dataset": "stock_price",
         "operation": "getStockPriceInfo",
         "items": [{"basDt": "20260815", "srtnCd": "005930"}],
-        "partition_date": date(2026, 8, 15),
-        "page_number": 1,
+        "partition_date": date(2026, 8, 1),
         "collected_at": datetime(2026, 8, 15, tzinfo=timezone.utc),
     }
     first, first_batch = writer.upload_items(**kwargs)
@@ -113,14 +94,11 @@ def test_raw_writer_reuses_existing_content_addressed_blob() -> None:
     assert second.created is False
 
 
-def test_blob_storage_rejects_real_azure_connection_string_without_identity(
-    monkeypatch,
-) -> None:
+def test_blob_storage_rejects_real_azure_connection_string_without_identity(monkeypatch) -> None:
     monkeypatch.delenv("AZURE_STORAGE_ACCOUNT_NAME", raising=False)
     monkeypatch.setenv(
         "AZURE_STORAGE_CONNECTION_STRING",
         "DefaultEndpointsProtocol=https;AccountName=example;AccountKey=not-used",
     )
-
     with pytest.raises(RuntimeError, match="Shared Key/connection-string"):
         BlobStorage.from_env()
