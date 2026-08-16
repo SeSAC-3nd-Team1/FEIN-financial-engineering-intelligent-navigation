@@ -69,7 +69,7 @@ def test_processed_resume_skips_completed_month(monkeypatch):
         raw_container="raw",
         processed_container="processed",
         dataset=dataset,
-        profile={"operations": {operation: {}}},
+        profile={"operations": {operation: {"payload_fields": {}}}},
         schema_version=schema_version,
         overwrite=False,
     )
