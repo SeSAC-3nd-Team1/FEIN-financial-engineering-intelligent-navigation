@@ -7,6 +7,7 @@ import gzip
 import json
 import os
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -24,6 +25,25 @@ RAW_RE = re.compile(
 )
 DATE8_RE = re.compile(r"^\d{8}$")
 INTEGER_RE = re.compile(r"^[+-]?\d+$")
+
+
+def _duration(seconds: float | None) -> str:
+    """터미널 진행 로그에서 읽기 쉬운 HH:MM:SS 형식으로 시간을 표시한다."""
+
+    if seconds is None or seconds < 0:
+        return "--:--:--"
+    total = int(seconds)
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _eta(elapsed: float, done: int, total: int) -> float | None:
+    """현재 처리량이 유지된다고 가정한 단순 ETA를 계산한다."""
+
+    if done <= 0 or total <= done or elapsed <= 0:
+        return 0.0 if total > 0 and done >= total else None
+    return elapsed * (total - done) / done
 
 
 @dataclass
@@ -197,18 +217,29 @@ def profile_dataset(
     operations: dict[str, OperationStats] = {}
     invalid_paths: list[str] = []
     blobs = list(client.list_blobs(name_starts_with=prefix))
+    total_bytes = sum(int(blob.size or 0) for blob in blobs)
+    done_bytes = 0
+    total_rows_seen = 0
+    started = time.monotonic()
+
+    print(
+        "PROFILE START "
+        f"dataset={dataset} blobs={len(blobs)} compressed_bytes={total_bytes}"
+    )
 
     for index, blob in enumerate(blobs, start=1):
         path = str(blob.name)
         match = RAW_RE.fullmatch(path)
         if not match or match.group("dataset") != dataset:
             invalid_paths.append(path)
+            done_bytes += int(blob.size or 0)
             continue
         operation = match.group("operation")
         stats = operations.setdefault(operation, OperationStats())
         stats.blobs += 1
         stats.compressed_bytes += int(blob.size or 0)
 
+        before_rows = stats.rows
         decoded = gzip.decompress(storage.download_bytes(container, path))
         for raw_line in decoded.splitlines():
             if not raw_line.strip():
@@ -227,8 +258,19 @@ def profile_dataset(
                 example_cap=example_cap,
             )
 
-        if index % 25 == 0 or index == len(blobs):
-            print(f"PROFILE PROGRESS dataset={dataset} blobs={index}/{len(blobs)}")
+        total_rows_seen += stats.rows - before_rows
+        done_bytes += int(blob.size or 0)
+        elapsed = time.monotonic() - started
+        remaining = _eta(elapsed, done_bytes, total_bytes)
+        percent = (done_bytes / total_bytes * 100.0) if total_bytes else 100.0
+
+        # 매 Blob 완료 시 갱신해 긴 전수 프로파일링에서도 멈춘 것처럼 보이지 않게 한다.
+        print(
+            "PROFILE PROGRESS "
+            f"dataset={dataset} blobs={index}/{len(blobs)} "
+            f"percent={percent:.1f}% rows={total_rows_seen:,} "
+            f"elapsed={_duration(elapsed)} eta={_duration(remaining)}"
+        )
 
     operation_payload = {
         name: stats.as_dict() for name, stats in sorted(operations.items())
