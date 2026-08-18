@@ -21,9 +21,12 @@ import type { Screen, SignupPersonal } from './types';
  *
  *   home → login → signup-1 → signup-2 → signup-3
  *        → risk(인트로·Q1~Q5·완료) → risk-result
- *        → strategy → start → dashboard
- *        → portfolio(20종목) → stock(종목 상세)
+ *        → strategy → start → portfolio(20종목) → stock(종목 상세)
  *   information 은 헤더 "정보"에서 언제든 진입
+ *
+ *   로그인 성공, 투자 시작 완료, 헤더 "나의 포트폴리오" 클릭은 모두 동일하게
+ *   portfolio(Power BI 분석 대시보드)로 착지한다. dashboard 는 portfolio 상단의
+ *   "← 대시보드로 돌아가기"로만 진입하는 보조 요약 화면이다.
  *
  * 챗봇 FAB 는 라우팅 밖에 있어 모든 화면에 상주한다.
  */
@@ -43,8 +46,8 @@ export default function App() {
 
       {screen === 'login' && (
         <Login
-          // 로그인 성공 → 인증 state를 켜고 대시보드로 이동
-          onLogin={() => { login(); setScreen('dashboard'); }}
+          // 로그인 성공 → 인증 state를 켜고, 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
+          onLogin={() => { login(); setScreen('portfolio'); }}
           onSignup={() => setScreen('signup-1')}
           onHome={() => setScreen('home')}
           onNavigate={setScreen}
@@ -99,7 +102,8 @@ export default function App() {
         />
       )}
       {screen === 'start' && (
-        <StartInvesting userName={userName} onNavigate={setScreen} onStart={() => setScreen('dashboard')} />
+        // 투자 시작 완료 → 이제 막 포트폴리오가 생긴 상태이므로, 로그인 착지점과 동일하게 Portfolio로 이동
+        <StartInvesting userName={userName} onNavigate={setScreen} onStart={() => setScreen('portfolio')} />
       )}
 
       {screen === 'information' && <InformationExam userName={userName} onNavigate={setScreen} />}
