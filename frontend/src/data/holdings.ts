@@ -70,3 +70,54 @@ export const STOCK_INFO: Record<string, StockInfo> = {
   '오리온': { code: '271560', price: 132500, cap: '5조원', div: '1.2%', pbr: '1.1배', per: '11.8배', roe: '10.4%', ai: [78, 80, 58, 82, 72],
     desc: '과자와 스낵을 만드는 식품 회사예요. 중국·베트남 등 해외 매출 비중이 커서 국내 소비만 보는 종목과는 다른 흐름을 만듭니다.' },
 };
+
+/* ----- Portfolio "내 포트폴리오 자세히 보기" (Power BI 스타일 분석 섹션) ----- */
+
+export interface TrendPoint { label: string; port: number; kospi: number; }
+
+/** 자산 변화 — 내 포트폴리오 vs KOSPI 누적 수익률(%), 지난해 10월 ~ 오늘 */
+export const PORTFOLIO_TREND: TrendPoint[] = [
+  { label: '지난해 10월', port: 0, kospi: 0 },
+  { label: '지난해 11월', port: 1.4, kospi: -1.8 },
+  { label: '지난해 12월', port: 2.1, kospi: -3.2 },
+  { label: '올해 1월', port: 1.2, kospi: -4.6 },
+  { label: '올해 2월', port: 3.6, kospi: -1.4 },
+  { label: '올해 3월', port: 4.8, kospi: 0.6 },
+  { label: '올해 4월', port: 4.1, kospi: -0.9 },
+  { label: '올해 5월', port: 5.9, kospi: 1.8 },
+  { label: '올해 6월', port: 3.2, kospi: -6.8 },
+  { label: '올해 7월', port: 6.4, kospi: 2.4 },
+  { label: '올해 8월', port: 8.34, kospi: 3.1 },
+  { label: '오늘', port: 8.34, kospi: 3.1 },
+];
+
+export interface ContributionItem { name: string; amount: number; }
+
+/** 종목별 기여 — 최근 1개월 동안 각 종목이 전체 수익에 기여한 금액 */
+export const STOCK_CONTRIBUTION: ContributionItem[] = [
+  { name: '삼성전자', amount: 12_400 },
+  { name: 'SK하이닉스', amount: 8_100 },
+  { name: 'NAVER', amount: 4_200 },
+  { name: 'KT&G', amount: 2_600 },
+  { name: 'POSCO홀딩스', amount: -1_900 },
+];
+
+export interface DecisionRecord { date: string; action: string; choice: '수락' | '보류'; result: string; }
+
+/** 최근 판단 기록 — AI 리밸런싱 제안에 대한 사용자 결정과 그 결과 */
+export const PAST_DECISIONS: DecisionRecord[] = [
+  { date: '2026.07.15', action: '삼성전자 비중 3% 줄이기', choice: '수락', result: '현재 자산 +12,400원' },
+  { date: '2026.06.28', action: 'SK하이닉스 비중 2% 늘리기', choice: '보류', result: '이후 2주간 변동성 소폭 상승' },
+  { date: '2026.06.12', action: 'KT&G 비중 1% 늘리기', choice: '수락', result: '변동성 방어 효과 확인' },
+  { date: '2026.05.30', action: '현금 비중 5% 줄이기', choice: '보류', result: '이후 수익률은 유지' },
+];
+
+/** 최근 6개월 판단 요약 통계 + AI 제안을 따랐을 때 vs 실제 선택의 평균 변동성 비교 */
+export const DECISION_SUMMARY = {
+  periodLabel: '최근 6개월',
+  proposed: 8,
+  accepted: 5,
+  held: 3,
+  volIfFollowed: 10.8,
+  volActual: 12.1,
+};

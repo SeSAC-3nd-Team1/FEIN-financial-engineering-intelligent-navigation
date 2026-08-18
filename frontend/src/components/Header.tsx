@@ -11,8 +11,8 @@ interface Props {
 const NAV: { key: Props['active']; label: string; to: Screen; guarded: boolean }[] = [
   { key: 'strategy', label: '전략 둘러보기', to: 'strategy', guarded: true },
   { key: 'information', label: '정보', to: 'information', guarded: false },
-  // 헤더 라우팅: 나의 포트폴리오 → 05 대시보드
-  { key: 'portfolio', label: '나의 포트폴리오', to: 'dashboard', guarded: true },
+  // 헤더 라우팅: 나의 포트폴리오 → Portfolio.tsx (PDF 1~4p 통합 Power BI 대시보드가 기본 화면)
+  { key: 'portfolio', label: '나의 포트폴리오', to: 'portfolio', guarded: true },
 ];
 
 export default function Header({ active, userName, onNavigate }: Props) {

@@ -8,7 +8,8 @@ export default function Home({ onNavigate }: Props) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   // "전략 둘러보기"/"나의 포트폴리오"는 로그인이 필요해 미로그인 시 로그인 화면으로 보낸다
   const goStrategy = () => onNavigate(isLoggedIn ? 'strategy' : 'login');
-  const goPortfolio = () => onNavigate(isLoggedIn ? 'dashboard' : 'login');
+  // "나의 포트폴리오" → Portfolio.tsx (PDF 1~4p 통합 Power BI 대시보드가 기본 화면)
+  const goPortfolio = () => onNavigate(isLoggedIn ? 'portfolio' : 'login');
 
   return (
     <div className="min-h-screen bg-canvas">
