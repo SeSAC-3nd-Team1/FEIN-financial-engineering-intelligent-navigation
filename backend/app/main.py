@@ -4,7 +4,7 @@ import psycopg
 import redis
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
-from .kis import OrderRequest, kis_client
+from .kis_runtime import OrderRequest, kis_client
 
 app = FastAPI(title="SeSAC Team 1 API")
 
