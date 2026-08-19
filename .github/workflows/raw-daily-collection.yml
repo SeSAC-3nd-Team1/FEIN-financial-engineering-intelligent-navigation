@@ -1,0 +1,104 @@
+name: Raw Daily Collection
+
+on:
+  schedule:
+    # 금융위원회 데이터의 영업일 다음 날 갱신을 고려해 매일 15:30 KST에 실행한다.
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "최근 며칠을 일자별로 다시 확인할지 지정합니다."
+        required: false
+        default: "7"
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: raw-daily-collection
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      AZURE_STORAGE_ACCOUNT_NAME: stfeindata
+      AZURE_STORAGE_CONTAINER_RAW: raw
+      DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+      PYTHONPATH: .
+      LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '7' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: data/requirements.txt
+
+      - name: Install data dependencies
+        run: python -m pip install -r data/requirements.txt
+
+      - name: Validate collection settings
+        shell: bash
+        run: |
+          if [[ -z "${DATA_GO_KR_API_KEY}" ]]; then
+            echo "DATA_GO_KR_API_KEY GitHub Secret is required." >&2
+            exit 1
+          fi
+          if ! [[ "${LOOKBACK_DAYS}" =~ ^[1-9][0-9]*$ ]] || (( LOOKBACK_DAYS > 31 )); then
+            echo "lookback_days must be between 1 and 31." >&2
+            exit 1
+          fi
+
+      - name: Collect recent dated operations into canonical Raw Blob
+        working-directory: data
+        shell: bash
+        run: |
+          for offset in $(seq 1 "${LOOKBACK_DAYS}"); do
+            target_date="$(date -u -d "${offset} day ago" +%F)"
+            echo "Collecting source date ${target_date}"
+            python -m scripts.collect_public_data \
+              --all-datasets \
+              --all-operations \
+              --exclude-operation getDiviInfo_V2 \
+              --exclude-operation getItemBasiInfo_V3 \
+              --date "${target_date}" \
+              --all-pages \
+              --rows 10000 \
+              --progress-every 25
+          done
+
+      - name: Collect current snapshot operations
+        working-directory: data
+        shell: bash
+        run: |
+          python -m scripts.collect_public_data \
+            --dataset stock_dividend \
+            --operation getDiviInfo_V2 \
+            --all-pages \
+            --rows 10000 \
+            --progress-every 25
+
+          python -m scripts.collect_public_data \
+            --dataset stock_issuance \
+            --operation getItemBasiInfo_V3 \
+            --all-pages \
+            --rows 10000 \
+            --progress-every 25
+
+      - name: Verify minimum Raw coverage
+        working-directory: data
+        run: python -m scripts.audit_raw_coverage --minimum-years 5

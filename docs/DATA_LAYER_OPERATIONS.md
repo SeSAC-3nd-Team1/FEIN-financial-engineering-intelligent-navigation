@@ -47,6 +47,30 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data pyth
 
 Historical collection uses `--start-date` and `--end-date`. `payload.basDt` is the authoritative partition/filter date. Invalid or missing `basDt` aborts the affected operation rather than using another date as fallback.
 
+Five-calendar-year backfill and Raw month-coverage audit:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
+```
+
+The coverage audit reads canonical Blob paths only. It proves the span between the first and last
+stored month, not completeness of every trading day. The source/priority inventory is maintained in
+`data/docs/RAW_DATA_CATALOG.md`.
+
+Daily Raw collection is scheduled by `.github/workflows/raw-daily-collection.yml` at 06:30 UTC
+(15:30 KST). It requests each of the previous seven dates independently across all 8 datasets and
+52 operations, then verifies the minimum Raw coverage. The workflow requires `DATA_GO_KR_API_KEY`
+plus the existing Azure OIDC secrets and Blob write RBAC. GitHub schedules run from the default
+branch, so this workflow becomes active after it reaches `main`.
+
+The 2020-01-01 through 2026-08-19 backfill was executed across all 8 datasets and 52 operations.
+Core time-series prefixes now span 2020-01 through 2026-08 with no missing month partitions. The
+`getStocIssuStat_V3` endpoint required date-sliced backfill because broad range requests timed out;
+`scripts.backfill_public_data_by_date` completed the full requested interval with zero final failures.
+Snapshot operations such as dividend and item-basic information do not expose daily `basDt` history
+and therefore retain only their source-provided snapshot month.
+
 ## Financial batch pipeline
 
 The supported bulk path is:

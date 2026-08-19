@@ -35,12 +35,58 @@ def parse_args() -> argparse.Namespace:
     dates = parser.add_mutually_exclusive_group()
     dates.add_argument("--date", type=date.fromisoformat)
     dates.add_argument("--start-date", type=date.fromisoformat)
+    dates.add_argument(
+        "--history-years",
+        type=int,
+        help="Collect this many calendar years ending at --end-date or today.",
+    )
     parser.add_argument("--end-date", type=date.fromisoformat)
     parser.add_argument("--rows", type=int, default=100)
     parser.add_argument("--max-pages", type=int, default=1)
     parser.add_argument("--all-pages", action="store_true")
     parser.add_argument("--progress-every", type=int, default=10)
     return parser.parse_args()
+
+
+def subtract_calendar_years(value: date, years: int) -> date:
+    """종료일에서 달력 연도를 빼 5년 백필의 시작일을 계산한다.
+
+    2월 29일은 대상 연도에 같은 날짜가 없을 수 있으므로 2월 28일로 내린다. 고정
+    일수(365 * years)를 빼면 윤년 때문에 사용자가 요청한 달력 기간과 어긋날 수 있다.
+    """
+
+    if years < 1:
+        raise ValueError("--history-years must be at least 1")
+    try:
+        return value.replace(year=value.year - years)
+    except ValueError:
+        return value.replace(year=value.year - years, day=28)
+
+
+def resolve_date_range(
+    args: argparse.Namespace, *, today: date | None = None
+) -> tuple[date, date] | None:
+    """명시 기간 또는 ``--history-years``를 inclusive 날짜 범위로 확정한다."""
+
+    if args.date and args.end_date:
+        raise ValueError("--end-date cannot be used with --date")
+    if args.start_date:
+        if not args.end_date:
+            raise ValueError("--start-date and --end-date must be supplied together")
+        start_date, end_date = args.start_date, args.end_date
+    elif args.history_years is not None:
+        end_date = args.end_date or today or date.today()
+        start_date = subtract_calendar_years(end_date, args.history_years)
+    else:
+        if args.end_date:
+            raise ValueError(
+                "--end-date requires --start-date or --history-years"
+            )
+        return None
+
+    if start_date > end_date:
+        raise ValueError("--start-date must not be after --end-date")
+    return start_date, end_date
 
 
 def parse_item_date(value: object) -> date | None:
@@ -76,6 +122,27 @@ def group_items_by_month(items: list[dict]) -> list[tuple[date, list[dict]]]:
     return sorted(grouped.items())
 
 
+def filter_items_by_date_range(
+    items: list[dict], *, start_date: date, end_date: date
+) -> list[dict]:
+    """서버가 기간 필터를 무시해도 요청한 ``basDt`` 범위만 Raw에 남긴다.
+
+    공공데이터 operation마다 날짜 parameter 적용 방식이 다를 수 있으므로 단일 일자와
+    기간 수집 모두 저장 직전에 같은 inclusive 검증을 거친다. 범위 밖 payload를 조용히
+    다른 월에 적재하는 것보다 제외하고 API 응답 건수와 적재 건수를 로그로 비교하는 편이
+    Raw 계약을 안전하게 유지한다.
+    """
+
+    return [
+        item
+        for item in items
+        if (
+            (item_date := parse_item_date(item.get("basDt")))
+            and start_date <= item_date <= end_date
+        )
+    ]
+
+
 def _select_operations(args: argparse.Namespace):
     """CLI 선택값을 실제 수집할 API operation 목록으로 확정한다."""
 
@@ -105,20 +172,18 @@ def main() -> None:
         raise ValueError("--max-pages must be at least 1")
     if args.progress_every < 1:
         raise ValueError("--progress-every must be at least 1")
-    if bool(args.start_date) != bool(args.end_date):
-        raise ValueError("--start-date and --end-date must be supplied together")
-    if args.start_date and args.start_date > args.end_date:
-        raise ValueError("--start-date must not be after --end-date")
+    date_range = resolve_date_range(args)
 
     operations = _select_operations(args)
     if args.date:
         filters = {"basDt": args.date.strftime("%Y%m%d")}
-    elif args.start_date:
+    elif date_range:
+        start_date, end_date = date_range
         # API의 endBasDt 경계 차이를 피하기 위해 종료일 다음 날까지 요청하고,
         # 실제 저장 대상은 아래에서 payload.basDt로 다시 inclusive 필터링한다.
         filters = {
-            "beginBasDt": args.start_date.strftime("%Y%m%d"),
-            "endBasDt": (args.end_date + timedelta(days=1)).strftime("%Y%m%d"),
+            "beginBasDt": start_date.strftime("%Y%m%d"),
+            "endBasDt": (end_date + timedelta(days=1)).strftime("%Y%m%d"),
         }
     else:
         filters = None
@@ -127,6 +192,10 @@ def main() -> None:
     raw_writer = RawBlobWriter.from_env()
     failures: list[str] = []
     total_received = 0
+    total_in_range = 0
+    total_raw_blob_records = 0
+    total_created_blobs = 0
+    total_reused_blobs = 0
 
     for operation in operations:
         try:
@@ -142,32 +211,39 @@ def main() -> None:
                     filters=filters,
                 )
                 items = page.items
-                if args.start_date:
+                requested_range = (
+                    (args.date, args.date) if args.date else date_range
+                )
+                if requested_range:
+                    start_date, end_date = requested_range
                     # 일부 operation이 서버 측 기간 필터를 완전히 지키지 않을 수 있으므로
                     # Raw에 쓰기 직전 authoritative date인 basDt로 요청 범위를 다시 보장한다.
-                    items = [
-                        item
-                        for item in page.items
-                        if (
-                            (item_date := parse_item_date(item.get("basDt")))
-                            and args.start_date <= item_date <= args.end_date
-                        )
-                    ]
+                    items = filter_items_by_date_range(
+                        page.items,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
 
                 # 한 API page에 월 경계가 섞여 있어도 파일 하나가 여러 달을 포함하지 않도록
                 # basDt 월별로 분리한 뒤 각각 content-addressed Raw object로 저장한다.
                 for partition_month, monthly_items in group_items_by_month(items):
-                    _, batch = raw_writer.upload_items(
+                    blob, batch = raw_writer.upload_items(
                         dataset=operation.dataset,
                         operation=operation.name,
                         items=monthly_items,
                         partition_date=partition_month,
                     )
                     written_records += batch.record_count
+                    total_raw_blob_records += batch.record_count
+                    if blob.created:
+                        total_created_blobs += 1
+                    else:
+                        total_reused_blobs += 1
 
                 pages_processed += 1
                 operation_received += len(page.items)
                 total_received += len(page.items)
+                total_in_range += len(items)
                 is_complete = not page.items or page_number * args.rows >= page.total_count
                 if (
                     pages_processed == 1
@@ -196,7 +272,10 @@ def main() -> None:
 
     print(
         f"collection complete: operations={len(operations)} "
-        f"received={total_received} failures={len(failures)}"
+        f"received={total_received} in_range={total_in_range} "
+        f"raw_blob_records={total_raw_blob_records} "
+        f"created_blobs={total_created_blobs} reused_blobs={total_reused_blobs} "
+        f"failures={len(failures)}"
     )
     if failures:
         raise PublicDataApiError("; ".join(failures))
