@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -118,12 +118,14 @@ function App() {
 
   const currentPrice = tick?.price ?? candles.at(-1)?.close ?? 0;
   const changeRate = tick?.changeRate ?? 0;
+  const statusLabel = status ? (status.source === "kis" ? `KIS ${status.mode.toUpperCase()}` : "MOCK DATA") : "연결 확인 중";
+  const statusClass = status?.source === "kis" ? "ok" : status?.source === "mock" ? "warn" : "neutral";
   return (
     <main className="dashboard-shell">
       <header className="topbar">
         <div><p className="eyebrow">FE!N · KIS Open API PoC</p><h1>실시간 투자 대시보드</h1></div>
         <div className="status-row">
-          <span className={`badge ${status?.source === "kis" ? "ok" : "warn"}`}>{status?.source === "kis" ? `KIS ${status.mode.toUpperCase()}` : "MOCK DATA"}</span>
+          <span className={`badge ${statusClass}`}>{statusLabel}</span>
           <span className={`badge ${socketState === "실시간 연결" ? "ok" : "neutral"}`}>{socketState}</span>
         </div>
       </header>
@@ -173,4 +175,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
+createRoot(document.getElementById("root")!).render(<App />);
