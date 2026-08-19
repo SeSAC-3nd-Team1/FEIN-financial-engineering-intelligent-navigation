@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from datetime import datetime, time as dt_time, timedelta, timezone
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
+import websockets
 from fastapi import HTTPException
 
 from .kis import KISClient, OrderRequest
@@ -21,6 +23,7 @@ class RuntimeKISClient(KISClient):
 
     All outbound KIS HTTP calls, including token/approval-key issuance, are serialized.
     Short-lived caches collapse React development-mode duplicate requests.
+    The KIS WebSocket uses the official endpoint and reconnects transparently.
     """
 
     def __init__(self) -> None:
@@ -44,6 +47,15 @@ class RuntimeKISClient(KISClient):
         # KIS official samples use a 0.5s paper-trading interval. Keep extra headroom
         # because this dashboard initializes account, chart, and WebSocket together.
         return 0.75 if self.settings.mode == "paper" else 0.10
+
+    @property
+    def _official_websocket_url(self) -> str:
+        # Official KIS endpoints do not include the legacy /tryitout suffix.
+        return (
+            "ws://ops.koreainvestment.com:31000"
+            if self.settings.mode == "paper"
+            else "ws://ops.koreainvestment.com:21000"
+        )
 
     async def _throttled_request(
         self,
@@ -292,6 +304,100 @@ class RuntimeKISClient(KISClient):
             result = result[-120:]
             self._chart_cache[symbol] = (time.monotonic(), result)
             return result
+
+    async def stream(self, symbol: str) -> AsyncIterator[dict[str, Any]]:
+        if self.mock_mode:
+            async for tick in super().stream(symbol):
+                yield tick
+            return
+
+        approval_key = await self._approval_key()
+        subscribe = {
+            "header": {
+                "approval_key": approval_key,
+                "custtype": "P",
+                "tr_type": "1",
+                "content-type": "utf-8",
+            },
+            "body": {"input": {"tr_id": "H0STCNT0", "tr_key": symbol}},
+        }
+
+        retry_count = 0
+        max_retries = 5
+
+        while retry_count < max_retries:
+            try:
+                async with websockets.connect(
+                    self._official_websocket_url,
+                    ping_interval=None,
+                    close_timeout=5,
+                ) as ws:
+                    await ws.send(json.dumps(subscribe, ensure_ascii=False))
+                    retry_count = 0
+
+                    while True:
+                        try:
+                            raw = await asyncio.wait_for(ws.recv(), timeout=30.0)
+                        except asyncio.TimeoutError:
+                            # KIS may be quiet outside market hours; keep the socket alive.
+                            continue
+
+                        if not raw:
+                            continue
+
+                        if raw[0] in {"0", "1"}:
+                            parts = raw.split("|", 3)
+                            if len(parts) < 4 or parts[1] != "H0STCNT0":
+                                continue
+
+                            values = parts[3].split("^")
+                            if len(values) < 14:
+                                continue
+
+                            yield {
+                                "symbol": values[0],
+                                "time": values[1],
+                                "price": int(float(values[2] or 0)),
+                                "change": int(float(values[4] or 0)),
+                                "changeRate": float(values[5] or 0),
+                                "ask": int(float(values[10] or 0)),
+                                "bid": int(float(values[11] or 0)),
+                                "volume": int(float(values[12] or 0)),
+                                "accumulatedVolume": int(float(values[13] or 0)),
+                                "source": "kis",
+                            }
+                            continue
+
+                        try:
+                            message = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+
+                        header = message.get("header", {})
+                        body = message.get("body", {})
+                        tr_id = header.get("tr_id")
+
+                        if tr_id == "PINGPONG":
+                            # Current KIS official sample echoes the PINGPONG payload.
+                            await ws.send(raw)
+                            continue
+
+                        rt_cd = body.get("rt_cd")
+                        msg = body.get("msg1", "")
+                        if rt_cd == "1" and msg != "ALREADY IN SUBSCRIBE":
+                            raise RuntimeError(f"KIS WebSocket 구독 오류: {msg or 'unknown error'}")
+
+            except asyncio.CancelledError:
+                raise
+            except websockets.exceptions.ConnectionClosed:
+                retry_count += 1
+            except OSError:
+                retry_count += 1
+
+            if retry_count < max_retries:
+                await asyncio.sleep(min(2**retry_count, 10))
+
+        raise RuntimeError("KIS WebSocket 연결을 여러 번 재시도했지만 유지하지 못했습니다.")
 
 
 kis_client = RuntimeKISClient()
