@@ -6,11 +6,13 @@ import requests
 
 from collectors.public_data_client import PublicDataApiError, PublicDataClient, decode_page
 from collectors.public_data_config import OPERATIONS, select_operations
+from scripts.backfill_public_data_by_date import iter_dates, resolve_operation
 from scripts.audit_raw_coverage import (
     assert_required_coverage,
     summarize_raw_coverage,
 )
 from scripts.collect_public_data import (
+    filter_items_by_date_range,
     group_items_by_month,
     parse_item_date,
     resolve_date_range,
@@ -90,6 +92,19 @@ def test_group_items_by_month_requires_valid_basdt() -> None:
         group_items_by_month([{"dvdnBasDt": "20231231"}])
 
 
+def test_filter_items_by_exact_date_rejects_server_overfetch() -> None:
+    items = [
+        {"basDt": "20260817", "srtnCd": "005930"},
+        {"basDt": "20260818", "srtnCd": "005930"},
+        {"basDt": "invalid", "srtnCd": "005930"},
+    ]
+    assert filter_items_by_date_range(
+        items,
+        start_date=date(2026, 8, 18),
+        end_date=date(2026, 8, 18),
+    ) == [{"basDt": "20260818", "srtnCd": "005930"}]
+
+
 def test_subtract_calendar_years_handles_leap_day() -> None:
     assert subtract_calendar_years(date(2024, 2, 29), 5) == date(2019, 2, 28)
 
@@ -127,3 +142,16 @@ def test_raw_coverage_rejects_short_required_operation() -> None:
     summaries = summarize_raw_coverage(paths, minimum_years=5)
     with pytest.raises(RuntimeError, match="minimum Raw coverage not met"):
         assert_required_coverage(summaries, ["market_index/getstockmarketindex"])
+
+
+def test_iter_dates_is_inclusive() -> None:
+    assert iter_dates(date(2026, 8, 18), date(2026, 8, 20)) == [
+        date(2026, 8, 18),
+        date(2026, 8, 19),
+        date(2026, 8, 20),
+    ]
+
+
+def test_resolve_operation_is_case_insensitive() -> None:
+    operation = resolve_operation("stock_issuance", "getstocissustat_v3")
+    assert operation.name == "getStocIssuStat_V3"

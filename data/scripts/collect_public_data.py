@@ -122,6 +122,27 @@ def group_items_by_month(items: list[dict]) -> list[tuple[date, list[dict]]]:
     return sorted(grouped.items())
 
 
+def filter_items_by_date_range(
+    items: list[dict], *, start_date: date, end_date: date
+) -> list[dict]:
+    """서버가 기간 필터를 무시해도 요청한 ``basDt`` 범위만 Raw에 남긴다.
+
+    공공데이터 operation마다 날짜 parameter 적용 방식이 다를 수 있으므로 단일 일자와
+    기간 수집 모두 저장 직전에 같은 inclusive 검증을 거친다. 범위 밖 payload를 조용히
+    다른 월에 적재하는 것보다 제외하고 API 응답 건수와 적재 건수를 로그로 비교하는 편이
+    Raw 계약을 안전하게 유지한다.
+    """
+
+    return [
+        item
+        for item in items
+        if (
+            (item_date := parse_item_date(item.get("basDt")))
+            and start_date <= item_date <= end_date
+        )
+    ]
+
+
 def _select_operations(args: argparse.Namespace):
     """CLI 선택값을 실제 수집할 API operation 목록으로 확정한다."""
 
@@ -171,6 +192,10 @@ def main() -> None:
     raw_writer = RawBlobWriter.from_env()
     failures: list[str] = []
     total_received = 0
+    total_in_range = 0
+    total_raw_blob_records = 0
+    total_created_blobs = 0
+    total_reused_blobs = 0
 
     for operation in operations:
         try:
@@ -186,33 +211,39 @@ def main() -> None:
                     filters=filters,
                 )
                 items = page.items
-                if date_range:
-                    start_date, end_date = date_range
+                requested_range = (
+                    (args.date, args.date) if args.date else date_range
+                )
+                if requested_range:
+                    start_date, end_date = requested_range
                     # 일부 operation이 서버 측 기간 필터를 완전히 지키지 않을 수 있으므로
                     # Raw에 쓰기 직전 authoritative date인 basDt로 요청 범위를 다시 보장한다.
-                    items = [
-                        item
-                        for item in page.items
-                        if (
-                            (item_date := parse_item_date(item.get("basDt")))
-                            and start_date <= item_date <= end_date
-                        )
-                    ]
+                    items = filter_items_by_date_range(
+                        page.items,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
 
                 # 한 API page에 월 경계가 섞여 있어도 파일 하나가 여러 달을 포함하지 않도록
                 # basDt 월별로 분리한 뒤 각각 content-addressed Raw object로 저장한다.
                 for partition_month, monthly_items in group_items_by_month(items):
-                    _, batch = raw_writer.upload_items(
+                    blob, batch = raw_writer.upload_items(
                         dataset=operation.dataset,
                         operation=operation.name,
                         items=monthly_items,
                         partition_date=partition_month,
                     )
                     written_records += batch.record_count
+                    total_raw_blob_records += batch.record_count
+                    if blob.created:
+                        total_created_blobs += 1
+                    else:
+                        total_reused_blobs += 1
 
                 pages_processed += 1
                 operation_received += len(page.items)
                 total_received += len(page.items)
+                total_in_range += len(items)
                 is_complete = not page.items or page_number * args.rows >= page.total_count
                 if (
                     pages_processed == 1
@@ -241,7 +272,10 @@ def main() -> None:
 
     print(
         f"collection complete: operations={len(operations)} "
-        f"received={total_received} failures={len(failures)}"
+        f"received={total_received} in_range={total_in_range} "
+        f"raw_blob_records={total_raw_blob_records} "
+        f"created_blobs={total_created_blobs} reused_blobs={total_reused_blobs} "
+        f"failures={len(failures)}"
     )
     if failures:
         raise PublicDataApiError("; ".join(failures))

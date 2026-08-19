@@ -109,6 +109,21 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
   --rows 10000
 ```
 
+장기간 범위 요청이 시간 초과되는 operation은 날짜 분할 백필을 사용한다.
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+  python -m scripts.backfill_public_data_by_date \
+  --dataset stock_issuance \
+  --operation getStocIssuStat_V3 \
+  --start-date 2021-08-17 \
+  --end-date 2026-08-19 \
+  --workers 4
+```
+
+이 CLI는 각 `basDt`를 독립 호출하므로 큰 범위 filter에서 API gateway가 시간 초과되는
+경우에도 이미 완료된 날짜를 content-addressed Blob으로 보존한다.
+
 ### 증분 수집
 
 ```bash
@@ -120,6 +135,23 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
   --all-pages \
   --rows 10000
 ```
+
+### 매일 자동 증분 수집
+
+`.github/workflows/raw-daily-collection.yml`은 매일 15:30 KST에 전체 8개 dataset과
+52개 operation을 갱신한다. 금요일 데이터의 차주 월요일 제공, 공휴일, 지연 갱신을 놓치지
+않도록 최근 7일을 **일자별 독립 요청**으로 다시 확인한다. 같은 날짜의 같은 payload batch는
+content-addressed 경로가 같아 기존 Blob을 재사용한다.
+
+필요한 GitHub Actions 설정:
+
+- Secret `DATA_GO_KR_API_KEY`
+- OIDC Secret `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+- OIDC principal에 Storage Blob Data Contributor 권한
+
+스케줄 workflow는 GitHub 기본 브랜치의 파일을 기준으로 실행되므로 이 변경이 `main`에
+반영된 뒤 자동 실행이 시작된다. 수동 실행에서는 `lookback_days`를 1~31 사이로 지정할 수
+있다.
 
 ### 실제 Raw 보유기간 감사
 
@@ -137,3 +169,24 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
 - Azure `raw` container에 8개 dataset의 canonical prefix가 존재한다.
 - 최신 증분 수집은 실패 operation 없이 종료된다.
 - Raw 외의 `processed`, `features`, PostgreSQL 금융 테이블은 이 작업에서 변경하지 않는다.
+
+## 2020-01-01 이후 전체 백필 실행 결과
+
+2026-08-20에 8개 dataset, 52개 operation을 대상으로 `2020-01-01~2026-08-19`
+수집을 실행했다. 일반 operation은 범위 조회로 적재했고, 장기간 범위 요청이 시간 초과된
+`getStocIssuStat_V3`는 날짜 분할 백필로 전환했다.
+
+- 전체 operation: 52개 조회·적재 완료
+- 핵심 주가·시장지수·종목마스터·ETF/ETN/ELW: `2020-01~2026-08`, 월 누락 0
+- `getStocIssuStat_V3`: 2020-01-01~2026-08-19의 2,423일을 날짜별 조회
+- `getStocIssuStat_V3` 원천 제공 범위: `2020-07~2026-08`, 월 누락 0
+- `getStocIssuStat_V3` 적재 처리: 17,310,302 records, 최종 실패 0
+- `stock_master/getItemInfo`: 4,172,408 records, 실패 0
+- `stock_price` 4 operations: 4,567,680 records, 실패 0
+- 전처리·Processed·Features 생성: 실행하지 않음
+
+`stock_dividend/getDiviInfo_V2`와 `stock_issuance/getItemBasiInfo_V3`는 API의 `basDt`가
+과거 일별 history가 아니라 현재 snapshot을 나타내므로 Raw 월 범위가 2026-08 하나다.
+배당일·발행일 같은 실제 event 날짜는 payload의 별도 필드에 존재하며 이 작업에서는
+해석하거나 전처리하지 않는다. 공시처럼 사건이 없을 수 있는 데이터의 빈 월도 수집 실패로
+간주하지 않는다.
