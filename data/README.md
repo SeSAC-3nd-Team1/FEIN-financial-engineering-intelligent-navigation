@@ -89,6 +89,16 @@ Raw 수집 예시:
 docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --date 2026-08-16 --all-pages --rows 10000
 ```
 
+최소 5년 백필과 실제 Raw 월 보유기간 감사:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
+```
+
+데이터 목록, 출처, 우선순위, 현재 관측 범위와 후속 source는
+[`docs/RAW_DATA_CATALOG.md`](docs/RAW_DATA_CATALOG.md)를 기준으로 한다.
+
 ## 금융 데이터 파이프라인
 
 Windows CMD, 프로젝트 루트 기준:
@@ -180,6 +190,7 @@ docker compose --profile data run --rm --no-deps data python -m pytest tests -q
 - `data/docs/FINANCIAL_PIPELINE_RUNBOOK.md`
 - `data/docs/MODELING_DATASET_CARD.md`
 - `data/docs/FEATURE_DICTIONARY.md`
+- `data/docs/RAW_DATA_CATALOG.md`
 - `docs/DATA_ARCHITECTURE.md`
 - `docs/DATA_LAYER_OPERATIONS.md`
 - `docs/DATABASE_SPECIFICATION.md`

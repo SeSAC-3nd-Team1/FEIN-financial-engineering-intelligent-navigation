@@ -47,6 +47,17 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data pyth
 
 Historical collection uses `--start-date` and `--end-date`. `payload.basDt` is the authoritative partition/filter date. Invalid or missing `basDt` aborts the affected operation rather than using another date as fallback.
 
+Five-calendar-year backfill and Raw month-coverage audit:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
+```
+
+The coverage audit reads canonical Blob paths only. It proves the span between the first and last
+stored month, not completeness of every trading day. The source/priority inventory is maintained in
+`data/docs/RAW_DATA_CATALOG.md`.
+
 ## Financial batch pipeline
 
 The supported bulk path is:
