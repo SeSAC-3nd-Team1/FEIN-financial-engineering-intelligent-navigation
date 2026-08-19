@@ -1,8 +1,10 @@
+import asyncio
 import os
 
 import psycopg
 import redis
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from .kis_runtime import OrderRequest, kis_client
 
@@ -54,11 +56,48 @@ async def kis_order(order: OrderRequest) -> dict:
 @app.websocket("/ws/kis/{symbol}")
 async def kis_stream(websocket: WebSocket, symbol: str) -> None:
     await websocket.accept()
+    stream = kis_client.stream(symbol)
+    tick_task: asyncio.Task | None = None
+    disconnect_task: asyncio.Task | None = None
+
     try:
-        async for tick in kis_client.stream(symbol):
-            await websocket.send_json(tick)
-    except WebSocketDisconnect:
+        while True:
+            tick_task = asyncio.create_task(anext(stream))
+            disconnect_task = asyncio.create_task(websocket.receive())
+
+            done, pending = await asyncio.wait(
+                {tick_task, disconnect_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+            if disconnect_task in done:
+                message = disconnect_task.result()
+                if message.get("type") == "websocket.disconnect":
+                    return
+
+            if tick_task in done:
+                try:
+                    tick = tick_task.result()
+                except StopAsyncIteration:
+                    return
+                await websocket.send_json(tick)
+
+    except (WebSocketDisconnect, asyncio.CancelledError):
         return
     except Exception as error:
-        await websocket.send_json({"type": "error", "message": str(error)})
-        await websocket.close(code=1011)
+        if websocket.client_state == WebSocketState.CONNECTED:
+            try:
+                await websocket.send_json({"type": "error", "message": str(error)})
+                await websocket.close(code=1011)
+            except WebSocketDisconnect:
+                pass
+    finally:
+        for task in (tick_task, disconnect_task):
+            if task is not None and not task.done():
+                task.cancel()
+        await stream.aclose()
