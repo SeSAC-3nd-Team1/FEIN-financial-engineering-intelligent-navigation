@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import HTTPException
 
 from .kis import KISClient, OrderRequest
 
-KST = ZoneInfo("Asia/Seoul")
+KST = timezone(timedelta(hours=9))
 MARKET_OPEN = dt_time(9, 0)
 MARKET_CLOSE = dt_time(15, 30)
 
