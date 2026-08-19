@@ -119,17 +119,57 @@ def test_resolve_five_year_history_range() -> None:
     assert resolve_date_range(args) == (date(2021, 8, 19), date(2026, 8, 19))
 
 
-def test_raw_coverage_requires_five_full_calendar_years() -> None:
-    paths = [
-        "data-go-kr/stock_price/operation=getstockpriceinfo/"
-        f"year={year}/month={month:02d}/{'a' * 64}.jsonl.gz"
-        for year, month in ((2021, 8), (2026, 8))
-    ]
+def _month_paths(
+    dataset: str,
+    operation: str,
+    *,
+    start_year: int,
+    start_month: int,
+    count: int,
+) -> list[str]:
+    paths: list[str] = []
+    for offset in range(count):
+        month_index = start_year * 12 + start_month - 1 + offset
+        year, zero_based_month = divmod(month_index, 12)
+        month = zero_based_month + 1
+        paths.append(
+            f"data-go-kr/{dataset}/operation={operation}/"
+            f"year={year}/month={month:02d}/{'a' * 64}.jsonl.gz"
+        )
+    return paths
+
+
+def test_raw_coverage_requires_five_contiguous_calendar_years() -> None:
+    paths = _month_paths(
+        "stock_price",
+        "getstockpriceinfo",
+        start_year=2021,
+        start_month=8,
+        count=61,
+    )
     summaries = summarize_raw_coverage(paths, minimum_years=5)
     assert summaries[0]["month_span"] == 60
+    assert summaries[0]["observed_months"] == 61
+    assert summaries[0]["missing_months"] == 0
     assert summaries[0]["meets_minimum_years"] is True
-    assert summaries[0]["missing_months"] == 59
     assert_required_coverage(summaries, ["stock_price/getstockpriceinfo"])
+
+
+def test_raw_coverage_rejects_missing_month_inside_required_range() -> None:
+    paths = _month_paths(
+        "stock_price",
+        "getstockpriceinfo",
+        start_year=2021,
+        start_month=8,
+        count=61,
+    )
+    del paths[30]
+    summaries = summarize_raw_coverage(paths, minimum_years=5)
+    assert summaries[0]["month_span"] == 60
+    assert summaries[0]["missing_months"] == 1
+    assert summaries[0]["meets_minimum_years"] is False
+    with pytest.raises(RuntimeError, match="missing_months=1"):
+        assert_required_coverage(summaries, ["stock_price/getstockpriceinfo"])
 
 
 def test_raw_coverage_rejects_short_required_operation() -> None:

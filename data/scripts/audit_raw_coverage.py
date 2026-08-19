@@ -50,8 +50,9 @@ def summarize_raw_coverage(
     """Raw 경로를 operation별로 묶어 기간과 중간 누락 월을 계산한다.
 
     Blob의 월 partition은 ``payload.basDt``로 만들어지므로 전체 payload를 다시 내려받지
-    않아도 보유 범위를 빠르게 감사할 수 있다. 다만 이 결과는 월 단위 coverage이며 개별
-    거래일의 완전성을 보증하지 않는다.
+    않아도 보유 범위를 빠르게 감사할 수 있다. 이 검사는 required operation에 대해 최소
+    기간뿐 아니라 첫 월부터 마지막 월까지 중간 누락 월이 없어야 통과하도록 설계한다.
+    개별 거래일의 완전성까지 보증하지는 않는다.
     """
 
     if minimum_years < 1:
@@ -76,6 +77,7 @@ def summarize_raw_coverage(
         month_span = _month_index(last) - _month_index(first)
         expected = set(range(_month_index(first), _month_index(last) + 1))
         observed = {_month_index(month) for month in months}
+        missing_months = len(expected - observed)
         summaries.append(
             {
                 "dataset": dataset,
@@ -85,8 +87,10 @@ def summarize_raw_coverage(
                 "last_month": last.strftime("%Y-%m"),
                 "month_span": month_span,
                 "observed_months": len(months),
-                "missing_months": len(expected - observed),
-                "meets_minimum_years": month_span >= minimum_years * 12,
+                "missing_months": missing_months,
+                "meets_minimum_years": (
+                    month_span >= minimum_years * 12 and missing_months == 0
+                ),
             }
         )
     return summaries
@@ -95,7 +99,7 @@ def summarize_raw_coverage(
 def assert_required_coverage(
     summaries: list[dict[str, object]], required_operations: Iterable[str]
 ) -> None:
-    """핵심 시계열 operation이 최소 기간을 충족하지 않으면 실행을 실패시킨다."""
+    """핵심 시계열 operation이 최소 기간 또는 연속 월 조건을 어기면 실패시킨다."""
 
     indexed = {
         f"{item['dataset']}/{item['operation']}": item for item in summaries
@@ -108,7 +112,8 @@ def assert_required_coverage(
         elif not item["meets_minimum_years"]:
             failures.append(
                 f"{required}: {item['first_month']}..{item['last_month']} "
-                f"({item['month_span']} months)"
+                f"({item['month_span']} months, "
+                f"missing_months={item['missing_months']})"
             )
     if failures:
         raise RuntimeError("minimum Raw coverage not met: " + "; ".join(failures))

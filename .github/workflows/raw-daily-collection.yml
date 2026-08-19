@@ -63,7 +63,7 @@ jobs:
             exit 1
           fi
 
-      - name: Collect recent dates into canonical Raw Blob
+      - name: Collect recent dated operations into canonical Raw Blob
         working-directory: data
         shell: bash
         run: |
@@ -73,11 +73,31 @@ jobs:
             python -m scripts.collect_public_data \
               --all-datasets \
               --all-operations \
+              --exclude-operation getDiviInfo_V2 \
+              --exclude-operation getItemBasiInfo_V3 \
               --date "${target_date}" \
               --all-pages \
               --rows 10000 \
               --progress-every 25
           done
+
+      - name: Collect current snapshot operations
+        working-directory: data
+        shell: bash
+        run: |
+          python -m scripts.collect_public_data \
+            --dataset stock_dividend \
+            --operation getDiviInfo_V2 \
+            --all-pages \
+            --rows 10000 \
+            --progress-every 25
+
+          python -m scripts.collect_public_data \
+            --dataset stock_issuance \
+            --operation getItemBasiInfo_V3 \
+            --all-pages \
+            --rows 10000 \
+            --progress-every 25
 
       - name: Verify minimum Raw coverage
         working-directory: data
