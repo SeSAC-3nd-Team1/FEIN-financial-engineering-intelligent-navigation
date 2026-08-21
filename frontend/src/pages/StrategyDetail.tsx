@@ -135,7 +135,7 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
 
     fetchAiExplanation(ctx)
       .then((r) => { if (!cancelled) { setAiHeadline(r.headline); setAiOverview(r.overview); setAiCaution(r.caution); } })
-      .catch(() => { if (!cancelled) setAiError('AI 설명을 불러오지 못했어요. 백테스트 결과는 위 지표에서 확인할 수 있어요.'); })
+      .catch(() => { if (!cancelled) setAiError('물방개가 설명을 준비하지 못했어요. 백테스트 결과는 위 지표에서 확인할 수 있어요.'); })
       .finally(() => { if (!cancelled) setAiLoading(false); });
 
     return () => { cancelled = true; };
@@ -303,11 +303,16 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
                 </div>
               </section>
 
-              <section className="flex gap-5 rounded-[20px] bg-[#F8FCEE] px-10 py-9">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime text-lg text-navy">✦</div>
+              <section className="flex gap-6 rounded-[20px] bg-[#F8FCEE] px-10 py-9">
+                <img
+                  src={aiLoading ? '/character-thinking.png' : '/character-analyze.png'}
+                  alt="물방개"
+                  className="h-20 w-20 shrink-0 object-contain"
+                />
                 <div className="flex flex-1 flex-col gap-4">
-                  <span className="text-[22px] font-bold leading-[34px] tracking-[-0.025em]">AI가 결과를 쉽게 설명해드릴게요</span>
-                  {aiLoading && <p className="text-lg leading-[30px] text-[#3F4A43]">백테스트 결과를 분석하고 있어요...</p>}
+                  <span className="text-[22px] font-bold leading-[34px] tracking-[-0.025em]">
+                    {aiLoading ? '물방개가 결과를 살펴보고 있어요...' : '물방개가 결과를 쉽게 설명해드릴게요'}
+                  </span>
                   {aiError && <p className="text-lg leading-[30px] text-[#3F4A43]">{aiError}</p>}
                   {aiOverview && (
                     <div className="flex flex-col gap-1.5">
