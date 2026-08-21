@@ -46,12 +46,15 @@ const delay = <T,>(v: T, ms = 700) => new Promise<T>((r) => setTimeout(() => r(v
 
 // vol 은 연환산 시 STRATEGIES(data/strategies.ts)의 low/value/momentum 변동성(12.4%/15.8%/21.3%)과
 // 비슷한 자릿수가 나오도록 맞춘 계수 — 실제 시세가 아니므로 정확히 일치할 필요는 없다.
-const STRATEGY_RISK: Record<string, { vol: number; benchmarkVolMultiplier: number }> = {
-  low: { vol: 2.2, benchmarkVolMultiplier: 1.6 },
-  value: { vol: 2.8, benchmarkVolMultiplier: 1.4 },
-  momentum: { vol: 3.8, benchmarkVolMultiplier: 1.1 },
+const STRATEGY_RISK: Record<string, { vol: number }> = {
+  low: { vol: 2.2 },
+  value: { vol: 2.8 },
+  momentum: { vol: 3.8 },
 };
-const DEFAULT_RISK = { vol: 2.5, benchmarkVolMultiplier: 1.3 };
+const DEFAULT_RISK = { vol: 2.5 };
+// KOSPI(벤치마크)는 전략을 비교하기 위한 고정 기준선이라, 선택한 전략과 무관하게
+// 같은 기간이면 항상 같은 곡선이어야 한다 — 전략별 risk.vol을 곱하지 않고 고정값을 쓴다.
+const BENCHMARK_VOL = 3.0;
 
 // MOCK — 기간별 대략적인 방향성만 반영한 placeholder drift (실제 시장 수치 아님)
 const PERIOD_BIAS: Record<string, { strategyDrift: number; benchmarkDrift: number }> = {
@@ -60,6 +63,12 @@ const PERIOD_BIAS: Record<string, { strategyDrift: number; benchmarkDrift: numbe
   'recent-5y': { strategyDrift: 0.18, benchmarkDrift: 0.1 },
 };
 const DEFAULT_BIAS = { strategyDrift: 0.05, benchmarkDrift: 0.02 };
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 1_000_000_007;
+  return h;
+}
 
 function lcgWalk(seed: number, n: number, vol: number, driftPerStep: number): number[] {
   let x = seed % 233280;
@@ -126,10 +135,13 @@ function buildMockResult(strategyId: string, strategyName: string, period: Backt
 
   const risk = STRATEGY_RISK[strategyId] ?? DEFAULT_RISK;
   const bias = PERIOD_BIAS[period.id] ?? DEFAULT_BIAS;
-  const seed = strategyId.length * 7919 + period.id.length * 104_729;
+  // 전략 시드에는 strategyId를 포함해 전략마다 다른 곡선이 나오게 하고,
+  // 벤치마크 시드는 기간(실제 날짜)에만 의존시켜 어떤 전략을 보든 같은 기간이면 같은 KOSPI 곡선이 나오게 한다.
+  const strategySeed = hashString(`${strategyId}_${period.startDate}_${period.endDate}`);
+  const benchmarkSeed = hashString(`benchmark_${period.startDate}_${period.endDate}`);
 
-  const strategySeries = lcgWalk(seed, n, risk.vol, bias.strategyDrift);
-  const benchmarkSeries = lcgWalk(seed + 1, n, risk.vol * risk.benchmarkVolMultiplier, bias.benchmarkDrift);
+  const strategySeries = lcgWalk(strategySeed, n, risk.vol, bias.strategyDrift);
+  const benchmarkSeries = lcgWalk(benchmarkSeed, n, BENCHMARK_VOL, bias.benchmarkDrift);
 
   const labels = dateLabels(period.startDate, period.endDate, n);
   const series: BacktestSeriesPoint[] = labels.map((t, i) => ({
