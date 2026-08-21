@@ -31,8 +31,7 @@ export default function Header({ active, userName, onNavigate }: Props) {
     <header className="sticky top-0 z-50 flex h-20 items-center justify-between bg-canvas px-16">
       <div className="flex items-center gap-10">
         <button onClick={() => onNavigate('home')} className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-[7px] bg-navy" />
-          <span className="text-[19px] font-bold tracking-[-0.02em]">물림방지</span>
+          <img src="/main_logo.png" alt="FE!N" className="h-16 w-auto object-contain" />
         </button>
         <nav className="flex gap-7">
           {NAV.map((n) => (

@@ -18,26 +18,47 @@ const TERMS_TEXT: Record<keyof Agreements, { label: string; title: string; body:
   a3: { label: '통신사 이용약관 동의', title: '통신사 이용약관', body: '이동통신사가 제공하는 본인확인 서비스 이용에 관한 약관입니다.\n서비스 제공자의 귀책이 없는 통신 장애로 인한 인증 실패에 대해서는 책임을 지지 않습니다.' },
   a4: { label: 'KCB 휴대폰 본인확인 서비스 이용약관 동의', title: 'KCB 휴대폰 본인확인 서비스 이용약관', body: '코리아크레딧뷰로(KCB)가 제공하는 휴대폰 본인확인 서비스 이용에 관한 약관입니다.\n본인확인 결과는 서비스 가입 및 본인확인 목적으로만 사용됩니다.' },
   b: { label: '개인정보 수집·이용 동의 (회원가입/휴대폰 본인인증)', title: '개인정보 수집·이용 동의서', body: '수집·이용 목적: 회원가입, 서비스 제공, 본인인증\n수집·이용 항목: 이름, 휴대폰번호, 생년월일, 성별, CI, 통신사\n보유 및 이용기간: 회원 탈퇴 시까지\n\n동의를 거부할 권리가 있으나, 필수 동의 사항이므로 거부 시 서비스 이용이 불가합니다.' },
-  c: { label: '준회원 이용약관 동의', title: '준회원 이용약관', body: '제1조 (목적)\n본 약관은 회사가 준회원에게 제공하는 서비스의 이용과 관련하여 회사와 준회원 간의 권리·의무 및 책임사항을 규정함을 목적으로 합니다.\n\n제2조 (용어의 정의)\n"준회원"이란 계좌를 개설하지 않고 본 약관에 따라 서비스 이용을 신청하여 승낙을 받은 자를 의미합니다.' },
+  c: { label: '준회원 이용약관 동의', title: '준회원 이용약관', body: '제1조 (목적)\n본 약관은 회사가 준회원에게 제공하는 서비스의 이용과 관련하여 회사와 준회원 간의 권리·의무 및 책임사항을 규정함을 목적으로 합니다.\n\n제2조 (용어의 정의)\n"준회원"이란 계좌를 개설하지 않고 본 약관에 따라 서비스 이용을 신청하여 승낙을 받은 자를 의미합니다.\n\n제3조 (AI 서비스 이용 안내)\nAI가 제공하는 투자전략 추천, 분석 및 설명은 투자 판단을 돕기 위한 참고 정보이며 특정 금융상품의 매수·매도 또는 투자수익을 보장하지 않습니다. AI가 생성한 정보에는 오류가 포함될 수 있으며, 최종 투자 판단과 결정은 이용자에게 있습니다.' },
+  ai: {
+    label: '[선택] AI 기반 맞춤형 서비스 제공을 위한 개인정보 이용 동의',
+    title: 'AI 기반 맞춤형 서비스 제공을 위한 개인정보 이용 동의',
+    body: '회사는 AI 기반 투자전략 추천 및 분석 서비스를 제공하기 위해 다음과 같이 이용자의 정보를 처리합니다.\n\n[수집·이용 항목]\n투자성향 진단 응답 및 결과, 서비스 이용 과정에서 생성된 투자전략 선택 정보, 포트폴리오 구성 및 모의투자 관련 정보\n\n[수집·이용 목적]\n이용자 투자성향에 따른 전략 추천, 백테스트 및 포트폴리오 분석 결과에 대한 AI 기반 설명, 리밸런싱 등 맞춤형 정보 및 제안 제공\n\n[보유 및 이용 기간]\n회원 탈퇴 또는 동의 철회 시까지. 단, 관계 법령에 따라 보존이 필요한 경우 해당 기간 동안 보관합니다.\n\n[동의 거부 권리 및 불이익]\n이용자는 본 동의를 거부할 수 있습니다. 동의를 거부하더라도 기본 서비스 이용에는 제한이 없으나, AI 기반 맞춤형 추천 및 설명 기능의 일부 이용이 제한될 수 있습니다.',
+  },
 };
 
-const ORDER: (keyof Agreements)[] = ['a1', 'a2', 'a3', 'a4', 'b', 'c'];
+/** 필수 약관 — 모두 true 여야 인증번호 받기 활성화 */
+const REQUIRED: (keyof Agreements)[] = ['a1', 'a2', 'a3', 'a4', 'b', 'c'];
+/** 화면에 노출되는 전체 목록(필수 + 선택) — "약관 전체 동의" 토글 대상 */
+const ORDER: (keyof Agreements)[] = [...REQUIRED, 'ai'];
 
 export default function SignupStep1({ value, onChange, onNext, userName, onNavigate }: Props) {
-  const [agree, setAgree] = useState<Agreements>({ a1: false, a2: false, a3: false, a4: false, b: false, c: false });
+  const [agree, setAgree] = useState<Agreements>({
+    a1: false, a2: false, a3: false, a4: false, b: false, c: false,
+    ai: value.aiPersonalizationConsent,
+  });
   const [modal, setModal] = useState<keyof Agreements | null>(null);
 
   const allAgreed = ORDER.every((k) => agree[k]);
-  // Step 01 통과 조건: 입력 3개 + 필수 동의 전체
+  const allRequiredAgreed = REQUIRED.every((k) => agree[k]);
+  // Step 01 통과 조건: 입력 3개 + 필수 동의 전체 (선택 약관인 AI 동의는 미포함)
   const canProceed =
     value.name.trim().length > 0 &&
     RE.birthdate.test(value.birthdate) &&
     RE.phone.test(value.phone) &&
-    allAgreed;
+    allRequiredAgreed;
 
   const toggleAll = () => {
     const next = !allAgreed;
-    setAgree({ a1: next, a2: next, a3: next, a4: next, b: next, c: next });
+    setAgree({ a1: next, a2: next, a3: next, a4: next, b: next, c: next, ai: next });
+    onChange({ ...value, aiPersonalizationConsent: next });
+  };
+
+  const toggleOne = (k: keyof Agreements) => {
+    setAgree((p) => {
+      const nextValue = !p[k];
+      if (k === 'ai') onChange({ ...value, aiPersonalizationConsent: nextValue });
+      return { ...p, [k]: nextValue };
+    });
   };
 
   return (
@@ -88,7 +109,7 @@ export default function SignupStep1({ value, onChange, onNext, userName, onNavig
         {ORDER.map((k) => (
           <div key={k} className="flex items-center justify-between gap-3">
             <button
-              onClick={() => setAgree((p) => ({ ...p, [k]: !p[k] }))}
+              onClick={() => toggleOne(k)}
               className="flex flex-1 items-center gap-3 text-left"
             >
               <Check on={agree[k]} />

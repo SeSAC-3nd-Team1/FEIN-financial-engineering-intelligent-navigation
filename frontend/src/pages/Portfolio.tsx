@@ -62,7 +62,6 @@ export default function Portfolio({
   // ── Power BI 스타일 분석 섹션 상태 ───────────────────────────────
   const [tab, setTab] = useState<AnalyticsTab>('trend');
   const [periodIdx, setPeriodIdx] = useState(2); // 기본값 "1년"
-  const [detail, setDetail] = useState(false); // 쉬운 보기 / 상세 보기
   const [selectedHoldingIdx, setSelectedHoldingIdx] = useState(() => {
     const i = ALL_HOLDINGS.findIndex((h) => h.name === 'SK하이닉스');
     return i >= 0 ? i : 0;
@@ -152,18 +151,12 @@ export default function Portfolio({
               지금은 4종 그래프를 자체 Recharts 로 렌더링하지만, 컨테이너/탭 구조는
               추후 Power BI iframe·SDK 를 그대로 꽂아 넣을 수 있도록 분리해뒀다. */}
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
-            <div className="flex flex-wrap items-center justify-between gap-6">
-              <div className="flex flex-col gap-2.5">
-                <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#F4F6F1] px-3 py-1.5 text-[11px] font-bold tracking-[0.04em] text-[#3F4A43]">
-                  POWERBI EMBEDDED
-                </span>
-                <h2 className="text-[26px] font-bold tracking-[-0.025em]">내 포트폴리오 자세히 보기</h2>
-                <p className="text-[17px] text-muted">여기부터는 데이터를 직접 탐색할 수 있어요.</p>
-              </div>
-              <div className="flex items-center gap-2 rounded-full bg-[#F4F6F1] p-1.5">
-                <Toggle active={!detail} onClick={() => setDetail(false)}>쉽게 보기</Toggle>
-                <Toggle active={detail} onClick={() => setDetail(true)}>상세 보기</Toggle>
-              </div>
+            <div className="flex flex-col gap-2.5">
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#F4F6F1] px-3 py-1.5 text-[11px] font-bold tracking-[0.04em] text-[#3F4A43]">
+                POWERBI EMBEDDED
+              </span>
+              <h2 className="text-[26px] font-bold tracking-[-0.025em]">내 포트폴리오 자세히 보기</h2>
+              <p className="text-[17px] text-muted">여기부터는 데이터를 직접 탐색할 수 있어요.</p>
             </div>
 
             {/* 그래프 변형 스위처 — 자산변화(Line) / 종목별기여(Bar) / 보유비중(Donut) / 위험분석(Radar) */}
@@ -203,8 +196,8 @@ export default function Portfolio({
                 <div className="h-[300px] w-full">
                   <ResponsiveContainer>
                     <LineChart data={trendData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                      {detail && <CartesianGrid stroke="#F0F2ED" vertical={false} />}
-                      <XAxis dataKey="label" hide={!detail} tick={{ fill: '#8A948C', fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <CartesianGrid stroke="#F0F2ED" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: '#8A948C', fontSize: 12 }} axisLine={false} tickLine={false} />
                       <YAxis
                         tick={{ fill: '#8A948C', fontSize: 13 }}
                         axisLine={false}
@@ -212,7 +205,7 @@ export default function Portfolio({
                         width={52}
                         tickFormatter={(v: number) => `${v}%`}
                       />
-                      {detail && <Tooltip formatter={(v: number) => `${v}%`} />}
+                      <Tooltip formatter={(v: number) => `${v}%`} />
                       <Legend iconType="plainline" wrapperStyle={{ fontSize: 15, color: '#5C665F' }} />
                       <Line type="monotone" dataKey="kospi" name="KOSPI" stroke="#C3CBC4" strokeWidth={3.5} dot={false} />
                       <Line type="monotone" dataKey="port" name="내 포트폴리오" stroke="#18243A" strokeWidth={5} dot={false} />
@@ -237,7 +230,7 @@ export default function Portfolio({
                       <CartesianGrid stroke="#F0F2ED" horizontal={false} />
                       <XAxis type="number" tickFormatter={(v: number) => won(v)} tick={{ fill: '#8A948C', fontSize: 12 }} axisLine={false} tickLine={false} />
                       <YAxis type="category" dataKey="name" width={100} tick={{ fill: '#5C665F', fontSize: 15 }} axisLine={false} tickLine={false} />
-                      {detail && <Tooltip formatter={(v: number) => won(v)} />}
+                      <Tooltip formatter={(v: number) => won(v)} />
                       <Bar dataKey="amount" radius={8} barSize={20}>
                         {contributionData.map((d) => (
                           <Cell key={d.name} fill={d.amount >= 0 ? '#18243A' : '#C24A4A'} />
@@ -275,7 +268,7 @@ export default function Portfolio({
                           />
                         ))}
                       </Pie>
-                      {detail && <Tooltip formatter={(v: number) => `${(v as number).toFixed(1)}%`} />}
+                      <Tooltip formatter={(v: number) => `${(v as number).toFixed(1)}%`} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1">
@@ -317,7 +310,7 @@ export default function Portfolio({
                       <PolarAngleAxis dataKey="subject" tick={{ fill: '#5C665F', fontSize: 15, fontWeight: 600 }} />
                       <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
                       <Radar dataKey="score" stroke="#18243A" strokeWidth={2.5} fill="#18243A" fillOpacity={0.12} />
-                      {detail && <Tooltip />}
+                      <Tooltip />
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
@@ -506,19 +499,6 @@ function ReviewView({ userName, onNavigate, onBack }: { userName: string; onNavi
         </div>
       </main>
     </div>
-  );
-}
-
-function Toggle({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full px-6 py-3 text-base font-semibold ${
-        active ? 'bg-surface text-ink shadow-[0_2px_8px_rgba(24,36,58,0.08)]' : 'text-muted'
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 

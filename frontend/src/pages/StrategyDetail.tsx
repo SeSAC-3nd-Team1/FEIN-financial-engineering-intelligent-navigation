@@ -15,7 +15,6 @@ interface Props {
 export default function StrategyDetail({ strategyId, userName, onNavigate, onStart }: Props) {
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const [scenarioId, setScenarioId] = useState(SCENARIOS[0].id);
-  const [detail, setDetail] = useState(false);
 
   const scenario = SCENARIOS.find((s) => s.id === scenarioId)!;
   // 차트 데이터: 전략 vs KOSPI 를 같은 배열에 담아 한 번에 그린다
@@ -36,15 +35,9 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
           </section>
 
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
-            <div className="flex items-center justify-between gap-6">
-              <div className="flex flex-col gap-2.5">
-                <h2 className="text-[26px] font-bold tracking-[-0.025em]">언제를 골라볼까요?</h2>
-                <p className="text-[17px] text-muted">1,000만원을 넣었다고 가정하고, 구간을 바꿔가며 결과를 볼 수 있어요.</p>
-              </div>
-              <div className="flex items-center gap-2 rounded-full bg-[#F4F6F1] p-1.5">
-                <Toggle active={!detail} onClick={() => setDetail(false)}>쉽게 보기</Toggle>
-                <Toggle active={detail} onClick={() => setDetail(true)}>상세 지표</Toggle>
-              </div>
+            <div className="flex flex-col gap-2.5">
+              <h2 className="text-[26px] font-bold tracking-[-0.025em]">언제를 골라볼까요?</h2>
+              <p className="text-[17px] text-muted">1,000만원을 넣었다고 가정하고, 구간을 바꿔가며 결과를 볼 수 있어요.</p>
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -87,7 +80,7 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
                     width={56}
                     tickFormatter={(v: number) => `${v}%`}
                   />
-                  {detail && <Tooltip formatter={(v: number) => `${v}%`} labelFormatter={() => ''} />}
+                  <Tooltip formatter={(v: number) => `${v}%`} labelFormatter={() => ''} />
                   <Legend iconType="plainline" wrapperStyle={{ fontSize: 15, color: '#5C665F' }} />
                   <Line type="monotone" dataKey="KOSPI" stroke="#C3CBC4" strokeWidth={3.5} dot={false} />
                   <Line type="monotone" dataKey="내전략" stroke="#18243A" strokeWidth={5} dot={false} />
@@ -107,14 +100,12 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
               </div>
             </div>
 
-            {detail && (
-              <div className="grid grid-cols-4 gap-8 border-t border-[#F0F2ED] pt-7">
-                <Fact label="최대 손실(MDD)" value={strategy.mdd} accent />
-                <Fact label="변동성(연)" value={strategy.vol} />
-                <Fact label="샤프 지수" value={strategy.sharpe} />
-                <Fact label="리밸런싱" value={strategy.rebalance} />
-              </div>
-            )}
+            <div className="grid grid-cols-4 gap-8 border-t border-[#F0F2ED] pt-7">
+              <Fact label="최대 손실(MDD)" value={strategy.mdd} accent />
+              <Fact label="변동성(연)" value={strategy.vol} />
+              <Fact label="샤프 지수" value={strategy.sharpe} />
+              <Fact label="리밸런싱" value={strategy.rebalance} />
+            </div>
           </section>
 
           <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
@@ -133,19 +124,6 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
         </div>
       </main>
     </div>
-  );
-}
-
-function Toggle({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full px-6 py-3 text-base font-semibold ${
-        active ? 'bg-surface text-ink shadow-[0_2px_8px_rgba(24,36,58,0.08)]' : 'text-muted'
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 

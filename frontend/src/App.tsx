@@ -3,6 +3,7 @@ import Chatbot from './components/Chatbot';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
 import InformationExam from './pages/InformationExam';
+import InvestorProfileCheck from './pages/InvestorProfileCheck';
 import Login from './pages/Login';
 import Portfolio, { type Strategy } from './pages/Portfolio';
 import RiskProfile from './pages/RiskProfile';
@@ -20,7 +21,7 @@ import type { Screen, SignupPersonal } from './types';
  * 라우팅 상태 머신 — 전체 사용자 흐름
  *
  *   home → login → signup-1 → signup-2 → signup-3
- *        → risk(인트로·Q1~Q5·완료) → risk-result
+ *        → risk(투자자 정보 확인 · 인트로·Q1~Q7·완료) → risk-result(투자성향 결과 + 전략 추천)
  *        → strategy → start → portfolio(20종목) → stock(종목 상세)
  *   information 은 헤더 "정보"에서 언제든 진입
  *
@@ -28,17 +29,45 @@ import type { Screen, SignupPersonal } from './types';
  *   portfolio(Power BI 분석 대시보드)로 착지한다. dashboard 는 portfolio 상단의
  *   "← 대시보드로 돌아가기"로만 진입하는 보조 요약 화면이다.
  *
+ *   실제 투자 시작(strategy → start)은 investorProfileCompleted 가드를 거친다:
+ *   완료 상태면 investor-check(정보 확인)로, 미완료면 안내와 함께 risk로 보낸다.
+ *   두 경우 모두 목적지(start)를 postDiagnosisTarget 에 기억해뒀다가 완료/확인 후 이어간다.
+ *
  * 챗봇 FAB 는 라우팅 밖에 있어 모든 화면에 상주한다.
  */
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
-  const [personal, setPersonal] = useState<SignupPersonal>({ name: '', birthdate: '', phone: '' });
+  const [personal, setPersonal] = useState<SignupPersonal>({
+    name: '', birthdate: '', phone: '', aiPersonalizationConsent: false,
+  });
   const [strategyId, setStrategyId] = useState('low');
   const [strategy, setStrategy] = useState<Strategy>('저변동성');
   const [stockIndex, setStockIndex] = useState(0);
+  // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
+  const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
+  const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
   const login = useAuthStore((s) => s.login);
+  const register = useAuthStore((s) => s.register);
+  const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
+  const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
 
   const userName = personal.name.trim() || '서연';
+
+  /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
+  const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
+    setPostDiagnosisTarget(target);
+    setRiskNotice(opts?.notice);
+    setScreen('risk');
+  };
+
+  /** StrategyDetail "이 전략으로 시작하기" — 실제 투자 실행 전 투자자 정보 확인 가드 */
+  const handleStartInvesting = () => {
+    if (investorProfileCompleted) {
+      setScreen('investor-check');
+    } else {
+      startInvestorProfile('start', { notice: '투자를 시작하기 전에 투자자 정보를 확인해주세요.' });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -74,8 +103,13 @@ export default function App() {
       )}
       {screen === 'signup-3' && (
         <SignupStep3
-          // 가입 완료 → 인증 state를 켜고 투자성향 진단으로 이동
-          onComplete={() => { login(); setScreen('risk'); }}
+          // 가입 완료 → 아이디/비밀번호를 저장해두고(로그인 시 대조용), 인증 state를 켜서
+          // 회원가입과는 별도 단계인 투자자 정보 확인으로 이동
+          onComplete={(userId, password) => {
+            register(userId, password);
+            login();
+            startInvestorProfile('risk-result');
+          }}
           onBack={() => setScreen('signup-2')}
           userName={userName}
           onNavigate={setScreen}
@@ -83,7 +117,16 @@ export default function App() {
       )}
 
       {screen === 'risk' && (
-        <RiskProfile onComplete={() => setScreen('risk-result')} onExit={() => setScreen('home')} />
+        <RiskProfile
+          notice={riskNotice}
+          onComplete={({ investorType, answers }) => {
+            completeInvestorProfile(investorType, answers, new Date().toISOString());
+            setRiskNotice(undefined);
+            setScreen(postDiagnosisTarget);
+            setPostDiagnosisTarget('risk-result');
+          }}
+          onExit={() => setScreen('home')}
+        />
       )}
       {screen === 'risk-result' && (
         <RiskResult
@@ -92,13 +135,21 @@ export default function App() {
           onSelectStrategy={(id) => { setStrategyId(id); setScreen('strategy'); }}
         />
       )}
+      {screen === 'investor-check' && (
+        <InvestorProfileCheck
+          userName={userName}
+          onNavigate={setScreen}
+          onContinue={() => setScreen('start')}
+          onRediagnose={() => startInvestorProfile('start')}
+        />
+      )}
 
       {screen === 'strategy' && (
         <StrategyDetail
           strategyId={strategyId}
           userName={userName}
           onNavigate={setScreen}
-          onStart={() => setScreen('start')}
+          onStart={handleStartInvesting}
         />
       )}
       {screen === 'start' && (
@@ -125,7 +176,7 @@ export default function App() {
           onStrategyChange={setStrategy}
           onNavigate={setScreen}
           onSelectStock={(i) => { setStockIndex(i); setScreen('stock'); }}
-          onRediagnose={() => setScreen('risk')}
+          onRediagnose={() => startInvestorProfile('risk-result')}
           onBack={() => setScreen('dashboard')}
         />
       )}

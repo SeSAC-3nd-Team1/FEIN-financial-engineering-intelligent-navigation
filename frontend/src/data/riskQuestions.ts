@@ -1,63 +1,115 @@
-export interface RiskOption { title: string; desc: string; }
+export interface RiskOption { title: string; desc?: string; }
 export interface RiskQuestion {
   q: string;
-  support: string;
-  visual?: 'loss';
-  spectrum?: boolean;
-  options?: RiskOption[];
+  support?: string;
+  options: RiskOption[];
+  /** Review 화면(입력 내용 확인)에서 쓰는 짧은 라벨 */
+  reviewLabel: string;
+  /** Review 화면에서 이 문항을 묶는 그룹 제목 */
+  reviewGroup: string;
 }
 
-/** 투자성향 진단 5문항 — 한 화면에 한 질문 */
+const GROUP_EXPERIENCE = '투자 경험과 이해도';
+const GROUP_GOAL = '투자 목표와 성향';
+const GROUP_FINANCE = '재무 정보';
+
+/** 투자자 정보 확인 8문항 — 한 화면에 한 질문. 문항/보기 문구는 기획 원문을 그대로 사용한다 */
 export const RISK_QUESTIONS: RiskQuestion[] = [
   {
-    q: '내 투자금 100만원이 85만원이 됐어요.\n어떻게 할 것 같나요?',
-    support: '가장 가까운 행동을 골라주세요.',
-    visual: 'loss',
+    q: '투자를 해본 경험이 얼마나 있나요?',
+    reviewLabel: '투자 경험',
+    reviewGroup: GROUP_EXPERIENCE,
     options: [
-      { title: '바로 팔 것 같아요', desc: '더 떨어질까 봐 불안할 것 같아요.' },
-      { title: '조금 더 지켜볼 것 같아요', desc: '이유를 확인한 뒤 결정하고 싶어요.' },
-      { title: '오히려 더 살 수도 있어요', desc: '장기적으로 회복할 가능성을 생각해요.' },
+      { title: '처음이에요' },
+      { title: '1년 미만' },
+      { title: '1~3년' },
+      { title: '3~5년' },
+      { title: '5년 이상' },
     ],
   },
   {
-    q: '이 돈은 언제쯤 필요할까요?',
-    support: '지금 계획에 가장 가까운 걸 골라주세요.',
+    q: '주식이나 펀드 같은 투자상품을 얼마나 이해하고 있나요?',
+    reviewLabel: '금융상품 이해도',
+    reviewGroup: GROUP_EXPERIENCE,
     options: [
-      { title: '1년 안에', desc: '가까운 시일에 쓸 계획이 있어요.' },
-      { title: '1~3년', desc: '중간에 필요해질 수도 있어요.' },
-      { title: '3~5년', desc: '한동안은 묶어둘 수 있어요.' },
-      { title: '5년 이상', desc: '당장 사용할 계획이 없는 돈이에요.' },
+      { title: '거의 몰라요' },
+      { title: '기본적인 내용은 알아요' },
+      { title: '어느 정도 이해하고 있어요' },
+      { title: '다양한 투자상품을 잘 이해하고 있어요' },
     ],
   },
   {
-    q: '투자로 가장 얻고 싶은 건 무엇인가요?',
-    support: '하나만 골라주세요.',
+    q: '이번 투자는 얼마나 오래 이어갈 생각인가요?',
+    reviewLabel: '투자 기간',
+    reviewGroup: GROUP_GOAL,
     options: [
-      { title: '안정적으로 불리기', desc: '큰 손실 없이 천천히' },
-      { title: '균형 있게 성장하기', desc: '수익과 안정성 둘 다' },
-      { title: '적극적으로 키우기', desc: '변동성을 감수하고 높은 수익 추구' },
+      { title: '1년 미만' },
+      { title: '1~3년' },
+      { title: '3~5년' },
+      { title: '5년 이상' },
     ],
   },
   {
-    q: '주식 투자는 얼마나 익숙한가요?',
-    support: '설명 난이도를 맞추는 데 참고해요.',
+    q: '이번 투자의 가장 큰 목적은 무엇인가요?',
+    reviewLabel: '투자 목적',
+    reviewGroup: GROUP_GOAL,
     options: [
-      { title: '처음이에요', desc: '투자를 거의 해본 적 없어요.' },
-      { title: '조금 해봤어요', desc: '직접 주식을 사고팔아본 적 있어요.' },
-      { title: '익숙해요', desc: '투자전략이나 지표도 어느 정도 이해해요.' },
+      { title: '생활에 필요한 자금 마련' },
+      { title: '주택·결혼 등 목돈 마련' },
+      { title: '노후 준비' },
+      { title: '여유자금 운용' },
+      { title: '장기적인 자산 증식' },
     ],
   },
   {
-    q: '시장이 크게 떨어졌다는 뉴스가 나왔어요.',
-    support: '이럴 때 나는 어느 쪽에 더 가까울까요?',
-    spectrum: true,
+    q: '투자할 돈이 줄어들더라도 어느 정도까지 감당할 수 있나요?',
+    support: '퍼센트는 투자 원금 기준이에요.',
+    reviewLabel: '감당 가능한 손실',
+    reviewGroup: GROUP_GOAL,
+    options: [
+      { title: '원금 손실을 원하지 않아요' },
+      { title: '10% 정도의 손실까지 괜찮아요' },
+      { title: '20% 정도의 손실까지 괜찮아요' },
+      { title: '30% 정도의 손실까지 괜찮아요' },
+      { title: '더 큰 손실도 감수할 수 있어요' },
+    ],
   },
-];
-
-export const SPECTRUM_LABELS = [
-  '지금은 지키는 게 먼저예요',
-  '조심스럽게 지켜볼 것 같아요',
-  '상황을 보고 판단할 것 같아요',
-  '떨어진 김에 조금 담아볼까 싶어요',
-  '기회라고 생각하고 적극적으로 볼 거예요',
+  {
+    q: '수익과 안정성 중 어디에 더 가까운 투자를 원하나요?',
+    reviewLabel: '수익 / 안정성 선호',
+    reviewGroup: GROUP_GOAL,
+    options: [
+      { title: '원금 보존이 가장 중요해요' },
+      { title: '안정성을 더 중요하게 생각해요' },
+      { title: '안정성과 수익을 비슷하게 생각해요' },
+      { title: '수익을 더 중요하게 생각해요' },
+      { title: '높은 수익을 위해 큰 변동도 감수할 수 있어요' },
+    ],
+  },
+  {
+    q: '현재 가진 금융자산 중 이번 투자에 사용할 금액은 어느 정도인가요?',
+    support: '예금, 주식, 펀드 등 보유 금융자산을 기준으로 생각해주세요.',
+    reviewLabel: '투자 가능 자산 비중',
+    reviewGroup: GROUP_FINANCE,
+    options: [
+      { title: '10% 미만' },
+      { title: '10~30%' },
+      { title: '30~50%' },
+      { title: '50~70%' },
+      { title: '70% 이상' },
+    ],
+  },
+  {
+    q: '연간 소득은 어느 정도인가요?',
+    support: '투자자 정보를 확인하고 적합한 투자전략을 안내하는 데 활용돼요.',
+    reviewLabel: '연간소득',
+    reviewGroup: GROUP_FINANCE,
+    options: [
+      { title: '1천만원 미만' },
+      { title: '1천만원 이상 ~ 3천만원 미만' },
+      { title: '3천만원 이상 ~ 5천만원 미만' },
+      { title: '5천만원 이상 ~ 8천만원 미만' },
+      { title: '8천만원 이상' },
+    ],
+  },
 ];

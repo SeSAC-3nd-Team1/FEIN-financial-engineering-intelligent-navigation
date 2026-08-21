@@ -6,7 +6,7 @@ import { RE, digitsOnly } from '../lib/validation';
 import type { Credentials, Screen } from '../types';
 
 interface Props {
-  onComplete: () => void;
+  onComplete: (userId: string, password: string) => void;
   onBack: () => void;
   userName: string;
   onNavigate: (s: Screen) => void;
@@ -121,7 +121,7 @@ export default function SignupStep3({ onComplete, onBack, userName, onNavigate }
           이전
         </button>
         <button
-          onClick={onComplete}
+          onClick={() => onComplete(v.userId, v.password)}
           disabled={!canSubmit}
           className="flex-1 rounded-field py-5 text-[19px] font-bold disabled:cursor-default disabled:bg-[#E8EBE5] disabled:text-[#A6AFA7] enabled:bg-lime enabled:text-navy"
         >
