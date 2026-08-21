@@ -43,6 +43,8 @@ export default function App() {
   const [strategyId, setStrategyId] = useState('low');
   const [strategy, setStrategy] = useState<Strategy>('저변동성');
   const [stockIndex, setStockIndex] = useState(0);
+  // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio로)
+  const [stockBackTarget, setStockBackTarget] = useState<Screen>('portfolio');
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
@@ -154,7 +156,12 @@ export default function App() {
       )}
       {screen === 'start' && (
         // 투자 시작 완료 → 이제 막 포트폴리오가 생긴 상태이므로, 로그인 착지점과 동일하게 Portfolio로 이동
-        <StartInvesting userName={userName} onNavigate={setScreen} onStart={() => setScreen('portfolio')} />
+        <StartInvesting
+          userName={userName}
+          onNavigate={setScreen}
+          onStart={() => setScreen('portfolio')}
+          onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('start'); setScreen('stock'); }}
+        />
       )}
 
       {screen === 'information' && <InformationExam userName={userName} onNavigate={setScreen} />}
@@ -175,7 +182,7 @@ export default function App() {
           strategy={strategy}
           onStrategyChange={setStrategy}
           onNavigate={setScreen}
-          onSelectStock={(i) => { setStockIndex(i); setScreen('stock'); }}
+          onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('portfolio'); setScreen('stock'); }}
           onRediagnose={() => startInvestorProfile('risk-result')}
           onBack={() => setScreen('dashboard')}
         />
@@ -186,7 +193,7 @@ export default function App() {
           index={stockIndex}
           userName={userName}
           onNavigate={setScreen}
-          onBack={() => setScreen('portfolio')}
+          onBack={() => setScreen(stockBackTarget)}
         />
       )}
 

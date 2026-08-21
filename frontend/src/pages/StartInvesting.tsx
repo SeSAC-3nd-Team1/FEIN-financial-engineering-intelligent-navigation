@@ -1,34 +1,51 @@
 import { useMemo, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
+import { ChevronRight } from 'lucide-react';
 import Header from '../components/Header';
 import { ALL_HOLDINGS } from '../data/holdings';
 import { won } from '../lib/validation';
-import type { Screen } from '../types';
+import type { Holding, Screen } from '../types';
 
 interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   onStart: () => void;
+  onSelectStock: (index: number) => void;
 }
 
 const PRESETS = [100_000, 500_000, 1_000_000, 5_000_000];
 /** 도넛 색: Deep Navy 계열 + 중립. 선택된 조각만 라임 */
 const SHADES = ['#18243A', '#2E4160', '#4A5F80', '#6C819E', '#C3CBC4'];
+/** 전략 목표 비중 (target 이 있으면 그 값을 쓴다) */
+const displayPct = (h: Holding) => h.target ?? h.pct;
 
-export default function StartInvesting({ userName, onNavigate, onStart }: Props) {
+/** row 선택 상태 — 대표 4종목/나머지 16종목은 ALL_HOLDINGS 인덱스로, 집계 행("기타 N개 종목")은 별도로 구분 */
+type Selection = { kind: 'holding'; index: number } | { kind: 'other' };
+
+export default function StartInvesting({ userName, onNavigate, onStart, onSelectStock }: Props) {
   const [amount, setAmount] = useState(1_000_000);
   const [custom, setCustom] = useState<string | null>(null); // null = 직접 입력 꺼짐
-  const [selected, setSelected] = useState(0);
+  const [selection, setSelection] = useState<Selection>({ kind: 'holding', index: 0 });
+  const [restExpanded, setRestExpanded] = useState(false);
   const [mode, setMode] = useState<'manual' | 'auto'>('manual');
 
-  /** 04는 전략 목표 비중으로 새로 담는다 (target 이 있으면 그 값) */
-  const slices = useMemo(() => {
-    const top = ALL_HOLDINGS.slice(0, 4).map((h) => ({ name: h.name, pct: h.target ?? h.pct, why: h.why }));
-    const restPct = Math.round((100 - top.reduce((a, h) => a + h.pct, 0)) * 10) / 10;
-    return [...top, { name: `기타 ${ALL_HOLDINGS.length - 4}개 종목`, pct: restPct, why: '한 종목에 쏠리지 않도록 나머지를 고르게 나눠 담았어요.' }];
-  }, []);
+  const topHoldings = ALL_HOLDINGS.slice(0, 4);
+  const restHoldings = ALL_HOLDINGS.slice(4);
 
-  const sel = slices[selected];
+  /** 04는 전략 목표 비중으로 새로 담는다 — 도넛 차트는 대표 4종목 + 기타 합계, 5조각 그대로 유지 */
+  const slices = useMemo(() => {
+    const top = topHoldings.map((h) => ({ name: h.name, pct: displayPct(h) }));
+    const restPct = Math.round((100 - top.reduce((a, h) => a + h.pct, 0)) * 10) / 10;
+    return [...top, { name: `기타 ${restHoldings.length}개 종목`, pct: restPct }];
+  }, []);
+  const otherLabel = slices[4];
+
+  // 도넛은 5조각(대표4 + 기타)까지만 있으므로, 나머지 16종목 중 하나를 선택해도 "기타" 조각이 강조된다
+  const donutActiveIndex = selection.kind === 'holding' && selection.index < 4 ? selection.index : 4;
+
+  const sel = selection.kind === 'other'
+    ? { name: otherLabel.name, pct: otherLabel.pct, why: '한 종목에 쏠리지 않도록 나머지를 고르게 나눠 담았어요.' }
+    : { name: ALL_HOLDINGS[selection.index].name, pct: displayPct(ALL_HOLDINGS[selection.index]), why: ALL_HOLDINGS[selection.index].why };
 
   const commitCustom = () => {
     const n = parseInt(custom ?? '', 10);
@@ -118,11 +135,11 @@ export default function StartInvesting({ userName, onNavigate, onStart }: Props)
                       endAngle={-270}
                       paddingAngle={1.5}
                       stroke="none"
-                      onClick={(_, i) => setSelected(i)}
+                      onClick={(_, i) => setSelection(i === 4 ? { kind: 'other' } : { kind: 'holding', index: i })}
                     >
                       {slices.map((_, i) => (
                         /* 선택된 조각만 라임 — 나머지는 네이비 계열 */
-                        <Cell key={i} fill={i === selected ? '#C6F04D' : SHADES[i]} cursor="pointer" />
+                        <Cell key={i} fill={i === donutActiveIndex ? '#C6F04D' : SHADES[i]} cursor="pointer" />
                       ))}
                     </Pie>
                   </PieChart>
@@ -136,25 +153,61 @@ export default function StartInvesting({ userName, onNavigate, onStart }: Props)
               </div>
 
               <div className="flex flex-1 flex-col gap-1">
-                {slices.map((h, i) => (
-                  <button
+                {topHoldings.map((h, i) => (
+                  <StockRow
                     key={h.name}
-                    onClick={() => setSelected(i)}
-                    className={`flex items-center gap-4 rounded-2xl px-5 py-4 text-left ${i === selected ? 'bg-[#F8FCEE]' : ''}`}
-                  >
-                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: i === selected ? '#C6F04D' : SHADES[i] }} />
-                    <span className="flex-1 text-[18px] font-semibold tracking-[-0.02em]">{h.name}</span>
-                    <span className="text-[17px] font-bold">{h.pct.toFixed(1)}%</span>
-                    <span className="w-28 text-right text-base text-muted">{won((amount * h.pct) / 100)}</span>
-                  </button>
+                    name={h.name}
+                    pct={displayPct(h)}
+                    amountWon={won((amount * displayPct(h)) / 100)}
+                    dotColor={i === donutActiveIndex ? '#C6F04D' : SHADES[i]}
+                    selected={selection.kind === 'holding' && selection.index === i}
+                    onSelect={() => setSelection({ kind: 'holding', index: i })}
+                    onOpenDetail={() => onSelectStock(i)}
+                  />
                 ))}
-                <span className="px-5 pt-2 text-base font-semibold text-navy">나머지 종목 보기 →</span>
+
+                {/* "기타 N개 종목" — 개별 기업이 아니라 나머지 합계 Summary Row라 Chevron이 없다 */}
+                <StockRow
+                  name={otherLabel.name}
+                  pct={otherLabel.pct}
+                  amountWon={won((amount * otherLabel.pct) / 100)}
+                  dotColor={donutActiveIndex === 4 ? '#C6F04D' : SHADES[4]}
+                  selected={selection.kind === 'other'}
+                  onSelect={() => setSelection({ kind: 'other' })}
+                />
+
+                <button
+                  onClick={() => setRestExpanded((v) => !v)}
+                  className="self-start px-5 pt-2 text-base font-semibold text-navy"
+                >
+                  {restExpanded ? '접기 ↑' : '나머지 종목 보기 ↓'}
+                </button>
+
+                {restExpanded && (
+                  <div className="flex flex-col gap-1 border-t border-[#F0F2ED] pt-1">
+                    {restHoldings.map((h, j) => {
+                      const index = j + 4; // ALL_HOLDINGS 상의 실제 인덱스
+                      return (
+                        <StockRow
+                          key={h.name}
+                          name={h.name}
+                          pct={displayPct(h)}
+                          amountWon={won((amount * displayPct(h)) / 100)}
+                          dotColor={selection.kind === 'holding' && selection.index === index ? '#C6F04D' : SHADES[4]}
+                          selected={selection.kind === 'holding' && selection.index === index}
+                          onSelect={() => setSelection({ kind: 'holding', index })}
+                          onOpenDetail={() => onSelectStock(index)}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* AI 설명은 선택된 종목에 붙는다 */}
+            {/* 설명은 선택된 종목/집계 행에 붙는다 — 물방개가 왜 이 종목을 담았는지 생각해서 설명해주는 역할 */}
             <div className="flex gap-5 rounded-[20px] bg-[#F8FCEE] px-10 py-9">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime text-lg text-navy">✦</div>
+              <img src="/character-thinking.png" alt="물방개" className="h-[68px] w-[68px] shrink-0 object-contain" />
               <div className="flex flex-col gap-3">
                 <span className="text-[15px] font-semibold text-[#3F5222]">{sel.name} · {sel.pct.toFixed(1)}%</span>
                 <span className="text-[22px] font-bold leading-[34px] tracking-[-0.025em]">
@@ -196,6 +249,47 @@ export default function StartInvesting({ userName, onNavigate, onStart }: Props)
           </section>
         </div>
       </main>
+    </div>
+  );
+}
+
+/**
+ * 종목 한 행 — PRIMARY: 이름/비중/금액 클릭 시 선정 이유 표시.
+ * TERTIARY: 오른쪽 끝 Chevron 클릭 시 재무정보 상세로 이동 (별도 버튼이라 클릭이 서로 섞이지 않는다).
+ * "기타 N개 종목" 집계 행은 onOpenDetail 을 넘기지 않아 Chevron 이 아예 표시되지 않는다.
+ */
+function StockRow({
+  name, pct, amountWon, dotColor, selected, onSelect, onOpenDetail,
+}: {
+  name: string; pct: number; amountWon: string; dotColor: string;
+  selected: boolean; onSelect: () => void; onOpenDetail?: () => void;
+}) {
+  return (
+    <div className={`flex items-center rounded-2xl pl-5 pr-2 ${selected ? 'bg-[#F8FCEE]' : ''}`}>
+      <button onClick={onSelect} className="flex flex-1 items-center gap-4 py-4 text-left">
+        <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: dotColor }} />
+        <span className="flex-1 text-[18px] font-semibold tracking-[-0.02em]">{name}</span>
+        <span className="text-[17px] font-bold">{pct.toFixed(1)}%</span>
+        <span className="w-28 text-right text-base text-muted">{amountWon}</span>
+      </button>
+      {onOpenDetail && (
+        <div className="group relative shrink-0">
+          <button
+            type="button"
+            aria-label={`${name} 재무정보 보기`}
+            onClick={onOpenDetail}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9CA3AF] outline-none hover:text-[#6B7280] focus-visible:text-[#6B7280]"
+          >
+            <ChevronRight size={16} />
+          </button>
+          <span
+            role="tooltip"
+            className="pointer-events-none absolute bottom-full right-0 z-10 mb-2 whitespace-nowrap rounded-md bg-navy px-2.5 py-1.5 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+          >
+            재무정보 보기
+          </span>
+        </div>
+      )}
     </div>
   );
 }
