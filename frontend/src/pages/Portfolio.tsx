@@ -36,8 +36,9 @@ const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'risk', label: '위험 분석' },
 ];
 
+// n:1 이면 라인 차트에 점이 하나뿐이라(dot={false}) 아무것도 안 보인다 — 최소 2개 포인트를 보장한다.
 const TREND_PERIODS = [
-  { label: '1개월', n: 1 },
+  { label: '1개월', n: 2 },
   { label: '3개월', n: 3 },
   { label: '1년', n: PORTFOLIO_TREND.length },
   { label: '전체', n: PORTFOLIO_TREND.length },
