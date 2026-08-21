@@ -9,10 +9,11 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   onStart: () => void;
+  onOpenBacktest: () => void;
 }
 
 /** 03 전략 상세 — 구간을 바꿔가며 내 돈이 어땠을지 체험하는 Playground */
-export default function StrategyDetail({ strategyId, userName, onNavigate, onStart }: Props) {
+export default function StrategyDetail({ strategyId, userName, onNavigate, onStart, onOpenBacktest }: Props) {
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const [scenarioId, setScenarioId] = useState(SCENARIOS[0].id);
 
@@ -113,9 +114,14 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
               <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략으로 시작해볼까요?</span>
               <span className="text-[17px] leading-7 text-[#B9C2BA]">10만원부터 시작할 수 있고, 전략은 언제든 바꿀 수 있어요.</span>
             </div>
-            <button onClick={onStart} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
-              이 전략으로 시작하기 →
-            </button>
+            <div className="flex shrink-0 gap-4">
+              <button onClick={onOpenBacktest} className="rounded-field bg-white/10 px-9 py-5 text-lg font-bold text-white">
+                백테스트 자세히 보기 →
+              </button>
+              <button onClick={onStart} className="rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
+                이 전략으로 시작하기 →
+              </button>
+            </div>
           </section>
 
           <p className="text-sm leading-[22px] text-subtle">
