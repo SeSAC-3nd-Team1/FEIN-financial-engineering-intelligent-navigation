@@ -89,6 +89,24 @@ Raw 수집 예시:
 docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --date 2026-08-16 --all-pages --rows 10000
 ```
 
+최소 5년 백필과 실제 Raw 월 보유기간 감사:
+
+```bash
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
+docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
+```
+
+매일 자동 증분 수집은 `.github/workflows/raw-daily-collection.yml`에서 15:30 KST에 실행한다.
+공휴일과 지연 갱신을 보완하기 위해 최근 7일을 일자별로 확인하며, GitHub Actions Secret
+`DATA_GO_KR_API_KEY`와 기존 Azure OIDC Secret/Blob 쓰기 권한이 필요하다.
+
+장기 범위 요청이 시간 초과되는 operation은 `scripts.backfill_public_data_by_date`로 날짜별
+병렬 백필한다. 개별 날짜가 완료될 때마다 Raw Blob이 남으므로 일부 요청 실패 후에도 성공
+날짜를 다시 잃지 않는다.
+
+데이터 목록, 출처, 우선순위, 현재 관측 범위와 후속 source는
+[`docs/RAW_DATA_CATALOG.md`](docs/RAW_DATA_CATALOG.md)를 기준으로 한다.
+
 ## 금융 데이터 파이프라인
 
 Windows CMD, 프로젝트 루트 기준:
@@ -180,6 +198,7 @@ docker compose --profile data run --rm --no-deps data python -m pytest tests -q
 - `data/docs/FINANCIAL_PIPELINE_RUNBOOK.md`
 - `data/docs/MODELING_DATASET_CARD.md`
 - `data/docs/FEATURE_DICTIONARY.md`
+- `data/docs/RAW_DATA_CATALOG.md`
 - `docs/DATA_ARCHITECTURE.md`
 - `docs/DATA_LAYER_OPERATIONS.md`
 - `docs/DATABASE_SPECIFICATION.md`
