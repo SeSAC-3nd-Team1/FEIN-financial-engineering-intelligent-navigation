@@ -214,7 +214,6 @@ export default function StartInvesting({ userName, onNavigate, onStart, onSelect
                   왜 {sel.name}을 {sel.pct.toFixed(1)}% 담았나요?
                 </span>
                 <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">{sel.why}</p>
-                <span className="pt-1 text-base font-semibold text-navy">더 자세히 물어보기 →</span>
               </div>
             </div>
           </section>
@@ -272,24 +271,27 @@ function StockRow({
         <span className="text-[17px] font-bold">{pct.toFixed(1)}%</span>
         <span className="w-28 text-right text-base text-muted">{amountWon}</span>
       </button>
-      {onOpenDetail && (
-        <div className="group relative shrink-0">
-          <button
-            type="button"
-            aria-label={`${name} 재무정보 보기`}
-            onClick={onOpenDetail}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9CA3AF] outline-none hover:text-[#6B7280] focus-visible:text-[#6B7280]"
-          >
-            <ChevronRight size={16} />
-          </button>
-          <span
-            role="tooltip"
-            className="pointer-events-none absolute bottom-full right-0 z-10 mb-2 whitespace-nowrap rounded-md bg-navy px-2.5 py-1.5 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-          >
-            재무정보 보기
-          </span>
-        </div>
-      )}
+      {/* Action column 공간은 항상 확보한다 — Chevron이 없는 "기타 N개 종목" 행도 비중/금액이 다른 row와 같은 x축에 오도록 */}
+      <div className="group relative flex h-8 w-8 shrink-0 items-center justify-center">
+        {onOpenDetail && (
+          <>
+            <button
+              type="button"
+              aria-label={`${name} 재무정보 보기`}
+              onClick={onOpenDetail}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9CA3AF] outline-none hover:text-[#6B7280] focus-visible:text-[#6B7280]"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute bottom-full right-0 z-10 mb-2 whitespace-nowrap rounded-md bg-navy px-2.5 py-1.5 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+            >
+              재무정보 보기
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
