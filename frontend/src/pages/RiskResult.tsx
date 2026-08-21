@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Info } from 'lucide-react';
 import Header from '../components/Header';
 import { STRATEGIES } from '../data/strategies';
-import { computeInvestorProfile, matchLabel } from '../lib/investorProfile';
+import { computeInvestorProfile, matchLabel, recommendedStrategyId } from '../lib/investorProfile';
 import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
 
@@ -17,11 +17,14 @@ const FALLBACK_PROFILE = computeInvestorProfile([2, 1, 1, 4, 1, 2]);
 
 /** 02 결과 — 투자성향 확인 + AI 추천 전략 + 대안 2개 */
 export default function RiskResult({ userName, onNavigate, onSelectStrategy }: Props) {
-  const [picked, setPicked] = useState('low');
-  const [hero, ...alternatives] = STRATEGIES;
-
   const investorAnswers = useAuthStore((s) => s.investorAnswers);
   const profile = investorAnswers ? computeInvestorProfile(investorAnswers) : FALLBACK_PROFILE;
+
+  // 투자성향 유형에 따라 "AI가 가장 추천해요" 카드가 달라지도록 한다 — 과거엔 항상 저변동성이 hero였다.
+  const heroId = recommendedStrategyId(profile.type);
+  const hero = STRATEGIES.find((s) => s.id === heroId) ?? STRATEGIES[0];
+  const alternatives = STRATEGIES.filter((s) => s.id !== hero.id);
+  const [picked, setPicked] = useState(hero.id);
 
   return (
     <div className="min-h-screen bg-canvas">

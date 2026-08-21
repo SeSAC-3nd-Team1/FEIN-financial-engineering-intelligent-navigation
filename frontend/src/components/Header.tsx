@@ -45,10 +45,17 @@ export default function Header({ active, userName, onNavigate }: Props) {
           ))}
         </nav>
       </div>
-      <div className="flex items-center gap-2.5 text-[15px] text-muted">
-        <span>{userName}님</span>
-        <div className="h-[34px] w-[34px] rounded-full bg-[#EAEEE7]" />
-      </div>
+      {/* 비로그인 상태(예: 회원가입 진행 중, "정보" 공개 화면)에서는 사용자명을 노출하지 않는다 */}
+      {isLoggedIn ? (
+        <div className="flex items-center gap-2.5 text-[15px] text-muted">
+          <span>{userName}님</span>
+          <div className="h-[34px] w-[34px] rounded-full bg-[#EAEEE7]" />
+        </div>
+      ) : (
+        <button onClick={() => onNavigate('login')} className="text-[15px] font-semibold text-ink">
+          로그인
+        </button>
+      )}
     </header>
   );
 }

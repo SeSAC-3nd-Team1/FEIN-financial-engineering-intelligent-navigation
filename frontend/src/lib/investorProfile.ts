@@ -74,6 +74,20 @@ export function computeInvestorProfile(answers: number[]): InvestorProfileResult
   };
 }
 
+/** 투자성향 유형 → AI 추천 전략 id — RiskResult "AI가 가장 추천해요" 카드가 이 매핑을 따른다.
+ *  실제 추천 로직/데이터가 붙기 전까지의 MOCK 매핑이다. */
+const STRATEGY_BY_PROFILE_TYPE: Record<string, string> = {
+  '안정추구형': 'low',
+  '안정투자형': 'low',
+  '중립투자형': 'value',
+  '성장추구형': 'momentum',
+  '공격투자형': 'momentum',
+};
+
+export function recommendedStrategyId(type: string): string {
+  return STRATEGY_BY_PROFILE_TYPE[type] ?? 'low';
+}
+
 /** 결과·확인 화면에서 원문 보기를 다시 보여줄 때 쓰는 헬퍼 */
 export function answerLabel(questionIndex: number, optionIndex: number | null | undefined): string {
   if (optionIndex == null) return '-';
