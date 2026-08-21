@@ -198,16 +198,24 @@ function buildMockHeadline(ctx: BacktestAiContext): string {
   return `${ctx.benchmarkName}과 비슷한 성과를 보였어요`;
 }
 
-/** "한눈에 보면" — 결과 + 벤치마크 비교, 한 문장 */
+/**
+ * "한눈에 보면" — 결과 + 벤치마크 비교, 한 문장.
+ * diff(=전략-벤치마크) 부호만으로 "하락폭이 작았다"고 쓰면, 둘 다 플러스인 기간(예: 최근 5년)에도
+ * 하락 표현이 붙는 오류가 생긴다 — 실제로 하락 중일 때(cumulativeReturn < 0)만 "하락폭" 표현을 쓴다.
+ */
 function buildMockOverview(ctx: BacktestAiContext): string {
   const opening = periodOpening(ctx);
   const diff = Math.round((ctx.cumulativeReturn - ctx.benchmarkReturn) * 10) / 10;
-  const compare =
-    diff > 0
-      ? `같은 기간 ${ctx.benchmarkName}(${ctx.benchmarkReturn}%)과 비교하면 하락폭이 ${Math.abs(diff)}%p 작았어요.`
-      : diff < 0
-        ? `같은 기간 ${ctx.benchmarkName}(${ctx.benchmarkReturn}%)과 비교하면 ${Math.abs(diff)}%p 낮은 성과였어요.`
-        : `같은 기간 ${ctx.benchmarkName}과 비슷한 수준(${ctx.benchmarkReturn}%)이었어요.`;
+  let compare: string;
+  if (diff > 0 && ctx.cumulativeReturn < 0) {
+    compare = `같은 기간 ${ctx.benchmarkName}(${ctx.benchmarkReturn}%)과 비교하면 하락폭이 ${Math.abs(diff)}%p 작았어요.`;
+  } else if (diff > 0) {
+    compare = `같은 기간 ${ctx.benchmarkName}(${ctx.benchmarkReturn}%)보다 ${Math.abs(diff)}%p 높은 성과였어요.`;
+  } else if (diff < 0) {
+    compare = `같은 기간 ${ctx.benchmarkName}(${ctx.benchmarkReturn}%)과 비교하면 ${Math.abs(diff)}%p 낮은 성과였어요.`;
+  } else {
+    compare = `같은 기간 ${ctx.benchmarkName}과 비슷한 수준(${ctx.benchmarkReturn}%)이었어요.`;
+  }
   return `${opening} ${ctx.strategyName}은 과거 해당 구간에서 누적 ${ctx.cumulativeReturn}%를 기록했어요. ${compare}`;
 }
 
