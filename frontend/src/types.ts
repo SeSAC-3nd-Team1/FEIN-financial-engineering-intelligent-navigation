@@ -79,6 +79,65 @@ export interface ListResponse<T> { items: T[]; totalCount: number; updatedAt: st
 
 export type InfoTab = 'news' | 'knowledge';
 
+/* ----- Backtest 외부 API 응답 계약 ----- */
+/** "추천 기간" 프리셋 — 실제 시작·종료일은 데이터팀 확정 전까지 backtestPeriods.ts 에서 mock 으로 관리 */
+export interface BacktestPeriod {
+  id: string;
+  label: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string;
+  description: string; // 선택 기간 아래 1~2줄 설명
+}
+
+export interface BacktestSeriesPoint {
+  t: string;         // x축 라벨(날짜)
+  strategy: number;  // 기간 시작 대비 누적 수익률 %
+  benchmark: number;
+}
+
+export interface BacktestMetrics {
+  cumulativeReturn: number;
+  cagr: number;
+  mdd: number;              // 음수 %
+  volatility: number;       // 연환산 %
+  sharpe: number | null;    // 산출 불가 시 null
+}
+
+export interface BacktestResult {
+  strategyId: string;
+  strategyName: string;
+  period: BacktestPeriod;
+  series: BacktestSeriesPoint[];
+  metrics: BacktestMetrics;
+  benchmarkName: string;
+  benchmarkMetrics: { cumulativeReturn: number; mdd: number };
+}
+
+export interface BacktestAiContext {
+  strategyName: string;
+  periodType: 'preset' | 'custom';
+  periodId: string;
+  periodLabel: string;
+  periodDescription: string;
+  startDate: string;
+  endDate: string;
+  cumulativeReturn: number;
+  cagr: number;
+  mdd: number;
+  volatility: number;
+  sharpe: number | null;
+  benchmarkName: string;
+  benchmarkReturn: number;
+  benchmarkMdd: number;
+}
+
+export interface BacktestAiExplanation {
+  headline: string;   // 차트 아래 AI 한 줄 해석
+  overview: string;   // 상세 설명의 "한눈에 보면"
+  caution: string;    // 상세 설명의 "주의해서 볼 점"
+  generatedAt: string;
+}
+
 /* ----- 챗봇 ----- */
 export interface ChatMessage {
   id: string;
