@@ -7,6 +7,8 @@ import type { Screen } from '../types';
 
 interface Props {
   userName: string;
+  /** RiskResult/StrategyDetail 에서 선택한 전략의 표시 이름 (예: "저변동성 전략") */
+  strategyName: string;
   onNavigate: (s: Screen) => void;
   onStart: () => void;
 }
@@ -15,7 +17,7 @@ const PRESETS = [100_000, 500_000, 1_000_000, 5_000_000];
 /** 도넛 색: Deep Navy 계열 + 중립. 선택된 조각만 라임 */
 const SHADES = ['#18243A', '#2E4160', '#4A5F80', '#6C819E', '#C3CBC4'];
 
-export default function StartInvesting({ userName, onNavigate, onStart }: Props) {
+export default function StartInvesting({ userName, strategyName, onNavigate, onStart }: Props) {
   const [amount, setAmount] = useState(1_000_000);
   const [custom, setCustom] = useState<string | null>(null); // null = 직접 입력 꺼짐
   const [selected, setSelected] = useState(0);
@@ -45,7 +47,7 @@ export default function StartInvesting({ userName, onNavigate, onStart }: Props)
       <main className="flex flex-col items-center px-16 pb-24 pt-6">
         <div className="flex w-[1040px] flex-col gap-10">
           <section className="flex flex-col gap-4">
-            <span className="text-base font-semibold text-muted">저변동성 전략으로 시작하기</span>
+            <span className="text-base font-semibold text-muted">{strategyName}으로 시작하기</span>
             <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">얼마로 시작해볼까요?</h1>
           </section>
 
@@ -187,7 +189,7 @@ export default function StartInvesting({ userName, onNavigate, onStart }: Props)
 
           <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
             <div className="flex flex-col gap-2.5">
-              <span className="text-[17px] text-[#B9C2BA]">저변동성 전략 · {ALL_HOLDINGS.length}개 종목 · {mode === 'manual' ? '확인하고 실행' : '자동으로 운용'}</span>
+              <span className="text-[17px] text-[#B9C2BA]">{strategyName} · {ALL_HOLDINGS.length}개 종목 · {mode === 'manual' ? '확인하고 실행' : '자동으로 운용'}</span>
               <span className="text-[32px] font-bold tracking-[-0.03em] text-white">{won(amount)}</span>
             </div>
             <button onClick={onStart} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">

@@ -10,23 +10,22 @@ import {
   AI_AXES, ALL_HOLDINGS, DECISION_SUMMARY, HOLD_TOTAL, PAST_DECISIONS,
   PORTFOLIO_TREND, STOCK_CONTRIBUTION, STOCK_INFO,
 } from '../data/holdings';
+import { STRATEGIES } from '../data/strategies';
 import { won } from '../lib/validation';
 import type { Screen } from '../types';
 
 interface Props {
   userName: string;
-  /** 모달에서 선택·표시되는 현재 전략 */
-  strategy: Strategy;
-  onStrategyChange: (s: Strategy) => void;
+  /** 모달에서 선택·표시되는 현재 전략 id — RiskResult/StrategyDetail 과 동일한 STRATEGIES.id 를 그대로 쓴다
+   *  (과거엔 이 화면만 별도의 표시용 전략 이름 상태를 들고 있어, 다른 화면에서 고른 전략과 어긋나는 문제가 있었다) */
+  strategyId: string;
+  onStrategyChange: (id: string) => void;
   onNavigate: (s: Screen) => void;
   onSelectStock: (index: number) => void;
   /** 모달의 "다시 진단하기" — 투자성향 진단으로 되돌린다 */
   onRediagnose: () => void;
   onBack: () => void;
 }
-
-export const STRATEGY_NAMES = ['저변동성', '가치', '모멘텀'] as const;
-export type Strategy = (typeof STRATEGY_NAMES)[number];
 
 /** Power BI 임베드 그래프 변형 4종 — "내 포트폴리오 자세히 보기" 탭 전환 대상 */
 type AnalyticsTab = 'trend' | 'contribution' | 'weight' | 'risk';
@@ -48,11 +47,12 @@ const TREND_PERIODS = [
 const DONUT_SHADES = ['#18243A', '#2E4160', '#4A5F80', '#6C819E', '#8FA0B4', '#C3CBC4'];
 
 export default function Portfolio({
-  userName, strategy, onStrategyChange, onNavigate, onSelectStock, onRediagnose, onBack,
+  userName, strategyId, onStrategyChange, onNavigate, onSelectStock, onRediagnose, onBack,
 }: Props) {
   // 전략 변경 모달 상태
   const [isModalOpen, setModalOpen] = useState(false);
-  const selectedStrategy = strategy;
+  // strategyId 로부터 표시용 전략 객체(이름/나와 맞는 정도 등)를 파생시킨다 — STRATEGIES 가 유일한 출처
+  const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const setSelectedStrategy = onStrategyChange;
 
   // 페이지 내 서브뷰 전환 — 현재 앱은 URL 라우터가 없는 화면 상태 머신이라,
@@ -136,8 +136,8 @@ export default function Portfolio({
           <section className="flex items-center justify-between gap-8 rounded-card bg-surface px-12 py-11">
             <div className="flex flex-col gap-2.5">
               <span className="text-[15px] text-muted">현재 전략</span>
-              <span className="text-2xl font-bold tracking-[-0.025em]">{selectedStrategy} 전략</span>
-              <span className="text-base text-muted">나와 92% 잘 맞아요</span>
+              <span className="text-2xl font-bold tracking-[-0.025em]">{selectedStrategy.name}</span>
+              <span className="text-base text-muted">나와 {selectedStrategy.match}% 잘 맞아요</span>
             </div>
             <button
               onClick={() => setModalOpen(true)}
@@ -401,17 +401,17 @@ export default function Portfolio({
             </div>
 
             <div className="flex flex-col gap-3">
-              {STRATEGY_NAMES.map((s) => {
-                const active = s === selectedStrategy;
+              {STRATEGIES.map((s) => {
+                const active = s.id === selectedStrategy.id;
                 return (
                   <button
-                    key={s}
-                    onClick={() => setSelectedStrategy(s)}
+                    key={s.id}
+                    onClick={() => setSelectedStrategy(s.id)}
                     className={`flex items-center justify-between rounded-[20px] px-8 py-7 text-left ${
                       active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
                     }`}
                   >
-                    <span className="text-[22px] font-bold tracking-[-0.02em]">{s} 전략</span>
+                    <span className="text-[22px] font-bold tracking-[-0.02em]">{s.name}</span>
                     {active && (
                       <span className="rounded-full bg-lime px-3.5 py-2 text-sm font-bold text-navy">현재 전략</span>
                     )}

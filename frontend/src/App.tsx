@@ -5,7 +5,7 @@ import Home from './pages/Home';
 import InformationExam from './pages/InformationExam';
 import InvestorProfileCheck from './pages/InvestorProfileCheck';
 import Login from './pages/Login';
-import Portfolio, { type Strategy } from './pages/Portfolio';
+import Portfolio from './pages/Portfolio';
 import RiskProfile from './pages/RiskProfile';
 import RiskResult from './pages/RiskResult';
 import SignupStep1 from './pages/SignupStep1';
@@ -14,6 +14,7 @@ import SignupStep3 from './pages/SignupStep3';
 import StartInvesting from './pages/StartInvesting';
 import StockDetail from './pages/StockDetail';
 import StrategyDetail from './pages/StrategyDetail';
+import { STRATEGIES } from './data/strategies';
 import { useAuthStore } from './store/authStore';
 import type { Screen, SignupPersonal } from './types';
 
@@ -40,8 +41,11 @@ export default function App() {
   const [personal, setPersonal] = useState<SignupPersonal>({
     name: '', birthdate: '', phone: '', aiPersonalizationConsent: false,
   });
-  const [strategyId, setStrategyId] = useState('low');
-  const [strategy, setStrategy] = useState<Strategy>('저변동성');
+  // 전략 선택은 strategyId(=STRATEGIES 의 id) 하나만 상태로 두고, 화면별 표시 이름은 여기서 파생시킨다.
+  // (과거엔 strategyId 와 별도로 strategy 표시 이름을 따로 들고 있어, 전략 선택 후에도
+  //  StartInvesting/Portfolio 가 갱신되지 않는 불일치가 있었다.)
+  const [strategyId, setStrategyId] = useState<string>('low');
+  const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const [stockIndex, setStockIndex] = useState(0);
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
@@ -154,7 +158,12 @@ export default function App() {
       )}
       {screen === 'start' && (
         // 투자 시작 완료 → 이제 막 포트폴리오가 생긴 상태이므로, 로그인 착지점과 동일하게 Portfolio로 이동
-        <StartInvesting userName={userName} onNavigate={setScreen} onStart={() => setScreen('portfolio')} />
+        <StartInvesting
+          userName={userName}
+          strategyName={strategy.name}
+          onNavigate={setScreen}
+          onStart={() => setScreen('portfolio')}
+        />
       )}
 
       {screen === 'information' && <InformationExam userName={userName} onNavigate={setScreen} />}
@@ -162,7 +171,7 @@ export default function App() {
       {screen === 'dashboard' && (
         <Dashboard
           userName={userName}
-          strategyName={`${strategy} 전략`}
+          strategyName={strategy.name}
           onNavigate={setScreen}
           onOpenHoldings={() => setScreen('portfolio')}
           onChangeStrategy={() => setScreen('portfolio')}
@@ -172,8 +181,8 @@ export default function App() {
       {screen === 'portfolio' && (
         <Portfolio
           userName={userName}
-          strategy={strategy}
-          onStrategyChange={setStrategy}
+          strategyId={strategyId}
+          onStrategyChange={setStrategyId}
           onNavigate={setScreen}
           onSelectStock={(i) => { setStockIndex(i); setScreen('stock'); }}
           onRediagnose={() => startInvestorProfile('risk-result')}
