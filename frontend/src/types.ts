@@ -3,7 +3,7 @@ export type Screen =
   | 'home' | 'login'
   | 'signup-1' | 'signup-2' | 'signup-3'
   | 'risk' | 'risk-result' | 'investor-check'
-  | 'strategy' | 'start' | 'backtest'
+  | 'strategy' | 'start'
   | 'information' | 'dashboard' | 'portfolio' | 'stock';
 
 /** 온보딩 Step 01 폼 값 */
@@ -132,8 +132,9 @@ export interface BacktestAiContext {
 }
 
 export interface BacktestAiExplanation {
-  headline: string;     // 차트 아래 AI 한 줄 해석
-  explanation: string;  // 상세지표 아래 AI 상세 설명
+  headline: string;   // 차트 아래 AI 한 줄 해석
+  overview: string;   // 상세 설명의 "한눈에 보면"
+  caution: string;    // 상세 설명의 "주의해서 볼 점"
   generatedAt: string;
 }
 

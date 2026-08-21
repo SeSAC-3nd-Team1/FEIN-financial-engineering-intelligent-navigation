@@ -186,7 +186,8 @@ function buildMockHeadline(ctx: BacktestAiContext): string {
   return `${ctx.benchmarkName}과 비슷한 성과를 보였어요`;
 }
 
-function buildMockExplanation(ctx: BacktestAiContext): string {
+/** "한눈에 보면" — 결과 + 벤치마크 비교, 한 문장 */
+function buildMockOverview(ctx: BacktestAiContext): string {
   const opening = periodOpening(ctx);
   const diff = Math.round((ctx.cumulativeReturn - ctx.benchmarkReturn) * 10) / 10;
   const compare =
@@ -195,18 +196,22 @@ function buildMockExplanation(ctx: BacktestAiContext): string {
       : diff < 0
         ? `같은 기간 ${ctx.benchmarkName}(${ctx.benchmarkReturn}%)과 비교하면 ${Math.abs(diff)}%p 낮은 성과였어요.`
         : `같은 기간 ${ctx.benchmarkName}과 비슷한 수준(${ctx.benchmarkReturn}%)이었어요.`;
-  const sharpeSentence = ctx.sharpe != null ? ` 샤프 지수는 ${ctx.sharpe}였어요.` : '';
+  return `${opening} ${ctx.strategyName}은 과거 해당 구간에서 누적 ${ctx.cumulativeReturn}%를 기록했어요. ${compare}`;
+}
 
-  return [
-    `${opening} ${ctx.strategyName}은 과거 해당 구간에서 누적 ${ctx.cumulativeReturn}%를 기록했어요.`,
-    compare,
-    `이 기간 최대 낙폭은 ${ctx.mdd}%, 변동성은 ${ctx.volatility}%였어요.${sharpeSentence}`,
-    '백테스트는 과거 데이터를 기반으로 한 결과이며, 미래 수익을 보장하지 않아요.',
-  ].join(' ');
+/** "주의해서 볼 점" — MDD/변동성 등 위험 관련, 한 문장 */
+function buildMockCaution(ctx: BacktestAiContext): string {
+  const sharpeSentence = ctx.sharpe != null ? ` 샤프 지수는 ${ctx.sharpe}였어요.` : '';
+  return `이 기간 최대 낙폭은 ${ctx.mdd}%, 변동성은 ${ctx.volatility}%였어요.${sharpeSentence}`;
 }
 
 export function fetchAiExplanation(ctx: BacktestAiContext): Promise<BacktestAiExplanation> {
   return USE_MOCK
-    ? delay({ headline: buildMockHeadline(ctx), explanation: buildMockExplanation(ctx), generatedAt: new Date().toISOString() })
+    ? delay({
+        headline: buildMockHeadline(ctx),
+        overview: buildMockOverview(ctx),
+        caution: buildMockCaution(ctx),
+        generatedAt: new Date().toISOString(),
+      })
     : request<BacktestAiExplanation>('/explain', ctx);
 }

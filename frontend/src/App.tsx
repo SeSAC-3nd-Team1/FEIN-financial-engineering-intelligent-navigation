@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import Backtest from './pages/Backtest';
 import Chatbot from './components/Chatbot';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
@@ -151,15 +150,6 @@ export default function App() {
           userName={userName}
           onNavigate={setScreen}
           onStart={handleStartInvesting}
-          onOpenBacktest={() => setScreen('backtest')}
-        />
-      )}
-      {screen === 'backtest' && (
-        <Backtest
-          strategyId={strategyId}
-          userName={userName}
-          onNavigate={setScreen}
-          onBack={() => setScreen('strategy')}
         />
       )}
       {screen === 'start' && (
