@@ -115,6 +115,7 @@ export interface BacktestResult {
 
 export interface BacktestAiContext {
   strategyName: string;
+  periodType: 'preset' | 'custom';
   periodId: string;
   periodLabel: string;
   periodDescription: string;
@@ -131,7 +132,8 @@ export interface BacktestAiContext {
 }
 
 export interface BacktestAiExplanation {
-  explanation: string;
+  headline: string;     // 차트 아래 AI 한 줄 해석
+  explanation: string;  // 상세지표 아래 AI 상세 설명
   generatedAt: string;
 }
 

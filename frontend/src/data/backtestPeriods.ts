@@ -45,3 +45,18 @@ function recentFiveYearsPeriod(): BacktestPeriod {
 export function getRecommendedPeriods(): BacktestPeriod[] {
   return [...STATIC_PERIODS, recentFiveYearsPeriod()];
 }
+
+/** 백테스트가 지원하는 데이터 범위 — 직접 기간 설정 검증에 쓴다(다른 곳에 하드코딩하지 않는다) */
+export const AVAILABLE_DATA_RANGE = {
+  minDate: '2015-01-01',
+  maxDate: new Date().toISOString().slice(0, 10),
+};
+
+/** 직접 기간 설정 값 검증 — 문제 없으면 null, 문제 있으면 사용자에게 보여줄 메시지 */
+export function validateCustomPeriod(startDate: string, endDate: string): string | null {
+  if (!startDate || !endDate) return '시작일과 종료일을 모두 선택해주세요.';
+  if (startDate >= endDate) return '시작일은 종료일보다 이전이어야 해요.';
+  if (endDate > AVAILABLE_DATA_RANGE.maxDate) return '미래 날짜는 선택할 수 없어요.';
+  if (startDate < AVAILABLE_DATA_RANGE.minDate) return '이 기간에는 사용할 수 있는 데이터가 없어요.';
+  return null;
+}

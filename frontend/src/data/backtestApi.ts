@@ -161,6 +161,8 @@ export function runBacktest(strategyId: string, strategyName: string, period: Ba
 /* ----- MOCK AI 설명 -----
  * ctx 로 전달된 숫자만 참조해서 문장을 조립한다. 예측·추천성 표현이 들어갈
  * 자리를 애초에 만들지 않아서, 과거 데이터 한정 표현만 나오도록 강제한다.
+ * 직접 설정한 기간은 "코로나 폭락"/"하락장" 같은 시장 이벤트로 임의 추론하지 않고
+ * 실제 선택한 시작~종료 연월만 근거로 한다.
  */
 const PERIOD_OPENING: Record<string, string> = {
   'corona-crash': '코로나 폭락처럼 시장이 급격하게 떨어졌던 시기에는',
@@ -168,8 +170,24 @@ const PERIOD_OPENING: Record<string, string> = {
   'recent-5y': '최근 5년처럼 상승과 하락을 모두 포함한 기간에는',
 };
 
+const fmtShort = (iso: string) => `${iso.slice(0, 4)}.${iso.slice(5, 7)}`;
+
+function periodOpening(ctx: BacktestAiContext): string {
+  if (ctx.periodType === 'custom') return `선택한 ${fmtShort(ctx.startDate)}~${fmtShort(ctx.endDate)} 기간에는`;
+  return PERIOD_OPENING[ctx.periodId] ?? '선택한 기간에는';
+}
+
+/** 차트 바로 아래에 쓰는 한 줄 해석 — 벤치마크 대비 결과 한 문장만 */
+function buildMockHeadline(ctx: BacktestAiContext): string {
+  const diff = Math.round((ctx.cumulativeReturn - ctx.benchmarkReturn) * 10) / 10;
+  if (diff > 0 && ctx.cumulativeReturn < 0) return `하락장에서도 ${ctx.benchmarkName}보다 ${Math.abs(diff)}%p 덜 떨어졌어요`;
+  if (diff > 0) return `${ctx.benchmarkName}보다 ${Math.abs(diff)}%p 더 벌었어요`;
+  if (diff < 0) return `이 기간에는 ${ctx.benchmarkName}보다 ${Math.abs(diff)}%p 낮은 성과였어요`;
+  return `${ctx.benchmarkName}과 비슷한 성과를 보였어요`;
+}
+
 function buildMockExplanation(ctx: BacktestAiContext): string {
-  const opening = PERIOD_OPENING[ctx.periodId] ?? '선택한 기간에는';
+  const opening = periodOpening(ctx);
   const diff = Math.round((ctx.cumulativeReturn - ctx.benchmarkReturn) * 10) / 10;
   const compare =
     diff > 0
@@ -189,6 +207,6 @@ function buildMockExplanation(ctx: BacktestAiContext): string {
 
 export function fetchAiExplanation(ctx: BacktestAiContext): Promise<BacktestAiExplanation> {
   return USE_MOCK
-    ? delay({ explanation: buildMockExplanation(ctx), generatedAt: new Date().toISOString() })
+    ? delay({ headline: buildMockHeadline(ctx), explanation: buildMockExplanation(ctx), generatedAt: new Date().toISOString() })
     : request<BacktestAiExplanation>('/explain', ctx);
 }

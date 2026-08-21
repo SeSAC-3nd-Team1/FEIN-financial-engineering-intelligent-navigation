@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { TooltipProps } from 'recharts';
 import Header from '../components/Header';
 import TermTooltip from '../components/TermTooltip';
 import { fetchAiExplanation, runBacktest } from '../data/backtestApi';
-import { getRecommendedPeriods } from '../data/backtestPeriods';
+import { AVAILABLE_DATA_RANGE, getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
 import { STRATEGIES } from '../data/strategies';
 import type { BacktestAiContext, BacktestPeriod, BacktestResult, Screen } from '../types';
 
@@ -14,6 +15,8 @@ interface Props {
   onBack: () => void;
 }
 
+const PRINCIPAL = 10_000_000;
+
 const METRIC_TERMS: Record<string, string> = {
   cumulativeReturn: '투자 시작 시점부터 해당 기간 끝까지 누적된 수익률이에요.',
   cagr: '연평균 성장률이에요. 기간 동안의 수익을 매년 일정하게 늘어난 것으로 환산한 값이에요.',
@@ -23,44 +26,77 @@ const METRIC_TERMS: Record<string, string> = {
 };
 
 const fmtDate = (iso: string) => iso.replaceAll('-', '.');
+const fmtAxisDate = (iso: string) => `${iso.slice(0, 4)}.${iso.slice(5, 7)}`;
+const fmtTooltipDate = (iso: string) => `${iso.slice(0, 4)}년 ${Number(iso.slice(5, 7))}월`;
+const fmtWon = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}만원`;
 const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 
-/** 04 백테스트 — 추천 기간 기준으로 전략의 과거 성과·위험을 확인하고 AI 설명을 받는다 */
+/** 04 백테스트 — 전략 상세에서 넘어온 전략을, 추천 기간 또는 직접 설정한 기간에 적용해 성과·위험을 확인한다 */
 export default function Backtest({ strategyId: initialStrategyId, userName, onNavigate, onBack }: Props) {
+  const strategy = STRATEGIES.find((s) => s.id === initialStrategyId) ?? STRATEGIES[0];
   const periods = useMemo(() => getRecommendedPeriods(), []);
-  const [strategyId, setStrategyId] = useState(initialStrategyId ?? STRATEGIES[0].id);
-  const [selectedPeriod, setSelectedPeriod] = useState<BacktestPeriod>(periods[0]);
-  const [retryToken, setRetryToken] = useState(0);
 
+  const [periodMode, setPeriodMode] = useState<'preset' | 'custom'>('preset');
+  const [presetPeriodId, setPresetPeriodId] = useState(periods[0].id);
+  const [customPeriod, setCustomPeriod] = useState<{ startDate: string; endDate: string } | null>(null);
+
+  const [customPanelOpen, setCustomPanelOpen] = useState(false);
+  const [draftStart, setDraftStart] = useState('');
+  const [draftEnd, setDraftEnd] = useState('');
+  const [customError, setCustomError] = useState<string | null>(null);
+
+  const [retryToken, setRetryToken] = useState(0);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [resultLoading, setResultLoading] = useState(false);
   const [resultError, setResultError] = useState<string | null>(null);
 
+  const [aiHeadline, setAiHeadline] = useState<string | null>(null);
   const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
+  // 추천 기간 또는 직접 설정 중 지금 적용된 기간 하나 — 두 모드가 항상 이 값 하나로 합쳐진다
+  const activePeriod: BacktestPeriod = useMemo(() => {
+    if (periodMode === 'custom' && customPeriod) {
+      return { id: 'custom', label: '직접 설정', startDate: customPeriod.startDate, endDate: customPeriod.endDate, description: '' };
+    }
+    return periods.find((p) => p.id === presetPeriodId) ?? periods[0];
+  }, [periodMode, customPeriod, presetPeriodId, periods]);
 
-  // 전략/기간이 바뀌면 이전 결과와 AI 설명을 함께 리셋하고 새로 받아온다 —
+  const selectPreset = (id: string) => {
+    setPeriodMode('preset');
+    setPresetPeriodId(id);
+    setCustomPanelOpen(false);
+  };
+
+  const applyCustomPeriod = () => {
+    const err = validateCustomPeriod(draftStart, draftEnd);
+    if (err) { setCustomError(err); return; }
+    setCustomError(null);
+    setCustomPeriod({ startDate: draftStart, endDate: draftEnd });
+    setPeriodMode('custom');
+  };
+
+  // 기간이 바뀌면 이전 결과와 AI 설명을 함께 리셋하고 새로 받아온다 —
   // 새 지표에 헌 AI 설명이 잠깐이라도 같이 보이는 상황을 막는다.
   useEffect(() => {
     let cancelled = false;
     setResultLoading(true);
     setResultError(null);
     setResult(null);
+    setAiHeadline(null);
     setAiExplanation(null);
     setAiError(null);
     setAiLoading(false);
 
-    runBacktest(strategyId, strategy.name, selectedPeriod)
+    runBacktest(strategy.id, strategy.name, activePeriod)
       .then((r) => { if (!cancelled) setResult(r); })
       .catch((e) => { if (!cancelled) setResultError(e instanceof Error ? e.message : '백테스트 결과를 불러오지 못했어요.'); })
       .finally(() => { if (!cancelled) setResultLoading(false); });
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strategyId, selectedPeriod, retryToken]);
+  }, [strategy.id, activePeriod, retryToken]);
 
   // AI 설명은 백테스트 결과가 성공적으로 온 뒤에만, 그 결과 값 그대로를 근거로 요청한다.
   useEffect(() => {
@@ -71,6 +107,7 @@ export default function Backtest({ strategyId: initialStrategyId, userName, onNa
 
     const ctx: BacktestAiContext = {
       strategyName: result.strategyName,
+      periodType: result.period.id === 'custom' ? 'custom' : 'preset',
       periodId: result.period.id,
       periodLabel: result.period.label,
       periodDescription: result.period.description,
@@ -87,7 +124,7 @@ export default function Backtest({ strategyId: initialStrategyId, userName, onNa
     };
 
     fetchAiExplanation(ctx)
-      .then((r) => { if (!cancelled) setAiExplanation(r.explanation); })
+      .then((r) => { if (!cancelled) { setAiHeadline(r.headline); setAiExplanation(r.explanation); } })
       .catch(() => { if (!cancelled) setAiError('AI 설명을 불러오지 못했어요. 백테스트 결과는 위 지표에서 확인할 수 있어요.'); })
       .finally(() => { if (!cancelled) setAiLoading(false); });
 
@@ -95,6 +132,9 @@ export default function Backtest({ strategyId: initialStrategyId, userName, onNa
   }, [result]);
 
   const chartData = result?.series.map((p) => ({ t: p.t, [result.strategyName]: p.strategy, [result.benchmarkName]: p.benchmark })) ?? [];
+  const finalAmount = result ? Math.round(PRINCIPAL * (1 + result.metrics.cumulativeReturn / 100)) : 0;
+  const diffAmount = finalAmount - PRINCIPAL;
+  const tickInterval = Math.max(0, Math.ceil((chartData.length || 1) / 6) - 1);
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -103,53 +143,73 @@ export default function Backtest({ strategyId: initialStrategyId, userName, onNa
       <main className="flex flex-col items-center px-16 pb-24 pt-6">
         <div className="flex w-[1040px] flex-col gap-10">
           <section className="flex flex-col gap-4">
-            <button onClick={onBack} className="self-start text-base font-semibold text-muted">← 전략으로 돌아가기</button>
+            <button onClick={onBack} className="self-start text-base font-semibold text-muted">← {strategy.name}으로 돌아가기</button>
             <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">백테스트</h1>
             <p className="max-w-[820px] text-[19px] leading-8 text-muted">
-              선택한 전략이 대표적인 과거 시장 상황에서 어떤 성과와 위험을 보였는지 확인해보세요.
+              {strategy.name}이 대표적인 과거 시장 상황에서 어떻게 움직였는지 확인해보세요.
             </p>
           </section>
 
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
-            <div className="flex flex-col gap-4">
-              <h2 className="text-[22px] font-bold tracking-[-0.025em]">전략</h2>
-              <div className="flex flex-wrap gap-3">
-                {STRATEGIES.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setStrategyId(s.id)}
-                    className={`rounded-full px-6 py-3.5 text-[17px] font-semibold ${
-                      s.id === strategyId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
-                    }`}
-                  >
-                    {s.name}
-                  </button>
-                ))}
-              </div>
+            <div className="flex flex-col gap-2.5">
+              <h2 className="text-[26px] font-bold tracking-[-0.025em]">언제를 골라볼까요?</h2>
+              <p className="text-[17px] text-muted">1,000만원을 넣었다고 가정하고, 구간을 바꿔가며 결과를 볼 수 있어요.</p>
             </div>
 
-            <div className="flex flex-col gap-4 border-t border-[#F0F2ED] pt-7">
-              <h2 className="text-[22px] font-bold tracking-[-0.025em]">추천 기간</h2>
-              <div className="flex flex-wrap gap-3">
-                {periods.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedPeriod(p)}
-                    className={`rounded-full px-6 py-3.5 text-[17px] font-semibold ${
-                      p.id === selectedPeriod.id ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-                {/* P2: 직접 설정 진입점 — CustomDateRangePicker 준비되면 여기 추가 */}
-              </div>
-              <p className="text-[15px] leading-6 text-muted">
-                {selectedPeriod.label} · {fmtDate(selectedPeriod.startDate)} — {fmtDate(selectedPeriod.endDate)}
-                <br />
-                {selectedPeriod.description}
-              </p>
+            <div className="flex flex-wrap gap-3">
+              {periods.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => selectPreset(p.id)}
+                  className={`rounded-full px-6 py-3.5 text-[17px] font-semibold ${
+                    periodMode === 'preset' && p.id === presetPeriodId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
+
+            <p className="text-[15px] leading-6 text-muted">
+              {activePeriod.label} · {fmtDate(activePeriod.startDate)} — {fmtDate(activePeriod.endDate)}
+              {periodMode === 'preset' && activePeriod.description && <><br />{activePeriod.description}</>}
+            </p>
+
+            <button
+              onClick={() => setCustomPanelOpen((o) => !o)}
+              className="self-start text-[15px] font-semibold text-navy underline"
+            >
+              원하는 기간이 있나요? 직접 설정 →
+            </button>
+
+            {customPanelOpen && (
+              <div className="flex flex-col gap-3.5 rounded-[16px] bg-[#F8F9F6] p-7">
+                <span className="text-[15px] font-bold">직접 기간 설정</span>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="date"
+                    value={draftStart}
+                    min={AVAILABLE_DATA_RANGE.minDate}
+                    max={AVAILABLE_DATA_RANGE.maxDate}
+                    onChange={(e) => setDraftStart(e.target.value)}
+                    className="rounded-field bg-surface px-4 py-3 text-[15px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
+                  />
+                  <span className="text-muted">→</span>
+                  <input
+                    type="date"
+                    value={draftEnd}
+                    min={AVAILABLE_DATA_RANGE.minDate}
+                    max={AVAILABLE_DATA_RANGE.maxDate}
+                    onChange={(e) => setDraftEnd(e.target.value)}
+                    className="rounded-field bg-surface px-4 py-3 text-[15px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
+                  />
+                </div>
+                {customError && <span className="text-sm text-up">{customError}</span>}
+                <button onClick={applyCustomPeriod} className="self-start rounded-field bg-lime px-7 py-3.5 text-[15px] font-bold text-navy">
+                  이 기간으로 확인하기
+                </button>
+              </div>
+            )}
           </section>
 
           {resultLoading && (
@@ -178,29 +238,30 @@ export default function Backtest({ strategyId: initialStrategyId, userName, onNa
               <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
                 <div className="flex flex-col gap-2">
                   <span className="text-base text-muted">
-                    {result.period.label} · {fmtDate(result.period.startDate)} — {fmtDate(result.period.endDate)}
+                    {result.period.label} · {fmtDate(result.period.startDate)} — {fmtDate(result.period.endDate)} · 투자금 1,000만원
                   </span>
                   <span className="text-[22px] font-bold tracking-[-0.025em]">{result.strategyName}</span>
                 </div>
 
-                <div className="flex gap-14">
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[15px] text-muted">누적 수익률</span>
-                    <span className={`text-[40px] font-bold tracking-[-0.035em] ${result.metrics.cumulativeReturn >= 0 ? 'text-up' : 'text-down'}`}>
-                      {signed(result.metrics.cumulativeReturn)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-[15px] text-muted">최대 낙폭</span>
-                    <span className="text-[40px] font-bold tracking-[-0.035em] text-down">{result.metrics.mdd}%</span>
-                  </div>
+                <div className="flex items-baseline gap-3.5">
+                  <span className="text-[44px] font-bold tracking-[-0.035em]">{fmtWon(finalAmount)}</span>
+                  <span className={`text-[19px] font-semibold ${diffAmount >= 0 ? 'text-up' : 'text-down'}`}>
+                    {diffAmount >= 0 ? '+' : ''}{fmtWon(diffAmount)} ({signed(result.metrics.cumulativeReturn)})
+                  </span>
                 </div>
 
                 <div className="h-[300px] w-full">
                   <ResponsiveContainer>
                     <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                       <CartesianGrid stroke="#F0F2ED" vertical={false} />
-                      <XAxis dataKey="t" hide />
+                      <XAxis
+                        dataKey="t"
+                        tick={{ fill: '#8A948C', fontSize: 12 }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={fmtAxisDate}
+                        interval={tickInterval}
+                      />
                       <YAxis
                         tick={{ fill: '#8A948C', fontSize: 13 }}
                         axisLine={false}
@@ -208,13 +269,20 @@ export default function Backtest({ strategyId: initialStrategyId, userName, onNa
                         width={56}
                         tickFormatter={(v: number) => `${v}%`}
                       />
-                      <Tooltip formatter={(v: number) => `${v}%`} labelFormatter={(l) => l} />
+                      <Tooltip content={<BacktestChartTooltip strategyName={result.strategyName} />} />
                       <Legend iconType="plainline" wrapperStyle={{ fontSize: 15, color: '#5C665F' }} />
                       <Line type="monotone" dataKey={result.benchmarkName} stroke="#C3CBC4" strokeWidth={3.5} dot={false} />
                       <Line type="monotone" dataKey={result.strategyName} stroke="#18243A" strokeWidth={5} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
+
+                {aiHeadline && (
+                  <div className="flex items-center gap-4 rounded-[16px] bg-[#F8FCEE] px-8 py-6">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-lime text-base text-navy">✦</span>
+                    <span className="text-[19px] font-bold leading-[28px] tracking-[-0.02em]">{aiHeadline}</span>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-4 gap-8 border-t border-[#F0F2ED] pt-7">
                   <MetricTile label="누적 수익률" value={signed(result.metrics.cumulativeReturn)} termKey="cumulativeReturn" />
@@ -256,6 +324,26 @@ function MetricTile({ label, value, accent, termKey }: { label: string; value: s
         <TermTooltip label={label} description={METRIC_TERMS[termKey]} />
       </div>
       <span className={`text-[22px] font-bold ${accent ? 'text-down' : ''}`}>{value}</span>
+    </div>
+  );
+}
+
+/** 차트 hover tooltip — 첫 줄에 실제 데이터 포인트의 날짜(YYYY년 M월), 그 아래 전략/벤치마크 수익률 */
+function BacktestChartTooltip({ active, payload, label, strategyName }: TooltipProps<number, string> & { strategyName: string }) {
+  if (!active || !payload || payload.length === 0) return null;
+  const sorted = [...payload].sort((a) => (a.dataKey === strategyName ? -1 : 1));
+  return (
+    <div className="rounded-[10px] bg-white px-4 py-3 text-[14px] shadow-[0_8px_24px_rgba(24,36,58,0.18)]">
+      <div className="mb-1.5 font-semibold text-ink">{fmtTooltipDate(String(label ?? ''))}</div>
+      <div className="flex flex-col gap-1">
+        {sorted.map((p) => (
+          <div key={String(p.dataKey)} className="flex items-center gap-2.5">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: p.dataKey === strategyName ? '#18243A' : '#C3CBC4' }} />
+            <span className="w-16 shrink-0 text-muted">{p.dataKey}</span>
+            <span className="font-semibold text-ink">{signed(Number(p.value))}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
