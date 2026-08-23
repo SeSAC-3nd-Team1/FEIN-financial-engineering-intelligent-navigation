@@ -12,7 +12,6 @@ import {
 } from '../data/holdings';
 import { STRATEGIES } from '../data/strategies';
 import { useTradingData } from '../hooks/useTradingData';
-import { getStockPriceApi, type PriceResponse } from '../lib/backendApi';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
 import { useTradingStore } from '../store/tradingStore';
@@ -58,17 +57,11 @@ export default function Portfolio({
   const logout = useAuthStore((state) => state.logout);
   const account = useTradingStore((state) => state.account);
   const portfolio = useTradingStore((state) => state.portfolio);
-  const orders = useTradingStore((state) => state.orders);
-  const executions = useTradingStore((state) => state.executions);
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const isLoading = useTradingStore((state) => state.isLoading);
   const isRefreshing = useTradingStore((state) => state.isRefreshing);
-  const isSubmitting = useTradingStore((state) => state.isSubmitting);
   const error = useTradingStore((state) => state.error);
-  const orderMessage = useTradingStore((state) => state.orderMessage);
-  const placeOrder = useTradingStore((state) => state.placeOrder);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
-  const clearError = useTradingStore((state) => state.clearError);
   // 전략 변경 모달 상태
   const [isModalOpen, setModalOpen] = useState(false);
   // strategyId 로부터 표시용 전략 객체(이름/나와 맞는 정도 등)를 파생시킨다 — STRATEGIES 가 유일한 출처
@@ -92,13 +85,6 @@ export default function Portfolio({
   const [tab, setTab] = useState<AnalyticsTab>('trend');
   const [periodIdx, setPeriodIdx] = useState(2); // 기본값 "1년"
   const [selectedHoldingIdx, setSelectedHoldingIdx] = useState(0);
-  const [stockCode, setStockCode] = useState('005930');
-  const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
-  const [quantity, setQuantity] = useState('1');
-  const [quote, setQuote] = useState<PriceResponse | null>(null);
-  const [quoteLoading, setQuoteLoading] = useState(false);
-  const [quoteError, setQuoteError] = useState<string | null>(null);
-  const [lastAttempt, setLastAttempt] = useState<{ signature: string; key: string } | null>(null);
 
   useEffect(() => {
     if (account?.selected_strategy_id && account.selected_strategy_id !== strategyId) {
@@ -146,7 +132,7 @@ export default function Portfolio({
         userName={userName}
         onNavigate={onNavigate}
         title={isLoading ? '가상계좌를 불러오고 있어요…' : accountMissing ? '아직 가상계좌가 없어요' : !token ? '로그인이 필요해요' : '포트폴리오를 불러오지 못했어요'}
-        message={isLoading ? '계좌·주문·체결과 최신 평가정보를 확인하고 있습니다.' : accountMissing ? '전략을 선택하고 가상투자를 시작해주세요.' : error?.message ?? '로그인 상태와 Backend 연결을 확인해주세요.'}
+        message={isLoading ? '계좌와 최신 평가정보를 확인하고 있습니다.' : accountMissing ? '전략을 선택하고 가상투자를 시작해주세요.' : error?.message ?? '로그인 상태와 Backend 연결을 확인해주세요.'}
       />
     );
   }
@@ -204,100 +190,6 @@ export default function Portfolio({
             >
               전략 변경하기
             </button>
-          </section>
-
-          <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
-            <div className="flex items-start justify-between gap-8">
-              <div className="flex flex-col gap-2">
-                <span className="text-[15px] font-semibold text-muted">내부 가상거래 · 시장가</span>
-                <h2 className="text-[26px] font-bold tracking-[-0.025em]">매수·매도 주문</h2>
-                <p className="text-[16px] text-muted">KIS는 가격만 제공하며 체결과 잔액 변경은 서비스 가상계좌에서 처리됩니다.</p>
-              </div>
-              <span className="rounded-full bg-[#F4F6F1] px-4 py-2 text-sm font-semibold text-[#3F4A43]">{account.account_name}</span>
-            </div>
-
-            <div className="grid grid-cols-[1fr_160px_150px] gap-4">
-              <label className="flex flex-col gap-2 text-[15px] font-semibold text-muted">
-                종목코드
-                <input
-                  aria-label="주문 종목코드"
-                  value={stockCode}
-                  onChange={(event) => { setStockCode(event.target.value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 12)); setQuote(null); setQuoteError(null); clearError(); }}
-                  className="rounded-field bg-canvas px-5 py-4 text-lg font-bold text-ink outline-none focus:ring-2 focus:ring-lime"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-[15px] font-semibold text-muted">
-                주문 방향
-                <select aria-label="주문 방향" value={side} onChange={(event) => { setSide(event.target.value as 'BUY' | 'SELL'); clearError(); }} className="rounded-field bg-canvas px-5 py-4 text-lg font-bold text-ink outline-none focus:ring-2 focus:ring-lime">
-                  <option value="BUY">매수</option>
-                  <option value="SELL">매도</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-2 text-[15px] font-semibold text-muted">
-                수량
-                <input
-                  aria-label="주문 수량"
-                  inputMode="numeric"
-                  value={quantity}
-                  onChange={(event) => { setQuantity(event.target.value.replace(/\D/g, '').slice(0, 7)); clearError(); }}
-                  className="rounded-field bg-canvas px-5 py-4 text-lg font-bold text-ink outline-none focus:ring-2 focus:ring-lime"
-                />
-              </label>
-            </div>
-
-            <div className="flex items-center justify-between gap-5 rounded-[18px] bg-canvas px-7 py-6">
-              <div className="flex flex-col gap-1">
-                <span className="text-[14px] text-muted">현재가</span>
-                <span className="text-xl font-bold">{quote ? won(Number(quote.price)) : '확인 전'}</span>
-                {quote && <span className="text-xs text-subtle">{quote.source} · {new Date(quote.as_of).toLocaleString('ko-KR')}</span>}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  disabled={quoteLoading || stockCode.length < 6}
-                  onClick={async () => {
-                    if (!token) return;
-                    setQuoteLoading(true);
-                    setQuoteError(null);
-                    clearError();
-                    try { setQuote(await getStockPriceApi(stockCode, token)); }
-                    catch (requestError) {
-                      setQuoteError(requestError instanceof Error ? requestError.message : '현재가를 조회하지 못했습니다.');
-                      if ((requestError as { status?: number }).status === 401) void logout();
-                    } finally { setQuoteLoading(false); }
-                  }}
-                  className="rounded-field bg-surface px-6 py-4 font-semibold text-[#3F4A43] disabled:opacity-50"
-                >
-                  {quoteLoading ? '조회 중…' : '현재가 확인'}
-                </button>
-                <button
-                  disabled={isSubmitting || stockCode.length < 6 || Number(quantity) <= 0}
-                  onClick={async () => {
-                    if (!token) return;
-                    const signature = `${account.id}:${stockCode}:${side}:${quantity}`;
-                    const idempotencyKey = lastAttempt?.signature === signature
-                      ? lastAttempt.key
-                      : `frontend-${crypto.randomUUID()}`;
-                    setLastAttempt({ signature, key: idempotencyKey });
-                    try {
-                      await placeOrder(token, {
-                        account_id: account.id, stock_code: stockCode, side,
-                        order_type: 'MARKET', quantity: Number(quantity), idempotency_key: idempotencyKey,
-                      });
-                      setLastAttempt(null);
-                      setQuote(null);
-                    } catch (requestError) {
-                      if ((requestError as { status?: number }).status === 401) void logout();
-                    }
-                  }}
-                  className={`rounded-field px-8 py-4 font-bold disabled:cursor-not-allowed disabled:opacity-50 ${side === 'BUY' ? 'bg-lime text-navy' : 'bg-navy text-white'}`}
-                >
-                  {isSubmitting ? '주문 처리 중…' : `${side === 'BUY' ? '매수' : '매도'} 주문`}
-                </button>
-              </div>
-            </div>
-            {orderMessage && <p role="status" className="rounded-[14px] bg-[#EAF7EF] px-5 py-4 font-semibold text-[#2E9B65]">{orderMessage}</p>}
-            {quoteError && <p role="alert" className="rounded-[14px] bg-[#FFF1F1] px-5 py-4 font-semibold text-down">{quoteError}</p>}
-            {error && <p role="alert" className="rounded-[14px] bg-[#FFF1F1] px-5 py-4 font-semibold text-down">{error.message} <span className="text-sm">({error.code})</span></p>}
           </section>
 
           {/* ── "내 포트폴리오 자세히 보기" — Power BI 임베드 컨테이너 ─────────────
@@ -398,7 +290,7 @@ export default function Portfolio({
 
             {tab === 'weight' && (
               actualPositions.length === 0 ? (
-                <div className="rounded-[20px] bg-canvas px-9 py-12 text-center text-lg text-muted">매수 후 실제 보유 비중이 표시됩니다.</div>
+                <div className="rounded-[20px] bg-canvas px-9 py-12 text-center text-lg text-muted">자동 운용이 시작되면 실제 보유 비중이 표시됩니다.</div>
               ) : (
                 <div className="flex items-center gap-14">
                   <div className="relative h-[280px] w-[280px] shrink-0">
@@ -479,7 +371,7 @@ export default function Portfolio({
             </div>
             <div className="flex flex-col">
               {actualPositions.length === 0 && (
-                <div className="rounded-[18px] bg-canvas px-8 py-10 text-center text-muted">아직 보유종목이 없습니다. 위 주문 영역에서 첫 가상 매수를 시작할 수 있어요.</div>
+                <div className="rounded-[18px] bg-canvas px-8 py-10 text-center text-muted">아직 보유종목이 없습니다. 선택한 전략에 따라 자동 운용이 시작되면 이곳에 표시됩니다.</div>
               )}
               {actualPositions.map((holding, i) => {
                 const staticIndex = stockIndex(holding.stock_code);
@@ -504,29 +396,6 @@ export default function Portfolio({
                 );
               })}
             </div>
-          </section>
-
-          <section className="grid grid-cols-2 gap-5">
-            <TransactionList
-              title="최근 주문"
-              empty="주문 내역이 없습니다."
-              rows={orders.slice(0, 5).map((order) => ({
-                id: order.id,
-                primary: `${order.stock_code} · ${order.side === 'BUY' ? '매수' : '매도'} ${order.quantity}주`,
-                secondary: `${order.status} · ${new Date(order.requested_at).toLocaleString('ko-KR')}`,
-                amount: order.requested_price ? won(Number(order.requested_price) * order.quantity) : '-',
-              }))}
-            />
-            <TransactionList
-              title="최근 체결"
-              empty="체결 내역이 없습니다."
-              rows={executions.slice(0, 5).map((execution) => ({
-                id: String(execution.id),
-                primary: `${execution.stock_code} · ${execution.side === 'BUY' ? '매수' : '매도'} ${execution.quantity}주`,
-                secondary: new Date(execution.executed_at).toLocaleString('ko-KR'),
-                amount: won(Number(execution.execution_price) * execution.quantity),
-              }))}
-            />
           </section>
 
           {/* "내 투자 판단은 어땠을까요?" — 요약 카드. 상세 회고는 "지난 판단 돌아보기"에서 서브뷰로 전환한다 */}
@@ -592,7 +461,6 @@ export default function Portfolio({
                 return (
                   <button
                     key={s.id}
-                    disabled={isSubmitting}
                     onClick={() => void setSelectedStrategy(s.id)}
                     className={`flex items-center justify-between rounded-[20px] px-8 py-7 text-left ${
                       active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
@@ -715,32 +583,6 @@ function PortfolioState({
         </section>
       </main>
     </div>
-  );
-}
-
-function TransactionList({
-  title, empty, rows,
-}: {
-  title: string;
-  empty: string;
-  rows: { id: string; primary: string; secondary: string; amount: string }[];
-}) {
-  return (
-    <section className="flex flex-col gap-5 rounded-card bg-surface p-9">
-      <h2 className="text-[22px] font-bold">{title}</h2>
-      {rows.length === 0 && <p className="text-muted">{empty}</p>}
-      <div className="flex flex-col">
-        {rows.map((row) => (
-          <div key={row.id} className="flex items-center justify-between gap-4 border-b border-line py-4 last:border-0">
-            <div className="flex flex-col gap-1">
-              <span className="font-semibold">{row.primary}</span>
-              <span className="text-xs text-subtle">{row.secondary}</span>
-            </div>
-            <span className="shrink-0 font-bold">{row.amount}</span>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 

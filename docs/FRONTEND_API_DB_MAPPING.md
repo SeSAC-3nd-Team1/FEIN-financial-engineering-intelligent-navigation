@@ -12,7 +12,7 @@
 | Portfolio/Dashboard | 계좌 금액·손익·보유종목은 실제 API, AI 설명·과거 분석은 명시적 mock | `GET /api/v1/accounts/me`, `GET /portfolio?account_id=`, `GET /orders`, `GET /executions` | `virtual_accounts`, `positions`, `orders`, `executions`, `cash_ledger` + Redis/KIS 현재가 |
 | StockDetail | 현재가는 실제 API, 차트·재무지표·AI 평가는 명시적 mock | `GET /api/v1/market/stocks/{code}/price` | Redis `price:{code}` → KIS 현재가. 재무지표는 Blob/Data API 후속 |
 | InformationExam | 한국 뉴스는 실제 Backend, 금융 상식은 기존 mock | `GET /api/v1/information/news/kr?page=1&size=20` | NAVER API HUB → Redis `information:news:kr:{query}:{page}:{size}`; PostgreSQL/Blob 저장 없음 |
-| Portfolio 주문 UI | MARKET BUY/SELL, 요청 중 버튼 잠금, 실패 재시도 시 동일 UUID idempotency key 재사용, 체결 후 전체 bundle 재조회 | `POST/GET /api/v1/orders`, `GET /executions`, `GET /portfolio` | `orders`, `executions`, `positions`, `cash_ledger`; KIS 주문 API 사용 안 함 |
+| 자동 운용 주문 처리 | 사용자가 직접 매수·매도하지 않으며, 전략 기반 자동 운용 계층이 MARKET BUY/SELL과 UUID idempotency key를 사용한 뒤 portfolio를 갱신 | `POST/GET /api/v1/orders`, `GET /executions`, `GET /portfolio` | `orders`, `executions`, `positions`, `cash_ledger`; KIS 주문 API 사용 안 함 |
 
 ## 확인된 불일치
 
