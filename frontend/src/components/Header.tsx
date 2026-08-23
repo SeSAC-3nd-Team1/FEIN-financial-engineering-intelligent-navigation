@@ -17,6 +17,7 @@ const NAV: { key: Props['active']; label: string; to: Screen; guarded: boolean }
 
 export default function Header({ active, userName, onNavigate }: Props) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const logout = useAuthStore((s) => s.logout);
 
   const handleNavClick = (item: (typeof NAV)[number]) => {
     // 로그인이 필요한 메뉴는 인증 여부를 먼저 확인하고, 미로그인 시 로그인/회원가입 화면으로 보낸다
@@ -50,6 +51,7 @@ export default function Header({ active, userName, onNavigate }: Props) {
         <div className="flex items-center gap-2.5 text-[15px] text-muted">
           <span>{userName}님</span>
           <div className="h-[34px] w-[34px] rounded-full bg-[#EAEEE7]" />
+          <button onClick={() => { void logout(); onNavigate('home'); }} className="ml-2 text-sm underline">로그아웃</button>
         </div>
       ) : (
         <button onClick={() => onNavigate('login')} className="text-[15px] font-semibold text-ink">

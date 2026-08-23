@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Chatbot from './components/Chatbot';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
@@ -52,12 +52,15 @@ export default function App() {
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
-  const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
+  const initialize = useAuthStore((s) => s.initialize);
+  const authenticatedUser = useAuthStore((s) => s.user);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
 
-  const userName = personal.name.trim() || '서연';
+  const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
+
+  useEffect(() => { void initialize(); }, [initialize]);
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
@@ -82,7 +85,7 @@ export default function App() {
       {screen === 'login' && (
         <Login
           // 로그인 성공 → 인증 state를 켜고, 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
-          onLogin={() => { login(); setScreen('portfolio'); }}
+          onLogin={() => setScreen('portfolio')}
           onSignup={() => setScreen('signup-1')}
           onHome={() => setScreen('home')}
           onNavigate={setScreen}
@@ -109,11 +112,19 @@ export default function App() {
       )}
       {screen === 'signup-3' && (
         <SignupStep3
-          // 가입 완료 → 아이디/비밀번호를 저장해두고(로그인 시 대조용), 인증 state를 켜서
-          // 회원가입과는 별도 단계인 투자자 정보 확인으로 이동
-          onComplete={(userId, password) => {
-            register(userId, password);
-            login();
+          // 가입 API 성공 후 JWT 로그인까지 완료하고 투자자 정보 확인으로 이동한다.
+          onComplete={async (userId, password, email) => {
+            await register({
+              user_id: userId,
+              password,
+              name: personal.name.trim(),
+              birthdate: personal.birthdate,
+              phone_number: personal.phone,
+              email,
+              phone_verified: true,
+              email_verified: true,
+              agreements: [],
+            });
             startInvestorProfile('risk-result');
           }}
           onBack={() => setScreen('signup-2')}

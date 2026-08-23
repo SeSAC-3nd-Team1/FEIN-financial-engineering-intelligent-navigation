@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class AgreementRequest(BaseModel):
@@ -16,7 +16,11 @@ class AgreementRequest(BaseModel):
 
 class SignupRequest(BaseModel):
     user_id: str = Field(pattern=r"^[a-z0-9]{6,16}$")
-    password: str = Field(min_length=8, max_length=72)
+    password: str = Field(
+        min_length=8,
+        max_length=72,
+        pattern=r"^[A-Za-z\d@$!%*#?&]+$",
+    )
     name: str = Field(min_length=1, max_length=30)
     birthdate: str = Field(pattern=r"^[0-9]{6}$")
     phone_number: str = Field(pattern=r"^0[0-9]{9,10}$")
@@ -24,6 +28,15 @@ class SignupRequest(BaseModel):
     phone_verified: bool
     email_verified: bool
     agreements: list[AgreementRequest] = Field(default_factory=list)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_composition(cls, value: str) -> str:
+        if not any(char.isalpha() for char in value) or not any(char.isdigit() for char in value):
+            raise ValueError("password must include letters and digits")
+        if not any(char in "@$!%*#?&" for char in value):
+            raise ValueError("password must include a special character")
+        return value
 
 
 class LoginRequest(BaseModel):

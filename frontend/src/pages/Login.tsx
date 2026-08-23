@@ -12,20 +12,28 @@ interface Props {
 
 /** 로그인 — 기존 회원은 포트폴리오로, "회원가입하기"는 가입 1단계로 */
 export default function Login({ onLogin, onSignup, onHome }: Props) {
-  const account = useAuthStore((s) => s.account);
+  const login = useAuthStore((s) => s.login);
   const [id, setId] = useState('');
   const [pw, setPw] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [invalid, setInvalid] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const canLogin = id.trim().length > 0 && pw.length > 0;
 
-  const handleLogin = () => {
-    if (!canLogin) return;
-    if (account && account.userId === id && account.password === pw) {
+  const handleLogin = async () => {
+    if (!canLogin || submitting) return;
+    setSubmitting(true);
+    setErrorMessage('');
+    try {
+      await login(id.trim(), pw);
       setInvalid(false);
       onLogin();
-    } else {
+    } catch (error) {
       setInvalid(true);
+      setErrorMessage(error instanceof Error ? error.message : '로그인 요청을 처리하지 못했습니다.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -43,7 +51,7 @@ export default function Login({ onLogin, onSignup, onHome }: Props) {
         <div className="flex flex-col gap-3.5">
           <input
             value={id}
-            onChange={(e) => { setId(e.target.value); setInvalid(false); }}
+            onChange={(e) => { setId(e.target.value); setInvalid(false); setErrorMessage(''); }}
             placeholder="아이디"
             className={`rounded-field bg-surface px-5 py-4 text-[17px] outline-none ${
               invalid ? 'shadow-[0_0_0_2px_#E5484D_inset]' : 'shadow-[0_0_0_1px_#E5E9E3_inset] focus:shadow-[0_0_0_2px_#C6F04D_inset]'
@@ -53,9 +61,9 @@ export default function Login({ onLogin, onSignup, onHome }: Props) {
             <input
               type={showPw ? 'text' : 'password'}
               value={pw}
-              onChange={(e) => { setPw(e.target.value); setInvalid(false); }}
+              onChange={(e) => { setPw(e.target.value); setInvalid(false); setErrorMessage(''); }}
               placeholder="비밀번호"
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              onKeyDown={(e) => e.key === 'Enter' && void handleLogin()}
               className={`w-full rounded-field bg-surface py-4 pl-5 pr-14 text-[17px] outline-none ${
                 invalid ? 'shadow-[0_0_0_2px_#E5484D_inset]' : 'shadow-[0_0_0_1px_#E5E9E3_inset] focus:shadow-[0_0_0_2px_#C6F04D_inset]'
               }`}
@@ -71,17 +79,17 @@ export default function Login({ onLogin, onSignup, onHome }: Props) {
           </div>
           {invalid && (
             <span className="text-sm text-up">
-              아이디 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요.
+              {errorMessage || '아이디 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요.'}
             </span>
           )}
         </div>
 
         <button
-          onClick={handleLogin}
-          disabled={!canLogin}
+          onClick={() => void handleLogin()}
+          disabled={!canLogin || submitting}
           className="rounded-field py-5 text-[19px] font-bold disabled:cursor-default disabled:bg-[#E8EBE5] disabled:text-[#A6AFA7] enabled:bg-lime enabled:text-navy"
         >
-          로그인
+          {submitting ? '로그인 중...' : '로그인'}
         </button>
 
         <div className="flex justify-center gap-5 text-[15px] text-muted">

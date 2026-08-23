@@ -60,6 +60,8 @@ Backend 테스트:
 docker compose run --rm --no-deps backend pytest -q
 ```
 
+Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다. JWT는 브라우저에 보관되어 새로고침 후 검증·복원되며, 로그아웃 시 제거된다.
+
 | 서비스 | 접속/확인 위치 |
 | --- | --- |
 | Frontend | http://localhost:5173 |
