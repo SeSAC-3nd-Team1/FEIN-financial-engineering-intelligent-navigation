@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Chatbot from './components/Chatbot';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
@@ -15,6 +15,7 @@ import StartInvesting from './pages/StartInvesting';
 import StockDetail from './pages/StockDetail';
 import StrategyDetail from './pages/StrategyDetail';
 import { STRATEGIES } from './data/strategies';
+import { signupTermsApi } from './lib/backendApi';
 import { useAuthStore } from './store/authStore';
 import type { Screen, SignupPersonal } from './types';
 
@@ -40,6 +41,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
   const [personal, setPersonal] = useState<SignupPersonal>({
     name: '', birthdate: '', phone: '', aiPersonalizationConsent: false,
+    agreements: { a1: false, a2: false, a3: false, a4: false, b: false, c: false, ai: false },
   });
   // 전략 선택은 strategyId(=STRATEGIES 의 id) 하나만 상태로 두고, 화면별 표시 이름은 여기서 파생시킨다.
   // (과거엔 strategyId 와 별도로 strategy 표시 이름을 따로 들고 있어, 전략 선택 후에도
@@ -52,12 +54,15 @@ export default function App() {
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
-  const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
+  const initialize = useAuthStore((s) => s.initialize);
+  const authenticatedUser = useAuthStore((s) => s.user);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
 
-  const userName = personal.name.trim() || '서연';
+  const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
+
+  useEffect(() => { void initialize(); }, [initialize]);
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
@@ -82,7 +87,7 @@ export default function App() {
       {screen === 'login' && (
         <Login
           // 로그인 성공 → 인증 state를 켜고, 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
-          onLogin={() => { login(); setScreen('portfolio'); }}
+          onLogin={() => setScreen('portfolio')}
           onSignup={() => setScreen('signup-1')}
           onHome={() => setScreen('home')}
           onNavigate={setScreen}
@@ -109,11 +114,39 @@ export default function App() {
       )}
       {screen === 'signup-3' && (
         <SignupStep3
-          // 가입 완료 → 아이디/비밀번호를 저장해두고(로그인 시 대조용), 인증 state를 켜서
-          // 회원가입과는 별도 단계인 투자자 정보 확인으로 이동
-          onComplete={(userId, password) => {
-            register(userId, password);
-            login();
+          // 가입 API 성공 후 JWT 로그인까지 완료하고 투자자 정보 확인으로 이동한다.
+          onComplete={async (userId, password, email) => {
+            const termCodeByAgreement = {
+              a1: 'A1_THIRD_PARTY',
+              a2: 'A2_UNIQUE_ID',
+              a3: 'A3_CARRIER',
+              a4: 'A4_KCB',
+              b: 'B_PRIVACY',
+              c: 'C_ASSOCIATE_TERMS',
+              ai: 'AI_PERSONALIZATION',
+            } as const;
+            const agreementByTermCode = Object.fromEntries(
+              Object.entries(termCodeByAgreement).map(([key, code]) => [
+                code,
+                personal.agreements[key as keyof typeof termCodeByAgreement],
+              ]),
+            );
+            const terms = await signupTermsApi();
+            await register({
+              user_id: userId,
+              password,
+              name: personal.name.trim(),
+              birthdate: personal.birthdate,
+              phone_number: personal.phone,
+              email,
+              phone_verified: true,
+              email_verified: true,
+              agreements: terms.map((term) => ({
+                term_code: term.term_code,
+                version: term.version,
+                agreed: agreementByTermCode[term.term_code] ?? false,
+              })),
+            });
             startInvestorProfile('risk-result');
           }}
           onBack={() => setScreen('signup-2')}

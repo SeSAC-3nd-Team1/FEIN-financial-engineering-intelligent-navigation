@@ -32,10 +32,7 @@ const REQUIRED: (keyof Agreements)[] = ['a1', 'a2', 'a3', 'a4', 'b', 'c'];
 const ORDER: (keyof Agreements)[] = [...REQUIRED, 'ai'];
 
 export default function SignupStep1({ value, onChange, onNext, userName, onNavigate }: Props) {
-  const [agree, setAgree] = useState<Agreements>({
-    a1: false, a2: false, a3: false, a4: false, b: false, c: false,
-    ai: value.aiPersonalizationConsent,
-  });
+  const agree = value.agreements;
   const [modal, setModal] = useState<keyof Agreements | null>(null);
 
   const allAgreed = ORDER.every((k) => agree[k]);
@@ -49,15 +46,16 @@ export default function SignupStep1({ value, onChange, onNext, userName, onNavig
 
   const toggleAll = () => {
     const next = !allAgreed;
-    setAgree({ a1: next, a2: next, a3: next, a4: next, b: next, c: next, ai: next });
-    onChange({ ...value, aiPersonalizationConsent: next });
+    const agreements = { a1: next, a2: next, a3: next, a4: next, b: next, c: next, ai: next };
+    onChange({ ...value, agreements, aiPersonalizationConsent: next });
   };
 
   const toggleOne = (k: keyof Agreements) => {
-    setAgree((p) => {
-      const nextValue = !p[k];
-      if (k === 'ai') onChange({ ...value, aiPersonalizationConsent: nextValue });
-      return { ...p, [k]: nextValue };
+    const nextValue = !agree[k];
+    onChange({
+      ...value,
+      agreements: { ...agree, [k]: nextValue },
+      aiPersonalizationConsent: k === 'ai' ? nextValue : value.aiPersonalizationConsent,
     });
   };
 

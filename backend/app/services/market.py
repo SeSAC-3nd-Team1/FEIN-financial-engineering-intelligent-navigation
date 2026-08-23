@@ -1,0 +1,36 @@
+"""Redis 우선 현재가 조회와 KIS fallback."""
+
+from datetime import UTC, datetime
+from decimal import Decimal
+import json
+import logging
+
+import redis
+
+from app.core.config import settings
+from app.integrations.kis.client import KisClient
+
+logger = logging.getLogger(__name__)
+
+
+class MarketService:
+    def __init__(self, kis: KisClient | None = None, cache: redis.Redis | None = None) -> None:
+        self.cache = cache or redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=1)
+        self.kis = kis or KisClient(cache=self.cache)
+
+    def get_price(self, stock_code: str) -> tuple[Decimal, datetime, str]:
+        key = f"price:{stock_code}"
+        try:
+            cached = self.cache.get(key)
+            if cached:
+                payload = json.loads(cached)
+                return Decimal(payload["price"]), datetime.fromisoformat(payload["as_of"]), "REDIS"
+        except (redis.RedisError, ValueError, KeyError):
+            logger.warning("Redis price cache unavailable stock_code=%s", stock_code)
+
+        price, as_of = self.kis.get_current_price(stock_code)
+        try:
+            self.cache.setex(key, settings.price_cache_ttl_seconds, json.dumps({"price": str(price), "as_of": as_of.isoformat()}))
+        except redis.RedisError:
+            logger.warning("Redis price cache write failed stock_code=%s", stock_code)
+        return price, as_of, "KIS"

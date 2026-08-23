@@ -5,6 +5,10 @@
 ## 현재 기준 문서
 
 - [현재 PostgreSQL 데이터 명세](DATABASE_SPECIFICATION.md)
+- [Backend API 명세](BACKEND_API_SPECIFICATION.md)
+- [가상투자 PostgreSQL 데이터 명세](VIRTUAL_TRADING_DATA_SPECIFICATION.md)
+- [가상투자 ERD](VIRTUAL_TRADING_ERD.md)
+- [Frontend → API → DB 매핑](FRONTEND_API_DB_MAPPING.md)
 - [데이터 아키텍처](DATA_ARCHITECTURE.md)
 - [데이터 레이어 운영](DATA_LAYER_OPERATIONS.md)
 - [회원가입 PostgreSQL 상세 설계](../data/REGISTRATION_DB.md)

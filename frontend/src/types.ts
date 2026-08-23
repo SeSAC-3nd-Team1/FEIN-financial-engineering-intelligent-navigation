@@ -13,6 +13,7 @@ export interface SignupPersonal {
   phone: string;       // 숫자만
   /** [선택] AI 기반 맞춤형 서비스 제공을 위한 개인정보 이용 동의 — 회원가입 가능 여부에는 영향 없음 */
   aiPersonalizationConsent: boolean;
+  agreements: Agreements;
 }
 
 /** 동의 항목 — a1~a4·b·c는 필수(모두 true 여야 인증번호 받기 활성화), ai는 선택(회원가입 가능 여부와 무관) */

@@ -34,6 +34,8 @@ Copy-Item .env.example .env
 
 외부 API를 사용하는 작업이라면 `.env`의 빈 Secret 항목을 채웁니다. `.env`는 Git에서 제외되며 실제 키를 소스, Dockerfile, Compose 파일, 문서에 기록하면 안 됩니다.
 
+운영/공유 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 교체합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 가상계좌 초기금은 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값으로 설정합니다.
+
 Azure Blob을 사용하는 Data 작업은 별도의 로컬 `.env.azure` 설정과 Azure CLI/Entra ID 인증을 사용합니다. Shared Key 기반 실제 Azure connection string은 사용하지 않습니다.
 
 ### 3. 기본 개발환경 실행
@@ -43,6 +45,22 @@ docker compose up -d
 ```
 
 최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, PostgreSQL, Redis만 포함되며 Data와 AI는 profile로 분리됩니다.
+
+최초 DB 준비와 migration 적용:
+
+```bash
+docker compose up -d postgres redis
+docker compose run --rm data alembic upgrade head
+docker compose up -d --build backend frontend
+```
+
+Backend 테스트:
+
+```bash
+docker compose run --rm --no-deps backend pytest -q
+```
+
+Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다. JWT는 브라우저에 보관되어 새로고침 후 검증·복원되며, 로그아웃 시 제거된다.
 
 | 서비스 | 접속/확인 위치 |
 | --- | --- |
