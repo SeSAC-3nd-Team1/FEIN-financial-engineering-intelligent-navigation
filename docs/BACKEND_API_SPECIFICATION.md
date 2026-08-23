@@ -12,8 +12,8 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 | 기능 | Method | Endpoint | 인증 | 주요 status | 관련 화면 |
 | --- | --- | --- | --- | --- | --- |
-| 회원가입 | POST | `/auth/signup` | 불필요 | 201, 409, 422 | SignupStep3 |
-| 가입 약관 | GET | `/auth/terms` | 불필요 | 200 | SignupStep1~3 |
+| 회원가입 | POST | `/auth/signup` | 불필요 | 201, 400, 409, 422, 503 | SignupStep3 |
+| 가입 약관 | GET | `/auth/terms` | 불필요 | 200, 503 | SignupStep1~3 |
 | 로그인 | POST | `/auth/login` | 불필요 | 200, 401 | Login |
 | 로그아웃 | POST | `/auth/logout` | 필요 | 204, 401 | Header |
 | 내 정보 | GET | `/auth/me` | 필요 | 200, 401 | Header/My page |
@@ -36,15 +36,37 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
   "user_id":"hong01","password":"SafePass!23","name":"홍길동",
   "birthdate":"000101","phone_number":"01012345678","email":"hong@example.com",
   "phone_verified":true,"email_verified":true,
-  "agreements":[{"term_code":"B_PRIVACY","version":"1.0","agreed":true}]
+  "agreements":[
+    {"term_code":"A1_THIRD_PARTY","version":"dev-20260823","agreed":true},
+    {"term_code":"A2_UNIQUE_ID","version":"dev-20260823","agreed":true},
+    {"term_code":"A3_CARRIER","version":"dev-20260823","agreed":true},
+    {"term_code":"A4_KCB","version":"dev-20260823","agreed":true},
+    {"term_code":"B_PRIVACY","version":"dev-20260823","agreed":true},
+    {"term_code":"C_ASSOCIATE_TERMS","version":"dev-20260823","agreed":true}
+  ]
 }
 ```
 
-`GET /auth/terms`가 각 약관 코드에서 현재 효력이 있는 최신 버전을 반환한다. Frontend는 Step1의 실제 동의 상태와 이 code/version을 함께 가입 요청으로 전달한다. 모든 필수 동의가 포함되어야 하며, 가입 성공 시 `user_agreements`에 같은 transaction으로 기록된다. 로컬 개발 DB도 운영과 같은 검증을 하려면 migration 후 `data/scripts/seed_signup_terms.py`로 승인된 약관 version을 seed한다.
+`GET /auth/terms`가 `effective_at <= now()`인 row 중 각 약관 코드의 최신 버전을 반환한다. Frontend는 Step1의 실제 동의 상태와 이 code/version을 함께 가입 요청으로 전달한다. API에는 내부 `term_id` 대신 불변 자연키인 `term_code + version`을 사용하고, Backend가 현재 catalog의 `term_id`로 변환한다.
+
+현재 catalog에 없는 code/version, 아직 효력이 시작되지 않은 version, 최신 버전으로 대체된 과거 version은 `400 INVALID_TERM_VERSION`이다. 필수 약관 누락 또는 `agreed=false`는 `400 REQUIRED_TERMS_NOT_AGREED`다. 사용할 수 있는 필수 catalog 자체가 없으면 조회와 가입 모두 `503 TERMS_CATALOG_UNAVAILABLE`로 fail-closed한다. 가입 성공 시 전달된 동의는 `user_agreements`에 사용자 생성과 같은 transaction으로 기록된다.
 
 비밀번호는 8~72자이며 영문·숫자·특수문자 조합 검증은 Frontend와 동일하게 적용한다.
 
 응답 `201`: `{"id":1,"user_id":"hong01","name":"홍길동","email":"hong@example.com","account_status":"ACTIVE"}`
+
+### GET `/auth/terms`
+
+응답 `200`:
+
+```json
+[
+  {"term_code":"B_PRIVACY","version":"dev-20260823","title":"개인정보 수집 및 이용 동의","is_required":true},
+  {"term_code":"C_ASSOCIATE_TERMS","version":"dev-20260823","title":"준회원 이용약관 동의","is_required":true}
+]
+```
+
+실제 응답에는 현재 seed된 기존 6종 약관이 포함된다. catalog가 준비되지 않은 경우 빈 배열로 가입을 허용하지 않고 `503`을 반환한다.
 
 ### POST `/auth/login`
 
@@ -101,4 +123,8 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 ## 주요 error code
 
-`AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
+`TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
+
+## KIS 현재가와 가상거래 경계
+
+`GET /market/stocks/{stock_code}/price`와 주문/포트폴리오 평가는 `price:{stock_code}` Redis key를 먼저 조회한다. cache miss이면 KIS 현재가 API를 호출하고 `{price, as_of}` JSON을 `PRICE_CACHE_TTL_SECONDS` 동안 저장하며 응답 source는 `KIS`다. cache hit 응답 source는 `REDIS`다. KIS OAuth token도 Redis에 만료 60초 전까지 공유한다. KIS 주문 API는 구현하거나 호출하지 않으며 주문·체결·잔액·원장은 PostgreSQL 가상계좌에서만 변경된다.

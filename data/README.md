@@ -46,6 +46,7 @@ Azure Blob features (Parquet)
 ```text
 data/
 ├─ AGENTS.md
+├─ Dockerfile.db-init  # Alembic + 약관 seed 전용 경량 이미지
 ├─ collectors/          # data.go.kr API client/config
 ├─ db/
 │  ├─ connection/       # PostgreSQL 연결
@@ -65,6 +66,7 @@ data/
 │  ├─ audit_model_data_outputs.py
 │  ├─ audit_raw_partition_dates.py
 │  ├─ check_db.py
+│  ├─ init_local_db.py
 │  ├─ seed_signup_terms.py
 │  └─ verify_signup_schema.py
 ├─ storage/             # Blob auth/path/Raw serialization
@@ -157,7 +159,7 @@ features/_manifests/model-datasets/version=v1/manifest.json
 
 ## PostgreSQL
 
-현재 구현 기준 Alembic head는 `20260816_0011`이다.
+현재 구현 기준 Alembic head는 `20260823_0012`이다.
 
 현재 membership/registration 관계:
 
@@ -177,6 +179,15 @@ Migration 적용:
 ```bash
 docker compose --env-file .env.azure --profile data run --rm --no-deps data alembic upgrade head
 ```
+
+로컬 기본 DB는 루트의 `docker compose up` 과정에서 `db-init`이 migration과 `dev-` 약관 seed를 자동 적용한다. 수동 재실행과 승인된 version의 명시적 seed는 다음과 같다.
+
+```bash
+docker compose run --rm db-init
+docker compose run --rm data python -m scripts.seed_signup_terms --version dev-20260823 --effective-at 2026-08-23T00:00:00+09:00
+```
+
+두 명령 모두 동일 code/version을 다시 실행해도 중복 insert하지 않는다. 운영 환경에서는 `dev-` 기본값을 사용하지 않는다.
 
 DB 확인:
 

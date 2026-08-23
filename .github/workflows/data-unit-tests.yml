@@ -59,6 +59,12 @@ jobs:
           --version ci-0011
           --effective-at 2026-08-16T00:00:00+00:00
 
+      - name: Verify signup term seed idempotency
+        run: >-
+          python -m scripts.seed_signup_terms
+          --version ci-0011
+          --effective-at 2026-08-16T00:00:00+00:00
+
       - name: Verify 3NF signup schema
         run: python -m scripts.verify_signup_schema --term-version ci-0011
 
