@@ -176,6 +176,7 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
             <div className="h-[300px] w-full">
               <ResponsiveContainer>
                 <LineChart data={priceData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  {/* 자세히 보기에서만 그리드와 축을 노출한다 */}
                   {chartMode === 'detail' && <CartesianGrid stroke="#F0F2ED" vertical={false} />}
                   {chartMode === 'detail' && <XAxis dataKey="t" hide />}
                   {chartMode === 'detail' && (
@@ -232,6 +233,7 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
                 ) : (
                   <RadarChart data={aiData} outerRadius="72%">
                     <PolarGrid stroke="#EDEFEA" />
+                    {/* 꼭짓점 라벨: 각 축 이름을 폴리곤 바깥에 렌더 */}
                     <PolarAngleAxis dataKey="subject" tick={{ fill: '#5C665F', fontSize: 15, fontWeight: 600 }} />
                     <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
                     <Radar dataKey="score" stroke="#18243A" strokeWidth={2.5} fill="#18243A" fillOpacity={0.12} />
@@ -258,6 +260,7 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
                 <div key={m.label} className="flex flex-col gap-2.5 rounded-[18px] bg-canvas px-6 py-7">
                   <div className="flex items-center gap-2">
                     <span className="text-[15px] text-muted">{m.label}</span>
+                    {/* "?" 토글 — 같은 항목을 다시 누르면 닫힌다 */}
                     {m.key && (
                       <button
                         aria-label={`${m.label} 설명`}
