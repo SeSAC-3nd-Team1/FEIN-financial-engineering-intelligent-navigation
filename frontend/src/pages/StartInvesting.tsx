@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { ChevronRight } from 'lucide-react';
 import Header from '../components/Header';
-import { ALL_HOLDINGS } from '../data/holdings';
+import { ALL_HOLDINGS as MOCK_TARGET_HOLDINGS } from '../data/holdings';
 import { won } from '../lib/validation';
 import type { Holding, Screen } from '../types';
 
@@ -11,7 +11,7 @@ interface Props {
   /** RiskResult/StrategyDetail 에서 선택한 전략의 표시 이름 (예: "저변동성 전략") */
   strategyName: string;
   onNavigate: (s: Screen) => void;
-  onStart: () => void;
+  onStart: () => Promise<void>;
   onSelectStock: (index: number) => void;
 }
 
@@ -30,9 +30,11 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
   const [selection, setSelection] = useState<Selection>({ kind: 'holding', index: 0 });
   const [restExpanded, setRestExpanded] = useState(false);
   const [mode, setMode] = useState<'manual' | 'auto'>('manual');
+  const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
-  const topHoldings = ALL_HOLDINGS.slice(0, 4);
-  const restHoldings = ALL_HOLDINGS.slice(4);
+  const topHoldings = MOCK_TARGET_HOLDINGS.slice(0, 4);
+  const restHoldings = MOCK_TARGET_HOLDINGS.slice(4);
 
   /** 04는 전략 목표 비중으로 새로 담는다 — 도넛 차트는 대표 4종목 + 기타 합계, 5조각 그대로 유지 */
   const slices = useMemo(() => {
@@ -47,7 +49,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
 
   const sel = selection.kind === 'other'
     ? { name: otherLabel.name, pct: otherLabel.pct, why: '한 종목에 쏠리지 않도록 나머지를 고르게 나눠 담았어요.' }
-    : { name: ALL_HOLDINGS[selection.index].name, pct: displayPct(ALL_HOLDINGS[selection.index]), why: ALL_HOLDINGS[selection.index].why };
+    : { name: MOCK_TARGET_HOLDINGS[selection.index].name, pct: displayPct(MOCK_TARGET_HOLDINGS[selection.index]), why: MOCK_TARGET_HOLDINGS[selection.index].why };
 
   const commitCustom = () => {
     const n = parseInt(custom ?? '', 10);
@@ -120,6 +122,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
           </section>
 
           <section className="flex flex-col gap-8 rounded-card bg-surface p-12">
+            <span className="self-start rounded-full bg-[#F4F6F1] px-3 py-1.5 text-xs font-bold text-muted">전략 배분 예시 · MOCK</span>
             <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">
               {(amount / 10000).toLocaleString('ko-KR')}만원을 투자하면 이렇게 나눠 담아요
             </h2>
@@ -150,7 +153,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                   <span className="text-[32px] font-bold tracking-[-0.035em]">
                     {(amount / 10000).toLocaleString('ko-KR')}만원
                   </span>
-                  <span className="text-base text-muted">{ALL_HOLDINGS.length}개 종목</span>
+                  <span className="text-base text-muted">{MOCK_TARGET_HOLDINGS.length}개 종목</span>
                 </div>
               </div>
 
@@ -241,13 +244,27 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
 
           <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
             <div className="flex flex-col gap-2.5">
-              <span className="text-[17px] text-[#B9C2BA]">{strategyName} · {ALL_HOLDINGS.length}개 종목 · {mode === 'manual' ? '확인하고 실행' : '자동으로 운용'}</span>
+              <span className="text-[17px] text-[#B9C2BA]">{strategyName} · {MOCK_TARGET_HOLDINGS.length}개 종목 · {mode === 'manual' ? '확인하고 실행' : '자동으로 운용'}</span>
               <span className="text-[32px] font-bold tracking-[-0.03em] text-white">{won(amount)}</span>
             </div>
-            <button onClick={onStart} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
-              이대로 시작하기 →
+            <button
+              disabled={isStarting}
+              onClick={async () => {
+                setIsStarting(true);
+                setStartError(null);
+                try { await onStart(); }
+                catch (error) { setStartError(error instanceof Error ? error.message : '가상계좌를 준비하지 못했습니다.'); }
+                finally { setIsStarting(false); }
+              }}
+              className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isStarting ? '가상계좌 준비 중…' : '이대로 시작하기 →'}
             </button>
           </section>
+          <p className="-mt-7 text-right text-sm text-subtle">
+            화면의 금액 배분은 전략 시뮬레이션 예시이며, 실제 가상계좌 초기금은 Backend 정책값으로 생성됩니다.
+          </p>
+          {startError && <p role="alert" className="-mt-7 text-right text-sm font-semibold text-down">{startError}</p>}
         </div>
       </main>
     </div>

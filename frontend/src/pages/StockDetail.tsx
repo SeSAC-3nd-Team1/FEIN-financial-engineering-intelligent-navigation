@@ -1,13 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar, BarChart, CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid,
   PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { X } from 'lucide-react';
 import Header from '../components/Header';
-import { AI_AXES, ALL_HOLDINGS, HOLD_TOTAL, STOCK_INFO } from '../data/holdings';
+import { AI_AXES, ALL_HOLDINGS, STOCK_INFO } from '../data/holdings';
+import { getStockPriceApi, type PriceResponse } from '../lib/backendApi';
 import { TERMS } from '../data/terms';
 import { won } from '../lib/validation';
+import { useAuthStore } from '../store/authStore';
+import { useTradingStore } from '../store/tradingStore';
 import type { Screen, TermKey } from '../types';
 
 interface Props {
@@ -46,11 +49,36 @@ function priceSeries(seed: number, n: number, vol: number, endChg: number) {
 export default function StockDetail({ index, userName, onNavigate, onBack }: Props) {
   const holding = ALL_HOLDINGS[index];
   const info = STOCK_INFO[holding.name];
+  const token = useAuthStore((state) => state.accessToken);
+  const logout = useAuthStore((state) => state.logout);
+  const portfolio = useTradingStore((state) => state.portfolio);
 
   const [chartMode, setChartMode] = useState<ChartMode>('simple');
   const [aiMode, setAiMode] = useState<AiMode>('bar');
   const [tfIndex, setTfIndex] = useState(2);
   const [activeTooltip, setActiveTooltip] = useState<TermKey | null>(null);
+  const [livePrice, setLivePrice] = useState<PriceResponse | null>(null);
+  const [priceError, setPriceError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) {
+      setPriceError('로그인 후 현재가를 확인할 수 있습니다.');
+      return;
+    }
+    let active = true;
+    setLivePrice(null);
+    setPriceError(null);
+    void getStockPriceApi(info.code, token)
+      .then((response) => { if (active) setLivePrice(response); })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setPriceError(error instanceof Error ? error.message : '현재가를 조회하지 못했습니다.');
+        if ((error as { status?: number }).status === 401) void logout();
+      });
+    return () => { active = false; };
+  }, [info.code, logout, token]);
+
+  const actualPosition = portfolio?.positions.find((position) => position.stock_code === info.code);
 
   const tf = TIMEFRAMES[tfIndex];
   const tfChg = holding.chg * (tfIndex === 0 ? 1 : tfIndex * 2.4);
@@ -59,10 +87,10 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
     const series = priceSeries(Number(info.code) + tfIndex * 977, tf.n, tf.vol, tfChg);
     return series.map((v, i) => ({
       t: i,
-      price: Math.round(info.price * (1 + v / 100)),
+      price: Math.round(Number(livePrice?.price ?? info.price) * (1 + v / 100)),
       volume: Math.round(30 + Math.abs(v) * 12),
     }));
-  }, [info.code, info.price, tfIndex, tf.n, tf.vol, tfChg]);
+  }, [info.code, info.price, livePrice?.price, tfIndex, tf.n, tf.vol, tfChg]);
 
   const high = Math.max(...priceData.map((d) => d.price));
   const low = Math.min(...priceData.map((d) => d.price));
@@ -97,22 +125,25 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
                 <span className="rounded-full bg-[#F1F3EE] px-3 py-1.5 text-sm font-semibold text-muted">{holding.sector}</span>
               </div>
               <div className="flex items-baseline gap-4">
-                <span className="text-[44px] font-bold tracking-[-0.035em]">{won(info.price)}</span>
-                <span className={`text-xl font-bold ${holding.chg > 0 ? 'text-up' : holding.chg < 0 ? 'text-down' : 'text-subtle'}`}>
-                  {holding.chg > 0 ? '+' : ''}{Math.round((info.price * holding.chg) / 100).toLocaleString('ko-KR')}원
-                  ({holding.chg > 0 ? '+' : ''}{holding.chg.toFixed(1)}%)
+                <span className="text-[44px] font-bold tracking-[-0.035em]">
+                  {livePrice ? won(Number(livePrice.price)) : priceError ? '조회 실패' : '조회 중…'}
                 </span>
+                {livePrice && <span className="text-base font-semibold text-muted">{livePrice.source} · {new Date(livePrice.as_of).toLocaleString('ko-KR')}</span>}
               </div>
+              {priceError && <p role="alert" className="text-sm font-semibold text-down">{priceError}</p>}
             </div>
             <div className="flex flex-col items-end gap-2">
               <span className="text-[15px] text-muted">내 포트폴리오 비중</span>
-              <span className="text-[26px] font-bold tracking-[-0.025em]">{holding.pct.toFixed(1)}%</span>
-              <span className="text-base text-muted">{won((HOLD_TOTAL * holding.pct) / 100)}</span>
+              <span className="text-[26px] font-bold tracking-[-0.025em]">
+                {actualPosition && portfolio ? `${(Number(actualPosition.evaluation_amount) / Number(portfolio.total_assets) * 100).toFixed(1)}%` : '미보유'}
+              </span>
+              {actualPosition && <span className="text-base text-muted">{actualPosition.quantity}주 · {won(Number(actualPosition.evaluation_amount))}</span>}
             </div>
           </section>
 
           {/* 차트 */}
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
+            <span className="self-start rounded-full bg-[#F4F6F1] px-3 py-1.5 text-xs font-bold text-muted">차트 예시 · MOCK</span>
             <div className="flex items-center justify-between gap-6">
               <div className="flex items-center gap-2 rounded-full bg-[#F4F6F1] p-1.5">
                 <Toggle active={chartMode === 'simple'} onClick={() => setChartMode('simple')}>심플하게 보기</Toggle>
@@ -274,7 +305,7 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
           </section>
 
           <p className="text-sm leading-[22px] text-subtle">
-            ※ 시세와 지표는 예시 데이터이며, 특정 종목의 매매를 권유하지 않습니다.
+            ※ 현재가는 Backend의 Redis/KIS 응답입니다. 차트·재무지표·AI 평가는 아직 API가 없어 예시 데이터로 표시합니다.
           </p>
         </div>
       </main>

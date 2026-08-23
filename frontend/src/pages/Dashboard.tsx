@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import Header from '../components/Header';
-import { ALL_HOLDINGS, HOLD_TOTAL } from '../data/holdings';
+import { ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL } from '../data/holdings';
+import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
+import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
 
 interface Props {
@@ -15,16 +17,33 @@ interface Props {
 
 /** 05 포트폴리오 대시보드 — 스토리 → 리밸런싱 제안 → 판단 성적표 → 전략 */
 export default function Dashboard({ userName, strategyName, onNavigate, onOpenHoldings, onChangeStrategy }: Props) {
+  useTradingData();
+  const portfolio = useTradingStore((state) => state.portfolio);
+  const accountMissing = useTradingStore((state) => state.accountMissing);
+  const isLoading = useTradingStore((state) => state.isLoading);
+  const isRefreshing = useTradingStore((state) => state.isRefreshing);
+  const error = useTradingStore((state) => state.error);
   const [sheetOpen, setSheetOpen] = useState(false); // 리밸런싱 상세 시트
 
   /** 오늘 손익 = 평가금액 × 등락률. 스토리와 요약이 같은 계산을 공유한다 */
   const { todayTotal, top } = useMemo(() => {
-    const gains = ALL_HOLDINGS.map((h) => ({ name: h.name, gain: (HOLD_TOTAL * h.pct) / 100 * (h.chg / 100) }));
+    const gains = MOCK_HOLDINGS.map((h) => ({ name: h.name, gain: (MOCK_HOLD_TOTAL * h.pct) / 100 * (h.chg / 100) }));
     const total = gains.reduce((a, g) => a + g.gain, 0);
     return { todayTotal: total, top: [...gains].sort((a, b) => b.gain - a.gain)[0] };
   }, []);
 
-  const profit = 83_400;
+  if (!portfolio) {
+    return (
+      <DashboardState
+        userName={userName}
+        onNavigate={onNavigate}
+        title={isLoading ? '가상계좌를 불러오고 있어요…' : accountMissing ? '아직 가상계좌가 없어요' : '포트폴리오를 불러오지 못했어요'}
+        message={isLoading ? '계좌와 보유종목을 확인하고 있습니다.' : accountMissing ? '전략을 선택하고 가상투자를 시작해주세요.' : error?.message ?? '잠시 후 다시 시도해주세요.'}
+      />
+    );
+  }
+
+  const profit = Number(portfolio.unrealized_profit) + Number(portfolio.realized_profit);
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -38,20 +57,32 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
               {userName}님의 투자는<br />오늘도 전략대로 움직이고 있어요.
             </h1>
             <div className="flex items-baseline gap-4">
-              <span className="text-[32px] font-bold tracking-[-0.03em]">{won(HOLD_TOTAL)}</span>
-              <span className="text-[19px] font-semibold text-up">+{profit.toLocaleString('ko-KR')}원 (+8.34%)</span>
+              <span className="text-[32px] font-bold tracking-[-0.03em]">{won(Number(portfolio.total_assets))}</span>
+              <span className={`text-[19px] font-semibold ${profit >= 0 ? 'text-up' : 'text-down'}`}>
+                평가·실현 {profit >= 0 ? '+' : ''}{Math.round(profit).toLocaleString('ko-KR')}원 ({Number(portfolio.return_rate).toFixed(2)}%)
+              </span>
             </div>
+            <div className="grid grid-cols-4 gap-3">
+              <Fact label="현금잔액" value={won(Number(portfolio.cash_balance))} />
+              <Fact label="총 매입금액" value={won(Number(portfolio.total_purchase_amount))} />
+              <Fact label="총 평가금액" value={won(Number(portfolio.total_evaluation_amount))} />
+              <Fact label="실현손익" value={won(Number(portfolio.realized_profit))} warn={Number(portfolio.realized_profit) < 0} />
+            </div>
+            {isRefreshing && <span className="text-sm text-subtle">최신 가격으로 갱신 중…</span>}
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-2 rounded-full bg-[#EAF7EF] px-3.5 py-2 text-[15px] font-semibold text-[#2E9B65]">
-                ● 전략 정상
+                ● 선택 전략
               </span>
-              <span className="text-[17px] text-muted">현재 포트폴리오는 {strategyName}의 목표 범위 안에 있어요.</span>
+              <span className="text-[17px] text-muted">현재 가상계좌에는 {strategyName}이 선택되어 있어요.</span>
             </div>
           </section>
 
           {/* 포트폴리오 스토리 — 의미 → 숫자 순서 */}
           <section className="flex flex-col gap-6">
-            <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">오늘 내 투자에는 무슨 일이 있었나요?</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">오늘 내 투자에는 무슨 일이 있었나요?</h2>
+              <span className="rounded-full bg-[#F4F6F1] px-3 py-1.5 text-xs font-bold text-muted">AI 설명 예시 · MOCK</span>
+            </div>
             <div className="flex flex-col gap-4">
               <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
                 <div className="flex items-baseline gap-4">
@@ -79,7 +110,10 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
             <div className="flex gap-5">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime text-lg text-navy">✦</div>
               <div className="flex flex-1 flex-col gap-4">
-                <span className="text-[26px] font-bold tracking-[-0.025em]">AI가 확인할 게 하나 있어요</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[26px] font-bold tracking-[-0.025em]">AI가 확인할 게 하나 있어요</span>
+                  <span className="rounded-full bg-[#F4F6F1] px-3 py-1.5 text-xs font-bold text-muted">MOCK</span>
+                </div>
                 <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">
                   SK하이닉스 비중이 전략 목표보다 높아졌어요.
                 </p>
@@ -101,17 +135,20 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
           <section className="flex items-center justify-between gap-8 rounded-card bg-surface px-12 py-11">
             <div className="flex flex-col gap-2.5">
               <span className="text-2xl font-bold tracking-[-0.025em]">내 돈은 지금 이렇게 나뉘어 있어요</span>
-              <span className="text-[17px] leading-7 text-muted">20개 종목의 현재 비중과 오늘 등락을 한 번에 볼 수 있어요.</span>
+              <span className="text-[17px] leading-7 text-muted">실제 보유 {portfolio.positions.length}개 종목의 평가금액과 수익률을 확인할 수 있어요.</span>
             </div>
             <button onClick={onOpenHoldings} className="shrink-0 rounded-field bg-[#F4F6F1] px-7 py-4 text-[17px] font-semibold text-[#3F4A43]">
-              전체 20개 종목 보기 →
+              실제 보유종목 보기 →
             </button>
           </section>
 
           {/* 판단 성적표 — 평가가 아니라 기록 */}
           <section className="flex flex-col gap-6">
             <div className="flex flex-col gap-3.5">
-              <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">내 투자 판단은 어땠을까요?</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">내 투자 판단은 어땠을까요?</h2>
+                <span className="rounded-full bg-[#F4F6F1] px-3 py-1.5 text-xs font-bold text-muted">MOCK</span>
+              </div>
               <p className="text-lg leading-[30px] text-muted">
                 AI 제안을 따랐을 때와 내가 선택한 결과를 함께 돌아볼 수 있어요.
               </p>
@@ -200,6 +237,23 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function DashboardState({
+  userName, onNavigate, title, message,
+}: { userName: string; onNavigate: (s: Screen) => void; title: string; message: string }) {
+  return (
+    <div className="min-h-screen bg-canvas">
+      <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
+      <main className="flex justify-center px-16 pt-20">
+        <section className="flex w-[720px] flex-col items-center gap-4 rounded-card bg-surface p-14 text-center">
+          <h1 className="text-[30px] font-bold">{title}</h1>
+          <p role="status" className="text-lg text-muted">{message}</p>
+          <button onClick={() => onNavigate('strategy')} className="mt-3 rounded-field bg-lime px-7 py-4 font-bold text-navy">전략 둘러보기</button>
+        </section>
+      </main>
     </div>
   );
 }

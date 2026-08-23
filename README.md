@@ -93,6 +93,8 @@ docker compose exec -T redis redis-cli TTL "information:news:kr:증시:1:20"
 
 Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다. JWT는 브라우저에 보관되어 새로고침 후 검증·복원되며, 로그아웃 시 제거된다.
 
+Frontend 가상투자 화면은 FastAPI만 호출한다. `/accounts/me`로 동적 계좌 ID를 얻고 `/portfolio` 한 번으로 현금·보유종목·현재 평가를 조회한다. 시장가 BUY/SELL은 UUID idempotency key와 함께 `/orders`로 보내며 성공 후 portfolio/orders/executions를 다시 조회한다. KIS는 Backend `MarketService`의 가격 공급자로만 사용하고, 가상계좌·주문·체결·포지션·현금원장은 PostgreSQL에서 관리한다. 브라우저 bundle에는 KIS key/secret이나 KIS 직접 호출 URL이 포함되지 않는다.
+
 | 서비스 | 접속/확인 위치 |
 | --- | --- |
 | Frontend | http://localhost:5173 |
