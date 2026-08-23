@@ -5,7 +5,7 @@
 | Frontend 화면 | 현재 데이터/액션 | 필요한 API | DB/외부 데이터 |
 | --- | --- | --- | --- |
 | Login | Backend 로그인, JWT 영속화·복원, `/auth/me`, 로그아웃 | `POST /api/v1/auth/login`, `POST /auth/logout`, `GET /auth/me` | `users`; bcrypt hash, JWT |
-| SignupStep1~3 | 개인정보, 약관, 휴대폰/이메일 OTP mock | `POST /api/v1/auth/signup` | 기존 `registration_sessions`, `terms`, `registration_agreements`, `users`, `user_agreements`; 실제 OTP provider는 후속 연결 |
+| SignupStep1~3 | 개인정보, 실제 약관 동의 상태·현재 버전, 휴대폰/이메일 OTP mock | `GET /api/v1/auth/terms`, `POST /api/v1/auth/signup` | 기존 `registration_sessions`, `terms`, `registration_agreements`, `users`, `user_agreements`; 실제 OTP provider는 후속 연결 |
 | RiskProfile/Result | 7문항과 전략 추천을 브라우저 state에 저장 | 후속 `investor-profile` API | 기존 Notion 논리 모델 대상. 이번 trading migration에는 포함하지 않음 |
 | StrategyDetail | `low/value/momentum`, mock backtest | `GET /api/v1/strategies` | `strategies`; 백테스트는 Blob/AI interface 후속 |
 | StartInvesting | 투자금/전략 선택 후 시작 | `POST /api/v1/accounts`, `PUT /accounts/{id}/strategy` | `virtual_accounts`, `cash_ledger`, `strategies` |

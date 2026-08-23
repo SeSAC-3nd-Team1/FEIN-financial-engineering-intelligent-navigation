@@ -13,6 +13,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 기능 | Method | Endpoint | 인증 | 주요 status | 관련 화면 |
 | --- | --- | --- | --- | --- | --- |
 | 회원가입 | POST | `/auth/signup` | 불필요 | 201, 409, 422 | SignupStep3 |
+| 가입 약관 | GET | `/auth/terms` | 불필요 | 200 | SignupStep1~3 |
 | 로그인 | POST | `/auth/login` | 불필요 | 200, 401 | Login |
 | 로그아웃 | POST | `/auth/logout` | 필요 | 204, 401 | Header |
 | 내 정보 | GET | `/auth/me` | 필요 | 200, 401 | Header/My page |
@@ -39,7 +40,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 }
 ```
 
-`terms` catalog에 등록된 모든 필수 code/version 동의가 포함되어야 하며, 가입 성공 시 `user_agreements`에 같은 transaction으로 기록된다. 로컬 개발 DB도 운영과 같은 검증을 하려면 migration 후 `data/scripts/seed_signup_terms.py`로 승인된 약관 version을 seed한다.
+`GET /auth/terms`가 각 약관 코드에서 현재 효력이 있는 최신 버전을 반환한다. Frontend는 Step1의 실제 동의 상태와 이 code/version을 함께 가입 요청으로 전달한다. 모든 필수 동의가 포함되어야 하며, 가입 성공 시 `user_agreements`에 같은 transaction으로 기록된다. 로컬 개발 DB도 운영과 같은 검증을 하려면 migration 후 `data/scripts/seed_signup_terms.py`로 승인된 약관 version을 seed한다.
 
 비밀번호는 8~72자이며 영문·숫자·특수문자 조합 검증은 Frontend와 동일하게 적용한다.
 

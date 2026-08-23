@@ -4,10 +4,15 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user
 from app.db.session import get_session
 from app.models import User
-from app.schemas.api import LoginRequest, SignupRequest, TokenResponse, UserResponse
+from app.schemas.api import LoginRequest, SignupRequest, TermResponse, TokenResponse, UserResponse
 from app.services.auth import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.get("/terms", response_model=list[TermResponse])
+def signup_terms(session: Session = Depends(get_session)) -> list:
+    return AuthService(session).signup_terms()
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

@@ -9,6 +9,7 @@ import logging
 import time
 
 import httpx
+import redis
 
 from app.core.config import settings
 from app.core.errors import ServiceError
@@ -17,13 +18,26 @@ logger = logging.getLogger(__name__)
 
 
 class KisClient:
-    def __init__(self) -> None:
+    TOKEN_CACHE_KEY = "kis:oauth:access_token"
+
+    def __init__(self, cache: redis.Redis | None = None) -> None:
+        self.cache = cache
         self._token: str | None = None
         self._token_expires_at = 0.0
 
     def _access_token(self) -> str:
         if self._token and time.time() < self._token_expires_at - 60:
             return self._token
+        if self.cache is not None:
+            try:
+                cached = self.cache.get(self.TOKEN_CACHE_KEY)
+                if cached:
+                    if isinstance(cached, bytes):
+                        cached = cached.decode()
+                    self._token = cached
+                    return cached
+            except redis.RedisError:
+                logger.warning("Redis KIS token cache unavailable")
         if not settings.kis_app_key or not settings.kis_app_secret:
             raise ServiceError("KIS_NOT_CONFIGURED", "KIS API credential이 설정되지 않았습니다.", 503)
         try:
@@ -38,7 +52,13 @@ class KisClient:
             logger.warning("KIS token request failed: %s", type(exc).__name__)
             raise ServiceError("KIS_UNAVAILABLE", "현재 시장가격 제공자를 사용할 수 없습니다.", 503) from exc
         self._token = payload["access_token"]
-        self._token_expires_at = time.time() + int(payload.get("expires_in", 3600))
+        expires_in = int(payload.get("expires_in", 3600))
+        self._token_expires_at = time.time() + expires_in
+        if self.cache is not None:
+            try:
+                self.cache.setex(self.TOKEN_CACHE_KEY, max(1, expires_in - 60), self._token)
+            except redis.RedisError:
+                logger.warning("Redis KIS token cache write failed")
         return self._token
 
     def get_current_price(self, stock_code: str) -> tuple[Decimal, datetime]:

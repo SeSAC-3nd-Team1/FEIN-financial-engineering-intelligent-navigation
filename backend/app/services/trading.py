@@ -18,6 +18,17 @@ class TradingService:
         self.market = market or MarketService()
 
     def execute_market_order(self, user_id: int, request: OrderCreateRequest) -> Order:
+        account = self.repo.owned_account(request.account_id, user_id)
+        if not account:
+            raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
+        existing = self.repo.order_by_idempotency(account.id, request.idempotency_key)
+        if existing:
+            self._validate_idempotent_order(existing, request)
+            self.session.rollback()
+            return existing
+
+        # 외부 가격 조회 전에 소유권과 멱등 재시도를 처리한다. 조회 transaction도 먼저 종료한다.
+        self.session.rollback()
         price, _, _ = self.market.get_price(request.stock_code)
         try:
             account = self.repo.owned_account(request.account_id, user_id, lock=True)
@@ -28,8 +39,7 @@ class TradingService:
 
             existing = self.repo.order_by_idempotency(account.id, request.idempotency_key)
             if existing:
-                if existing.stock_code != request.stock_code or existing.side != request.side or existing.quantity != request.quantity:
-                    raise ServiceError("IDEMPOTENCY_CONFLICT", "동일 요청 키가 다른 주문에 사용되었습니다.", 409)
+                self._validate_idempotent_order(existing, request)
                 self.session.rollback()
                 return existing
 
@@ -82,3 +92,8 @@ class TradingService:
             self.session.rollback()
             raise
         return order
+
+    @staticmethod
+    def _validate_idempotent_order(existing: Order, request: OrderCreateRequest) -> None:
+        if existing.stock_code != request.stock_code or existing.side != request.side or existing.quantity != request.quantity:
+            raise ServiceError("IDEMPOTENCY_CONFLICT", "동일 요청 키가 다른 주문에 사용되었습니다.", 409)

@@ -15,6 +15,7 @@ import StartInvesting from './pages/StartInvesting';
 import StockDetail from './pages/StockDetail';
 import StrategyDetail from './pages/StrategyDetail';
 import { STRATEGIES } from './data/strategies';
+import { signupTermsApi } from './lib/backendApi';
 import { useAuthStore } from './store/authStore';
 import type { Screen, SignupPersonal } from './types';
 
@@ -40,6 +41,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
   const [personal, setPersonal] = useState<SignupPersonal>({
     name: '', birthdate: '', phone: '', aiPersonalizationConsent: false,
+    agreements: { a1: false, a2: false, a3: false, a4: false, b: false, c: false, ai: false },
   });
   // 전략 선택은 strategyId(=STRATEGIES 의 id) 하나만 상태로 두고, 화면별 표시 이름은 여기서 파생시킨다.
   // (과거엔 strategyId 와 별도로 strategy 표시 이름을 따로 들고 있어, 전략 선택 후에도
@@ -114,6 +116,22 @@ export default function App() {
         <SignupStep3
           // 가입 API 성공 후 JWT 로그인까지 완료하고 투자자 정보 확인으로 이동한다.
           onComplete={async (userId, password, email) => {
+            const termCodeByAgreement = {
+              a1: 'A1_THIRD_PARTY',
+              a2: 'A2_UNIQUE_ID',
+              a3: 'A3_CARRIER',
+              a4: 'A4_KCB',
+              b: 'B_PRIVACY',
+              c: 'C_ASSOCIATE_TERMS',
+              ai: 'AI_PERSONALIZATION',
+            } as const;
+            const agreementByTermCode = Object.fromEntries(
+              Object.entries(termCodeByAgreement).map(([key, code]) => [
+                code,
+                personal.agreements[key as keyof typeof termCodeByAgreement],
+              ]),
+            );
+            const terms = await signupTermsApi();
             await register({
               user_id: userId,
               password,
@@ -123,7 +141,11 @@ export default function App() {
               email,
               phone_verified: true,
               email_verified: true,
-              agreements: [],
+              agreements: terms.map((term) => ({
+                term_code: term.term_code,
+                version: term.version,
+                agreed: agreementByTermCode[term.term_code] ?? false,
+              })),
             });
             startInvestorProfile('risk-result');
           }}

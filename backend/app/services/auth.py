@@ -23,7 +23,7 @@ class AuthService:
         )
         if duplicate:
             raise ServiceError("DUPLICATE_ACCOUNT", "이미 사용 중인 아이디 또는 이메일입니다.", 409)
-        catalog = list(self.session.scalars(select(Term)))
+        catalog = self.signup_terms()
         accepted = {(item.term_code, item.version) for item in request.agreements if item.agreed}
         required = {(term.term_code, term.version) for term in catalog if term.is_required}
         if not required.issubset(accepted):
@@ -59,6 +59,19 @@ class AuthService:
             self.session.rollback()
             raise
         return user
+
+    def signup_terms(self) -> list[Term]:
+        """각 약관 코드에서 현재 효력이 있는 최신 버전만 반환한다."""
+        now = datetime.now(UTC)
+        terms = self.session.scalars(
+            select(Term)
+            .where(Term.effective_at <= now)
+            .order_by(Term.term_code, Term.effective_at.desc(), Term.id.desc())
+        )
+        latest: dict[str, Term] = {}
+        for term in terms:
+            latest.setdefault(term.term_code, term)
+        return list(latest.values())
 
     def login(self, request: LoginRequest) -> str:
         user = self.session.scalar(select(User).where(User.user_id == request.user_id))

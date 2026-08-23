@@ -21,6 +21,13 @@ export interface SignupPayload {
   agreements: { term_code: string; version: string; agreed: boolean }[];
 }
 
+export interface SignupTerm {
+  term_code: string;
+  version: string;
+  title: string;
+  is_required: boolean;
+}
+
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status: number) {
     super(message);
@@ -60,6 +67,10 @@ export function currentUserApi(token: string): Promise<AuthUser> {
 
 export function signupApi(payload: SignupPayload): Promise<AuthUser> {
   return request<AuthUser>('/auth/signup', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function signupTermsApi(): Promise<SignupTerm[]> {
+  return request<SignupTerm[]>('/auth/terms');
 }
 
 export function logoutApi(token: string): Promise<void> {

@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.errors import ServiceError
-from app.models import CashLedger, Execution, Position, VirtualAccount
+from app.models import CashLedger, Execution, Order, Position, VirtualAccount
 from app.schemas.api import OrderCreateRequest
 from app.services.trading import TradingService
 
@@ -43,15 +43,16 @@ class FixedMarket:
 
 
 class FakeRepo:
-    def __init__(self, account, position=None) -> None:
+    def __init__(self, account, position=None, existing_order=None) -> None:
         self.account = account
         self.current_position = position
+        self.existing_order = existing_order
 
     def owned_account(self, *_args, **_kwargs):
         return self.account
 
     def order_by_idempotency(self, *_args):
-        return None
+        return self.existing_order
 
     def position(self, *_args, **_kwargs):
         return self.current_position
@@ -113,3 +114,23 @@ def test_sell_rejects_insufficient_position_without_writes() -> None:
         svc.execute_market_order(1, request("SELL", 2))
     assert error.value.code == "INSUFFICIENT_POSITION"
     assert session.added == []
+
+
+def test_idempotent_retry_returns_existing_order_without_market_lookup() -> None:
+    acc = account()
+    payload = request("BUY", 3)
+    existing = Order(
+        id=uuid4(), account_id=acc.id, stock_code=payload.stock_code, side=payload.side,
+        order_type="MARKET", quantity=payload.quantity, status="FILLED",
+        idempotency_key=payload.idempotency_key,
+    )
+
+    class FailingMarket:
+        def get_price(self, _stock_code):
+            raise AssertionError("idempotent retry must not look up a market price")
+
+    session = FakeSession()
+    svc = TradingService(session, FailingMarket())
+    svc.repo = FakeRepo(acc, existing_order=existing)
+
+    assert svc.execute_market_order(1, payload) is existing

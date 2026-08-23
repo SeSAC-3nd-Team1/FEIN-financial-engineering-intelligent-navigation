@@ -58,6 +58,14 @@ class UserResponse(BaseModel):
     account_status: str
 
 
+class TermResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    term_code: str
+    version: str
+    title: str
+    is_required: bool
+
+
 class AccountCreateRequest(BaseModel):
     account_name: str = Field(default="나의 가상 투자계좌", min_length=1, max_length=100)
 

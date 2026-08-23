@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID as PythonUUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Identity, Numeric, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Identity, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +27,7 @@ class Strategy(Base):
 class VirtualAccount(TimestampMixin, Base):
     """KIS 계좌와 무관하게 서비스가 보유하는 사용자별 단일 가상계좌다."""
     __tablename__ = "virtual_accounts"
+    __table_args__ = (Index("ix_virtual_accounts_status", "status"),)
     id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), default=uuid4, primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), unique=True, nullable=False)
     account_name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -39,6 +40,10 @@ class VirtualAccount(TimestampMixin, Base):
 class Position(TimestampMixin, Base):
     """체결 결과인 수량·평균매입가와 누적 실현손익만 저장한다."""
     __tablename__ = "positions"
+    __table_args__ = (
+        UniqueConstraint("account_id", "stock_code", name="uq_positions_account_stock"),
+        Index("ix_positions_account_id", "account_id"),
+    )
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     account_id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"), nullable=False)
     stock_code: Mapped[str] = mapped_column(String(12), nullable=False)
@@ -50,6 +55,10 @@ class Position(TimestampMixin, Base):
 class Order(Base):
     """시장가 주문 요청과 최종 상태를 저장한다."""
     __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("account_id", "idempotency_key", name="uq_orders_account_idempotency"),
+        Index("ix_orders_account_requested_at", "account_id", "requested_at"),
+    )
     id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), default=uuid4, primary_key=True)
     account_id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"), nullable=False)
     stock_code: Mapped[str] = mapped_column(String(12), nullable=False)
@@ -66,6 +75,7 @@ class Order(Base):
 class Execution(Base):
     """내부 가상 거래 엔진이 만든 체결 사실이다."""
     __tablename__ = "executions"
+    __table_args__ = (Index("ix_executions_account_executed_at", "account_id", "executed_at"),)
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     order_id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("orders.id", ondelete="RESTRICT"), unique=True, nullable=False)
     account_id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"), nullable=False)
@@ -79,6 +89,10 @@ class Execution(Base):
 class CashLedger(Base):
     """현재 잔액의 모든 증감 사유를 보존하는 append-only 원장이다."""
     __tablename__ = "cash_ledger"
+    __table_args__ = (
+        Index("ix_cash_ledger_account_created_at", "account_id", "created_at"),
+        Index("ix_cash_ledger_reference", "reference_type", "reference_id"),
+    )
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     account_id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"), nullable=False)
     transaction_type: Mapped[str] = mapped_column(String(30), nullable=False)
