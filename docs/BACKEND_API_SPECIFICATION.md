@@ -41,6 +41,8 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 `terms` catalog에 등록된 모든 필수 code/version 동의가 포함되어야 하며, 가입 성공 시 `user_agreements`에 같은 transaction으로 기록된다. 로컬 개발 DB도 운영과 같은 검증을 하려면 migration 후 `data/scripts/seed_signup_terms.py`로 승인된 약관 version을 seed한다.
 
+비밀번호는 8~72자이며 영문·숫자·특수문자 조합 검증은 Frontend와 동일하게 적용한다.
+
 응답 `201`: `{"id":1,"user_id":"hong01","name":"홍길동","email":"hong@example.com","account_status":"ACTIVE"}`
 
 ### POST `/auth/login`

@@ -16,7 +16,7 @@ class AgreementRequest(BaseModel):
 
 class SignupRequest(BaseModel):
     user_id: str = Field(pattern=r"^[a-z0-9]{6,16}$")
-    password: str = Field(min_length=10, max_length=72)
+    password: str = Field(min_length=8, max_length=72)
     name: str = Field(min_length=1, max_length=30)
     birthdate: str = Field(pattern=r"^[0-9]{6}$")
     phone_number: str = Field(pattern=r"^0[0-9]{9,10}$")
