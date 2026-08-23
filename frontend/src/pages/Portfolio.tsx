@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart,
@@ -7,11 +7,14 @@ import {
 import { X } from 'lucide-react';
 import Header from '../components/Header';
 import {
-  AI_AXES, ALL_HOLDINGS, DECISION_SUMMARY, HOLD_TOTAL, PAST_DECISIONS,
+  AI_AXES, ALL_HOLDINGS as MOCK_HOLDINGS, DECISION_SUMMARY, HOLD_TOTAL as MOCK_HOLD_TOTAL, PAST_DECISIONS,
   PORTFOLIO_TREND, STOCK_CONTRIBUTION, STOCK_INFO,
 } from '../data/holdings';
 import { STRATEGIES } from '../data/strategies';
+import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
+import { useAuthStore } from '../store/authStore';
+import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
 
 interface Props {
@@ -50,11 +53,48 @@ const DONUT_SHADES = ['#18243A', '#2E4160', '#4A5F80', '#6C819E', '#8FA0B4', '#C
 export default function Portfolio({
   userName, strategyId, onStrategyChange, onNavigate, onSelectStock, onRediagnose, onBack,
 }: Props) {
+  const token = useTradingData();
+  const logout = useAuthStore((state) => state.logout);
+  const account = useTradingStore((state) => state.account);
+  const portfolio = useTradingStore((state) => state.portfolio);
+  const ensureAccount = useTradingStore((state) => state.ensureAccount);
+
   // 전략 변경 모달 상태
   const [isModalOpen, setModalOpen] = useState(false);
   // strategyId 로부터 표시용 전략 객체(이름/나와 맞는 정도 등)를 파생시킨다 — STRATEGIES 가 유일한 출처
   const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
-  const setSelectedStrategy = onStrategyChange;
+  const setSelectedStrategy = async (nextStrategyId: string) => {
+    if (!token) return;
+    try {
+      await ensureAccount(token, nextStrategyId);
+      onStrategyChange(nextStrategyId);
+      setModalOpen(false);
+    } catch (requestError) {
+      if ((requestError as { status?: number }).status === 401) void logout();
+    }
+  };
+
+  useEffect(() => {
+    if (account?.selected_strategy_id && account.selected_strategy_id !== strategyId) {
+      onStrategyChange(account.selected_strategy_id);
+    }
+  }, [account?.selected_strategy_id, onStrategyChange, strategyId]);
+
+  const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
+  const ALL_HOLDINGS = useMemo(() => {
+    if (!portfolio || portfolio.positions.length === 0) return MOCK_HOLDINGS;
+    const assets = Number(portfolio.total_assets);
+    return portfolio.positions.map((position) => {
+      const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
+      const metadata = matched ?? MOCK_HOLDINGS[0];
+      return {
+        ...metadata,
+        name: matched?.name ?? position.stock_code,
+        pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
+        chg: Number(position.return_rate),
+      };
+    });
+  }, [portfolio]);
 
   // 페이지 내 서브뷰 전환 — 현재 앱은 URL 라우터가 없는 화면 상태 머신이라,
   // "지난 판단 돌아보기"는 실제 라우트(`/portfolio/review`) 대신 로컬 뷰 전환으로 구현한다.
@@ -63,15 +103,21 @@ export default function Portfolio({
   // ── Power BI 스타일 분석 섹션 상태 ───────────────────────────────
   const [tab, setTab] = useState<AnalyticsTab>('trend');
   const [periodIdx, setPeriodIdx] = useState(2); // 기본값 "1년"
-  const [selectedHoldingIdx, setSelectedHoldingIdx] = useState(() => {
-    const i = ALL_HOLDINGS.findIndex((h) => h.name === 'SK하이닉스');
-    return i >= 0 ? i : 0;
-  });
+  const [selectedHoldingIdx, setSelectedHoldingIdx] = useState(0);
 
   /** 오늘 손익 = 평가금액 × 등락률. 요약과 종목 행이 같은 계산을 쓴다 */
   const gains = useMemo(
-    () => ALL_HOLDINGS.map((h) => ({ ...h, gain: (HOLD_TOTAL * h.pct) / 100 * (h.chg / 100) })),
-    []
+    () => ALL_HOLDINGS.map((h) => {
+      const code = STOCK_INFO[h.name]?.code;
+      const position = portfolio?.positions.find((item) => item.stock_code === code);
+      return {
+        ...h,
+        gain: position
+          ? Number(position.unrealized_profit)
+          : (HOLD_TOTAL * h.pct) / 100 * (h.chg / 100),
+      };
+    }),
+    [ALL_HOLDINGS, HOLD_TOTAL, portfolio]
   );
   const todayTotal = gains.reduce((a, g) => a + g.gain, 0);
 
@@ -86,19 +132,20 @@ export default function Portfolio({
   const topContributor = contributionData[0];
 
   // 보유 비중 탭: 선택된 종목의 현재 비중 vs 전략 목표 비중
-  const selectedHolding = ALL_HOLDINGS[selectedHoldingIdx];
+  const safeSelectedIndex = Math.min(selectedHoldingIdx, Math.max(ALL_HOLDINGS.length - 1, 0));
+  const selectedHolding = ALL_HOLDINGS[safeSelectedIndex];
   const targetPct = selectedHolding.target ?? selectedHolding.pct;
   const weightDiff = Math.round((selectedHolding.pct - targetPct) * 10) / 10;
 
   // 위험 분석 탭: 종목별 AI 5축 점수를 보유 비중으로 가중 평균 — StockDetail의 AI_AXES를 그대로 재사용한다
-  const totalPct = useMemo(() => ALL_HOLDINGS.reduce((a, h) => a + h.pct, 0), []);
+  const totalPct = useMemo(() => ALL_HOLDINGS.reduce((a, h) => a + h.pct, 0), [ALL_HOLDINGS]);
   const portfolioRisk = useMemo(
     () =>
       AI_AXES.map((subject, i) => {
         const weighted = ALL_HOLDINGS.reduce((sum, h) => sum + (STOCK_INFO[h.name]?.ai[i] ?? 0) * h.pct, 0);
-        return { subject, score: Math.round(weighted / totalPct) };
+        return { subject, score: totalPct > 0 ? Math.round(weighted / totalPct) : 0 };
       }),
-    [totalPct]
+    [ALL_HOLDINGS, totalPct]
   );
   const topRiskAxis = portfolioRisk.reduce((a, b) => (b.score > a.score ? b : a));
 
@@ -326,10 +373,12 @@ export default function Portfolio({
               <span className="text-[15px] text-subtle">종목을 누르면 상세 정보를 볼 수 있어요</span>
             </div>
             <div className="flex flex-col">
-              {gains.map((h, i) => (
+              {gains.map((h, i) => {
+                const detailIndex = MOCK_HOLDINGS.findIndex((holding) => holding.name === h.name);
+                return (
                 <button
                   key={h.name}
-                  onClick={() => onSelectStock(i)}
+                  onClick={() => detailIndex >= 0 && onSelectStock(detailIndex)}
                   className="flex items-center gap-5 border-b border-line py-4 text-left last:border-0 hover:bg-canvas"
                 >
                   <span className="w-7 shrink-0 text-[15px] text-subtle">{i + 1}</span>
@@ -343,7 +392,8 @@ export default function Portfolio({
                     {h.chg > 0 ? '+' : ''}{h.chg.toFixed(1)}%
                   </span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </section>
 
@@ -407,7 +457,7 @@ export default function Portfolio({
                 return (
                   <button
                     key={s.id}
-                    onClick={() => setSelectedStrategy(s.id)}
+                    onClick={() => void setSelectedStrategy(s.id)}
                     className={`flex items-center justify-between rounded-[20px] px-8 py-7 text-left ${
                       active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
                     }`}

@@ -22,7 +22,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 전략 선택 | PUT | `/accounts/{account_id}/strategy` | 필요/소유권 | 200, 404 | StartInvesting |
 | 전략 목록 | GET | `/strategies` | 불필요 | 200 | RiskResult/StrategyDetail |
 | 현재가 | GET | `/market/stocks/{stock_code}/price` | 필요 | 200, 404, 503 | StockDetail |
-| 시장가 주문 | POST | `/orders` | 필요/소유권 | 201, 404, 409, 503 | 주문 UI/Model signal |
+| 시장가 주문 | POST | `/orders` | 필요/소유권 | 201, 404, 409, 503 | 전략 기반 자동 운용 계층/Model signal 전용 |
 | 주문 목록 | GET | `/orders?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | Portfolio/Dashboard |

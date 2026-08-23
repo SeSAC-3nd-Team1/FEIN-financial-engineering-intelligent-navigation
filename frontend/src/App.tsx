@@ -17,6 +17,7 @@ import StrategyDetail from './pages/StrategyDetail';
 import { STRATEGIES } from './data/strategies';
 import { signupTermsApi } from './lib/backendApi';
 import { useAuthStore } from './store/authStore';
+import { useTradingStore } from './store/tradingStore';
 import type { Screen, SignupPersonal } from './types';
 
 /**
@@ -59,6 +60,8 @@ export default function App() {
   const authenticatedUser = useAuthStore((s) => s.user);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const ensureAccount = useTradingStore((s) => s.ensureAccount);
 
   const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
 
@@ -197,7 +200,14 @@ export default function App() {
           userName={userName}
           strategyName={strategy.name}
           onNavigate={setScreen}
-          onStart={() => setScreen('portfolio')}
+          onStart={async () => {
+            if (!accessToken) {
+              setScreen('login');
+              throw new Error('로그인이 필요합니다.');
+            }
+            await ensureAccount(accessToken, strategyId);
+            setScreen('portfolio');
+          }}
           onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('start'); setScreen('stock'); }}
         />
       )}

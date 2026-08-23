@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar, BarChart, CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid,
   PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -6,8 +6,11 @@ import {
 import { X } from 'lucide-react';
 import Header from '../components/Header';
 import { AI_AXES, ALL_HOLDINGS, HOLD_TOTAL, STOCK_INFO } from '../data/holdings';
+import { getStockPriceApi, type PriceResponse } from '../lib/backendApi';
 import { TERMS } from '../data/terms';
 import { won } from '../lib/validation';
+import { useAuthStore } from '../store/authStore';
+import { useTradingStore } from '../store/tradingStore';
 import type { Screen, TermKey } from '../types';
 
 interface Props {
@@ -46,11 +49,33 @@ function priceSeries(seed: number, n: number, vol: number, endChg: number) {
 export default function StockDetail({ index, userName, onNavigate, onBack }: Props) {
   const holding = ALL_HOLDINGS[index];
   const info = STOCK_INFO[holding.name];
+  const token = useAuthStore((state) => state.accessToken);
+  const logout = useAuthStore((state) => state.logout);
+  const portfolio = useTradingStore((state) => state.portfolio);
 
   const [chartMode, setChartMode] = useState<ChartMode>('simple');
   const [aiMode, setAiMode] = useState<AiMode>('bar');
   const [tfIndex, setTfIndex] = useState(2);
   const [activeTooltip, setActiveTooltip] = useState<TermKey | null>(null);
+  const [livePrice, setLivePrice] = useState<PriceResponse | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    void getStockPriceApi(info.code, token)
+      .then((response) => { if (active) setLivePrice(response); })
+      .catch((error: unknown) => {
+        if ((error as { status?: number }).status === 401) void logout();
+      });
+    return () => { active = false; };
+  }, [info.code, logout, token]);
+
+  const actualPosition = portfolio?.positions.find((position) => position.stock_code === info.code);
+  const currentPrice = Number(livePrice?.price ?? info.price);
+  const portfolioWeight = actualPosition && portfolio && Number(portfolio.total_assets) > 0
+    ? Number(actualPosition.evaluation_amount) / Number(portfolio.total_assets) * 100
+    : holding.pct;
+  const portfolioAmount = actualPosition ? Number(actualPosition.evaluation_amount) : (HOLD_TOTAL * holding.pct) / 100;
 
   const tf = TIMEFRAMES[tfIndex];
   const tfChg = holding.chg * (tfIndex === 0 ? 1 : tfIndex * 2.4);
@@ -59,10 +84,10 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
     const series = priceSeries(Number(info.code) + tfIndex * 977, tf.n, tf.vol, tfChg);
     return series.map((v, i) => ({
       t: i,
-      price: Math.round(info.price * (1 + v / 100)),
+      price: Math.round(currentPrice * (1 + v / 100)),
       volume: Math.round(30 + Math.abs(v) * 12),
     }));
-  }, [info.code, info.price, tfIndex, tf.n, tf.vol, tfChg]);
+  }, [currentPrice, info.code, tfIndex, tf.n, tf.vol, tfChg]);
 
   const high = Math.max(...priceData.map((d) => d.price));
   const low = Math.min(...priceData.map((d) => d.price));
@@ -97,17 +122,17 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
                 <span className="rounded-full bg-[#F1F3EE] px-3 py-1.5 text-sm font-semibold text-muted">{holding.sector}</span>
               </div>
               <div className="flex items-baseline gap-4">
-                <span className="text-[44px] font-bold tracking-[-0.035em]">{won(info.price)}</span>
+                <span className="text-[44px] font-bold tracking-[-0.035em]">{won(currentPrice)}</span>
                 <span className={`text-xl font-bold ${holding.chg > 0 ? 'text-up' : holding.chg < 0 ? 'text-down' : 'text-subtle'}`}>
-                  {holding.chg > 0 ? '+' : ''}{Math.round((info.price * holding.chg) / 100).toLocaleString('ko-KR')}원
+                  {holding.chg > 0 ? '+' : ''}{Math.round((currentPrice * holding.chg) / 100).toLocaleString('ko-KR')}원
                   ({holding.chg > 0 ? '+' : ''}{holding.chg.toFixed(1)}%)
                 </span>
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
               <span className="text-[15px] text-muted">내 포트폴리오 비중</span>
-              <span className="text-[26px] font-bold tracking-[-0.025em]">{holding.pct.toFixed(1)}%</span>
-              <span className="text-base text-muted">{won((HOLD_TOTAL * holding.pct) / 100)}</span>
+              <span className="text-[26px] font-bold tracking-[-0.025em]">{portfolioWeight.toFixed(1)}%</span>
+              <span className="text-base text-muted">{won(portfolioAmount)}</span>
             </div>
           </section>
 
