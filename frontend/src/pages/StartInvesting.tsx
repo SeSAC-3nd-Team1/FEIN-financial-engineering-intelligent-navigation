@@ -90,6 +90,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                   <span className="text-[44px] font-bold tracking-[-0.035em]">{won(amount)}</span>
                 ) : (
                   <>
+                    {/* 직접 입력: 숫자만 받고 blur/Enter 에서 10만~1억으로 보정 */}
                     <div className="flex items-center gap-3">
                       <input
                         value={custom}
@@ -139,6 +140,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                       onClick={(_, i) => setSelection(i === 4 ? { kind: 'other' } : { kind: 'holding', index: i })}
                     >
                       {slices.map((_, i) => (
+                        /* 선택된 조각만 라임 — 나머지는 네이비 계열 */
                         <Cell key={i} fill={i === donutActiveIndex ? '#C6F04D' : SHADES[i]} cursor="pointer" />
                       ))}
                     </Pie>
@@ -166,6 +168,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                   />
                 ))}
 
+                {/* "기타 N개 종목" — 개별 기업이 아니라 나머지 합계 Summary Row라 Chevron이 없다 */}
                 <StockRow
                   name={otherLabel.name}
                   pct={otherLabel.pct}
@@ -185,7 +188,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                 {restExpanded && (
                   <div className="flex flex-col gap-1 border-t border-[#F0F2ED] pt-1">
                     {restHoldings.map((h, j) => {
-                      const index = j + 4;
+                      const index = j + 4; // ALL_HOLDINGS 상의 실제 인덱스
                       return (
                         <StockRow
                           key={h.name}
@@ -204,6 +207,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
               </div>
             </div>
 
+            {/* 설명은 선택된 종목/집계 행에 붙는다 — 물방개가 왜 이 종목을 담았는지 생각해서 설명해주는 역할 */}
             <div className="flex gap-5 rounded-[20px] bg-[#F8FCEE] px-10 py-9">
               <img src="/character-thinking.png" alt="물방개" className="h-[68px] w-[68px] shrink-0 object-contain" />
               <div className="flex flex-col gap-3">
@@ -250,6 +254,11 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
   );
 }
 
+/**
+ * 종목 한 행 — PRIMARY: 이름/비중/금액 클릭 시 선정 이유 표시.
+ * TERTIARY: 오른쪽 끝 Chevron 클릭 시 재무정보 상세로 이동 (별도 버튼이라 클릭이 서로 섞이지 않는다).
+ * "기타 N개 종목" 집계 행은 onOpenDetail 을 넘기지 않아 Chevron 이 아예 표시되지 않는다.
+ */
 function StockRow({
   name, pct, amountWon, dotColor, selected, onSelect, onOpenDetail,
 }: {
@@ -262,42 +271,51 @@ function StockRow({
         <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: dotColor }} />
         <span className="flex-1 text-[18px] font-semibold tracking-[-0.02em]">{name}</span>
         <span className="text-[17px] font-bold">{pct.toFixed(1)}%</span>
-        <span className="w-28 text-right text-[16px] text-muted">{amountWon}</span>
+        <span className="w-28 text-right text-base text-muted">{amountWon}</span>
       </button>
-      {onOpenDetail && (
-        <button
-          onClick={onOpenDetail}
-          aria-label={`${name} 상세 보기`}
-          className="ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[#8A948C] hover:bg-white hover:text-navy"
-        >
-          <ChevronRight size={20} />
-        </button>
-      )}
+      {/* Action column 공간은 항상 확보한다 — Chevron이 없는 "기타 N개 종목" 행도 비중/금액이 다른 row와 같은 x축에 오도록 */}
+      <div className="group relative flex h-8 w-8 shrink-0 items-center justify-center">
+        {onOpenDetail && (
+          <>
+            <button
+              type="button"
+              aria-label={`${name} 재무정보 보기`}
+              onClick={onOpenDetail}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9CA3AF] outline-none hover:text-[#6B7280] focus-visible:text-[#6B7280]"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute bottom-full right-0 z-10 mb-2 whitespace-nowrap rounded-md bg-navy px-2.5 py-1.5 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+            >
+              재무정보 보기
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
+/** 운용 방식 카드 — 긴 설명 대신 mini-flow 로 3초 안에 차이를 보여준다 */
 function ModeCard({
   active, onClick, badge, title, flow,
-}: {
-  active: boolean; onClick: () => void; badge?: string; title: string; flow: string[];
-}) {
+}: { active: boolean; onClick: () => void; badge?: string; title: string; flow: string[] }) {
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col gap-5 rounded-[20px] px-8 py-7 text-left ${
+      className={`flex flex-col gap-5 rounded-[20px] p-9 text-left ${
         active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
       }`}
     >
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-[22px] font-bold tracking-[-0.02em]">{title}</span>
-        {badge && <span className="rounded-full bg-lime px-3 py-1.5 text-xs font-bold text-navy">{badge}</span>}
-      </div>
-      <div className="flex flex-wrap items-center gap-2 text-[15px] text-muted">
+      {badge && <span className="self-start rounded-full bg-lime px-3 py-1.5 text-sm font-bold text-navy">{badge}</span>}
+      <span className="text-2xl font-bold tracking-[-0.025em]">{title}</span>
+      <div className="flex flex-wrap items-center gap-2">
         {flow.map((step, i) => (
           <span key={step} className="flex items-center gap-2">
-            <span className="rounded-full bg-white px-3 py-1.5 font-semibold text-[#3F4A43]">{step}</span>
-            {i < flow.length - 1 && <span>→</span>}
+            <span className="rounded-[10px] bg-surface px-3.5 py-2.5 text-[15px] font-semibold text-[#3F4A43]">{step}</span>
+            {i < flow.length - 1 && <span className="text-[#A6AFA7]">→</span>}
           </span>
         ))}
       </div>
