@@ -22,6 +22,7 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const isLoading = useTradingStore((state) => state.isLoading);
   const isRefreshing = useTradingStore((state) => state.isRefreshing);
+  const lastUpdatedAt = useTradingStore((state) => state.lastUpdatedAt);
   const error = useTradingStore((state) => state.error);
   const [sheetOpen, setSheetOpen] = useState(false); // 리밸런싱 상세 시트
 
@@ -59,7 +60,7 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
             <div className="flex items-baseline gap-4">
               <span className="text-[32px] font-bold tracking-[-0.03em]">{won(Number(portfolio.total_assets))}</span>
               <span className={`text-[19px] font-semibold ${profit >= 0 ? 'text-up' : 'text-down'}`}>
-                평가·실현 {profit >= 0 ? '+' : ''}{Math.round(profit).toLocaleString('ko-KR')}원 ({Number(portfolio.return_rate).toFixed(2)}%)
+                총손익 {profit >= 0 ? '+' : ''}{Math.round(profit).toLocaleString('ko-KR')}원 · 평가수익률 {Number(portfolio.return_rate).toFixed(2)}%
               </span>
             </div>
             <div className="grid grid-cols-4 gap-3">
@@ -69,6 +70,12 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
               <Fact label="실현손익" value={won(Number(portfolio.realized_profit))} warn={Number(portfolio.realized_profit) < 0} />
             </div>
             {isRefreshing && <span className="text-sm text-subtle">최신 가격으로 갱신 중…</span>}
+            {!isRefreshing && error && (
+              <p role="alert" className="rounded-[14px] bg-[#FFF1F1] px-5 py-4 text-sm font-semibold text-down">
+                최신 가격 갱신에 실패해 마지막 조회 데이터를 표시합니다. ({error.message})
+              </p>
+            )}
+            {lastUpdatedAt && <span className="text-sm text-subtle">데이터 기준 {new Date(lastUpdatedAt).toLocaleString('ko-KR')}</span>}
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-2 rounded-full bg-[#EAF7EF] px-3.5 py-2 text-[15px] font-semibold text-[#2E9B65]">
                 ● 선택 전략

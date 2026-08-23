@@ -60,6 +60,7 @@ export default function Portfolio({
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const isLoading = useTradingStore((state) => state.isLoading);
   const isRefreshing = useTradingStore((state) => state.isRefreshing);
+  const lastUpdatedAt = useTradingStore((state) => state.lastUpdatedAt);
   const error = useTradingStore((state) => state.error);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
   // 전략 변경 모달 상태
@@ -113,6 +114,15 @@ export default function Portfolio({
     }));
   }, [portfolio]);
   const selectedHolding = actualPositions[Math.min(selectedHoldingIdx, Math.max(actualPositions.length - 1, 0))];
+  const allocationSlices = useMemo(() => {
+    if (!portfolio) return [];
+    const assets = Number(portfolio.total_assets);
+    const cashWeight = assets > 0 ? Number(portfolio.cash_balance) / assets * 100 : 0;
+    return [
+      ...actualPositions.map((position) => ({ key: position.stock_code, name: position.name, weight: position.weight, kind: 'position' as const })),
+      { key: 'cash', name: '현금', weight: cashWeight, kind: 'cash' as const },
+    ].filter((slice) => slice.weight > 0);
+  }, [actualPositions, portfolio]);
 
   // 위험 분석 탭: 종목별 AI 5축 점수를 보유 비중으로 가중 평균 — StockDetail의 AI_AXES를 그대로 재사용한다
   const totalPct = useMemo(() => MOCK_HOLDINGS.reduce((a, h) => a + h.pct, 0), []);
@@ -172,9 +182,15 @@ export default function Portfolio({
               <Fact label="현금잔액" value={won(Number(portfolio.cash_balance))} />
               <Fact label="총 매입금액" value={won(Number(portfolio.total_purchase_amount))} />
               <Fact label="총 평가금액" value={won(Number(portfolio.total_evaluation_amount))} />
-              <Fact label="총 수익률" value={`${Number(portfolio.return_rate).toFixed(2)}%`} warn={Number(portfolio.return_rate) < 0} />
+              <Fact label="평가수익률" value={`${Number(portfolio.return_rate).toFixed(2)}%`} warn={Number(portfolio.return_rate) < 0} />
             </div>
             {isRefreshing && <span className="text-sm text-subtle">최신 KIS/Redis 가격으로 갱신 중…</span>}
+            {!isRefreshing && error && (
+              <p role="alert" className="rounded-[14px] bg-[#FFF1F1] px-5 py-4 text-sm font-semibold text-down">
+                최신 가격 갱신에 실패해 마지막 조회 데이터를 표시합니다. ({error.message})
+              </p>
+            )}
+            {lastUpdatedAt && <span className="text-sm text-subtle">데이터 기준 {new Date(lastUpdatedAt).toLocaleString('ko-KR')}</span>}
           </section>
 
           {/* 현재 전략 + 변경 트리거 — Primary 로 강조하지 않는다 */}
@@ -297,7 +313,7 @@ export default function Portfolio({
                     <ResponsiveContainer>
                       <PieChart>
                         <Pie
-                          data={actualPositions}
+                          data={allocationSlices}
                           dataKey="weight"
                           nameKey="name"
                           innerRadius="62%"
@@ -306,13 +322,15 @@ export default function Portfolio({
                           endAngle={-270}
                           paddingAngle={1}
                           stroke="none"
-                          onClick={(_, i) => setSelectedHoldingIdx(i)}
+                          onClick={(_, i) => {
+                            if (allocationSlices[i]?.kind === 'position') setSelectedHoldingIdx(i);
+                          }}
                         >
-                          {actualPositions.map((holding, i) => (
+                          {allocationSlices.map((slice, i) => (
                             <Cell
-                              key={holding.stock_code}
-                              fill={i === selectedHoldingIdx ? '#C6F04D' : DONUT_SHADES[i % DONUT_SHADES.length]}
-                              cursor="pointer"
+                              key={slice.key}
+                              fill={slice.kind === 'cash' ? '#DDE3DC' : i === selectedHoldingIdx ? '#C6F04D' : DONUT_SHADES[i % DONUT_SHADES.length]}
+                              cursor={slice.kind === 'position' ? 'pointer' : 'default'}
                             />
                           ))}
                         </Pie>
@@ -320,8 +338,8 @@ export default function Portfolio({
                       </PieChart>
                     </ResponsiveContainer>
                     <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1">
-                      <span className="text-[15px] text-muted">투자자산</span>
-                      <span className="text-[26px] font-bold tracking-[-0.03em]">{won(Number(portfolio.total_evaluation_amount))}</span>
+                      <span className="text-[15px] text-muted">총자산</span>
+                      <span className="text-[26px] font-bold tracking-[-0.03em]">{won(Number(portfolio.total_assets))}</span>
                     </div>
                   </div>
 

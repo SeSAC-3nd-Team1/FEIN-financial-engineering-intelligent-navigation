@@ -24,6 +24,7 @@ interface TradingState {
   isLoading: boolean;
   isRefreshing: boolean;
   isSubmitting: boolean;
+  lastUpdatedAt: string | null;
   error: ApiError | null;
   orderMessage: string | null;
   refresh: (token: string) => Promise<void>;
@@ -42,6 +43,7 @@ const EMPTY_STATE = {
   isLoading: false,
   isRefreshing: false,
   isSubmitting: false,
+  lastUpdatedAt: null,
   error: null,
   orderMessage: null,
 };
@@ -82,7 +84,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         set({ account, accountMissing: false });
         const data = await loadAccountData(account, token);
         if (generation !== refreshGeneration) return;
-        set({ ...data, isLoading: false, isRefreshing: false });
+        set({ ...data, isLoading: false, isRefreshing: false, lastUpdatedAt: new Date().toISOString() });
       } catch (error) {
         if (generation !== refreshGeneration) return;
         const apiError = asApiError(error);
@@ -120,7 +122,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         account = await selectStrategyApi(account.id, strategyId, token);
       }
       const data = await loadAccountData(account, token);
-      set({ account, ...data, accountMissing: false, isSubmitting: false });
+      set({ account, ...data, accountMissing: false, isSubmitting: false, lastUpdatedAt: new Date().toISOString() });
       return account;
     } catch (error) {
       const apiError = asApiError(error);
@@ -139,7 +141,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       const account = get().account ?? await getMyAccountApi(token);
       const data = await loadAccountData(account, token);
       set({
-        account, ...data, isSubmitting: false,
+        account, ...data, isSubmitting: false, lastUpdatedAt: new Date().toISOString(),
         orderMessage: `${order.stock_code} ${order.side === 'BUY' ? '매수' : '매도'} 주문이 체결됐습니다.`,
       });
       return order;
