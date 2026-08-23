@@ -11,6 +11,7 @@
 | StartInvesting | 투자금/전략 선택 후 시작 | `POST /api/v1/accounts`, `PUT /accounts/{id}/strategy` | `virtual_accounts`, `cash_ledger`, `strategies` |
 | Portfolio/Dashboard | 20종목 mock, 자산/손익/비중 | `GET /api/v1/portfolio?account_id=` | `positions`, `executions`, `cash_ledger` + Redis/KIS 현재가 |
 | StockDetail | 종목 mock 현재가/재무지표 | `GET /api/v1/market/stocks/{code}/price` | Redis `price:{code}` → KIS 현재가. 재무지표는 Blob/Data API 후속 |
+| InformationExam | 한국 뉴스는 실제 Backend, 금융 상식은 기존 mock | `GET /api/v1/information/news/kr?page=1&size=20` | NAVER API HUB → Redis `information:news:kr:{query}:{page}:{size}`; PostgreSQL/Blob 저장 없음 |
 | 주문 UI(후속) | 현재 화면 없음 | `POST/GET /api/v1/orders`, `GET /executions` | `orders`, `executions`, `positions`, `cash_ledger` |
 
 ## 확인된 불일치

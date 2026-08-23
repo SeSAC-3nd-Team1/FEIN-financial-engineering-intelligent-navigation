@@ -26,6 +26,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 주문 목록 | GET | `/orders?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | Portfolio/Dashboard |
+| 한국 금융 뉴스 | GET | `/information/news/kr?page=&size=` | 불필요 | 200, 422, 502, 503 | InformationExam |
 
 ## 주요 Request/Response
 
@@ -121,9 +122,43 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 }
 ```
 
+### GET `/information/news/kr`
+
+Provider는 NAVER Cloud Platform NAVER API HUB Search News API의 `GET /search/v1/news`다. `page` 기본값은 1이고 최솟값은 1이다. `size` 기본값은 20이며 1~50만 허용한다. Backend는 `query=NEWS_SEARCH_QUERY`, `display=size`, `start=((page-1)*size)+1`, `sort=date`로 호출한다.
+
+응답 `200`:
+
+```json
+{
+  "items": [
+    {
+      "id": "8d58f6e8b17f38f43001f17a",
+      "title": "삼성전자 주가 상승",
+      "summary": "외국인 순매수가 증가했습니다.",
+      "thumbnail": null,
+      "publisher": "hankyung.com",
+      "publishedAt": "2026-08-23T15:42:00+09:00",
+      "link": "https://www.hankyung.com/article/123"
+    }
+  ],
+  "totalCount": 1234,
+  "updatedAt": "2026-08-23T15:50:00+09:00"
+}
+```
+
+- `originallink`를 우선하고 없으면 NAVER `link`를 사용한다.
+- `id`는 최종 link의 SHA-256 앞 24자리이므로 같은 기사는 같은 ID를 가진다.
+- title/description의 HTML tag와 entity는 Backend에서 제거·해제한다.
+- NAVER 응답에 언론사 필드가 없으므로 publisher는 최종 link hostname이며 매체명을 추측하지 않는다.
+- Redis key는 `information:news:kr:{query}:{page}:{size}`, 기본 TTL은 300초다.
+- Redis read/write 장애는 provider 호출 또는 정상 응답을 막지 않는다.
+- 뉴스는 PostgreSQL과 Azure Blob에 저장하지 않고 뉴스 본문도 scraping하지 않는다.
+
+오류는 설정 누락 `503 NAVER_NEWS_NOT_CONFIGURED`, timeout/4xx/5xx/응답 schema 오류 `502 NAVER_NEWS_UNAVAILABLE`, provider 429 `503 NAVER_NEWS_RATE_LIMIT`이다. API key header와 실제 credential은 응답·exception·로그에 포함하지 않는다.
+
 ## 주요 error code
 
-`TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
+`NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
 
 ## KIS 현재가와 가상거래 경계
 

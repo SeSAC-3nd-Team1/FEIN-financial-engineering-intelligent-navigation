@@ -36,6 +36,8 @@ Copy-Item .env.example .env
 
 운영/공유 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 교체합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 가상계좌 초기금은 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값으로 설정합니다.
 
+한국 금융 뉴스는 NAVER Cloud Platform의 NAVER API HUB Search News API를 Backend에서만 호출합니다. 로컬 `.env`에 `NAVER_API_HUB_CLIENT_ID`와 `NAVER_API_HUB_CLIENT_SECRET`을 설정하고 실제 값은 커밋하거나 로그에 출력하지 않습니다. 기본 검색어는 `NEWS_SEARCH_QUERY=증시`, Redis cache TTL은 `NEWS_CACHE_TTL_SECONDS=300`입니다.
+
 Azure Blob을 사용하는 Data 작업은 별도의 로컬 `.env.azure` 설정과 Azure CLI/Entra ID 인증을 사용합니다. Shared Key 기반 실제 Azure connection string은 사용하지 않습니다.
 
 ### 3. 기본 개발환경 실행
@@ -78,6 +80,16 @@ docker compose exec -T backend env RUN_KIS_INTEGRATION=1 pytest -q tests/test_ki
 docker compose exec -T redis redis-cli --scan --pattern "price:*"
 docker compose exec -T redis redis-cli TTL price:005930
 ```
+
+실제 NAVER 뉴스→Redis 통합 테스트도 credential이 있는 로컬에서만 명시적으로 실행합니다.
+
+```bash
+docker compose exec -T backend env RUN_NAVER_NEWS_INTEGRATION=1 pytest -q tests/test_naver_news_integration.py
+docker compose exec -T redis redis-cli --scan --pattern "information:news:kr:*"
+docker compose exec -T redis redis-cli TTL "information:news:kr:증시:1:20"
+```
+
+뉴스 API는 `GET /api/v1/information/news/kr?page=1&size=20`이다. NAVER 검색 결과만 정규화하며 뉴스 본문을 scraping하지 않는다. 뉴스는 PostgreSQL이나 Azure Blob에 저장하지 않고 Redis에만 단기 cache한다. Information 화면의 새로고침은 Backend를 다시 호출하지만 TTL 동안은 Redis 응답을 사용한다.
 
 Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다. JWT는 브라우저에 보관되어 새로고침 후 검증·복원되며, 로그아웃 시 제거된다.
 
