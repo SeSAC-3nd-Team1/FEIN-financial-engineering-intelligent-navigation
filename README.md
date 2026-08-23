@@ -44,20 +44,39 @@ Azure Blob을 사용하는 Data 작업은 별도의 로컬 `.env.azure` 설정�
 docker compose up -d
 ```
 
-최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, PostgreSQL, Redis만 포함되며 Data와 AI는 profile로 분리됩니다.
+최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, PostgreSQL, Redis와 일회성 `db-init`이 포함됩니다. `db-init`은 Backend보다 먼저 Alembic migration을 적용하고 `.env`의 `SIGNUP_TERMS_*` 개발용 약관을 멱등 seed한 뒤 종료합니다. Data와 AI 작업용 장기 실행 컨테이너는 profile로 분리됩니다.
 
-최초 DB 준비와 migration 적용:
+DB 준비만 다시 실행하려면:
 
 ```bash
 docker compose up -d postgres redis
-docker compose run --rm data alembic upgrade head
+docker compose run --rm db-init
 docker compose up -d --build backend frontend
 ```
+
+동일한 `SIGNUP_TERMS_VERSION`으로 `db-init`을 반복해도 `(term_code, version)` UNIQUE와 `ON CONFLICT DO NOTHING` 때문에 중복 약관이 생기지 않습니다. 기본 version의 `dev-` prefix는 로컬 개발 데이터임을 나타냅니다. 운영 약관은 승인된 별도 version·효력 시각·불변 본문 URL을 명시적으로 설정해야 하며 Compose 기본값을 사용하지 않습니다.
 
 Backend 테스트:
 
 ```bash
 docker compose run --rm --no-deps backend pytest -q
+```
+
+Seeded PostgreSQL/Redis E2E 테스트:
+
+```bash
+docker compose run --rm db-init
+docker compose exec -T backend env RUN_INTEGRATION=1 pytest -q tests/test_integration_flow.py
+```
+
+E2E는 `GET /auth/terms`부터 회원가입 동의 저장, 계좌·전략·매수·멱등 재시도·포트폴리오·매도·원장 정합성까지 확인합니다. 생성한 사용자와 가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 개발 데이터 전체를 삭제하지 않습니다.
+
+실제 KIS 시세→Redis 통합 테스트는 유효한 KIS 환경 변수가 있는 경우에만 명시적으로 실행합니다. 이 테스트는 현재가 조회만 수행하고 KIS 주문 API나 실제·모의 계좌 주문을 호출하지 않습니다.
+
+```bash
+docker compose exec -T backend env RUN_KIS_INTEGRATION=1 pytest -q tests/test_kis_integration.py
+docker compose exec -T redis redis-cli --scan --pattern "price:*"
+docker compose exec -T redis redis-cli TTL price:005930
 ```
 
 Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다. JWT는 브라우저에 보관되어 새로고침 후 검증·복원되며, 로그아웃 시 제거된다.

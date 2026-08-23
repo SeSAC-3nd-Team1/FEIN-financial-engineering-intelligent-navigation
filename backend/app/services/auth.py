@@ -24,13 +24,13 @@ class AuthService:
         if duplicate:
             raise ServiceError("DUPLICATE_ACCOUNT", "이미 사용 중인 아이디 또는 이메일입니다.", 409)
         catalog = self.signup_terms()
+        catalog_by_key = {(term.term_code, term.version): term for term in catalog}
+        if any((item.term_code, item.version) not in catalog_by_key for item in request.agreements):
+            raise ServiceError("INVALID_TERM_VERSION", "존재하지 않는 약관 또는 버전입니다.")
         accepted = {(item.term_code, item.version) for item in request.agreements if item.agreed}
         required = {(term.term_code, term.version) for term in catalog if term.is_required}
         if not required.issubset(accepted):
             raise ServiceError("REQUIRED_TERMS_NOT_AGREED", "필수 약관에 모두 동의해야 합니다.")
-        catalog_by_key = {(term.term_code, term.version): term for term in catalog}
-        if any((item.term_code, item.version) not in catalog_by_key for item in request.agreements):
-            raise ServiceError("INVALID_TERM_VERSION", "존재하지 않는 약관 또는 버전입니다.")
         now = datetime.now(UTC)
         try:
             user = User(
@@ -71,7 +71,14 @@ class AuthService:
         latest: dict[str, Term] = {}
         for term in terms:
             latest.setdefault(term.term_code, term)
-        return list(latest.values())
+        catalog = list(latest.values())
+        if not any(term.is_required for term in catalog):
+            raise ServiceError(
+                "TERMS_CATALOG_UNAVAILABLE",
+                "현재 사용할 수 있는 필수 약관이 준비되지 않았습니다.",
+                503,
+            )
+        return catalog
 
     def login(self, request: LoginRequest) -> str:
         user = self.session.scalar(select(User).where(User.user_id == request.user_id))
