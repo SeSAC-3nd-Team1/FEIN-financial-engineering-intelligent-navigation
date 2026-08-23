@@ -161,3 +161,21 @@ class PortfolioResponse(BaseModel):
 class ErrorResponse(BaseModel):
     code: str
     message: str
+
+
+class NewsArticleResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    id: str
+    title: str
+    summary: str
+    thumbnail: str | None = None
+    publisher: str
+    published_at: datetime = Field(alias="publishedAt")
+    link: str
+
+
+class NewsListResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    items: list[NewsArticleResponse]
+    total_count: int = Field(alias="totalCount", ge=0)
+    updated_at: datetime = Field(alias="updatedAt")

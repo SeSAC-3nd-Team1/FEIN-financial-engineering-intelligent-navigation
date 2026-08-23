@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import accounts, auth, market, orders, portfolio, strategies
+from app.api.routes import accounts, auth, information, market, orders, portfolio, strategies
 from app.core.errors import ServiceError
 
 app = FastAPI(
@@ -47,5 +47,5 @@ def dependency_health():
     return {"postgres": "ok", "redis": "ok"}
 
 
-for router in (auth.router, accounts.router, strategies.router, market.router, orders.router, portfolio.router):
+for router in (auth.router, accounts.router, strategies.router, market.router, orders.router, portfolio.router, information.router):
     app.include_router(router, prefix="/api/v1")

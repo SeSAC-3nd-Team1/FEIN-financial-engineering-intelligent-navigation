@@ -18,6 +18,12 @@ class Settings:
     kis_base_url: str = os.getenv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
     price_cache_ttl_seconds: int = int(os.getenv("PRICE_CACHE_TTL_SECONDS", "5"))
     request_timeout_seconds: float = float(os.getenv("KIS_TIMEOUT_SECONDS", "3"))
+    naver_api_hub_client_id: str = os.getenv("NAVER_API_HUB_CLIENT_ID", "")
+    naver_api_hub_client_secret: str = os.getenv("NAVER_API_HUB_CLIENT_SECRET", "")
+    naver_news_base_url: str = os.getenv("NAVER_NEWS_BASE_URL", "https://naverapihub.apigw.ntruss.com")
+    news_search_query: str = os.getenv("NEWS_SEARCH_QUERY", "증시")
+    news_cache_ttl_seconds: int = int(os.getenv("NEWS_CACHE_TTL_SECONDS", "300"))
+    news_request_timeout_seconds: float = float(os.getenv("NEWS_REQUEST_TIMEOUT_SECONDS", "5"))
 
 
 settings = Settings()

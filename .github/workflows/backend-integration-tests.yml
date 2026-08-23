@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "backend/**"
+      - "frontend/**"
       - "data/db/**"
       - "data/scripts/init_local_db.py"
       - "data/scripts/seed_signup_terms.py"
@@ -75,3 +76,16 @@ jobs:
       - name: Run Backend unit and E2E tests
         working-directory: backend
         run: pytest -q
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build Frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
