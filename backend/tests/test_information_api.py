@@ -79,6 +79,28 @@ def test_news_api_custom_pagination() -> None:
     assert service.calls == [(2, 50)]
 
 
+def test_news_api_accepts_maximum_provider_start() -> None:
+    service = FakeNewsService()
+    app.dependency_overrides[get_news_service] = lambda: service
+    try:
+        response = TestClient(app).get("/api/v1/information/news/kr?page=1000&size=1")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert service.calls == [(1000, 1)]
+
+
+def test_news_api_rejects_start_above_provider_limit_before_service_call() -> None:
+    service = FakeNewsService()
+    app.dependency_overrides[get_news_service] = lambda: service
+    try:
+        response = TestClient(app).get("/api/v1/information/news/kr?page=51&size=20")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert service.calls == []
+
+
 def test_news_api_rejects_invalid_pagination() -> None:
     client = TestClient(app)
     for query in ("page=0&size=20", "page=1&size=0", "page=1&size=51"):

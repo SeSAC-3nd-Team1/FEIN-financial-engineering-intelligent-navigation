@@ -109,7 +109,19 @@ class NaverNewsClient:
     def _normalize_item(item: dict) -> NewsArticleResponse:
         if not isinstance(item, dict):
             raise TypeError("news item must be an object")
-        link = (item.get("originallink") or item.get("link") or "").strip()
+
+        for field in ("title", "description", "pubDate"):
+            if not isinstance(item.get(field), str):
+                raise TypeError(f"{field} must be a string")
+
+        original_link = item.get("originallink")
+        naver_link = item.get("link")
+        if original_link is not None and not isinstance(original_link, str):
+            raise TypeError("originallink must be a string")
+        if naver_link is not None and not isinstance(naver_link, str):
+            raise TypeError("link must be a string")
+
+        link = (original_link or naver_link or "").strip()
         if not link:
             raise ValueError("news link is missing")
         hostname = (urlparse(link).hostname or "unknown").lower()
@@ -117,10 +129,10 @@ class NaverNewsClient:
             hostname = hostname[4:]
         return NewsArticleResponse(
             id=hashlib.sha256(link.encode("utf-8")).hexdigest()[:24],
-            title=clean_html_text(str(item["title"])),
-            summary=clean_html_text(str(item["description"])),
+            title=clean_html_text(item["title"]),
+            summary=clean_html_text(item["description"]),
             thumbnail=None,
             publisher=hostname,
-            publishedAt=parse_provider_datetime(str(item["pubDate"])),
+            publishedAt=parse_provider_datetime(item["pubDate"]),
             link=link,
         )

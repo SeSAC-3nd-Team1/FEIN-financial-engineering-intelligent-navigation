@@ -124,7 +124,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 ### GET `/information/news/kr`
 
-Provider는 NAVER Cloud Platform NAVER API HUB Search News API의 `GET /search/v1/news`다. `page` 기본값은 1이고 최솟값은 1이다. `size` 기본값은 20이며 1~50만 허용한다. Backend는 `query=NEWS_SEARCH_QUERY`, `display=size`, `start=((page-1)*size)+1`, `sort=date`로 호출한다.
+Provider는 NAVER Cloud Platform NAVER API HUB Search News API의 `GET /search/v1/news`다. `page` 기본값은 1이고 최솟값은 1이다. `size` 기본값은 20이며 1~50만 허용한다. Backend는 `query=NEWS_SEARCH_QUERY`, `display=size`, `start=((page-1)*size)+1`, `sort=date`로 호출한다. 계산된 `start`가 NAVER 허용 범위인 1~1000을 벗어나면 provider를 호출하지 않고 `422`를 반환한다.
 
 응답 `200`:
 

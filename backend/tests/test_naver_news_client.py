@@ -138,6 +138,28 @@ def test_malformed_provider_response(monkeypatch, response) -> None:
     assert error.value.code == "NAVER_NEWS_UNAVAILABLE"
 
 
+@pytest.mark.parametrize(
+    "item_overrides",
+    [
+        {"originallink": 123},
+        {"originallink": "", "link": 123},
+        {"title": 123},
+        {"description": ["잘못된 설명"]},
+        {"pubDate": 123},
+    ],
+)
+def test_malformed_provider_item_field_types_return_unavailable(monkeypatch, item_overrides) -> None:
+    monkeypatch.setattr(
+        "app.integrations.naver.news_client.httpx.get",
+        lambda *_args, **_kwargs: FakeResponse(payload=provider_payload(**item_overrides)),
+    )
+
+    with pytest.raises(ServiceError) as error:
+        client().search("증시", 1, 20)
+    assert error.value.code == "NAVER_NEWS_UNAVAILABLE"
+    assert error.value.status_code == 502
+
+
 def test_missing_credentials_fails_before_http(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.integrations.naver.news_client.httpx.get",
