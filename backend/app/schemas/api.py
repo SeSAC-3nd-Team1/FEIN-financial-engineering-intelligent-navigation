@@ -248,8 +248,47 @@ class InvestorProfileAnalysisResult(BaseModel):
 
 
 class InvestorProfileResponse(InvestorProfileAnalysisResult):
+    assessment_id: UUID
     questionnaire_version: str
     analysis_version: Literal["v1"] = "v1"
+    model_version: str
+    created_at: datetime
+
+
+class StrategyRecommendationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assessment_id: UUID
+
+
+class StrategyRecommendationAnalysisItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    strategy_id: str = Field(min_length=1, max_length=30)
+    rank: int = Field(ge=1, le=3)
+    score: float = Field(ge=0, le=1)
+    match_level: Literal["BEST", "GOOD", "CAUTION"]
+    reason: str = Field(min_length=1, max_length=500)
+    caution: str = Field(min_length=1, max_length=500)
+
+
+class StrategyRecommendationAnalysisResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recommendations: list[StrategyRecommendationAnalysisItem] = Field(min_length=1, max_length=3)
+
+
+class StrategyRecommendationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recommendation_id: UUID
+    assessment_id: UUID
+    primary: StrategyRecommendationAnalysisItem
+    alternatives: list[StrategyRecommendationAnalysisItem]
+    model_version: str
+    dataset_version: str
+    recommendation_version: Literal["v1"] = "v1"
+    created_at: datetime
 
 
 class NewsArticleResponse(BaseModel):
