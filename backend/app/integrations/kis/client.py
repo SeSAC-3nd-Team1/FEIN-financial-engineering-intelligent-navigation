@@ -4,7 +4,7 @@
 """
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import logging
 import time
 
@@ -48,11 +48,14 @@ class KisClient:
             )
             response.raise_for_status()
             payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
+            access_token = payload["access_token"]
+            expires_in = int(payload.get("expires_in", 3600))
+            if not isinstance(access_token, str) or not access_token or expires_in <= 0:
+                raise ValueError("invalid token response")
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
             logger.warning("KIS token request failed: %s", type(exc).__name__)
             raise ServiceError("KIS_UNAVAILABLE", "현재 시장가격 제공자를 사용할 수 없습니다.", 503) from exc
-        self._token = payload["access_token"]
-        expires_in = int(payload.get("expires_in", 3600))
+        self._token = access_token
         self._token_expires_at = time.time() + expires_in
         if self.cache is not None:
             try:
@@ -84,10 +87,13 @@ class KisClient:
                 payload = response.json()
                 if payload.get("rt_cd") != "0":
                     raise ServiceError("STOCK_NOT_FOUND", "조회할 수 없는 종목입니다.", 404)
-                return Decimal(payload["output"]["stck_prpr"]), datetime.now(UTC)
+                price = Decimal(payload["output"]["stck_prpr"])
+                if not price.is_finite() or price <= 0:
+                    raise ValueError("invalid current price")
+                return price, datetime.now(UTC)
             except ServiceError:
                 raise
-            except (httpx.HTTPError, ValueError, KeyError) as exc:
+            except (httpx.HTTPError, InvalidOperation, ValueError, KeyError, TypeError) as exc:
                 last_error = exc
                 logger.warning("KIS price request attempt=%s failed stock_code=%s error=%s", attempt + 1, stock_code, type(exc).__name__)
         raise ServiceError("KIS_UNAVAILABLE", "현재 시장가격을 조회하지 못했습니다.", 503) from last_error
