@@ -114,26 +114,51 @@ def collect_raw(
     return results
 
 
+def _derived_overwrite(*, overwrite: bool, incremental: bool) -> bool:
+    """증분 Raw가 고정 월 경로의 파생 데이터를 갱신하도록 overwrite 여부를 결정한다."""
+
+    # Processed/Feature는 월별 part-00000 고정 경로이므로 증분 실행에서 덮어쓰지 않으면
+    # 같은 달에 새 Raw가 추가되어도 이전 시점의 파생 데이터가 그대로 남는다.
+    return overwrite or incremental
+
+
 def audit_outputs(
     storage, *, processed_container: str, features_container: str, series_names: list[str],
+    schema_version: str, feature_version: str,
 ) -> dict[str, object]:
-    """ECOS 품질 manifest와 macro feature object 존재를 가볍게 감사한다."""
+    """요청한 version의 ECOS 품질 manifest와 macro feature object를 감사한다."""
 
-    quality = {
-        name: storage.list_paths(
-            processed_container, prefix=f"_quality/ecos/operation={name}/",
+    quality_paths: dict[str, list[str]] = {}
+    missing: list[str] = []
+    for name in series_names:
+        expected = (
+            f"_quality/ecos/operation={name}/schema=v{schema_version}/manifest.json"
         )
-        for name in series_names
-    }
-    missing = [name for name, paths in quality.items() if not paths]
-    feature_paths = storage.list_paths(features_container, prefix="macro_daily/version=v")
-    if missing or not feature_paths:
+        paths = storage.list_paths(processed_container, prefix=expected)
+        quality_paths[name] = paths
+        if expected not in paths:
+            missing.append(name)
+
+    feature_prefix = f"macro_daily/version=v{feature_version}/"
+    feature_paths = [
+        path for path in storage.list_paths(features_container, prefix=feature_prefix)
+        if path.endswith(".parquet")
+    ]
+    feature_manifest = f"_manifests/ecos/version=v{feature_version}/manifest.json"
+    manifest_paths = storage.list_paths(features_container, prefix=feature_manifest)
+    if missing or not feature_paths or feature_manifest not in manifest_paths:
         raise RuntimeError(
-            f"ECOS audit failed missing_quality={missing} macro_daily={bool(feature_paths)}"
+            "ECOS audit failed "
+            f"schema_version={schema_version} feature_version={feature_version} "
+            f"missing_quality={missing} macro_daily={bool(feature_paths)} "
+            f"feature_manifest={feature_manifest in manifest_paths}"
         )
     return {
-        "quality_manifests": {name: len(paths) for name, paths in quality.items()},
+        "schema_version": schema_version,
+        "feature_version": feature_version,
+        "quality_manifests": {name: len(paths) for name, paths in quality_paths.items()},
         "macro_daily_objects": len(feature_paths),
+        "feature_manifest": feature_manifest,
     }
 
 
@@ -147,6 +172,9 @@ def main() -> None:
     raw_container = os.getenv("AZURE_STORAGE_CONTAINER_RAW", "raw")
     processed_container = os.getenv("AZURE_STORAGE_CONTAINER_PROCESSED", "processed")
     features_container = os.getenv("AZURE_STORAGE_CONTAINER_FEATURES", "features")
+    derived_overwrite = _derived_overwrite(
+        overwrite=args.overwrite, incremental=args.incremental,
+    )
 
     if args.stage in {"raw", "all"} or args.validate_metadata:
         client = EcosClient(
@@ -166,7 +194,8 @@ def main() -> None:
         result = [
             build_ecos_processed(
                 storage, raw_container=raw_container, processed_container=processed_container,
-                series_name=name, schema_version=args.schema_version, overwrite=args.overwrite,
+                series_name=name, schema_version=args.schema_version,
+                overwrite=derived_overwrite,
             )
             for name in series_names
         ]
@@ -178,7 +207,7 @@ def main() -> None:
         result = build_macro_features(
             storage, processed_container=processed_container,
             features_container=features_container, schema_version=args.schema_version,
-            feature_version=args.feature_version, overwrite=args.overwrite,
+            feature_version=args.feature_version, overwrite=derived_overwrite,
         )
         print("ECOS FEATURES COMPLETE " + json.dumps(result, ensure_ascii=False))
 
@@ -186,6 +215,7 @@ def main() -> None:
         result = audit_outputs(
             storage, processed_container=processed_container,
             features_container=features_container, series_names=series_names,
+            schema_version=args.schema_version, feature_version=args.feature_version,
         )
         print("ECOS AUDIT OK " + json.dumps(result, ensure_ascii=False))
 

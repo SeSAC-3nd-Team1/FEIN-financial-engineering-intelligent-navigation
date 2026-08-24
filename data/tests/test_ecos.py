@@ -9,7 +9,7 @@ from collectors.ecos_client import EcosApiError, EcosClient, EcosError, EcosNotC
 from collectors.ecos_config import ECOS_SERIES
 from features.ecos import compute_macro_daily
 from processing.ecos import normalize_ecos_records
-from scripts.run_ecos_pipeline import _latest_raw_date
+from scripts.run_ecos_pipeline import _derived_overwrite, _latest_raw_date, audit_outputs
 from storage.raw import serialize_jsonl_gzip
 
 
@@ -185,6 +185,85 @@ def test_incremental_checkpoint_comes_from_latest_raw_payload() -> None:
             return gzip.compress(b"\n".join(json.dumps(row).encode() for row in rows))
 
     assert _latest_raw_date(Storage(), "raw", "usd_krw", "D") == date(2026, 1, 5)
+
+
+def test_incremental_run_overwrites_derived_month_partitions() -> None:
+    """같은 월의 증분 Raw가 기존 Processed/Feature 고정 경로를 갱신하게 한다."""
+
+    assert _derived_overwrite(overwrite=False, incremental=True) is True
+    assert _derived_overwrite(overwrite=True, incremental=False) is True
+    assert _derived_overwrite(overwrite=False, incremental=False) is False
+
+
+def test_incremental_all_wires_overwrite_to_processed_and_features(monkeypatch) -> None:
+    """all 증분 실행이 두 파생 builder 모두에 overwrite를 전달한다."""
+
+    from types import SimpleNamespace
+    import scripts.run_ecos_pipeline as pipeline
+
+    args = SimpleNamespace(
+        stage="all", series=None, start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 2), incremental=True, validate_metadata=False,
+        schema_version="1", feature_version="1", overwrite=False,
+    )
+    processed_overwrite: list[bool] = []
+    feature_overwrite: list[bool] = []
+    monkeypatch.setattr(pipeline, "load_dotenv", lambda: None)
+    monkeypatch.setattr(pipeline, "parse_args", lambda: args)
+    monkeypatch.setattr(pipeline.BlobStorage, "from_env", lambda: object())
+    monkeypatch.setattr(pipeline, "EcosClient", lambda *args, **kwargs: object())
+    monkeypatch.setattr(pipeline, "collect_raw", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        pipeline, "build_ecos_processed",
+        lambda *args, overwrite, **kwargs: processed_overwrite.append(overwrite) or {},
+    )
+    monkeypatch.setattr(
+        pipeline, "build_macro_features",
+        lambda *args, overwrite, **kwargs: feature_overwrite.append(overwrite) or {},
+    )
+    monkeypatch.setattr(pipeline, "audit_outputs", lambda *args, **kwargs: {})
+
+    pipeline.main()
+
+    assert processed_overwrite == [True] * len(ECOS_SERIES)
+    assert feature_overwrite == [True]
+
+
+class _AuditStorage:
+    """버전별 audit 경로 검증을 위한 최소 Blob storage 대역이다."""
+
+    def __init__(self, schema_version: str, feature_version: str) -> None:
+        self.paths = {
+            *(
+                f"_quality/ecos/operation={name}/schema=v{schema_version}/manifest.json"
+                for name in ECOS_SERIES
+            ),
+            f"macro_daily/version=v{feature_version}/year=2026/month=01/part-00000.parquet",
+            f"_manifests/ecos/version=v{feature_version}/manifest.json",
+        }
+
+    def list_paths(self, container, *, prefix):
+        """요청 prefix와 일치하는 가상 Blob 경로를 반환한다."""
+
+        return sorted(path for path in self.paths if path.startswith(prefix))
+
+
+def test_audit_requires_exact_schema_and_feature_versions() -> None:
+    """다른 version 산출물이 있어도 요청 version audit는 통과하지 않는다."""
+
+    storage = _AuditStorage(schema_version="1", feature_version="1")
+    result = audit_outputs(
+        storage, processed_container="processed", features_container="features",
+        series_names=list(ECOS_SERIES), schema_version="1", feature_version="1",
+    )
+    assert result["schema_version"] == "1"
+    assert result["feature_version"] == "1"
+
+    with pytest.raises(RuntimeError, match="schema_version=2 feature_version=2"):
+        audit_outputs(
+            storage, processed_container="processed", features_container="features",
+            series_names=list(ECOS_SERIES), schema_version="2", feature_version="2",
+        )
 
 
 @pytest.mark.skipif(not __import__("os").getenv("ECOS_API_KEY"), reason="ECOS_API_KEY not configured")
