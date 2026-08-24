@@ -104,12 +104,19 @@ def verify(
         raise RuntimeError("KRX processed history manifest not found")
     manifest = json.loads(storage.download_bytes(processed_container, manifest_path))
     expected_months = _expected_months(start_date, end_date)
+    # 시작/종료 월은 요청 경계가 휴장일·월초일 수 있으므로 날짜 경계 검증에 맡긴다.
+    # 그 사이 내부 월은 하나라도 통째로 빠지면 즉시 실패시켜 장기 누락을 숨기지 않는다.
+    boundary_months = {
+        (start_date.year, start_date.month),
+        (end_date.year, end_date.month),
+    }
+    required_internal_months = expected_months - boundary_months
     result: dict[str, Any] = {}
     failures: list[str] = []
 
     for source_dataset, feature_dataset in DATASET_CONFIG.items():
         actual_months = _manifest_months(manifest, dataset=source_dataset)
-        missing_months = sorted(expected_months - actual_months)
+        missing_months = sorted(required_internal_months - actual_months)
         trade_dates = _feature_trade_dates(
             storage,
             features_container,
@@ -135,10 +142,14 @@ def verify(
             "weekday_days": coverage.weekday_days,
             "weekday_density": round(coverage.weekday_density, 6),
             "max_gap_days": coverage.max_gap_days,
-            "missing_months": [f"{year:04d}-{month:02d}" for year, month in missing_months],
+            "missing_internal_months": [
+                f"{year:04d}-{month:02d}" for year, month in missing_months
+            ],
         }
         if missing_months:
-            failures.append(f"{source_dataset}:missing_months={len(missing_months)}")
+            failures.append(
+                f"{source_dataset}:missing_internal_months={len(missing_months)}"
+            )
         if not complete:
             failures.append(
                 f"{source_dataset}:density={coverage.weekday_density:.3f}:gap={coverage.max_gap_days}"
