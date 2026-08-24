@@ -6,6 +6,13 @@ from db.models.opendart import Company, CompanyDisclosure, CompanyFinancial, Com
 from loaders.upsert import upsert_rows
 
 
+CASH_FLOW_COLUMNS = (
+    "operating_cash_flow",
+    "investing_cash_flow",
+    "financing_cash_flow",
+)
+
+
 class OpenDartRepository:
     """OpenDART 테이블별 충돌키를 한 곳에서 관리한다."""
 
@@ -29,15 +36,23 @@ class OpenDartRepository:
         *,
         preserve_existing_cash_flows: bool = False,
     ) -> int:
-        """보고서 요약을 UPSERT하고 필요 시 기존 현금흐름 값을 보존한다.
+        """보고서 요약을 UPSERT하고 sparse 응답에서는 기존 현금흐름 값을 보존한다.
 
-        ``fnlttMultiAcnt``는 주요 BS/IS 계정 중심이라 현금흐름 3종이 비어 있을 수 있다.
-        이 응답을 기존 단일회사 전체재무제표 결과 위에 적재할 때는 해당 컬럼을 UPDATE 대상에서
-        제외해 이미 확보한 non-null 현금흐름을 ``None``으로 지우지 않는다.
+        ``fnlttMultiAcnt``는 주요 BS/IS 계정 중심이라 현금흐름 3종이 모두 비어 들어온다.
+        배치 전체에서 현금흐름이 하나도 관측되지 않으면 sparse source로 판단해 해당 컬럼을
+        UPDATE 대상에서 제외한다. 따라서 기존 단일회사 전체재무제표에서 확보한 non-null
+        현금흐름을 ``None``으로 지우지 않는다.
         """
 
+        sparse_cash_flow_batch = bool(rows) and all(
+            row.get(column) is None
+            for row in rows
+            for column in CASH_FLOW_COLUMNS
+        )
+        preserve_cash_flows = preserve_existing_cash_flows or sparse_cash_flow_batch
+
         update_columns = None
-        if preserve_existing_cash_flows:
+        if preserve_cash_flows:
             update_columns = [
                 "stock_code",
                 "quarter",
