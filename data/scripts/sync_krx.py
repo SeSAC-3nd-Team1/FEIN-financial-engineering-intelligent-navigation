@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 import argparse
 from datetime import date, datetime, timedelta
+import json
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -24,6 +26,10 @@ def _parser() -> argparse.ArgumentParser:
     dates.add_argument("--start-date", help="KRX 백필 시작일(YYYY-MM-DD, 양끝 포함)")
     parser.add_argument("--end-date", help="KRX 백필 종료일(YYYY-MM-DD, 양끝 포함)")
     parser.add_argument("--skip-blob", action="store_true", help="로컬 진단에서만 Raw Blob 업로드 생략")
+    parser.add_argument(
+        "--checkpoint",
+        help="완료 거래일을 기록할 JSON 경로. 장기 백필 재실행 시 완료일을 provider 재호출 없이 건너뜀",
+    )
     return parser
 
 
@@ -48,6 +54,39 @@ def _sync_dates(args: argparse.Namespace, parser: argparse.ArgumentParser) -> It
         if current.weekday() < 5:
             yield current
         current += timedelta(days=1)
+
+
+def _load_checkpoint(path: Path | None) -> set[str]:
+    """장기 백필의 완료일 checkpoint를 읽고 손상된 형식은 명확히 실패시킨다."""
+
+    if path is None or not path.exists():
+        return set()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    values = payload.get("completed_dates", [])
+    if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+        raise RuntimeError(f"invalid KRX checkpoint: {path}")
+    return set(values)
+
+
+def _save_checkpoint(path: Path | None, completed: set[str]) -> None:
+    """성공한 날짜만 원자적으로 기록해 중간 종료 후 같은 명령으로 재개할 수 있게 한다."""
+
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(
+            {
+                "updated_at": datetime.now().astimezone().isoformat(),
+                "completed_dates": sorted(completed),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _sync_date(
@@ -102,14 +141,28 @@ def main(argv: list[str] | None = None) -> int:
         timeout_seconds=float(os.getenv("KRX_TIMEOUT_SECONDS", "10")),
     )
     raw = None if args.skip_blob else RawBlobWriter.from_env()
+    checkpoint_path = Path(args.checkpoint) if args.checkpoint else None
+    completed = _load_checkpoint(checkpoint_path)
+    skipped = 0
+    synced = 0
 
     for base_date in dates:
+        key = base_date.isoformat()
+        if key in completed:
+            skipped += 1
+            print(f"KRX sync skip checkpoint: date={key}")
+            continue
         stocks, prices, indices = _sync_date(base_date, client=client, raw=raw)
+        completed.add(key)
+        _save_checkpoint(checkpoint_path, completed)
+        synced += 1
         print(
             f"KRX sync complete: date={base_date.isoformat()} "
             f"stocks={stocks} prices={prices} indices={indices}"
         )
-    print(f"KRX sync range complete: dates={len(dates)}")
+    print(
+        f"KRX sync range complete: dates={len(dates)} synced={synced} skipped={skipped}"
+    )
     return 0
 
 
