@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { API_BASE, runBacktest } from './backtestApi';
+import { API_BASE, getBacktestAvailableRange, runBacktest } from './backtestApi';
 import type { BacktestPeriod, BacktestResult } from '../types';
 
 const period: BacktestPeriod = {
@@ -44,5 +44,18 @@ describe('runBacktest', () => {
     )));
 
     await expect(runBacktest('low', '저변동성 전략', period)).rejects.toThrow('과거 시세가 부족합니다.');
+  });
+});
+
+describe('getBacktestAvailableRange', () => {
+  it('gets the actual common range from the backend', async () => {
+    const range = { minDate: '2022-09-18', maxDate: '2026-08-24' };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(range), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getBacktestAvailableRange()).resolves.toEqual(range);
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}/available-range`, {
+      headers: { Accept: 'application/json' },
+    });
   });
 });

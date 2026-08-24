@@ -15,6 +15,7 @@ class StockPricePoint:
     stock_code: str
     trade_date: date
     close: Decimal
+    listed_shares: int | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,32 @@ class BacktestRepository:
         return self.session.scalar(
             select(Strategy).where(Strategy.id == strategy_id, Strategy.is_active.is_(True))
         )
+
+    def available_dates(
+        self,
+        *,
+        min_stocks: int,
+    ) -> tuple[date | None, date | None, date | None, date | None]:
+        eligible_stock_dates = (
+            select(MarketStockPrice.trade_date)
+            .where(MarketStockPrice.market_cap.is_not(None), MarketStockPrice.market_cap > 0)
+            .group_by(MarketStockPrice.trade_date)
+            .having(func.count(func.distinct(MarketStockPrice.stock_code)) >= min_stocks)
+            .subquery()
+        )
+        stock_min, stock_max = self.session.execute(
+            select(
+                func.min(eligible_stock_dates.c.trade_date),
+                func.max(eligible_stock_dates.c.trade_date),
+            )
+        ).one()
+        index_min, index_max = self.session.execute(
+            select(func.min(MarketIndex.trade_date), func.max(MarketIndex.trade_date)).where(
+                MarketIndex.market == "KOSPI",
+                MarketIndex.index_name.in_(("코스피", "KOSPI")),
+            )
+        ).one()
+        return stock_min, stock_max, index_min, index_max
 
     def universe_codes(self, as_of: date, *, limit: int = 100) -> list[str]:
         """시작일 전에 관측된 최신 시총으로 universe를 고정해 미래 universe 참조를 막는다."""
@@ -57,13 +84,14 @@ class BacktestRepository:
                 MarketStockPrice.stock_code,
                 MarketStockPrice.trade_date,
                 MarketStockPrice.close_price,
+                MarketStockPrice.listed_shares,
             ).where(
                 MarketStockPrice.stock_code.in_(stock_codes),
                 MarketStockPrice.trade_date >= start_date,
                 MarketStockPrice.trade_date <= end_date,
             ).order_by(MarketStockPrice.trade_date, MarketStockPrice.stock_code)
         )
-        return [StockPricePoint(code, trade_date, close) for code, trade_date, close in rows]
+        return [StockPricePoint(code, trade_date, close, listed_shares) for code, trade_date, close, listed_shares in rows]
 
     def kospi_prices(self, start_date: date, end_date: date) -> list[IndexPricePoint]:
         rows = self.session.execute(

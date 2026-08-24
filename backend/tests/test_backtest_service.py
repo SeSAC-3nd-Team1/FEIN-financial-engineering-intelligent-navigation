@@ -26,6 +26,10 @@ class FakeRepository:
     def universe_codes(self, _as_of: date, *, limit: int = 100) -> list[str]:
         return self.codes[:limit]
 
+    def available_dates(self, *, min_stocks: int):
+        assert min_stocks == 10
+        return date(2020, 1, 1), date(2026, 8, 20), date(2020, 3, 1), date(2026, 8, 18)
+
     def stock_prices(self, stock_codes: list[str], _start_date: date, end_date: date) -> list[StockPricePoint]:
         first = self.start - timedelta(days=150)
         points: list[StockPricePoint] = []
@@ -74,6 +78,13 @@ def test_metrics_calculate_return_cagr_mdd_volatility_and_sharpe() -> None:
     assert metrics["sharpe"] is not None
 
 
+def test_available_range_uses_warmup_and_common_stock_index_end_date() -> None:
+    result = BacktestService(FakeRepository()).available_range()
+
+    assert result.min_date == date(2020, 9, 17)
+    assert result.max_date == date(2026, 8, 18)
+
+
 def test_backtest_uses_historical_strategy_prices_and_real_kospi() -> None:
     result = BacktestService(FakeRepository()).run(request())
 
@@ -100,6 +111,44 @@ def test_factor_selection_does_not_use_prices_after_rebalance_date() -> None:
 
     # 관측치가 짧아 실제 momentum 후보는 없지만 미래 급등값을 넣어도 선택 결과에 들어가면 안 된다.
     assert BacktestService._select("momentum", history, as_of) == []
+
+
+def test_suspended_holding_applies_full_return_when_trading_resumes() -> None:
+    monday = date(2026, 1, 5)
+    thursday = monday + timedelta(days=3)
+    prices: dict[str, dict[date, float]] = {}
+    for index in range(10):
+        code = f"{index:06d}"
+        history = {monday - timedelta(days=offset): 100.0 for offset in range(61)}
+        history[thursday] = 80.0
+        prices[code] = history
+
+    values = BacktestService(SimpleNamespace())._simulate(
+        "low_volatility",
+        prices,
+        [monday, monday + timedelta(days=1), monday + timedelta(days=2), thursday],
+    )
+
+    assert values == pytest.approx([1.0, 1.0, 1.0, 0.8])
+
+
+def test_unadjusted_corporate_action_resets_price_without_false_return() -> None:
+    start = date(2026, 1, 5)
+    split_day = start + timedelta(days=1)
+    prices: dict[str, dict[date, float]] = {}
+    for index in range(10):
+        code = f"{index:06d}"
+        history = {start - timedelta(days=offset): 100.0 for offset in range(61)}
+        history[split_day] = 50.0
+        history[split_day + timedelta(days=1)] = 55.0
+        prices[code] = history
+
+    actions = {(code, split_day) for code in prices}
+    values = BacktestService(SimpleNamespace())._simulate(
+        "low_volatility", prices, [start, split_day, split_day + timedelta(days=1)], actions,
+    )
+
+    assert values == pytest.approx([1.0, 1.0, 1.1])
 
 
 def test_value_strategy_is_unavailable_without_point_in_time_financials() -> None:

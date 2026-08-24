@@ -167,6 +167,13 @@ class BacktestPeriodResponse(BaseModel):
     description: str
 
 
+class BacktestAvailableRangeResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    min_date: date = Field(alias="minDate")
+    max_date: date = Field(alias="maxDate")
+
+
 class BacktestSeriesPointResponse(BaseModel):
     t: date
     strategy: float

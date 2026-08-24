@@ -7,6 +7,20 @@ import type {
 
 export const API_BASE = '/api/v1/backtest';
 
+export interface BacktestAvailableRange {
+  minDate: string;
+  maxDate: string;
+}
+
+async function get<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, { headers: { Accept: 'application/json' } });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { message?: string } | null;
+    throw new Error(payload?.message ?? `서버가 ${response.status} 응답을 보냈어요. 잠시 후 다시 시도해주세요.`);
+  }
+  return await response.json() as T;
+}
+
 async function request<T>(path: string, body: unknown): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15_000);
@@ -40,6 +54,10 @@ export function runBacktest(
     startDate: period.startDate,
     endDate: period.endDate,
   });
+}
+
+export function getBacktestAvailableRange(): Promise<BacktestAvailableRange> {
+  return get<BacktestAvailableRange>('/available-range');
 }
 
 const fmtShort = (iso: string) => `${iso.slice(0, 4)}.${iso.slice(5, 7)}`;
