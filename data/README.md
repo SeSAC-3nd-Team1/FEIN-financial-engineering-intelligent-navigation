@@ -181,13 +181,13 @@ public.alembic_version
 Migration 적용(Local/Azure 공통):
 
 ```bash
-docker compose run --rm --no-deps db-init
+docker compose --profile migration run --rm --no-deps db-init
 ```
 
-`db-init`은 Alembic migration과 `dev-` 약관 seed를 PostgreSQL advisory lock 안에서 적용한다. 공용 Azure DB에서 여러 개발자가 동시에 실행해도 초기화는 직렬화되며, 적용된 revision과 같은 code/version 약관은 건너뛴다. 로컬 기본 DB는 루트의 `docker compose up` 과정에서 이를 자동 실행한다. 승인된 version의 명시적 seed는 다음과 같다.
+`db-init`은 Alembic migration과 `dev-` 약관 seed를 PostgreSQL advisory lock 안에서 적용한다. 공용 Azure DB에서 여러 개발자가 동시에 실행해도 초기화는 직렬화되며, 적용된 revision과 같은 code/version 약관은 건너뛴다. 일반 `docker compose up`은 이를 자동 실행하지 않는다. migration 담당자가 임시/CI PostgreSQL 검증과 `develop` 반영을 마친 뒤 공용 Azure DB에 명시적으로 실행한다. 승인된 version의 명시적 seed는 다음과 같다.
 
 ```bash
-docker compose run --rm db-init
+docker compose --profile migration run --rm --no-deps db-init
 docker compose run --rm data python -m scripts.seed_signup_terms --version dev-20260823 --effective-at 2026-08-23T00:00:00+09:00
 ```
 
@@ -214,7 +214,7 @@ Migration 적용 후 corp code를 먼저 동기화한다. 모든 종목코드는
 저장되므로 `005930`의 선행 0이 유지된다.
 
 ```bash
-docker compose run --rm db-init
+docker compose --profile migration run --rm --no-deps db-init
 docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart corp-codes
 docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart company --stock-code 005930
 docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart companies --limit 100

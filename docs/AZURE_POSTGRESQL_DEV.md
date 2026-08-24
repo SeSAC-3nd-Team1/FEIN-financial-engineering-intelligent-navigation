@@ -6,13 +6,15 @@ Azure Blob Storage의 Raw / Processed / Features 데이터와 Redis는 별도 �
 
 ## 핵심 정책
 
-- Backend, `db-init`, Data, AI는 모두 동일한 `DATABASE_URL`을 사용한다.
+- Backend, migration job, Data, AI는 모두 동일한 `DATABASE_URL`을 사용한다.
 - `DATABASE_URL`은 필수다. 없거나 빈 값이면 Docker Compose가 즉시 실패한다.
 - 로컬 PostgreSQL fallback은 제공하지 않는다.
 - 실제 Azure Connection String은 `.env` 또는 배포 Secret에만 둔다.
 - 비밀번호의 `@`, `:`, `/`, `%`, `#`, `?` 같은 문자는 percent-encoding해야 한다.
 - URL 자체를 채팅, Issue, PR, 로그에 붙이지 않는다.
 - 일반 개발과 발표/시연은 같은 프로젝트 DB를 사용한다.
+- 일반 `docker compose up`은 migration을 실행하지 않는다.
+- migration 담당자가 임시/CI PostgreSQL 검증과 `develop` 반영 후 공용 Azure DB에 명시적으로 적용한다.
 - 파괴적 테스트가 필요할 때만 별도 임시 PostgreSQL을 테스트 실행 범위에서 사용한다.
 
 ## 팀원이 새 PC에서 시작하기
@@ -47,15 +49,19 @@ curl --fail http://localhost:8000/health/dependencies
 {"postgres":"ok","redis":"ok"}
 ```
 
-기본 실행 서비스는 Frontend, Backend, Redis와 일회성 `db-init`이다. 로컬 PostgreSQL 컨테이너는 생성하지 않는다.
+기본 실행 서비스는 Frontend, Backend, Redis다. 로컬 PostgreSQL 컨테이너와 migration job은 생성하지 않으며 Backend는 현재 공용 Azure schema에 연결만 한다.
 
 ## Migration과 초기 데이터
 
-수동 적용 명령:
+DB schema 변경 담당자는 임시/CI PostgreSQL에서 먼저 migration을 검증하고, 해당 변경이 `develop`에 반영된 뒤 다음 명령으로 공용 Azure DB에 적용한다.
 
 ```bash
-docker compose run --rm --no-deps db-init
+git switch develop
+git pull origin develop
+docker compose --profile migration run --rm --no-deps db-init
 ```
+
+feature branch에서 이 명령을 공용 Azure DB 대상으로 실행하지 않는다. 아직 merge되지 않은 migration이 팀 공용 schema에 먼저 적용될 수 있다.
 
 `db-init`은 다음 순서로 동작한다.
 
@@ -147,7 +153,7 @@ docker compose exec -T backend env RUN_INTEGRATION=1 pytest -q tests/test_integr
 4. Public Access가 필요하면 개발자들의 현재 공인 IP만 Firewall allowlist에 추가한다.
 5. 서버 FQDN, DB 이름, 사용자명, 비밀번호로 `sslmode=require` URL을 작성한다.
 6. 각 개발자의 `.env`에 URL과 공용 `JWT_SECRET`을 안전하게 배포한다.
-7. `db-init`, dependency health, 회원가입/로그인 검증을 수행한다.
+7. `develop` 기준 `db-init`, dependency health, 회원가입/로그인 검증을 수행한다.
 
 Portal에서는 Flexible Server의 **Networking**에서 Public access와 Firewall rules를, **Overview**에서 Server name을 확인한다.
 

@@ -48,16 +48,17 @@ Azure Blob을 사용하는 Data 작업은 Azure CLI/Entra ID 인증을 사용합
 docker compose up -d
 ```
 
-최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, Redis와 일회성 `db-init`이 포함됩니다. 로컬 PostgreSQL 컨테이너는 생성하지 않습니다. `db-init`은 Backend보다 먼저 팀 공용 Azure PostgreSQL에 Alembic migration을 적용하고 `.env`의 `SIGNUP_TERMS_*` 약관을 멱등 seed한 뒤 종료합니다. Data와 AI 작업용 장기 실행 컨테이너는 profile로 분리됩니다.
+최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, Redis만 포함되며 로컬 PostgreSQL 컨테이너와 migration job은 생성하지 않습니다. Data, AI, migration 작업은 profile로 분리됩니다.
 
-DB 준비만 다시 실행하려면:
+DB schema 변경 담당자는 migration을 임시/CI PostgreSQL에서 먼저 검증하고 `develop` 반영 후에만 공용 Azure DB에 적용합니다.
 
 ```bash
-docker compose run --rm --no-deps db-init
-docker compose up -d --build backend frontend redis
+git switch develop
+git pull origin develop
+docker compose --profile migration run --rm --no-deps db-init
 ```
 
-동일한 `SIGNUP_TERMS_VERSION`으로 `db-init`을 반복해도 `(term_code, version)` UNIQUE와 `ON CONFLICT DO NOTHING` 때문에 중복 약관이 생기지 않습니다.
+`db-init`은 Alembic migration과 약관 seed를 명시적으로 실행합니다. 동일한 `SIGNUP_TERMS_VERSION`으로 반복해도 `(term_code, version)` UNIQUE와 `ON CONFLICT DO NOTHING` 때문에 중복 약관이 생기지 않습니다. feature branch에서 공용 Azure DB에 실행하면 아직 merge되지 않은 schema가 먼저 적용될 수 있으므로 금지합니다.
 
 실행 후 dependency 상태를 확인합니다.
 
@@ -85,7 +86,7 @@ docker compose run --rm --no-deps backend pytest -q
 공용 Azure PostgreSQL/Redis E2E 테스트:
 
 ```bash
-docker compose run --rm --no-deps db-init
+docker compose --profile migration run --rm --no-deps db-init
 docker compose exec -T backend env RUN_INTEGRATION=1 pytest -q tests/test_integration_flow.py
 ```
 
