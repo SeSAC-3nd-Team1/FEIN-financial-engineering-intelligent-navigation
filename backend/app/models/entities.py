@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import INET, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -35,6 +35,7 @@ class Term(Base):
     term_code: Mapped[str] = mapped_column(String(30))
     version: Mapped[str] = mapped_column(String(20))
     title: Mapped[str] = mapped_column(String(200))
+    content_reference: Mapped[str | None] = mapped_column(String(500))
     is_required: Mapped[bool] = mapped_column(Boolean)
     effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -46,6 +47,8 @@ class UserAgreement(Base):
     term_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("terms.id", ondelete="RESTRICT"))
     is_agreed: Mapped[bool] = mapped_column(Boolean)
     agreed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    agreed_ip: Mapped[str | None] = mapped_column(INET)
+    user_agent: Mapped[str | None] = mapped_column(String(512))
 
 
 class Strategy(Base):
@@ -68,6 +71,38 @@ class VirtualAccount(Base):
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
     selected_strategy_id: Mapped[str | None] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class InvestmentOnboarding(Base):
+    __tablename__ = "investment_onboardings"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_investment_onboardings_user_id"),
+        CheckConstraint("investment_amount > 0", name="ck_investment_onboardings_investment_amount_positive"),
+        CheckConstraint(
+            "operation_mode IN ('AUTO', 'SEMI_AUTO')",
+            name="ck_investment_onboardings_operation_mode_values",
+        ),
+        CheckConstraint(
+            "status IN ('TERMS_PENDING', 'ACCOUNT_PENDING', 'READY', 'COMPLETED')",
+            name="ck_investment_onboardings_status_values",
+        ),
+        CheckConstraint(
+            "(status = 'COMPLETED' AND account_id IS NOT NULL AND completed_at IS NOT NULL) OR "
+            "(status <> 'COMPLETED' AND completed_at IS NULL)",
+            name="ck_investment_onboardings_completion_consistency",
+        ),
+        Index("ix_investment_onboardings_status", "status"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), unique=True)
+    strategy_id: Mapped[str] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="RESTRICT"))
+    investment_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    operation_mode: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
