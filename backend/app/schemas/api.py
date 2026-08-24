@@ -137,6 +137,24 @@ class PriceResponse(BaseModel):
     as_of: datetime
 
 
+class MinuteCandleResponse(BaseModel):
+    started_at: datetime
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int
+    is_closed: bool
+
+
+class MinuteCandleListResponse(BaseModel):
+    stock_code: str
+    interval: Literal["1m"] = "1m"
+    items: list[MinuteCandleResponse]
+    source: str
+    as_of: datetime
+
+
 class RealtimeSubscriptionRequest(BaseModel):
     action: Literal["subscribe", "unsubscribe"]
     stock_codes: list[str] = Field(min_length=1)

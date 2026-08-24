@@ -1,8 +1,9 @@
 import asyncio
 from datetime import UTC, datetime
+from typing import Literal
 
 import jwt
-from fastapi import APIRouter, Depends, Path, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
@@ -11,7 +12,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.integrations.kis.hub import realtime_hub
 from app.models import User
-from app.schemas.api import PriceResponse, RealtimeStatusResponse, RealtimeSubscriptionRequest
+from app.schemas.api import MinuteCandleListResponse, PriceResponse, RealtimeStatusResponse, RealtimeSubscriptionRequest
 from app.services.market import MarketService
 
 router = APIRouter(prefix="/market", tags=["market"])
@@ -24,6 +25,23 @@ def current_price(
 ) -> PriceResponse:
     price, as_of, source = MarketService().get_price(stock_code)
     return PriceResponse(stock_code=stock_code, price=price, as_of=as_of, source=source)
+
+
+@router.get("/stocks/{stock_code}/candles", response_model=MinuteCandleListResponse)
+def minute_candles(
+    stock_code: str = Path(pattern=r"^[0-9A-Z]{6,12}$"),
+    interval: Literal["1m"] = Query(default="1m"),
+    limit: int = Query(default=120, ge=1, le=120),
+    _: User = Depends(current_user),
+) -> MinuteCandleListResponse:
+    candles, as_of, source = MarketService().get_minute_candles(stock_code, limit)
+    return MinuteCandleListResponse(
+        stock_code=stock_code,
+        interval=interval,
+        items=[candle.to_payload() for candle in candles],
+        source=source,
+        as_of=as_of,
+    )
 
 
 @router.get("/realtime/status", response_model=RealtimeStatusResponse)

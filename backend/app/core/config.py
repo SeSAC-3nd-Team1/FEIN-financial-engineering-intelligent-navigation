@@ -19,6 +19,7 @@ class Settings:
     kis_base_url: str = os.getenv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
     kis_websocket_url: str = os.getenv("KIS_WEBSOCKET_URL", "ws://ops.koreainvestment.com:21000")
     price_cache_ttl_seconds: int = int(os.getenv("PRICE_CACHE_TTL_SECONDS", "5"))
+    minute_candle_cache_ttl_seconds: int = int(os.getenv("MINUTE_CANDLE_CACHE_TTL_SECONDS", "15"))
     request_timeout_seconds: float = float(os.getenv("KIS_TIMEOUT_SECONDS", "3"))
     realtime_price_cache_ttl_seconds: int = int(os.getenv("REALTIME_PRICE_CACHE_TTL_SECONDS", "30"))
     realtime_price_stale_seconds: int = int(os.getenv("REALTIME_PRICE_STALE_SECONDS", "10"))
