@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
 import InformationExam from './pages/InformationExam';
 import InvestAccount from './pages/InvestAccount';
+import InvestConfirm from './pages/InvestConfirm';
 import InvestDeposit from './pages/InvestDeposit';
 import InvestorProfileCheck from './pages/InvestorProfileCheck';
 import InvestTerms from './pages/InvestTerms';
@@ -23,6 +24,7 @@ import { signupTermsApi } from './lib/backendApi';
 import { resolveInvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
+import { useTradingStore } from './store/tradingStore';
 import type { Screen, SignupPersonal } from './types';
 
 /**
@@ -68,6 +70,8 @@ export default function App() {
   const authenticatedUser = useAuthStore((s) => s.user);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const ensureAccount = useTradingStore((s) => s.ensureAccount);
   const termsAcceptedStrategyIds = useInvestmentStore((s) => s.termsAcceptedStrategyIds);
   const sesacAccount = useInvestmentStore((s) => s.sesacAccount);
   const pendingInvestment = useInvestmentStore((s) => s.pendingInvestment);
@@ -294,6 +298,25 @@ export default function App() {
             // (Header에 로그인 상태가 정상 표시되고, 필요하면 "이 전략으로 시작하기"로 바로 이 화면에 재진입할 수 있다)
             deferDeposit({ strategyId, strategyName: strategy.name, amount: investmentAmount, mode: investmentMode });
             setScreen('strategy');
+          }}
+        />
+      )}
+      {screen === 'invest-confirm' && sesacAccount && (
+        <InvestConfirm
+          userName={userName}
+          strategyName={strategy.name}
+          amount={investmentAmount}
+          mode={investmentMode}
+          account={sesacAccount}
+          onNavigate={navigate}
+          onBack={() => setScreen('invest-deposit')}
+          onConfirm={async () => {
+            if (!accessToken) {
+              setScreen('login');
+              throw new Error('로그인이 필요합니다.');
+            }
+            await ensureAccount(accessToken, strategyId);
+            setScreen('portfolio');
           }}
         />
       )}
