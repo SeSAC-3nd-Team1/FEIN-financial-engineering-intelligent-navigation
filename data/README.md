@@ -129,6 +129,27 @@ Migration 직후 5년 차트에 필요한 과거 시세를 초기 적재할 때�
 docker compose --profile data run --rm --no-deps data python -m scripts.sync_krx --start-date 2021-08-24 --end-date 2026-08-24
 ```
 
+GitHub Actions의 Azure OIDC나 Raw Blob 권한 없이 화면 조회용 PostgreSQL만 로컬에서
+초기 백필하려면 저장소 루트의 Windows 실행기를 사용한다. `.env`의 `DATABASE_URL`과
+`KRX_AUTH_KEY`, 실행 중인 Docker Desktop만 필요하다. 기본 종료일은 실행 당일이고 시작일은
+그로부터 5년 전으로 동적 계산한다. 완료 후 종목 가격과 시장 지수의 기간 경계, 평일 대비
+거래일 밀도, 내부 최대 공백을 자동 검증한다. 날짜별 UPSERT가 멱등이므로 중간에 중단되면
+같은 명령을 다시 실행할 수 있다.
+
+```cmd
+run-krx-backfill.cmd
+```
+
+다른 범위는 PowerShell 인자로 지정한다.
+
+```powershell
+.\run-krx-backfill.ps1 -StartDate 2021-08-24 -EndDate 2026-08-24
+```
+
+이 로컬 실행기는 의도적으로 `--skip-blob`을 사용하므로 PostgreSQL serving table만
+갱신하고 canonical Raw Blob은 만들지 않는다. Raw 보존이 필요한 정기 운영 수집은 Azure
+OIDC가 설정된 `KRX Daily Sync` workflow를 사용한다.
+
 StockDetail 기간 차트와 Strategy Backtest는 동일한 `market_stock_prices`, `market_indices`를 사용한다. 백테스트 요청 기간 이전에 factor lookback 최대 126거래일이 추가로 필요하므로 운영 초기 백필 시작일은 화면에서 허용할 최소 시작일보다 최소 260일 앞서 잡는다. 저장되지 않은 기간은 Backend가 unavailable로 응답하며 합성 곡선으로 대체하지 않는다.
 
 로컬 parser와 PostgreSQL 적재만 진단할 때는 `--skip-blob`을 사용할 수 있으나 운영 동기화에서는 사용하지 않는다. `.github/workflows/krx-daily-sync.yml`은 평일 18:30 KST에 실행하며 GitHub Actions Secret `KRX_AUTH_KEY`, `DATABASE_URL`과 기존 Azure OIDC Secret/Blob 쓰기 권한이 필요하다. 이 workflow는 공용 DB migration을 자동 적용하지 않으므로 `20260824_0016`이 승인·반영된 뒤 migration 담당자가 먼저 `db-init`을 실행해야 한다. 휴장일처럼 KRX가 빈 목록을 반환하면 임의 값을 생성하지 않는다.
