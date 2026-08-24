@@ -14,6 +14,7 @@ from db.models.membership import (
 )
 from db.models.trading import CashLedger, Execution, Order, Position, Strategy, VirtualAccount
 from db.models.opendart import Company, CompanyDisclosure, CompanyFinancial, CompanyFinancialAccount
+from db.models.recommendation import InvestorProfileAssessment, StrategyRecommendation, StrategyRecommendationItem
 
 __all__ = [
     "RegistrationAgreement",
@@ -31,4 +32,7 @@ __all__ = [
     "CompanyDisclosure",
     "CompanyFinancial",
     "CompanyFinancialAccount",
+    "InvestorProfileAssessment",
+    "StrategyRecommendation",
+    "StrategyRecommendationItem",
 ]
