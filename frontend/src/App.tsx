@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
 import InformationExam from './pages/InformationExam';
 import InvestAccount from './pages/InvestAccount';
+import InvestDeposit from './pages/InvestDeposit';
 import InvestorProfileCheck from './pages/InvestorProfileCheck';
 import InvestTerms from './pages/InvestTerms';
 import Login from './pages/Login';
@@ -69,14 +70,32 @@ export default function App() {
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
   const termsAcceptedStrategyIds = useInvestmentStore((s) => s.termsAcceptedStrategyIds);
   const sesacAccount = useInvestmentStore((s) => s.sesacAccount);
+  const pendingInvestment = useInvestmentStore((s) => s.pendingInvestment);
   const acceptStrategyTerms = useInvestmentStore((s) => s.acceptStrategyTerms);
   const connectSesacAccount = useInvestmentStore((s) => s.connectSesacAccount);
+  const deposit = useInvestmentStore((s) => s.deposit);
+  const deferDeposit = useInvestmentStore((s) => s.deferDeposit);
 
   /** StartInvesting "이대로 시작하기" — 이미 완료한 단계는 건너뛰고 다음 필요한 단계로 이동한다 */
   const enterInvestmentFlow = (amount: number, mode: OperationMode) => {
     setInvestmentAmount(amount);
     setInvestmentMode(mode);
     setScreen(resolveInvestmentEntryStep({ strategyId, amount, termsAcceptedStrategyIds, sesacAccount }));
+  };
+
+  /**
+   * Header "나의 포트폴리오"/로그인 성공 등 Portfolio로 향하는 모든 경로가 거치는 관문.
+   * DEPOSIT_PENDING(계좌는 연결됐지만 입금이 남은) 상태라면 Portfolio 대신 입금 요청 화면으로 보낸다.
+   */
+  const navigate = (target: Screen) => {
+    if (target === 'portfolio' && pendingInvestment) {
+      setStrategyId(pendingInvestment.strategyId);
+      setInvestmentAmount(pendingInvestment.amount);
+      setInvestmentMode(pendingInvestment.mode);
+      setScreen('invest-deposit');
+      return;
+    }
+    setScreen(target);
   };
 
   const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
@@ -101,15 +120,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      {screen === 'home' && <Home onNavigate={setScreen} />}
+      {screen === 'home' && <Home onNavigate={navigate} />}
 
       {screen === 'login' && (
         <Login
           // 로그인 성공 → 인증 state를 켜고, 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
-          onLogin={() => setScreen('portfolio')}
+          onLogin={() => navigate('portfolio')}
           onSignup={() => setScreen('signup-1')}
           onHome={() => setScreen('home')}
-          onNavigate={setScreen}
+          onNavigate={navigate}
         />
       )}
 
@@ -119,7 +138,7 @@ export default function App() {
           onChange={setPersonal}
           onNext={() => setScreen('signup-2')}
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
         />
       )}
       {screen === 'signup-2' && (
@@ -128,7 +147,7 @@ export default function App() {
           onNext={() => setScreen('signup-3')}
           onBack={() => setScreen('signup-1')}
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
         />
       )}
       {screen === 'signup-3' && (
@@ -170,7 +189,7 @@ export default function App() {
           }}
           onBack={() => setScreen('signup-2')}
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
         />
       )}
 
@@ -189,14 +208,14 @@ export default function App() {
       {screen === 'risk-result' && (
         <RiskResult
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onSelectStrategy={(id) => { setStrategyId(id); setScreen('strategy'); }}
         />
       )}
       {screen === 'investor-check' && (
         <InvestorProfileCheck
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onContinue={() => setScreen('start')}
           onRediagnose={() => startInvestorProfile('start')}
         />
@@ -206,7 +225,7 @@ export default function App() {
         <StrategyDetail
           strategyId={strategyId}
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onStart={handleStartInvesting}
         />
       )}
@@ -214,7 +233,7 @@ export default function App() {
         <StartInvesting
           userName={userName}
           strategyName={strategy.name}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onStart={enterInvestmentFlow}
           onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('start'); setScreen('stock'); }}
         />
@@ -225,7 +244,7 @@ export default function App() {
           strategy={strategy}
           amount={investmentAmount}
           mode={investmentMode}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onBack={() => setScreen('start')}
           onComplete={() => {
             acceptStrategyTerms(strategyId);
@@ -242,7 +261,7 @@ export default function App() {
         <InvestAccount
           userName={userName}
           strategyName={strategy.name}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onBack={() => setScreen('invest-terms')}
           onComplete={(account) => {
             connectSesacAccount(account);
@@ -252,16 +271,42 @@ export default function App() {
           }}
         />
       )}
+      {screen === 'invest-deposit' && sesacAccount && (
+        <InvestDeposit
+          userName={userName}
+          strategyName={strategy.name}
+          amount={investmentAmount}
+          mode={investmentMode}
+          account={sesacAccount}
+          onNavigate={navigate}
+          onBack={() => setScreen('invest-account')}
+          onDeposit={() => {
+            deposit(investmentAmount);
+            setScreen(resolveInvestmentEntryStep({
+              strategyId,
+              amount: investmentAmount,
+              termsAcceptedStrategyIds,
+              sesacAccount: { ...sesacAccount, balance: sesacAccount.balance + investmentAmount },
+            }));
+          }}
+          onDeferDeposit={() => {
+            // Home 은 비로그인 전용 랜딩이라 로그인 상태가 반영되지 않는다 — 전략 상세로 돌려보낸다
+            // (Header에 로그인 상태가 정상 표시되고, 필요하면 "이 전략으로 시작하기"로 바로 이 화면에 재진입할 수 있다)
+            deferDeposit({ strategyId, strategyName: strategy.name, amount: investmentAmount, mode: investmentMode });
+            setScreen('strategy');
+          }}
+        />
+      )}
 
-      {screen === 'information' && <InformationExam userName={userName} onNavigate={setScreen} />}
+      {screen === 'information' && <InformationExam userName={userName} onNavigate={navigate} />}
 
       {screen === 'dashboard' && (
         <Dashboard
           userName={userName}
           strategyName={strategy.name}
-          onNavigate={setScreen}
-          onOpenHoldings={() => setScreen('portfolio')}
-          onChangeStrategy={() => setScreen('portfolio')}
+          onNavigate={navigate}
+          onOpenHoldings={() => navigate('portfolio')}
+          onChangeStrategy={() => navigate('portfolio')}
         />
       )}
 
@@ -270,7 +315,7 @@ export default function App() {
           userName={userName}
           strategyId={strategyId}
           onStrategyChange={setStrategyId}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('portfolio'); setScreen('stock'); }}
           onRediagnose={() => startInvestorProfile('risk-result')}
           onBack={() => setScreen('dashboard')}
@@ -281,7 +326,7 @@ export default function App() {
         <StockDetail
           index={stockIndex}
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onBack={() => setScreen(stockBackTarget)}
         />
       )}
