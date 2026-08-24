@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
 import InformationExam from './pages/InformationExam';
 import InvestorProfileCheck from './pages/InvestorProfileCheck';
+import InvestTerms from './pages/InvestTerms';
 import Login from './pages/Login';
 import Portfolio from './pages/Portfolio';
 import RiskProfile from './pages/RiskProfile';
@@ -15,9 +16,11 @@ import StartInvesting from './pages/StartInvesting';
 import StockDetail from './pages/StockDetail';
 import StrategyDetail from './pages/StrategyDetail';
 import { STRATEGIES } from './data/strategies';
+import type { OperationMode } from './data/fees';
 import { signupTermsApi } from './lib/backendApi';
+import { resolveInvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
-import { useTradingStore } from './store/tradingStore';
+import { useInvestmentStore } from './store/investmentStore';
 import type { Screen, SignupPersonal } from './types';
 
 /**
@@ -55,13 +58,24 @@ export default function App() {
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
+  // 투자 시작 Flow(약관 → 계좌 준비 → 입금 → 최종 확인) 동안 유지해야 하는 선택 금액/운용방식
+  const [investmentAmount, setInvestmentAmount] = useState(1_000_000);
+  const [investmentMode, setInvestmentMode] = useState<OperationMode>('manual');
   const register = useAuthStore((s) => s.register);
   const initialize = useAuthStore((s) => s.initialize);
   const authenticatedUser = useAuthStore((s) => s.user);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const ensureAccount = useTradingStore((s) => s.ensureAccount);
+  const termsAcceptedStrategyIds = useInvestmentStore((s) => s.termsAcceptedStrategyIds);
+  const sesacAccount = useInvestmentStore((s) => s.sesacAccount);
+  const acceptStrategyTerms = useInvestmentStore((s) => s.acceptStrategyTerms);
+
+  /** StartInvesting "이대로 시작하기" — 이미 완료한 단계는 건너뛰고 다음 필요한 단계로 이동한다 */
+  const enterInvestmentFlow = (amount: number, mode: OperationMode) => {
+    setInvestmentAmount(amount);
+    setInvestmentMode(mode);
+    setScreen(resolveInvestmentEntryStep({ strategyId, amount, termsAcceptedStrategyIds, sesacAccount }));
+  };
 
   const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
 
@@ -195,20 +209,31 @@ export default function App() {
         />
       )}
       {screen === 'start' && (
-        // 투자 시작 완료 → 이제 막 포트폴리오가 생긴 상태이므로, 로그인 착지점과 동일하게 Portfolio로 이동
         <StartInvesting
           userName={userName}
           strategyName={strategy.name}
           onNavigate={setScreen}
-          onStart={async () => {
-            if (!accessToken) {
-              setScreen('login');
-              throw new Error('로그인이 필요합니다.');
-            }
-            await ensureAccount(accessToken, strategyId);
-            setScreen('portfolio');
-          }}
+          onStart={enterInvestmentFlow}
           onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('start'); setScreen('stock'); }}
+        />
+      )}
+      {screen === 'invest-terms' && (
+        <InvestTerms
+          userName={userName}
+          strategy={strategy}
+          amount={investmentAmount}
+          mode={investmentMode}
+          onNavigate={setScreen}
+          onBack={() => setScreen('start')}
+          onComplete={() => {
+            acceptStrategyTerms(strategyId);
+            setScreen(resolveInvestmentEntryStep({
+              strategyId,
+              amount: investmentAmount,
+              termsAcceptedStrategyIds: [...termsAcceptedStrategyIds, strategyId],
+              sesacAccount,
+            }));
+          }}
         />
       )}
 
