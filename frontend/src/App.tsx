@@ -306,7 +306,8 @@ export default function App() {
           onStart={handleStartInvesting}
           pendingDeposit={
             pendingInvestment && pendingInvestment.strategyId === strategyId
-              ? { amount: pendingInvestment.amount }
+              // InvestDeposit과 동일하게, 이미 보유한 잔액을 제외한 부족분만 안내한다
+              ? { amount: Math.max(0, pendingInvestment.amount - (sesacAccount?.balance ?? 0)) }
               : null
           }
           onResumeDeposit={() => {
