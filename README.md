@@ -32,9 +32,9 @@ PowerShell:
 Copy-Item .env.example .env
 ```
 
-외부 API를 사용하는 작업이라면 `.env`의 빈 Secret 항목을 채웁니다. `.env`는 Git에서 제외되며 실제 키를 소스, Dockerfile, Compose 파일, 문서에 기록하면 안 됩니다.
+외부 API를 사용하는 작업이라면 `.env`의 빈 Secret 항목을 채웁니다. 로컬 환경 파일은 루트 `.env` 하나만 사용하며, 과거의 `.env.azure` 같은 서비스별 환경 파일은 사용하지 않습니다. `.env`와 `.env.*`는 Git에서 제외되며 실제 키를 소스, Dockerfile, Compose 파일, 문서에 기록하면 안 됩니다. 변수별 설정 위치와 관리 원칙은 [환경 변수 관리 가이드](docs/ENVIRONMENT_VARIABLES.md)를 따릅니다.
 
-PostgreSQL은 `.env`의 `DATABASE_URL`에 팀 공용 Azure Database for PostgreSQL URL을 반드시 설정합니다. `?sslmode=require`가 포함된 URL을 사용하며 실제 Azure 사용자명·비밀번호·호스트는 GitHub에 올리지 않습니다. `DATABASE_URL`이 없거나 빈 값이면 Docker Compose는 실행을 중단합니다. 전체 준비 절차와 Portal/CLI 작업은 [Azure PostgreSQL 단일 프로젝트 DB 가이드](docs/AZURE_POSTGRESQL_DEV.md)를 따릅니다.
+PostgreSQL은 `.env`의 `DATABASE_URL`에 팀 공용 Azure Database for PostgreSQL URL을 반드시 설정합니다. 공공데이터 수집 시 사용하는 `DATA_GO_KR_API_KEY`를 포함한 외부 API 키도 같은 `.env`에 설정합니다. `DATABASE_URL`에는 `?sslmode=require`를 포함하며 실제 Azure 사용자명·비밀번호·호스트는 GitHub에 올리지 않습니다. `DATABASE_URL`이 없거나 빈 값이면 Docker Compose는 실행을 중단합니다. 전체 준비 절차와 Portal/CLI 작업은 [Azure PostgreSQL 단일 프로젝트 DB 가이드](docs/AZURE_POSTGRESQL_DEV.md)를 따릅니다.
 
 공용 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 설정하고 팀 Backend가 동일한 값을 사용합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 가상계좌 초기금은 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값으로 설정합니다.
 
