@@ -103,7 +103,7 @@ def test_subscription_message_never_contains_account_or_order_data() -> None:
     assert "order" not in serialized
 
     unsubscribe = json.loads(asyncio.run(client.subscription_message("005930", subscribe=False)))
-    assert unsubscribe["header"]["tr_type"] == "0"
+    assert unsubscribe["header"]["tr_type"] == "2"
 
 
 def test_pingpong_system_message_is_detected() -> None:

@@ -65,7 +65,7 @@ class KisRealtimeClient:
             "header": {
                 "approval_key": await self.approval_key(),
                 "custtype": "P",
-                "tr_type": "1" if subscribe else "0",
+                "tr_type": "1" if subscribe else "2",
                 "content-type": "utf-8",
             },
             "body": {"input": {"tr_id": KIS_REALTIME_PRICE_TR_ID, "tr_key": stock_code}},
