@@ -3,6 +3,7 @@ import Chatbot from './components/Chatbot';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
 import InformationExam from './pages/InformationExam';
+import InvestAccount from './pages/InvestAccount';
 import InvestorProfileCheck from './pages/InvestorProfileCheck';
 import InvestTerms from './pages/InvestTerms';
 import Login from './pages/Login';
@@ -69,6 +70,7 @@ export default function App() {
   const termsAcceptedStrategyIds = useInvestmentStore((s) => s.termsAcceptedStrategyIds);
   const sesacAccount = useInvestmentStore((s) => s.sesacAccount);
   const acceptStrategyTerms = useInvestmentStore((s) => s.acceptStrategyTerms);
+  const connectSesacAccount = useInvestmentStore((s) => s.connectSesacAccount);
 
   /** StartInvesting "이대로 시작하기" — 이미 완료한 단계는 건너뛰고 다음 필요한 단계로 이동한다 */
   const enterInvestmentFlow = (amount: number, mode: OperationMode) => {
@@ -232,6 +234,20 @@ export default function App() {
               amount: investmentAmount,
               termsAcceptedStrategyIds: [...termsAcceptedStrategyIds, strategyId],
               sesacAccount,
+            }));
+          }}
+        />
+      )}
+      {screen === 'invest-account' && (
+        <InvestAccount
+          userName={userName}
+          strategyName={strategy.name}
+          onNavigate={setScreen}
+          onBack={() => setScreen('invest-terms')}
+          onComplete={(account) => {
+            connectSesacAccount(account);
+            setScreen(resolveInvestmentEntryStep({
+              strategyId, amount: investmentAmount, termsAcceptedStrategyIds, sesacAccount: account,
             }));
           }}
         />
