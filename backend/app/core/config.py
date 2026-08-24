@@ -8,6 +8,7 @@ import os
 @dataclass(frozen=True)
 class Settings:
     database_url: str = os.getenv("DATABASE_URL", "postgresql://app:app@postgres:5432/app")
+    database_connect_timeout_seconds: int = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
     redis_url: str = os.getenv("REDIS_URL", "redis://redis:6379/0")
     jwt_secret: str = os.getenv("JWT_SECRET", "local-development-only-change-me")
     jwt_algorithm: str = "HS256"

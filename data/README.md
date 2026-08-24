@@ -174,13 +174,13 @@ public.alembic_version
 
 과거 금융/API PostgreSQL `raw`, `processed` schema는 retire되었으며 정상 금융 batch 실행에는 필요하지 않다.
 
-Migration 적용:
+Migration 적용(Local/Azure 공통):
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data alembic upgrade head
+docker compose run --rm --no-deps db-init
 ```
 
-로컬 기본 DB는 루트의 `docker compose up` 과정에서 `db-init`이 migration과 `dev-` 약관 seed를 자동 적용한다. 수동 재실행과 승인된 version의 명시적 seed는 다음과 같다.
+`db-init`은 Alembic migration과 `dev-` 약관 seed를 PostgreSQL advisory lock 안에서 적용한다. 공용 Azure DB에서 여러 개발자가 동시에 실행해도 초기화는 직렬화되며, 적용된 revision과 같은 code/version 약관은 건너뛴다. 로컬 기본 DB는 루트의 `docker compose up` 과정에서 이를 자동 실행한다. 승인된 version의 명시적 seed는 다음과 같다.
 
 ```bash
 docker compose run --rm db-init
@@ -192,8 +192,10 @@ docker compose run --rm data python -m scripts.seed_signup_terms --version dev-2
 DB 확인:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.check_db
+docker compose run --rm --no-deps data python -m scripts.check_db
 ```
+
+Azure 연결과 전체 공용 개발 절차는 [`docs/AZURE_POSTGRESQL_DEV.md`](../docs/AZURE_POSTGRESQL_DEV.md)를 따른다.
 
 회원가입 상세 구현 가이드는 `data/REGISTRATION_DB.md`를 본다.
 

@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Connection, Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 
@@ -58,19 +58,22 @@ def build_engine(database_url: str | None = None, *, echo: bool = False) -> Engi
         echo=echo,
         pool_pre_ping=True,
         pool_recycle=1_800,
+        connect_args={
+            "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
+        },
     )
 
 
 @contextmanager
-def session_scope(engine: Engine | None = None) -> Iterator[Session]:
+def session_scope(bind: Engine | Connection | None = None) -> Iterator[Session]:
     """한 작업 단위를 commit하고 예외가 발생하면 전체 transaction을 rollback한다.
 
     loader가 중간까지만 저장되는 상태를 만들지 않도록 session의 commit/rollback/close를
     호출자 대신 한 곳에서 보장한다.
     """
 
-    active_engine = engine or build_engine()
-    factory = sessionmaker(bind=active_engine, expire_on_commit=False)
+    active_bind = bind if bind is not None else build_engine()
+    factory = sessionmaker(bind=active_bind, expire_on_commit=False)
     session = factory()
     try:
         yield session

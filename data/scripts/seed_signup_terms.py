@@ -3,6 +3,7 @@
 import argparse
 from datetime import datetime
 
+from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.postgresql import insert
 
 from db.connection import build_engine, session_scope
@@ -79,14 +80,19 @@ def build_seed_statement(rows: list[dict]):
     ).returning(Term.id)
 
 
-def seed_signup_terms(version: str, effective_at: datetime, content_base_url: str | None = None) -> int:
+def seed_signup_terms(
+    version: str,
+    effective_at: datetime,
+    content_base_url: str | None = None,
+    bind: Engine | Connection | None = None,
+) -> int:
     """동일 code/version을 건너뛰며 약관을 seed하고 추가된 행 수를 반환한다."""
     rows = build_term_rows(version, effective_at, content_base_url)
 
-    engine = build_engine()
+    active_bind = bind if bind is not None else build_engine()
     # 같은 term_code/version을 다시 실행해도 기존 약관 row를 덮어쓰지 않는다.
     statement = build_seed_statement(rows)
-    with session_scope(engine) as session:
+    with session_scope(active_bind) as session:
         result = session.execute(statement)
         inserted_count = len(result.scalars().all())
     return inserted_count

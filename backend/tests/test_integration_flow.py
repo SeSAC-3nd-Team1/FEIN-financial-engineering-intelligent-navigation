@@ -137,6 +137,10 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             assert login.status_code == 200, login.text
             headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
+            me = client.get("/api/v1/auth/me", headers=headers)
+            assert me.status_code == 200, me.text
+            assert me.json()["user_id"] == user_id
+
             created = client.post("/api/v1/accounts", headers=headers, json={"account_name": "통합테스트 계좌"})
             assert created.status_code == 201, created.text
             account_id = created.json()["id"]
