@@ -12,6 +12,7 @@ import {
 } from '../data/holdings';
 import { STRATEGIES } from '../data/strategies';
 import { useTradingData } from '../hooks/useTradingData';
+import { buildPortfolioHoldings } from '../lib/portfolioModel';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
 import { useTradingStore } from '../store/tradingStore';
@@ -81,20 +82,10 @@ export default function Portfolio({
   }, [account?.selected_strategy_id, onStrategyChange, strategyId]);
 
   const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
-  const ALL_HOLDINGS = useMemo(() => {
-    if (!portfolio || portfolio.positions.length === 0) return MOCK_HOLDINGS;
-    const assets = Number(portfolio.total_assets);
-    return portfolio.positions.map((position) => {
-      const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
-      const metadata = matched ?? MOCK_HOLDINGS[0];
-      return {
-        ...metadata,
-        name: matched?.name ?? position.stock_code,
-        pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
-        chg: Number(position.return_rate),
-      };
-    });
-  }, [portfolio]);
+  const ALL_HOLDINGS = useMemo(
+    () => buildPortfolioHoldings(portfolio, MOCK_HOLDINGS, STOCK_INFO),
+    [portfolio],
+  );
 
   // 페이지 내 서브뷰 전환 — 현재 앱은 URL 라우터가 없는 화면 상태 머신이라,
   // "지난 판단 돌아보기"는 실제 라우트(`/portfolio/review`) 대신 로컬 뷰 전환으로 구현한다.
@@ -108,8 +99,7 @@ export default function Portfolio({
   /** 오늘 손익 = 평가금액 × 등락률. 요약과 종목 행이 같은 계산을 쓴다 */
   const gains = useMemo(
     () => ALL_HOLDINGS.map((h) => {
-      const code = STOCK_INFO[h.name]?.code;
-      const position = portfolio?.positions.find((item) => item.stock_code === code);
+      const position = portfolio?.positions.find((item) => item.stock_code === h.stockCode);
       return {
         ...h,
         gain: position
@@ -374,11 +364,10 @@ export default function Portfolio({
             </div>
             <div className="flex flex-col">
               {gains.map((h, i) => {
-                const detailCode = STOCK_INFO[h.name]?.code;
                 return (
                 <button
                   key={h.name}
-                  onClick={() => detailCode && onSelectStock(detailCode)}
+                  onClick={() => h.stockCode && onSelectStock(h.stockCode)}
                   className="flex items-center gap-5 border-b border-line py-4 text-left last:border-0 hover:bg-canvas"
                 >
                   <span className="w-7 shrink-0 text-[15px] text-subtle">{i + 1}</span>

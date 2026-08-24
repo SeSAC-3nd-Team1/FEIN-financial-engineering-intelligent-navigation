@@ -11,6 +11,13 @@ from typing import Any
 STOCK_CODE_PATTERN = re.compile(r"^\d{6}$")
 
 
+def _is_unsupported_alphanumeric_code(value: object) -> bool:
+    """서비스 계약 밖인 6자리 영문 혼합 단축코드는 해당 row만 제외한다."""
+
+    text = str(value).strip()
+    return len(text) == 6 and text.isalnum() and not text.isdigit()
+
+
 def _date(value: object) -> date:
     text = str(value)
     if len(text) != 8 or not text.isdigit():
@@ -50,6 +57,8 @@ def stock_master_rows(items: list[dict[str, Any]], *, market: str, as_of: date) 
 
     rows: list[dict[str, Any]] = []
     for item in items:
+        if _is_unsupported_alphanumeric_code(item.get("ISU_SRT_CD")):
+            continue
         source_market = str(item.get("MKT_TP_NM") or market).strip().upper()
         if source_market not in {"KOSPI", "KOSDAQ"}:
             raise ValueError("unsupported KRX market")
@@ -77,6 +86,8 @@ def stock_price_rows(items: list[dict[str, Any]], *, market: str, as_of: date) -
 
     rows: list[dict[str, Any]] = []
     for item in items:
+        if _is_unsupported_alphanumeric_code(item.get("ISU_CD")):
+            continue
         source_market = str(item.get("MKT_NM") or market).strip().upper()
         if source_market not in {"KOSPI", "KOSDAQ"}:
             raise ValueError("unsupported KRX market")
@@ -105,6 +116,9 @@ def market_index_rows(items: list[dict[str, Any]], *, market: str, as_of: date) 
 
     rows: list[dict[str, Any]] = []
     for item in items:
+        # KRX가 일부 보조 지수(외국주 포함)에 빈 종가를 내려주므로 서비스 시계열에서 제외한다.
+        if not str(item.get("CLSPRC_IDX") or "").strip():
+            continue
         index_name = str(item.get("IDX_NM") or "").strip()
         index_class = str(item.get("IDX_CLSS") or market).strip().upper()
         if not index_name:

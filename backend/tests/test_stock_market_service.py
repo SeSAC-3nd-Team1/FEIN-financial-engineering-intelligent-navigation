@@ -1,12 +1,12 @@
 """KIS·KRX·OpenDART 조합 Stock summary/chart 규칙을 검증한다."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 
-from app.integrations.kis.models import CurrentQuote, MinuteCandle
+from app.integrations.kis.models import MinuteCandle
 from app.services.market import StockMarketService, _positive_ratio
 
 
@@ -31,6 +31,7 @@ class FakeRepository:
             total_equity=Decimal("360000000000000"),
         ) if financial else None
         self._prices = [self._price] if prices else []
+        self.requested_start_date = None
 
     def stock(self, stock_code: str):
         return self._stock if stock_code == "005930" else None
@@ -45,16 +46,13 @@ class FakeRepository:
         return self._financial
 
     def prices_since(self, _stock_code: str, _start_date: date):
+        self.requested_start_date = _start_date
         return self._prices
 
 
 class FakeLiveMarket:
-    def get_quote(self, stock_code: str) -> CurrentQuote:
-        return CurrentQuote(
-            stock_code=stock_code, price=Decimal("73400"), previous_close=Decimal("72200"),
-            change_amount=Decimal("1200"), change_rate=Decimal("1.66"), volume=12345678,
-            as_of=datetime(2026, 8, 24, tzinfo=UTC), source="KIS_REST",
-        )
+    def get_quote(self, _stock_code: str):
+        raise AssertionError("summary must not request a duplicate KIS quote")
 
     def get_minute_candles(self, stock_code: str, limit: int):
         assert limit == 390
@@ -66,17 +64,26 @@ class FakeLiveMarket:
         )], now, "KIS"
 
 
+class UnavailableRepository:
+    def stock(self, _stock_code: str):
+        raise AssertionError("1D KIS chart must not query the KRX repository")
+
+
 def test_summary_combines_real_sources_and_calculates_metrics() -> None:
     result = StockMarketService(FakeRepository(), FakeLiveMarket()).summary("005930")
 
     assert result.stock_name == "삼성전자"
-    assert result.price == Decimal("73400")
+    assert result.price is None
+    assert result.previous_close is None
+    assert result.change_amount is None
+    assert result.change_rate is None
+    assert result.volume is None
     assert result.market_cap == Decimal("438000000000000")
     assert result.per == Decimal("14.6")
     assert result.pbr == pytest.approx(Decimal("1.216666666666666666666666667"))
     assert result.roe == pytest.approx(Decimal("8.333333333333333333333333333"))
     assert result.dividend_yield is None
-    assert result.sources == {"price": "KIS_REST", "market": "KRX", "financial": "OpenDART"}
+    assert result.sources == {"price": None, "market": "KRX", "financial": "OpenDART"}
 
 
 @pytest.mark.parametrize(
@@ -97,11 +104,13 @@ def test_summary_returns_null_financial_metrics_when_statement_is_missing() -> N
 
 
 def test_historical_chart_uses_only_repository_prices() -> None:
-    result = StockMarketService(FakeRepository(), FakeLiveMarket()).chart("005930", "3M")
+    repository = FakeRepository()
+    result = StockMarketService(repository, FakeLiveMarket()).chart("005930", "3M")
 
     assert result.source == "KRX"
     assert len(result.items) == 1
     assert result.items[0].close == Decimal("73800")
+    assert repository.requested_start_date == date.today() - timedelta(days=93)
 
 
 def test_one_day_chart_uses_kis_minute_candles() -> None:
@@ -110,3 +119,10 @@ def test_one_day_chart_uses_kis_minute_candles() -> None:
     assert result.source == "KIS"
     assert result.items[0].date == "2026-08-24T00:00:00+00:00"
     assert result.items[0].close == Decimal("73400")
+
+
+def test_one_day_chart_does_not_require_krx_database() -> None:
+    result = StockMarketService(UnavailableRepository(), FakeLiveMarket()).chart("005930", "1D")
+
+    assert result.source == "KIS"
+    assert result.stock_code == "005930"
