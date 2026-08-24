@@ -134,7 +134,7 @@ Query parameter:
 {"action":"unsubscribe","stock_codes":["000660"]}
 ```
 
-서버는 15초 동안 전송할 체결가가 없으면 `heartbeat`를 보낸다. JWT 만료 또는 인증 실패 시 오류 이벤트 후 WebSocket close code `4401`로 종료한다.
+서버는 15초 동안 전송할 체결가가 없으면 `heartbeat`를 보낸다. 초기 구독은 연결 후 5초 안에 전송해야 하며, 실패 원인별 오류 이벤트와 close code는 아래 오류 계약을 따른다.
 
 ## 5. 실시간 상태 조회
 
@@ -173,8 +173,15 @@ REST 오류 형식:
 WebSocket 오류 이벤트:
 
 ```json
-{"type":"error","code":"INVALID_SUBSCRIPTION","message":"인증 토큰과 유효한 구독 종목이 필요합니다."}
+{"type":"error","code":"INVALID_TOKEN","message":"유효한 인증 토큰이 필요합니다."}
 ```
+
+| 상황 | 오류 code | WebSocket close code |
+| --- | --- | --- |
+| 토큰 누락·만료·위조·비활성 사용자 | `INVALID_TOKEN` | `4401` |
+| 최초 action, 종목코드 또는 메시지 형식 오류 | `INVALID_SUBSCRIPTION` | `4400` |
+| 연결 후 5초 동안 초기 구독이 없음 | `SUBSCRIPTION_TIMEOUT` | `4408` |
+| 사용자 인증 DB 등 의존성 장애 | `AUTH_SERVICE_UNAVAILABLE` | `1011` |
 
 ## 7. 환경변수
 
@@ -204,3 +211,27 @@ Frontend/API ── 가상 주문 ─────> PostgreSQL
 ```
 
 시장가 조회 실패 시 실제 KIS 주문으로 우회하지 않으며, PostgreSQL 가상거래 원장도 시장 데이터 저장소로 사용하지 않는다.
+
+## 9. 배포 제약과 Scale-out 계획
+
+현재 `realtime_hub`의 subscriber queue와 KIS WebSocket 연결 상태는 Backend 프로세스 메모리에 있다. 따라서 실시간 WebSocket API의 현재 지원 배포 단위는 **단일 Uvicorn worker, 단일 Backend replica**다. KIS 연결은 프로세스 시작 시가 아니라 해당 프로세스에 첫 구독자가 들어올 때 생성되지만, 여러 worker/replica가 활성화되면 각 프로세스가 별도 KIS 연결과 종목 구독을 만든다.
+
+다중 replica 배포 전에는 다음 구조로 전환해야 한다.
+
+```text
+KIS WebSocket
+      ↓ 단일 upstream 연결
+Market Data Worker
+      ├─ Redis 최신 현재가 저장
+      └─ Redis Pub/Sub 발행
+                 ↓
+       Backend replica 1..N
+                 ↓
+         WebSocket clients
+```
+
+- Market Data Worker만 KIS WebSocket 연결과 종목 구독을 관리한다.
+- Backend replica는 Redis Pub/Sub quote를 받아 자기 프로세스의 client에게 fan-out한다.
+- 최신 가격 Redis key는 재연결과 Pub/Sub 유실 복구용으로 유지한다.
+- `/market/realtime/status`도 worker 상태를 Redis에 저장해 모든 replica가 같은 결과를 반환하도록 변경한다.
+- 위 구조가 적용되기 전에는 Uvicorn `--workers` 증가 또는 Backend replica 수평 확장을 지원하지 않는다.
