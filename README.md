@@ -36,7 +36,7 @@ Copy-Item .env.example .env
 
 PostgreSQL은 `.env`의 `DATABASE_URL`에 팀 공용 Azure Database for PostgreSQL URL을 반드시 설정합니다. 공공데이터 수집 시 사용하는 `DATA_GO_KR_API_KEY`를 포함한 외부 API 키도 같은 `.env`에 설정합니다. `DATABASE_URL`에는 `?sslmode=require`를 포함하며 실제 Azure 사용자명·비밀번호·호스트는 GitHub에 올리지 않습니다. `DATABASE_URL`이 없거나 빈 값이면 Docker Compose는 실행을 중단합니다. 전체 준비 절차와 Portal/CLI 작업은 [Azure PostgreSQL 단일 프로젝트 DB 가이드](docs/AZURE_POSTGRESQL_DEV.md)를 따릅니다.
 
-공용 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 설정하고 팀 Backend가 동일한 값을 사용합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 가상계좌 초기금은 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값으로 설정합니다.
+공용 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 설정하고 팀 Backend가 동일한 값을 사용합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 투자 온보딩에서 만드는 신규 가상계좌는 사용자가 선택한 투자 금액으로 시작하며, 레거시 `POST /accounts` 직접 생성 경로만 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값을 사용합니다.
 
 한국 금융 뉴스는 NAVER Cloud Platform의 NAVER API HUB Search News API를 Backend에서만 호출합니다. 로컬 `.env`에 `NAVER_API_HUB_CLIENT_ID`와 `NAVER_API_HUB_CLIENT_SECRET`을 설정하고 실제 값은 커밋하거나 로그에 출력하지 않습니다. 기본 검색어는 `NEWS_SEARCH_QUERY=증시`, Redis cache TTL은 `NEWS_CACHE_TTL_SECONDS=300`입니다.
 

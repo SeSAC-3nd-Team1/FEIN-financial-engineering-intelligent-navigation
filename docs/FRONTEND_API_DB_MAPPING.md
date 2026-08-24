@@ -8,7 +8,7 @@
 | SignupStep1~3 | 개인정보, 실제 약관 동의 상태·현재 버전, 휴대폰/이메일 OTP mock | `GET /api/v1/auth/terms`, `POST /api/v1/auth/signup` | 기존 `registration_sessions`, `terms`, `registration_agreements`, `users`, `user_agreements`; 실제 OTP provider는 후속 연결 |
 | RiskProfile/Result | 설문 입력과 추천 결과 표시 | `POST /api/v1/investor-profile/analyze`, `GET /api/v1/investor-profile/me/latest`, `POST /api/v1/strategy-recommendations`, `GET /api/v1/strategy-recommendations/me/latest` | `investor_profile_assessments`, `strategy_recommendations`, `strategy_recommendation_items` |
 | StrategyDetail | `low/value/momentum`, mock backtest | `GET /api/v1/strategies` | `strategies`; 백테스트는 Blob/AI interface 후속 |
-| StartInvesting | 전략 배분은 명시적 mock, 시작 시 로그인 사용자의 계좌 조회/생성·전략 저장 | `GET/POST /api/v1/accounts`, `PUT /accounts/{id}/strategy` | `virtual_accounts`, `cash_ledger`, `strategies`; 초기금은 Backend 정책값 |
+| StartInvesting | 전략 배분은 명시적 mock, 시작 시 투자 온보딩·약관 동의·가상계좌 준비·전략 저장 | `/investment/terms`, `/investment/onboardings*` | `investment_onboardings`, `terms`, `user_agreements`, `virtual_accounts`, `cash_ledger`, `strategies`; 신규 계좌 초기금은 선택 투자 금액 |
 | Portfolio/Dashboard | 계좌 금액·손익·보유종목은 실제 API, AI 설명·과거 분석은 명시적 mock | `GET /api/v1/accounts/me`, `GET /portfolio?account_id=`, `GET /orders`, `GET /executions` | `virtual_accounts`, `positions`, `orders`, `executions`, `cash_ledger` + Redis/KIS 현재가 |
 | StockDetail | 현재가는 실제 API, 차트·재무지표·AI 평가는 명시적 mock | `GET /api/v1/market/stocks/{code}/price` | Redis `price:{code}` → KIS 현재가. 재무지표는 Blob/Data API 후속 |
 | InformationExam | 한국 뉴스는 실제 Backend, 금융 상식은 기존 mock | `GET /api/v1/information/news/kr?page=1&size=20` | NAVER API HUB → Redis `information:news:kr:{query}:{page}:{size}`; PostgreSQL/Blob 저장 없음 |
@@ -18,7 +18,7 @@
 
 - Notion의 기존 계좌 문서는 증권 연동 계좌와 KIS 주문/잔고를 전제로 하나, 구현은 서비스 내부 가상계좌다.
 - Frontend 인증·계좌·현재가·포트폴리오·주문·체결은 실제 API와 연결되었다. 과거 자산 추이, AI 리밸런싱·설명, 재무지표는 Backend API가 없어 UI에서 `MOCK`으로 구분한다.
-- Frontend 투자 시작 금액은 사용자가 선택하지만 계좌 초기금은 Backend 정책 환경변수로 결정한다. 사용자 입출금 기능은 이번 MVP 범위 밖이다.
+- 신규 가상계좌는 사용자가 선택한 투자 금액으로 시작한다. 기존 가상계좌 재사용 시에는 잔액·포지션·원장을 유지하고 추가 입금이나 초기화를 하지 않는다. 사용자 입출금 기능은 이번 MVP 범위 밖이다.
 
 ## 실제 호출 흐름
 

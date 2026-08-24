@@ -69,6 +69,45 @@ class TermResponse(BaseModel):
     is_required: bool
 
 
+class InvestmentTermResponse(TermResponse):
+    content_reference: str | None = None
+
+
+class InvestmentOnboardingCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    strategy_id: str = Field(min_length=1, max_length=30)
+    investment_amount: Decimal = Field(gt=0, le=100_000_000)
+    operation_mode: Literal["AUTO", "SEMI_AUTO"]
+
+
+class InvestmentAgreementSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agreements: list[AgreementRequest] = Field(min_length=1, max_length=10)
+
+
+class InvestmentAccountPrepareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_name: str = Field(default="나의 가상 투자계좌", min_length=1, max_length=100)
+
+
+class InvestmentOnboardingResponse(BaseModel):
+    id: UUID
+    strategy_id: str
+    investment_amount: Decimal
+    operation_mode: Literal["AUTO", "SEMI_AUTO"]
+    status: Literal["TERMS_PENDING", "ACCOUNT_PENDING", "READY", "COMPLETED"]
+    account_id: UUID | None
+    terms_completed: bool
+    account_exists: bool
+    next_step: Literal["TERMS", "ACCOUNT", "CONFIRM", "PORTFOLIO"]
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class AccountCreateRequest(BaseModel):
     account_name: str = Field(default="나의 가상 투자계좌", min_length=1, max_length=100)
 
@@ -82,6 +121,12 @@ class AccountResponse(BaseModel):
     status: str
     selected_strategy_id: str | None
     created_at: datetime
+
+
+class InvestmentAccountPrepareResponse(BaseModel):
+    account: AccountResponse
+    created: bool
+    onboarding: InvestmentOnboardingResponse
 
 
 class StrategyResponse(BaseModel):

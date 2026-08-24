@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID as PythonUUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Identity, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Identity, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,6 +35,49 @@ class VirtualAccount(TimestampMixin, Base):
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     selected_strategy_id: Mapped[str | None] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="SET NULL"))
+
+
+class InvestmentOnboarding(TimestampMixin, Base):
+    """투자 약관 확인부터 가상계좌 준비까지의 서버 기준 진행 상태다."""
+
+    __tablename__ = "investment_onboardings"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_investment_onboardings_user_id"),
+        CheckConstraint("investment_amount > 0", name="investment_amount_positive"),
+        CheckConstraint(
+            "operation_mode IN ('AUTO', 'SEMI_AUTO')",
+            name="operation_mode_values",
+        ),
+        CheckConstraint(
+            "status IN ('TERMS_PENDING', 'ACCOUNT_PENDING', 'READY', 'COMPLETED')",
+            name="status_values",
+        ),
+        CheckConstraint(
+            "(status = 'COMPLETED' AND account_id IS NOT NULL AND completed_at IS NOT NULL) OR "
+            "(status <> 'COMPLETED' AND completed_at IS NULL)",
+            name="completion_consistency",
+        ),
+        Index("ix_investment_onboardings_status", "status"),
+    )
+    id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), default=uuid4, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    strategy_id: Mapped[str] = mapped_column(
+        String(30),
+        ForeignKey("strategies.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    investment_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    operation_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    account_id: Mapped[PythonUUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("virtual_accounts.id", ondelete="RESTRICT"),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Position(TimestampMixin, Base):

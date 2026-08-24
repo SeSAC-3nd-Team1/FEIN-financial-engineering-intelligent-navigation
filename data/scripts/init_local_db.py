@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from db.connection import build_engine
+from scripts.seed_investment_terms import seed_investment_terms
 from scripts.seed_signup_terms import parse_timestamp, seed_signup_terms
 
 
@@ -21,6 +22,10 @@ def initialize_database(
     version: str,
     effective_at: datetime,
     content_base_url: str | None = None,
+    *,
+    investment_version: str | None = None,
+    investment_effective_at: datetime | None = None,
+    investment_content_base_url: str | None = None,
 ) -> int:
     """하나의 transaction advisory lock 안에서 migration과 seed를 수행한다.
 
@@ -38,7 +43,14 @@ def initialize_database(
         alembic_config = Config("alembic.ini")
         alembic_config.attributes["connection"] = connection
         command.upgrade(alembic_config, "head")
-        return seed_signup_terms(version, effective_at, content_base_url, bind=connection)
+        signup_count = seed_signup_terms(version, effective_at, content_base_url, bind=connection)
+        investment_count = seed_investment_terms(
+            investment_version or version,
+            investment_effective_at or effective_at,
+            investment_content_base_url,
+            bind=connection,
+        )
+        return signup_count + investment_count
 
 
 def initialize_with_retry(
@@ -46,6 +58,9 @@ def initialize_with_retry(
     effective_at: datetime,
     content_base_url: str | None = None,
     *,
+    investment_version: str | None = None,
+    investment_effective_at: datetime | None = None,
+    investment_content_base_url: str | None = None,
     max_attempts: int,
     retry_seconds: float,
 ) -> int:
@@ -58,7 +73,14 @@ def initialize_with_retry(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            return initialize_database(version, effective_at, content_base_url)
+            return initialize_database(
+                version,
+                effective_at,
+                content_base_url,
+                investment_version=investment_version,
+                investment_effective_at=investment_effective_at,
+                investment_content_base_url=investment_content_base_url,
+            )
         except OperationalError:
             # driver 예외에는 connection string이 포함될 수 있어 credential을 로그에 쓰지 않는다.
             if attempt == max_attempts:
@@ -76,6 +98,11 @@ def main() -> None:
         os.getenv("SIGNUP_TERMS_EFFECTIVE_AT", "2026-08-23T00:00:00+09:00")
     )
     content_base_url = os.getenv("SIGNUP_TERMS_CONTENT_BASE_URL") or None
+    investment_version = os.getenv("INVESTMENT_TERMS_VERSION", "dev-20260824")
+    investment_effective_at = parse_timestamp(
+        os.getenv("INVESTMENT_TERMS_EFFECTIVE_AT", "2026-08-24T00:00:00+09:00")
+    )
+    investment_content_base_url = os.getenv("INVESTMENT_TERMS_CONTENT_BASE_URL") or None
     max_attempts = int(os.getenv("DB_INIT_MAX_ATTEMPTS", "30"))
     retry_seconds = float(os.getenv("DB_INIT_RETRY_SECONDS", "2"))
 
@@ -83,10 +110,17 @@ def main() -> None:
         version,
         effective_at,
         content_base_url,
+        investment_version=investment_version,
+        investment_effective_at=investment_effective_at,
+        investment_content_base_url=investment_content_base_url,
         max_attempts=max_attempts,
         retry_seconds=retry_seconds,
     )
-    print(f"database ready: {inserted_count} terms inserted, version={version}")
+    print(
+        "database ready: "
+        f"{inserted_count} terms inserted, signup_version={version}, "
+        f"investment_version={investment_version}"
+    )
 
 
 if __name__ == "__main__":
