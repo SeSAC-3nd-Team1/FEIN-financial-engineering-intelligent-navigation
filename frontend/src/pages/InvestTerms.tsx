@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import Header from '../components/Header';
 import TermsModal from '../components/TermsModal';
-import { estimateAnnualFee, INVESTMENT_FEES, type OperationMode } from '../data/fees';
+import { estimateAnnualFee, type OperationMode } from '../data/fees';
+import { OPERATING_MODES } from '../data/operatingModes';
 import type { Strategy } from '../data/strategies';
 import { won } from '../lib/validation';
 import type { Screen } from '../types';
@@ -18,8 +19,6 @@ interface Props {
 }
 
 type RequiredKey = 'product' | 'service' | 'privacy' | 'riskNotice';
-
-const MODE_LABEL: Record<OperationMode, string> = { manual: '확인하고 실행', auto: '자동으로 운용' };
 
 const SERVICE_TERMS_BODY =
   '제1조 (목적)\n본 약관은 FE!N이 제공하는 투자 서비스(전략 기반 포트폴리오 구성 및 SeSAC증권 연계 매매)의 이용과 관련한 회사와 이용자 간의 권리·의무를 규정합니다.\n\n제2조 (서비스 내용)\nFE!N은 이용자가 선택한 투자 전략에 따라 포트폴리오를 구성하고, SeSAC증권 계좌를 통해 매매를 실행하거나 자동으로 운용합니다.\n\n제3조 (투자 판단 및 책임)\nFE!N과 물방개가 제공하는 정보는 투자 판단을 돕기 위한 참고 정보이며, 최종 투자 결정과 그 결과에 대한 책임은 이용자 본인에게 있습니다.';
@@ -40,12 +39,12 @@ export default function InvestTerms({ userName, strategy, amount, mode, onNaviga
   };
   const toggleOne = (key: RequiredKey) => setAgreed((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const feeRate = INVESTMENT_FEES[mode];
+  const feeRate = OPERATING_MODES[mode].feeRate;
   const feeAmount = estimateAnnualFee(amount, mode);
   const productBody =
     `${strategy.name}은 ${strategy.tagline} 전략이에요.\n\n` +
     `연 환산 수익률(참고): ${strategy.annual}\n최대 낙폭(MDD, 참고): ${strategy.mdd}\n변동성(참고): ${strategy.vol}\n리밸런싱 주기: ${strategy.rebalance}\n\n` +
-    `이용 수수료: 연 ${(feeRate * 100).toFixed(1)}% (${MODE_LABEL[mode]} 기준, ${(amount / 10_000).toLocaleString('ko-KR')}만원 투자 시 연 약 ${won(feeAmount)})\n\n` +
+    `이용 수수료: 연 ${(feeRate * 100).toFixed(1)}% (${OPERATING_MODES[mode].label} 기준, ${(amount / 10_000).toLocaleString('ko-KR')}만원 투자 시 연 약 ${won(feeAmount)})\n\n` +
     '위 수치는 과거 백테스트 및 프로토타입 기준 참고 정보이며, 미래 수익을 보장하지 않습니다. 실제 수수료는 잔고와 이용 기간 등에 따라 달라질 수 있어요.';
 
   return (
@@ -62,7 +61,7 @@ export default function InvestTerms({ userName, strategy, amount, mode, onNaviga
           <section className="flex flex-col gap-3 rounded-card bg-surface p-9">
             <div className="flex items-center justify-between">
               <span className="text-[20px] font-bold tracking-[-0.02em]">{strategy.name}</span>
-              <span className="text-base text-muted">{MODE_LABEL[mode]}</span>
+              <span className="text-base text-muted">{OPERATING_MODES[mode].label}</span>
             </div>
             <span className="text-lg text-muted">투자 예정 금액 <b className="text-ink">{won(amount)}</b></span>
           </section>
