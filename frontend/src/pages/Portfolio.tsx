@@ -424,19 +424,19 @@ export default function Portfolio({
                 <span>내 선택 <b>{latestDecision ? (latestDecision.decision === 'ACCEPTED' ? '수락' : '보류') : '-'}</b></span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                <span className="text-[15px] text-muted">수락한 판단 이후 평균</span>
-                <span className="text-[26px] font-bold tracking-[-0.03em]">{formatDecisionReturn(decisions?.accepted_average_portfolio_return)}</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
+                  <span className="text-[15px] text-muted">최근 6개월 수락</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{decisions?.accepted ?? 0}건</span>
+                </div>
+                <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
+                  <span className="text-[15px] text-muted">최근 6개월 보류</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{decisions?.held ?? 0}건</span>
+                </div>
               </div>
-              <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                <span className="text-[15px] text-muted">보류한 판단 이후 평균</span>
-                <span className="text-[26px] font-bold tracking-[-0.03em]">{formatDecisionReturn(decisions?.held_average_portfolio_return)}</span>
-              </div>
-            </div>
-            <p className="text-[17px] leading-7 text-muted">
-              수락·보류 시점 이후의 실제 포트폴리오 수익률을 비교해요.
-            </p>
+              <p className="text-[17px] leading-7 text-muted">
+              판단마다 기준 시점이 다르므로 성과 평균을 직접 비교하지 않아요.
+              </p>
             {/* 트리거: 클릭 시 로컬 view state 를 'review' 로 전환해 PDF Page 5 레이아웃(ReviewView)을 렌더링한다 */}
             <button
               onClick={() => setView('review')}
@@ -526,12 +526,8 @@ function ReviewView({ userName, onNavigate, onBack, decisions }: { userName: str
           </section>
 
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
-            <h2 className="text-[22px] font-bold tracking-[-0.025em]">수락한 판단 vs 보류한 판단 이후 실제 성과</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <Stat label="수락 이후 평균" value={formatDecisionReturn(decisions?.accepted_average_portfolio_return)} />
-              <Stat label="보류 이후 평균" value={formatDecisionReturn(decisions?.held_average_portfolio_return)} />
-            </div>
-            <Insight>기준 스냅샷 이후 실제 계좌 수익률만 계산하며, 제안을 따랐다는 가상 성과는 만들지 않아요.</Insight>
+            <h2 className="text-[22px] font-bold tracking-[-0.025em]">판단 결과를 해석하는 기준</h2>
+            <Insight>판단 시점 자산과 이후 실제 계좌 스냅샷만 비교해요. 판단별 경과 기간이 달라 수락·보류 평균은 제공하지 않아요.</Insight>
           </section>
 
           <section className="flex flex-col gap-5 rounded-card bg-surface p-12">

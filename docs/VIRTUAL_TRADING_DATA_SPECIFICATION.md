@@ -26,7 +26,7 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | rebalancing_decisions.id/account_id | uuid/uuid | PK/FK | account/created_at index | 실제 제안에 대한 판단 기록 |
 | rebalancing_decisions.stock_code/action/decision | varchar | NOT NULL | BUY/SELL, ACCEPTED/HELD | 서버 제안과 사용자 선택 |
 | rebalancing_decisions.current_weight/target_weight/recommended_amount | numeric | NOT NULL |  | 판단 당시 서버 산출값 snapshot |
-| rebalancing_decisions.baseline_snapshot_date/total_assets | date/numeric | NULL |  | 이후 실제 계좌 수익률 계산 기준 |
+| rebalancing_decisions.baseline_snapshot_date/total_assets | date/numeric | NULL |  | 판단 요청 시 재평가한 가격 기준일·총자산 |
 | rebalancing_decisions.idempotency_key | varchar(100) | NOT NULL | UNIQUE(account,key) | 중복 판단 기록 방지 |
 | orders.id | uuid | PK |  | 주문 ID |
 | orders.account_id | uuid | FK virtual_accounts, NOT NULL | account/requested_at index | 주문 계좌 |

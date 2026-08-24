@@ -18,6 +18,7 @@ import {
   type RebalancingDecisionCreateRequest,
   type RebalancingDecisionHistoryResponse,
 } from '../lib/backendApi';
+import { mergeDecisionHistory } from '../lib/portfolioAnalyticsModel';
 
 interface TradingState {
   account: AccountResponse | null;
@@ -168,9 +169,11 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
     set({ isDecisionSubmitting: true, error: null });
     try {
-      await createRebalancingDecisionApi(payload, token);
-      const decisions = await getRebalancingDecisionsApi(payload.account_id, token);
-      set({ decisions, isDecisionSubmitting: false });
+      const decision = await createRebalancingDecisionApi(payload, token);
+      set((state) => ({
+        decisions: mergeDecisionHistory(state.decisions, decision),
+        isDecisionSubmitting: false,
+      }));
     } catch (error) {
       const apiError = asApiError(error);
       set({ error: apiError, isDecisionSubmitting: false });

@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import Header from '../components/Header';
 import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
-import { formatDecisionReturn } from '../lib/portfolioAnalyticsModel';
 import type { OperationMode } from '../data/fees';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
@@ -28,6 +27,12 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
   const recordDecision = useTradingStore((state) => state.recordDecision);
   const isDecisionSubmitting = useTradingStore((state) => state.isDecisionSubmitting);
   const [sheetOpen, setSheetOpen] = useState(false); // 리밸런싱 상세 시트
+  const decisionRetry = useRef<{
+    decision: 'ACCEPTED' | 'HELD';
+    accountId: string;
+    stockCode: string;
+    key: string;
+  } | null>(null);
 
   const top = portfolio?.top_contributor ?? null;
   const proposal = portfolio?.rebalancing_proposals[0] ?? null;
@@ -40,13 +45,25 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
     ? null : Number(latestDecision.actual_portfolio_return_rate);
   const submitDecision = async (decision: 'ACCEPTED' | 'HELD') => {
     if (!token || !account || !proposal) return;
+    const retry = decisionRetry.current?.decision === decision
+      && decisionRetry.current.accountId === account.id
+      && decisionRetry.current.stockCode === proposal.stock_code
+      ? decisionRetry.current
+      : {
+        decision,
+        accountId: account.id,
+        stockCode: proposal.stock_code,
+        key: crypto.randomUUID(),
+      };
+    decisionRetry.current = retry;
     try {
       await recordDecision(token, {
         account_id: account.id,
         stock_code: proposal.stock_code,
         decision,
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: retry.key,
       });
+      decisionRetry.current = null;
       setSheetOpen(false);
     } catch {
       // Store에 실제 API 오류가 보존되므로 시트를 유지해 사용자가 다시 시도할 수 있게 한다.
@@ -168,16 +185,16 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                  <span className="text-[15px] text-muted">수락한 판단 이후 평균</span>
-                  <span className="text-[26px] font-bold tracking-[-0.03em]">{formatDecisionReturn(decisions?.accepted_average_portfolio_return)}</span>
+                  <span className="text-[15px] text-muted">최근 6개월 수락</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{decisions?.accepted ?? 0}건</span>
                 </div>
                 <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                  <span className="text-[15px] text-muted">보류한 판단 이후 평균</span>
-                  <span className="text-[26px] font-bold tracking-[-0.03em]">{formatDecisionReturn(decisions?.held_average_portfolio_return)}</span>
+                  <span className="text-[15px] text-muted">최근 6개월 보류</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{decisions?.held ?? 0}건</span>
                 </div>
               </div>
               <p className="text-[17px] leading-7 text-muted">
-                같은 날의 계좌 스냅샷을 기준으로 이후 실제 포트폴리오 수익률만 비교해요.
+                각 판단 결과는 판단 시점 자산과 이후 실제 계좌 스냅샷을 기준으로 개별 확인해요.
               </p>
               <span className="text-base font-semibold text-navy">지난 판단 돌아보기 →</span>
             </div>

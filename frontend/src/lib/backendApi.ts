@@ -207,8 +207,6 @@ export interface RebalancingDecisionHistoryResponse {
   proposed: number;
   accepted: number;
   held: number;
-  accepted_average_portfolio_return: DecimalString | null;
-  held_average_portfolio_return: DecimalString | null;
   items: RebalancingDecisionResponse[];
 }
 

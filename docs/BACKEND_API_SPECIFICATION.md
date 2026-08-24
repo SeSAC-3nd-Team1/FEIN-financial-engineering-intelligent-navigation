@@ -181,11 +181,14 @@ OpenDART FY 재무 또는 다른 보유종목 표본이 부족하면 해당 축�
 비중·금액·BUY/SELL은 요청에서 받지 않고 Backend가 현재 포트폴리오 제안에서 다시 산출한다.
 유효한 제안이 없으면 `409 REBALANCING_PROPOSAL_NOT_FOUND`다. 같은 계좌의 idempotency key를
 재전송하면 기존 기록을 반환한다.
+판단 기준 자산은 과거 장마감 snapshot이 아니라 이 요청에서 다시 평가한 현재 포트폴리오
+`total_assets`이며, 가격 기준일도 함께 저장한다.
 
 ### GET `/portfolio/decisions?account_id=...`
 
 최근 6개월의 수락·보류 개수와 판단 당시 서버 제안값을 반환한다. 판단 기준일보다 뒤의 일별
 스냅샷이 있으면 실제 포트폴리오 수익률을 제공한다. 반사실 수익률은 제공하지 않는다.
+판단별 경과 기간이 다르므로 수락·보류 성과 평균은 제공하지 않는다.
 
 ### GET `/information/news/kr`
 

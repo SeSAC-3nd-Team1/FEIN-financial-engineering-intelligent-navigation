@@ -5,6 +5,7 @@ from decimal import Decimal
 from math import sqrt
 from statistics import correlation, stdev
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -37,13 +38,29 @@ def _linear_score(value: float, low: float, high: float, *, inverse: bool = Fals
     return _clamp_score(100 - scaled if inverse else scaled)
 
 
-def _returns(points: list, value_attribute: str) -> dict[date, float]:
+def _returns(
+    points: list,
+    value_attribute: str,
+    *,
+    share_attribute: str | None = None,
+) -> dict[date, float]:
     ordered = sorted(points, key=lambda item: item.trade_date)
     result: dict[date, float] = {}
+    previous_shares: int | None = None
     for previous, current in zip(ordered, ordered[1:]):
         previous_value = float(getattr(previous, value_attribute))
         current_value = float(getattr(current, value_attribute))
-        if previous_value > 0:
+        if share_attribute and previous_shares is None:
+            shares = getattr(previous, share_attribute)
+            if shares is not None and shares > 0:
+                previous_shares = shares
+        corporate_action = False
+        if share_attribute:
+            shares = getattr(current, share_attribute)
+            if shares is not None and shares > 0:
+                corporate_action = previous_shares is not None and shares != previous_shares
+                previous_shares = shares
+        if previous_value > 0 and not corporate_action:
             result[current.trade_date] = current_value / previous_value - 1
     return result
 
@@ -136,7 +153,7 @@ class PortfolioAnalyticsService:
         latest_price = self.market.latest_price(stock_code)
         start_date = latest_price.trade_date - timedelta(days=FEATURE_WINDOW_DAYS) if latest_price else date.today()
         price_rows = self.market.prices_since(stock_code, start_date) if latest_price else []
-        stock_returns = _returns(price_rows, "close_price")
+        stock_returns = _returns(price_rows, "close_price", share_attribute="listed_shares")
 
         financial_rows = self.market.annual_financials(stock_code)
         annual_by_year = {}
@@ -201,7 +218,11 @@ class PortfolioAnalyticsService:
             if latest is None:
                 continue
             market_value = float(latest.close_price * position.quantity)
-            returns = _returns(self.market.prices_since(position.stock_code, start_date), "close_price")
+            returns = _returns(
+                self.market.prices_since(position.stock_code, start_date),
+                "close_price",
+                share_attribute="listed_shares",
+            )
             if market_value > 0 and returns:
                 series.append((market_value, returns))
         if not series:
@@ -232,7 +253,10 @@ class PortfolioAnalyticsService:
         )
         if proposal is None:
             raise ServiceError("REBALANCING_PROPOSAL_NOT_FOUND", "현재 유효한 리밸런싱 제안이 없습니다.", 409)
-        baseline = self.trading.latest_snapshot(request.account_id)
+        baseline_date = max(
+            (position.price_as_of.date() for position in portfolio.positions),
+            default=datetime.now(ZoneInfo("Asia/Seoul")).date(),
+        )
         decision = RebalancingDecision(
             account_id=request.account_id,
             strategy_id=account.selected_strategy_id,
@@ -245,8 +269,8 @@ class PortfolioAnalyticsService:
             recommended_amount=proposal.recommended_amount,
             decision=request.decision,
             idempotency_key=request.idempotency_key,
-            baseline_snapshot_date=baseline.snapshot_date if baseline else None,
-            baseline_total_assets=baseline.total_assets if baseline else None,
+            baseline_snapshot_date=baseline_date,
+            baseline_total_assets=portfolio.total_assets,
         )
         try:
             self.trading.add_decision(decision)
@@ -264,15 +288,11 @@ class PortfolioAnalyticsService:
             account_id, datetime.now(UTC) - timedelta(days=DECISION_HISTORY_DAYS)
         )
         items = [self._decision_response(item) for item in decisions]
-        accepted_returns = [item.actual_portfolio_return_rate for item in items if item.decision == "ACCEPTED" and item.actual_portfolio_return_rate is not None]
-        held_returns = [item.actual_portfolio_return_rate for item in items if item.decision == "HELD" and item.actual_portfolio_return_rate is not None]
         return RebalancingDecisionHistoryResponse(
             account_id=account_id,
             proposed=len(items),
             accepted=sum(item.decision == "ACCEPTED" for item in items),
             held=sum(item.decision == "HELD" for item in items),
-            accepted_average_portfolio_return=self._average(accepted_returns),
-            held_average_portfolio_return=self._average(held_returns),
             items=items,
         )
 
@@ -306,9 +326,3 @@ class PortfolioAnalyticsService:
             outcome_as_of=outcome_as_of,
             created_at=decision.created_at,
         )
-
-    @staticmethod
-    def _average(values: list[Decimal]) -> Decimal | None:
-        if not values:
-            return None
-        return (sum(values, Decimal("0")) / len(values)).quantize(Decimal("0.01"))

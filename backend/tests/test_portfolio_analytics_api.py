@@ -53,7 +53,6 @@ class FakeService:
         self.calls.append(("history", user_id, account_id))
         return RebalancingDecisionHistoryResponse(
             account_id=account_id, proposed=1, accepted=0, held=1,
-            accepted_average_portfolio_return=None, held_average_portfolio_return=None,
             items=[decision_response()],
         )
 

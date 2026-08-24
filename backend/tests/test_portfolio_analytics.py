@@ -5,16 +5,32 @@ from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
 from app.schemas.api import RebalancingDecisionCreateRequest
 from app.services import portfolio_analytics
 from app.services.portfolio_analytics import (
     PortfolioAnalyticsService,
+    _returns,
     calculate_defense,
     calculate_diversification,
     calculate_financial_health,
     calculate_growth,
     calculate_stability,
 )
+
+
+def test_unadjusted_corporate_action_resets_feature_return_baseline() -> None:
+    points = [
+        SimpleNamespace(trade_date=date(2026, 1, 1), close_price=Decimal("100"), listed_shares=100),
+        SimpleNamespace(trade_date=date(2026, 1, 2), close_price=Decimal("50"), listed_shares=200),
+        SimpleNamespace(trade_date=date(2026, 1, 3), close_price=Decimal("55"), listed_shares=200),
+    ]
+
+    returns = _returns(points, "close_price", share_attribute="listed_shares")
+
+    assert date(2026, 1, 2) not in returns
+    assert returns[date(2026, 1, 3)] == pytest.approx(0.1)
 
 
 def test_feature_scores_use_real_price_and_financial_inputs() -> None:
@@ -60,8 +76,6 @@ def test_record_decision_persists_server_side_proposal(monkeypatch) -> None:
         current_weight=Decimal("20"), target_weight=Decimal("15"),
         weight_diff=Decimal("5"), recommended_amount=Decimal("50000"),
     )
-    baseline = SimpleNamespace(snapshot_date=date(2026, 8, 24), total_assets=Decimal("1000000"))
-
     class FakeTrading:
         def owned_account(self, *_args):
             return account
@@ -70,7 +84,7 @@ def test_record_decision_persists_server_side_proposal(monkeypatch) -> None:
             return None
 
         def latest_snapshot(self, *_args):
-            return baseline
+            return None
 
         def add_decision(self, decision):
             self.saved = decision
@@ -89,7 +103,11 @@ def test_record_decision_persists_server_side_proposal(monkeypatch) -> None:
     monkeypatch.setattr(
         portfolio_analytics,
         "PortfolioService",
-        lambda _session: SimpleNamespace(evaluate=lambda *_args: SimpleNamespace(rebalancing_proposals=[proposal])),
+        lambda _session: SimpleNamespace(evaluate=lambda *_args: SimpleNamespace(
+            rebalancing_proposals=[proposal],
+            total_assets=Decimal("1012345.67"),
+            positions=[SimpleNamespace(price_as_of=datetime(2026, 8, 25, 6, tzinfo=UTC))],
+        )),
     )
     service = PortfolioAnalyticsService.__new__(PortfolioAnalyticsService)
     service.session = FakeSession()
@@ -104,6 +122,7 @@ def test_record_decision_persists_server_side_proposal(monkeypatch) -> None:
     result = service.record_decision(1, request)
 
     assert result.current_weight == Decimal("20")
-    assert result.baseline_snapshot_date == date(2026, 8, 24)
+    assert result.baseline_snapshot_date == date(2026, 8, 25)
+    assert service.trading.saved.baseline_total_assets == Decimal("1012345.67")
     assert service.trading.saved.stock_name == "삼성전자"
     assert service.session.committed is True

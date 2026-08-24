@@ -462,8 +462,6 @@ class RebalancingDecisionHistoryResponse(BaseModel):
     proposed: int
     accepted: int
     held: int
-    accepted_average_portfolio_return: Decimal | None
-    held_average_portfolio_return: Decimal | None
     items: list[RebalancingDecisionResponse]
 
 
