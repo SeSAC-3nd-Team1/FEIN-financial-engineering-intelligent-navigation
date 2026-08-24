@@ -43,6 +43,7 @@ class Settings:
     price_cache_ttl_seconds: int = int(os.getenv("PRICE_CACHE_TTL_SECONDS", "5"))
     minute_candle_cache_ttl_seconds: int = int(os.getenv("MINUTE_CANDLE_CACHE_TTL_SECONDS", "15"))
     request_timeout_seconds: float = float(os.getenv("KIS_TIMEOUT_SECONDS", "3"))
+    kis_rest_page_interval_seconds: float = float(os.getenv("KIS_REST_PAGE_INTERVAL_SECONDS", "0.5"))
     realtime_price_cache_ttl_seconds: int = int(os.getenv("REALTIME_PRICE_CACHE_TTL_SECONDS", "30"))
     realtime_price_stale_seconds: int = int(os.getenv("REALTIME_PRICE_STALE_SECONDS", "10"))
     realtime_reconnect_max_seconds: int = int(os.getenv("KIS_REALTIME_RECONNECT_MAX_SECONDS", "30"))

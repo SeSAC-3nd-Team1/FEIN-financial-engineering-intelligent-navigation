@@ -4,9 +4,9 @@
 
 이 문서는 현재 `develop`의 SQLAlchemy 모델과 Alembic migration history를 기준으로 PostgreSQL의 역할을 요약한다.
 
-- 현재 Alembic 구현 기준: `20260824_0015`
+- 현재 Alembic 구현 기준: `20260824_0016`
 - 금융/API 대용량 Raw source of truth: Azure Blob Storage
-- PostgreSQL 역할: 회원가입/약관/가입 진행 상태 등 관계형 서비스 데이터
+- PostgreSQL 역할: 관계형 서비스 데이터와 Frontend 조회용 KRX/OpenDART 정제 결과
 - 과거 금융/API PostgreSQL `raw`, `processed` schema: retire 완료
 
 과거 16GB 금융 Raw landing DB의 상세 snapshot은 [`archive/DATABASE_SPECIFICATION_20260815.md`](archive/DATABASE_SPECIFICATION_20260815.md)에 보존한다. 해당 문서는 현재 운영 명세가 아니다.
@@ -24,7 +24,8 @@ Azure Blob features (Parquet)
 
 PostgreSQL
   ├─ membership / registration / virtual trading relational data
-  └─ OpenDART serving tables (원문은 Blob)
+  ├─ OpenDART serving tables (원문은 Blob)
+  └─ KRX market serving tables (원문은 Blob)
 
 Redis
   └─ OTP / token / session / rate limit 등 단기 상태
@@ -47,6 +48,9 @@ Redis
 | `company_financial_accounts` | 공시 재무제표의 계정별 정제 행 |
 | `company_financials` | FastAPI용 핵심 재무지표 집계 |
 | `company_disclosures` | 접수번호 기준 기업 공시 목록 |
+| `market_stocks` | KRX 종목기본정보 최신 상태 |
+| `market_stock_prices` | 종목·거래일별 KRX OHLCV·시가총액 |
+| `market_indices` | 지수·거래일별 KRX OHLCV |
 | `alembic_version` | migration head 관리 |
 
 세부 컬럼/제약은 `data/db/models/membership.py`, `docs/REGISTRATION_DATA_SPECIFICATION.md`, `docs/REGISTRATION_DATA_ERD.md`를 함께 본다.
@@ -71,7 +75,7 @@ erDiagram
 
 ## Migration history
 
-`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을, `20260824_0014`는 투자성향·전략 추천 이력을, `20260824_0015`는 가상투자 시작 상태를 추가한다.
+`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을, `20260824_0014`는 투자성향·전략 추천 이력을, `20260824_0015`는 가상투자 시작 상태를, `20260824_0016`은 KRX 화면 조회용 serving table을 추가한다.
 
 과거 migration 파일은 오래된 runtime 설계를 의미하는 것이 아니라 새 DB를 head까지 재현하기 위한 역사이므로 삭제하지 않는다.
 
@@ -161,7 +165,7 @@ Unique는 `(corp_code,business_year,report_code,fs_div)`다.
 
 ## 금융 데이터와 PostgreSQL
 
-현재 금융 batch 파이프라인은 PostgreSQL을 거치지 않는다.
+분석용 금융 batch 파이프라인은 PostgreSQL을 거치지 않는다.
 
 ```text
 Azure Blob raw
@@ -171,4 +175,14 @@ Azure Blob raw
 → Azure Blob features
 ```
 
-향후 백엔드에서 빠른 관계형 조회가 필요한 금융 결과가 생기면, 대용량 Raw landing을 복원하는 대신 필요한 serving table을 별도 이슈에서 목적에 맞게 설계한다.
+대용량 Raw landing을 복원하지 않고 StockDetail이 필요한 KRX 정제 결과만 다음 serving table에 저장한다. 원문 source of truth는 계속 Azure Blob이다.
+
+### KRX serving table
+
+| Table | Key | 주요 값 | 갱신 방식 |
+| --- | --- | --- | --- |
+| `market_stocks` | `stock_code` | ISIN, 명칭, 시장, 상장일, 상장주식수, 증권·섹터 구분 | KRX 종목기본정보 기준 최신 상태 UPSERT |
+| `market_stock_prices` | `(stock_code, trade_date)` unique | 일별 OHLCV, 전일대비, 등락률, 거래대금, 시가총액 | KRX 일별매매정보 멱등 UPSERT |
+| `market_indices` | `(index_code, trade_date)` unique | 지수 일별 OHLCV, 전일대비, 등락률, 거래대금, 시가총액 | KRX 지수정보 멱등 UPSERT |
+
+`market_stock_prices.stock_code`는 `market_stocks.stock_code`를 참조하므로 동기화는 종목 마스터를 먼저 적재한다. 종목코드는 `VARCHAR(6)`으로 선행 0을 보존하며, 원천 결측값은 임의의 0으로 채우지 않는다. `source='KRX'`, `as_of`에는 동기화 기준일을 기록한다.

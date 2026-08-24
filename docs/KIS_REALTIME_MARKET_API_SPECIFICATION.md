@@ -76,6 +76,8 @@ Query parameter:
 - `items`는 오래된 봉부터 최신 봉 순서다.
 - 현재 진행 중인 마지막 봉은 `is_closed=false`일 수 있다.
 - KIS는 호출당 최대 30건을 반환하므로 Backend가 `limit`에 맞춰 최대 4회 조회하고 중복 시각을 제거한다.
+- StockDetail의 `1D` 조합 API는 정규장 390분봉을 위해 최대 13페이지를 조회하며, 페이지 사이에 기본 0.5초 간격을 둔다.
+- HTTP 429와 KIS 업무 응답 `msg_cd=EGW00201`은 `KIS_RATE_LIMIT`으로 분류하고 지수 backoff 후 최대 3회 재시도한다.
 - Redis key는 `market:candles:1m:{stock_code}`, 기본 TTL은 15초다.
 - 캐시 응답의 `source`는 `REDIS`, KIS 직접 조회 응답은 `KIS`다.
 - KIS API 특성상 당일 분봉만 제공한다. 전일 또는 기간 차트는 이 API 범위가 아니다.
@@ -190,6 +192,7 @@ WebSocket 오류 이벤트:
 | `KIS_APP_KEY` | 없음 | KIS App Key |
 | `KIS_APP_SECRET` | 없음 | KIS App Secret |
 | `KIS_BASE_URL` | `https://openapi.koreainvestment.com:9443` | KIS REST URL |
+| `KIS_REST_PAGE_INTERVAL_SECONDS` | `0.5` | 분봉 페이지 호출 간격 및 rate-limit backoff 기준값(초) |
 | `KIS_WEBSOCKET_URL` | `ws://ops.koreainvestment.com:21000` | KIS WebSocket URL |
 | `PRICE_CACHE_TTL_SECONDS` | `5` | 현재가 REST cache TTL |
 | `MINUTE_CANDLE_CACHE_TTL_SECONDS` | `15` | 당일 1분봉 cache TTL |

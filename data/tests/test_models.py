@@ -1,4 +1,7 @@
 from db.models import (
+    MarketIndex,
+    MarketStock,
+    MarketStockPrice,
     RegistrationAgreement,
     RegistrationSession,
     Term,
@@ -93,6 +96,15 @@ def test_registration_agreement_has_composite_key_and_restricts_term_delete() ->
     }
     assert ondelete_by_target["registration_sessions.id"] == "CASCADE"
     assert ondelete_by_target["terms.id"] == "RESTRICT"
+
+
+def test_krx_serving_models_prevent_duplicate_daily_rows() -> None:
+    assert MarketStock.__table__.columns.stock_code.primary_key
+    assert "uq_market_stock_prices_code_date" in _constraint_names(MarketStockPrice)
+    assert "uq_market_indices_code_date" in _constraint_names(MarketIndex)
+    stock_fk = next(iter(MarketStockPrice.__table__.columns.stock_code.foreign_keys))
+    assert stock_fk.target_fullname == "market_stocks.stock_code"
+    assert stock_fk.ondelete == "RESTRICT"
 
 
 def test_model_registry_contains_only_membership_and_registration_models() -> None:

@@ -24,7 +24,7 @@ interface Props {
   strategyId: string;
   onStrategyChange: (id: string) => void;
   onNavigate: (s: Screen) => void;
-  onSelectStock: (index: number) => void;
+  onSelectStock: (stockCode: string) => void;
   /** 모달의 "다시 진단하기" — 투자성향 진단으로 되돌린다 */
   onRediagnose: () => void;
   onBack: () => void;
@@ -374,11 +374,11 @@ export default function Portfolio({
             </div>
             <div className="flex flex-col">
               {gains.map((h, i) => {
-                const detailIndex = MOCK_HOLDINGS.findIndex((holding) => holding.name === h.name);
+                const detailCode = STOCK_INFO[h.name]?.code;
                 return (
                 <button
                   key={h.name}
-                  onClick={() => detailIndex >= 0 && onSelectStock(detailIndex)}
+                  onClick={() => detailCode && onSelectStock(detailCode)}
                   className="flex items-center gap-5 border-b border-line py-4 text-left last:border-0 hover:bg-canvas"
                 >
                   <span className="w-7 shrink-0 text-[15px] text-subtle">{i + 1}</span>
