@@ -6,6 +6,7 @@ import InformationExam from './pages/InformationExam';
 import InvestorProfileCheck from './pages/InvestorProfileCheck';
 import Login from './pages/Login';
 import Portfolio from './pages/Portfolio';
+import PortfolioDetail from './pages/PortfolioDetail';
 import RiskProfile from './pages/RiskProfile';
 import RiskResult from './pages/RiskResult';
 import SignupStep1 from './pages/SignupStep1';
@@ -14,6 +15,8 @@ import SignupStep3 from './pages/SignupStep3';
 import StartInvesting from './pages/StartInvesting';
 import StockDetail from './pages/StockDetail';
 import StrategyDetail from './pages/StrategyDetail';
+import TransactionDetail from './pages/TransactionDetail';
+import TransactionHistory from './pages/TransactionHistory';
 import { STRATEGIES } from './data/strategies';
 import { signupTermsApi } from './lib/backendApi';
 import { useAuthStore } from './store/authStore';
@@ -33,7 +36,9 @@ function loadPersistedNav(): Partial<PersistedNav> {
   }
 }
 /** 로그인이 필요한 화면 — 새로고침 후 토큰이 없거나 만료된 걸로 확인되면 이 화면들에서는 로그인으로 돌려보낸다 */
-const PROTECTED_SCREENS: Screen[] = ['dashboard', 'portfolio', 'stock', 'strategy', 'start'];
+const PROTECTED_SCREENS: Screen[] = [
+  'dashboard', 'portfolio', 'portfolio-detail', 'stock', 'strategy', 'start', 'transactions', 'transaction-detail',
+];
 
 /**
  * 라우팅 상태 머신 — 전체 사용자 흐름
@@ -68,8 +73,12 @@ export default function App() {
   const [strategyId, setStrategyId] = useState<string>(persistedNav.strategyId ?? 'low');
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const [stockIndex, setStockIndex] = useState(persistedNav.stockIndex ?? 0);
-  // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio로)
-  const [stockBackTarget, setStockBackTarget] = useState<Screen>(persistedNav.stockBackTarget ?? 'portfolio');
+  // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio-detail로)
+  const [stockBackTarget, setStockBackTarget] = useState<Screen>(persistedNav.stockBackTarget ?? 'portfolio-detail');
+  // 거래 상세 진입 지점(포트폴리오 상세의 "최근 거래" 3건 vs 전체 거래 내역)에 따라 뒤로가기 목적지가 달라진다.
+  // 새로고침으로 잃어도 무방한 값이라 sessionStorage 에는 담지 않는다.
+  const [selectedTransactionId, setSelectedTransactionId] = useState('');
+  const [transactionBackTarget, setTransactionBackTarget] = useState<Screen>('portfolio-detail');
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
@@ -253,20 +262,55 @@ export default function App() {
           userName={userName}
           strategyName={strategy.name}
           onNavigate={setScreen}
-          onOpenHoldings={() => setScreen('portfolio')}
-          onChangeStrategy={() => setScreen('portfolio')}
+          onOpenHoldings={() => setScreen('portfolio-detail')}
+          onChangeStrategy={() => setScreen('portfolio-detail')}
         />
       )}
 
       {screen === 'portfolio' && (
         <Portfolio
           userName={userName}
+          onNavigate={setScreen}
+          onOpenDetail={() => setScreen('portfolio-detail')}
+        />
+      )}
+
+      {screen === 'portfolio-detail' && (
+        <PortfolioDetail
+          userName={userName}
           strategyId={strategyId}
           onStrategyChange={setStrategyId}
           onNavigate={setScreen}
-          onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('portfolio'); setScreen('stock'); }}
+          onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('portfolio-detail'); setScreen('stock'); }}
+          onSelectTransaction={(id) => {
+            setSelectedTransactionId(id);
+            setTransactionBackTarget('portfolio-detail');
+            setScreen('transaction-detail');
+          }}
           onRediagnose={() => startInvestorProfile('risk-result')}
-          onBack={() => setScreen('dashboard')}
+          onBack={() => setScreen('portfolio')}
+        />
+      )}
+
+      {screen === 'transactions' && (
+        <TransactionHistory
+          userName={userName}
+          onNavigate={setScreen}
+          onSelectTransaction={(id) => {
+            setSelectedTransactionId(id);
+            setTransactionBackTarget('transactions');
+            setScreen('transaction-detail');
+          }}
+          onBack={() => setScreen('portfolio-detail')}
+        />
+      )}
+
+      {screen === 'transaction-detail' && (
+        <TransactionDetail
+          transactionId={selectedTransactionId}
+          userName={userName}
+          onNavigate={setScreen}
+          onBack={() => setScreen(transactionBackTarget)}
         />
       )}
 

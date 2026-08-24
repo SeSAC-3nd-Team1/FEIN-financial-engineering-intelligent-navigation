@@ -4,7 +4,7 @@ export type Screen =
   | 'signup-1' | 'signup-2' | 'signup-3'
   | 'risk' | 'risk-result' | 'investor-check'
   | 'strategy' | 'start'
-  | 'information' | 'dashboard' | 'portfolio' | 'stock';
+  | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail';
 
 /** 온보딩 Step 01 폼 값 */
 export interface SignupPersonal {
@@ -43,7 +43,17 @@ export interface Holding {
   pct: number;        // 현재 비중 (05)
   target?: number;    // 전략 목표 비중 (04 신규 매수). 없으면 pct 와 동일
   chg: number;        // 오늘 등락률 %
+  principal: number;  // 투자 원금(KRW) — 실 계좌가 있으면 PositionResponse.purchase_amount 로 대체된다
+  returnRate: number; // 원금 대비 누적 수익률(%) — 실 계좌가 있으면 PositionResponse.return_rate 로 대체된다
   why: string;        // AI 편입 사유
+}
+
+/** 재무제표 핵심 지표 — StockDetail "재무제표 핵심 지표" 섹션. 백엔드에 아직 없는 항목이라 목업만 존재한다. */
+export interface FinanceRatios {
+  debtRatio: number;        // 부채비율 (%)
+  currentRatio: number;     // 유동비율 (%)
+  quickRatio: number;       // 당좌비율 (%)
+  interestCoverage: number; // 이자보상배율 (배)
 }
 
 export interface StockInfo {
@@ -54,8 +64,36 @@ export interface StockInfo {
   pbr: string;
   per: string;
   roe: string;
-  ai: number[];       // AI_AXES 순서의 5축 점수
+  ai: number[];        // AI_AXES 순서의 5축 점수 — Portfolio "위험 분석" 탭 전용
+  aiEval: number[];    // AI_EVAL_AXES 순서의 6축 점수 — StockDetail "AI 평가" 레이더 전용
+  finance: FinanceRatios;
   desc: string;
+}
+
+/** 거래 내역 화면에서 쓰는 표시용 모델 — 실 계좌가 있으면 ExecutionResponse(체결내역)를 이 모양으로 매핑해서 쓰고,
+ *  계좌가 없거나 체결 기록이 없으면 아래 RECENT_TRANSACTIONS(목업)를 그대로 쓴다. */
+export interface TransactionRecord {
+  id: string;
+  date: string;      // 'YYYY.MM.DD'
+  type: '매수' | '매도' | '리밸런싱' | '배당';
+  stockName: string;
+  amount: number;    // 매수/배당은 양수, 매도/리밸런싱 축소는 음수(KRW)
+  note: string;
+  quantity: number;  // 체결 수량(소수 주 단위, 소수점 투자 기준) — 배당은 0
+  price: number;     // 체결 단가(KRW) — 배당은 0
+  fee: number;       // 수수료(KRW) — 실 체결에는 수수료 필드가 없어 0으로 채운다
+  status: '체결완료';
+}
+
+/** AI 손절/리밸런싱 제안 — 백엔드에 아직 판단 로직이 없어 목업으로만 존재한다 */
+export interface AiAlert {
+  id: string;
+  stockName: string;
+  kind: '손절' | '리밸런싱';
+  badge: string;     // 종목 배지에 쓰는 짧은 라벨
+  headline: string;  // 제안 카드 한 줄 요약
+  reason: string;    // "왜 지금인가요?" 모달 본문 — 근거
+  action: string;    // 제안하는 구체적 조치
 }
 
 export interface TermDef {

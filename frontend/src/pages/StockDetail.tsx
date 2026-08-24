@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { X } from 'lucide-react';
 import Header from '../components/Header';
-import { AI_AXES, ALL_HOLDINGS, HOLD_TOTAL, STOCK_INFO } from '../data/holdings';
+import { AI_EVAL_AXES, ALL_HOLDINGS, HOLD_TOTAL, STOCK_INFO } from '../data/holdings';
 import { getStockPriceApi, type PriceResponse } from '../lib/backendApi';
 import { TERMS } from '../data/terms';
 import { won } from '../lib/validation';
@@ -92,8 +92,8 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
   const high = Math.max(...priceData.map((d) => d.price));
   const low = Math.min(...priceData.map((d) => d.price));
 
-  /** AI 5축 — 막대/레이더가 같은 데이터 배열을 공유한다 */
-  const aiData = AI_AXES.map((subject, i) => ({ subject, score: info.ai[i] }));
+  /** AI 6축(PER/PBR/ROE/배당수익률/성장성/안정성) — 막대/레이더가 같은 데이터 배열을 공유한다 */
+  const aiData = AI_EVAL_AXES.map((subject, i) => ({ subject, score: info.aiEval[i] }));
 
   const metrics: { label: string; value: string; key: TermKey | null }[] = [
     { label: '시가 총액', value: info.cap, key: null },
@@ -101,6 +101,13 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
     { label: 'PBR', value: info.pbr, key: 'pbr' },
     { label: 'PER', value: info.per, key: 'per' },
     { label: 'ROE', value: info.roe, key: 'roe' },
+  ];
+
+  const financeMetrics: { label: string; value: string }[] = [
+    { label: '부채비율', value: `${info.finance.debtRatio.toFixed(1)}%` },
+    { label: '유동비율', value: `${info.finance.currentRatio.toFixed(1)}%` },
+    { label: '당좌비율', value: `${info.finance.quickRatio.toFixed(1)}%` },
+    { label: '이자보상배율', value: `${info.finance.interestCoverage.toFixed(1)}배` },
   ];
 
   const term = activeTooltip ? TERMS[activeTooltip] : null;
@@ -200,6 +207,19 @@ export default function StockDetail({ index, userName, onNavigate, onBack }: Pro
                 “자세하게 보기”에서 볼 수 있어요.
               </p>
             )}
+          </section>
+
+          {/* 재무제표 핵심 지표 */}
+          <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
+            <h2 className="text-[26px] font-bold tracking-[-0.025em]">재무제표 핵심 지표</h2>
+            <div className="grid grid-cols-4 gap-4">
+              {financeMetrics.map((m) => (
+                <div key={m.label} className="flex flex-col gap-2.5 rounded-[18px] bg-canvas px-6 py-7">
+                  <span className="text-[15px] text-muted">{m.label}</span>
+                  <span className="text-2xl font-bold tracking-[-0.025em]">{m.value}</span>
+                </div>
+              ))}
+            </div>
           </section>
 
           {/* 종목 설명 */}
