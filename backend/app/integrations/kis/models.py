@@ -11,6 +11,59 @@ STOCK_CODE_PATTERN = re.compile(r"^[0-9A-Z]{6,12}$")
 
 
 @dataclass(frozen=True)
+class MinuteCandle:
+    stock_code: str
+    started_at: datetime
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int
+    is_closed: bool
+    source: str = "KIS_REST"
+
+    def __post_init__(self) -> None:
+        if not STOCK_CODE_PATTERN.fullmatch(self.stock_code):
+            raise ValueError("invalid stock code")
+        if self.started_at.tzinfo is None:
+            raise ValueError("candle timestamp must include timezone information")
+        prices = (self.open, self.high, self.low, self.close)
+        if any(not price.is_finite() or price <= 0 for price in prices):
+            raise ValueError("candle prices must be positive finite numbers")
+        if self.high < max(self.open, self.close) or self.low > min(self.open, self.close):
+            raise ValueError("invalid candle price range")
+        if self.volume < 0:
+            raise ValueError("volume must not be negative")
+
+    def to_payload(self) -> dict[str, str | int | bool]:
+        return {
+            "started_at": self.started_at.isoformat(),
+            "open": str(self.open),
+            "high": str(self.high),
+            "low": str(self.low),
+            "close": str(self.close),
+            "volume": self.volume,
+            "is_closed": self.is_closed,
+        }
+
+    @classmethod
+    def from_payload(cls, stock_code: str, payload: dict[str, object]) -> "MinuteCandle":
+        try:
+            return cls(
+                stock_code=stock_code,
+                started_at=datetime.fromisoformat(str(payload["started_at"])),
+                open=Decimal(str(payload["open"])),
+                high=Decimal(str(payload["high"])),
+                low=Decimal(str(payload["low"])),
+                close=Decimal(str(payload["close"])),
+                volume=int(payload["volume"]),
+                is_closed=bool(payload["is_closed"]),
+            )
+        except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+            raise ValueError("invalid minute candle payload") from exc
+
+
+@dataclass(frozen=True)
 class RealtimeQuote:
     stock_code: str
     price: Decimal
