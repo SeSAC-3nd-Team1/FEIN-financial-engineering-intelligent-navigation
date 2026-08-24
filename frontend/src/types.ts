@@ -44,7 +44,7 @@ export interface Holding {
   sector: string;
   pct: number;        // 현재 비중 (05)
   target?: number;    // 전략 목표 비중 (04 신규 매수). 없으면 pct 와 동일
-  chg: number;        // 오늘 등락률 %
+  chg: number | null; // 오늘 등락률 %. 제공되지 않으면 null
   why: string;        // AI 편입 사유
 }
 

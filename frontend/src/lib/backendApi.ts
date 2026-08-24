@@ -97,14 +97,39 @@ export interface StockChartResponse {
 
 export interface PositionResponse {
   stock_code: string;
+  stock_name: string | null;
+  sector: string | null;
   quantity: number;
   average_price: DecimalString;
   current_price: DecimalString;
+  previous_close: DecimalString | null;
+  change_rate: DecimalString | null;
   purchase_amount: DecimalString;
   evaluation_amount: DecimalString;
   unrealized_profit: DecimalString;
   return_rate: DecimalString;
   realized_profit: DecimalString;
+  weight: DecimalString;
+  today_profit: DecimalString | null;
+  price_source: string;
+  price_as_of: string;
+}
+
+export interface PortfolioContributionResponse {
+  stock_code: string;
+  stock_name: string | null;
+  amount: DecimalString;
+  share_rate: DecimalString | null;
+}
+
+export interface RebalancingProposalResponse {
+  stock_code: string;
+  stock_name: string | null;
+  current_weight: DecimalString;
+  target_weight: DecimalString;
+  weight_diff: DecimalString;
+  action: 'BUY' | 'SELL';
+  recommended_amount: DecimalString;
 }
 
 export interface PortfolioResponse {
@@ -116,7 +141,26 @@ export interface PortfolioResponse {
   unrealized_profit: DecimalString;
   realized_profit: DecimalString;
   return_rate: DecimalString;
+  today_profit: DecimalString | null;
+  top_contributor: PortfolioContributionResponse | null;
+  contributions: PortfolioContributionResponse[];
+  strategy_targets_available: boolean;
+  rebalancing_proposals: RebalancingProposalResponse[];
   positions: PositionResponse[];
+}
+
+export type PortfolioHistoryPeriod = '1M' | '3M' | '1Y' | 'ALL';
+
+export interface PortfolioHistoryResponse {
+  account_id: string;
+  period: PortfolioHistoryPeriod;
+  benchmark_name: string;
+  items: Array<{
+    date: string;
+    total_assets: DecimalString;
+    portfolio_return_rate: DecimalString;
+    benchmark_return_rate: DecimalString | null;
+  }>;
 }
 
 export interface OrderCreateRequest {
@@ -251,6 +295,18 @@ export function getStockChartApi(stockCode: string, period: StockChartPeriod, to
 
 export function getPortfolioApi(accountId: string, token: string): Promise<PortfolioResponse> {
   return request<PortfolioResponse>(`/portfolio?account_id=${encodeURIComponent(accountId)}`, {}, token);
+}
+
+export function getPortfolioHistoryApi(
+  accountId: string,
+  period: PortfolioHistoryPeriod,
+  token: string,
+): Promise<PortfolioHistoryResponse> {
+  return request<PortfolioHistoryResponse>(
+    `/portfolio/history?account_id=${encodeURIComponent(accountId)}&period=${period}`,
+    {},
+    token,
+  );
 }
 
 export function createOrderApi(payload: OrderCreateRequest, token: string): Promise<OrderResponse> {

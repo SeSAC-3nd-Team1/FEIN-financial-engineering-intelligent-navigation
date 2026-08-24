@@ -12,7 +12,7 @@ from db.models.membership import (
     User,
     UserAgreement,
 )
-from db.models.trading import CashLedger, Execution, InvestmentOnboarding, Order, Position, Strategy, VirtualAccount
+from db.models.trading import CashLedger, Execution, InvestmentOnboarding, Order, PortfolioSnapshot, Position, Strategy, StrategyTargetWeight, VirtualAccount
 from db.models.opendart import Company, CompanyDisclosure, CompanyFinancial, CompanyFinancialAccount
 from db.models.market_data import MarketIndex, MarketStock, MarketStockPrice
 from db.models.recommendation import InvestorProfileAssessment, StrategyRecommendation, StrategyRecommendationItem
@@ -27,8 +27,10 @@ __all__ = [
     "Execution",
     "InvestmentOnboarding",
     "Order",
+    "PortfolioSnapshot",
     "Position",
     "Strategy",
+    "StrategyTargetWeight",
     "VirtualAccount",
     "Company",
     "CompanyDisclosure",

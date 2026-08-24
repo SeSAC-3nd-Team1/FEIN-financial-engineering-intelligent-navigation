@@ -1,17 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
-  PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { X } from 'lucide-react';
 import Header from '../components/Header';
-import {
-  AI_AXES, ALL_HOLDINGS as MOCK_HOLDINGS, DECISION_SUMMARY, HOLD_TOTAL as MOCK_HOLD_TOTAL, PAST_DECISIONS,
-  PORTFOLIO_TREND, STOCK_CONTRIBUTION, STOCK_INFO,
-} from '../data/holdings';
 import { STRATEGIES } from '../data/strategies';
 import { useTradingData } from '../hooks/useTradingData';
+import { getPortfolioHistoryApi, type PortfolioHistoryResponse } from '../lib/backendApi';
 import { buildPortfolioHoldings } from '../lib/portfolioModel';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
@@ -42,10 +38,10 @@ const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
 
 // n:1 이면 라인 차트에 점이 하나뿐이라(dot={false}) 아무것도 안 보인다 — 최소 2개 포인트를 보장한다.
 const TREND_PERIODS = [
-  { label: '1개월', n: 2 },
-  { label: '3개월', n: 3 },
-  { label: '1년', n: PORTFOLIO_TREND.length },
-  { label: '전체', n: PORTFOLIO_TREND.length },
+  { label: '1개월', period: '1M' },
+  { label: '3개월', period: '3M' },
+  { label: '1년', period: '1Y' },
+  { label: '전체', period: 'ALL' },
 ] as const;
 
 /** 도넛(보유 비중) 색 — 선택된 조각만 라임, 나머지는 순환 셰이드 */
@@ -81,11 +77,8 @@ export default function Portfolio({
     }
   }, [account?.selected_strategy_id, onStrategyChange, strategyId]);
 
-  const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
-  const ALL_HOLDINGS = useMemo(
-    () => buildPortfolioHoldings(portfolio, MOCK_HOLDINGS, STOCK_INFO),
-    [portfolio],
-  );
+  const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : null;
+  const ALL_HOLDINGS = useMemo(() => buildPortfolioHoldings(portfolio), [portfolio]);
 
   // 페이지 내 서브뷰 전환 — 현재 앱은 URL 라우터가 없는 화면 상태 머신이라,
   // "지난 판단 돌아보기"는 실제 라우트(`/portfolio/review`) 대신 로컬 뷰 전환으로 구현한다.
@@ -95,6 +88,17 @@ export default function Portfolio({
   const [tab, setTab] = useState<AnalyticsTab>('trend');
   const [periodIdx, setPeriodIdx] = useState(2); // 기본값 "1년"
   const [selectedHoldingIdx, setSelectedHoldingIdx] = useState(0);
+  const [history, setHistory] = useState<PortfolioHistoryResponse | null>(null);
+
+  useEffect(() => {
+    if (!token || !account) {
+      setHistory(null);
+      return;
+    }
+    void getPortfolioHistoryApi(account.id, TREND_PERIODS[periodIdx].period, token)
+      .then(setHistory)
+      .catch(() => setHistory(null));
+  }, [account, periodIdx, token]);
 
   /** 오늘 손익 = 평가금액 × 등락률. 요약과 종목 행이 같은 계산을 쓴다 */
   const gains = useMemo(
@@ -102,42 +106,38 @@ export default function Portfolio({
       const position = portfolio?.positions.find((item) => item.stock_code === h.stockCode);
       return {
         ...h,
-        gain: position
-          ? Number(position.unrealized_profit)
-          : (HOLD_TOTAL * h.pct) / 100 * (h.chg / 100),
+        gain: position?.today_profit == null ? 0 : Number(position.today_profit),
       };
     }),
-    [ALL_HOLDINGS, HOLD_TOTAL, portfolio]
+    [ALL_HOLDINGS, portfolio]
   );
-  const todayTotal = gains.reduce((a, g) => a + g.gain, 0);
+  const todayTotal = portfolio?.today_profit == null ? null : Number(portfolio.today_profit);
 
   // 자산 변화 탭: 선택된 기간만큼 최근 구간을 자른다
-  const trendData = useMemo(() => PORTFOLIO_TREND.slice(-TREND_PERIODS[periodIdx].n), [periodIdx]);
+  const trendData = useMemo(() => (history?.items ?? []).map((item) => ({
+    label: item.date,
+    port: Number(item.portfolio_return_rate),
+    kospi: item.benchmark_return_rate == null ? null : Number(item.benchmark_return_rate),
+  })), [history]);
 
   // 종목별 기여 탭: 큰 기여 순으로 정렬
   const contributionData = useMemo(
-    () => [...STOCK_CONTRIBUTION].sort((a, b) => b.amount - a.amount),
-    []
+    () => (portfolio?.contributions ?? []).map((item) => ({
+      name: item.stock_name ?? item.stock_code,
+      amount: Number(item.amount),
+    })).sort((a, b) => b.amount - a.amount),
+    [portfolio?.contributions]
   );
   const topContributor = contributionData[0];
 
   // 보유 비중 탭: 선택된 종목의 현재 비중 vs 전략 목표 비중
   const safeSelectedIndex = Math.min(selectedHoldingIdx, Math.max(ALL_HOLDINGS.length - 1, 0));
   const selectedHolding = ALL_HOLDINGS[safeSelectedIndex];
-  const targetPct = selectedHolding.target ?? selectedHolding.pct;
-  const weightDiff = Math.round((selectedHolding.pct - targetPct) * 10) / 10;
-
-  // 위험 분석 탭: 종목별 AI 5축 점수를 보유 비중으로 가중 평균 — StockDetail의 AI_AXES를 그대로 재사용한다
-  const totalPct = useMemo(() => ALL_HOLDINGS.reduce((a, h) => a + h.pct, 0), [ALL_HOLDINGS]);
-  const portfolioRisk = useMemo(
-    () =>
-      AI_AXES.map((subject, i) => {
-        const weighted = ALL_HOLDINGS.reduce((sum, h) => sum + (STOCK_INFO[h.name]?.ai[i] ?? 0) * h.pct, 0);
-        return { subject, score: totalPct > 0 ? Math.round(weighted / totalPct) : 0 };
-      }),
-    [ALL_HOLDINGS, totalPct]
+  const selectedProposal = portfolio?.rebalancing_proposals.find(
+    (item) => item.stock_code === selectedHolding?.stockCode,
   );
-  const topRiskAxis = portfolioRisk.reduce((a, b) => (b.score > a.score ? b : a));
+  const targetPct = selectedProposal == null ? null : Number(selectedProposal.target_weight);
+  const weightDiff = selectedProposal == null ? null : Number(selectedProposal.weight_diff);
 
   if (view === 'review') {
     return (
@@ -163,9 +163,9 @@ export default function Portfolio({
               {userName}님의 투자는<br />오늘도 전략대로 움직이고 있어요.
             </h1>
             <div className="flex items-baseline gap-4">
-              <span className="text-[40px] font-bold tracking-[-0.035em]">{won(HOLD_TOTAL)}</span>
+              <span className="text-[40px] font-bold tracking-[-0.035em]">{HOLD_TOTAL == null ? '-' : won(HOLD_TOTAL)}</span>
               <span className="text-xl font-bold text-up">
-                오늘 {todayTotal >= 0 ? '+' : ''}{Math.round(todayTotal).toLocaleString('ko-KR')}원
+                {todayTotal == null ? '오늘 -' : `오늘 ${todayTotal >= 0 ? '+' : ''}${Math.round(todayTotal).toLocaleString('ko-KR')}원`}
               </span>
             </div>
           </section>
@@ -175,7 +175,7 @@ export default function Portfolio({
             <div className="flex flex-col gap-2.5">
               <span className="text-[15px] text-muted">현재 전략</span>
               <span className="text-2xl font-bold tracking-[-0.025em]">{selectedStrategy.name}</span>
-              <span className="text-base text-muted">나와 {selectedStrategy.match}% 잘 맞아요</span>
+              <span className="text-base text-muted">전략 적합도 -</span>
             </div>
             <button
               onClick={() => setModalOpen(true)}
@@ -251,17 +251,13 @@ export default function Portfolio({
                   </ResponsiveContainer>
                 </div>
 
-                <Insight>
-                  {trendData[trendData.length - 1].port >= trendData[trendData.length - 1].kospi
-                    ? '시장보다 덜 흔들리면서 더 높은 누적 수익을 내고 있어요.'
-                    : '최근 구간에서는 KOSPI가 더 좋았지만, 변동성은 여전히 낮게 유지되고 있어요.'}
-                </Insight>
+                <Insight>{trendData.length < 2 ? '실제 자산 스냅샷이 쌓이면 KOSPI와 수익률을 비교할 수 있어요.' : '실제 계좌 자산 변화와 KOSPI 누적 수익률을 비교한 결과예요.'}</Insight>
               </div>
             )}
 
             {tab === 'contribution' && (
               <div className="flex flex-col gap-6">
-                <p className="text-[15px] text-subtle">기간 최근 1개월 · 선택한 기간 동안 각 종목이 전체 수익에 얼마나 영향을 줬는지 보여줘요.</p>
+                <p className="text-[15px] text-subtle">오늘 · 전일 종가 대비 각 종목이 오늘 손익에 얼마나 영향을 줬는지 보여줘요.</p>
                 <div className="h-[260px] w-full">
                   <ResponsiveContainer>
                     <BarChart data={contributionData} layout="vertical" margin={{ left: 24, right: 24 }}>
@@ -277,11 +273,11 @@ export default function Portfolio({
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                <Insight>{topContributor.name}가 수익에 가장 많이 기여했어요.</Insight>
+                <Insight>{topContributor ? `${topContributor.name}가 오늘 수익에 가장 많이 기여했어요.` : '당일 기여도를 계산할 수 있는 시세가 아직 없어요.'}</Insight>
               </div>
             )}
 
-            {tab === 'weight' && (
+            {tab === 'weight' && selectedHolding && (
               <div className="flex items-center gap-14">
                 <div className="relative h-[280px] w-[280px] shrink-0">
                   <ResponsiveContainer>
@@ -323,12 +319,14 @@ export default function Portfolio({
                     </div>
                     <span className="text-[38px] font-bold tracking-[-0.035em]">{selectedHolding.pct.toFixed(1)}%</span>
                     <div className="flex gap-10 border-t border-line pt-5">
-                      <Fact label="목표" value={`${targetPct.toFixed(1)}%`} />
-                      <Fact label="차이" value={`${weightDiff > 0 ? '+' : ''}${weightDiff.toFixed(1)}%p`} warn={weightDiff > 0} />
+                      <Fact label="목표" value={targetPct == null ? '-' : `${targetPct.toFixed(1)}%`} />
+                      <Fact label="차이" value={weightDiff == null ? '-' : `${weightDiff > 0 ? '+' : ''}${weightDiff.toFixed(1)}%p`} warn={weightDiff != null && weightDiff > 0} />
                     </div>
                   </div>
                   <Insight>
-                    {weightDiff > 0
+                    {weightDiff == null
+                      ? '이 전략의 실제 목표 비중 데이터가 아직 없어요.'
+                      : weightDiff > 0
                       ? `${selectedHolding.name} 비중이 목표보다 높아요.`
                       : weightDiff < 0
                         ? `${selectedHolding.name} 비중이 목표보다 낮아요.`
@@ -338,28 +336,22 @@ export default function Portfolio({
               </div>
             )}
 
+            {tab === 'weight' && !selectedHolding && (
+              <div className="flex h-[280px] items-center justify-center rounded-[20px] bg-canvas text-lg text-muted">보유 종목이 아직 없어요.</div>
+            )}
+
             {tab === 'risk' && (
               <div className="flex flex-col gap-6">
-                <p className="text-[15px] text-subtle">보유 비중으로 가중 평균한 포트폴리오 전체의 AI 5축 위험 프로파일이에요.</p>
-                <div className="h-[320px] w-full">
-                  <ResponsiveContainer>
-                    <RadarChart data={portfolioRisk} outerRadius="72%">
-                      <PolarGrid stroke="#EDEFEA" />
-                      <PolarAngleAxis dataKey="subject" tick={{ fill: '#5C665F', fontSize: 15, fontWeight: 600 }} />
-                      <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-                      <Radar dataKey="score" stroke="#18243A" strokeWidth={2.5} fill="#18243A" fillOpacity={0.12} />
-                      <Tooltip />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
-                <Insight>{topRiskAxis.subject}이(가) 가장 높은 포트폴리오예요.</Insight>
+                <p className="text-[15px] text-subtle">AI 5축 위험 점수는 실제 feature 산식과 기록 데이터가 준비된 뒤 제공됩니다.</p>
+                <div className="flex h-[320px] items-center justify-center rounded-[20px] bg-canvas text-lg text-muted">위험 분석 데이터가 아직 없어요.</div>
+                <Insight>신뢰성 있게 계산할 수 없는 점수는 임의 값으로 표시하지 않아요.</Insight>
               </div>
             )}
           </section>
 
           <section className="flex flex-col gap-5 rounded-card bg-surface p-12">
             <div className="flex items-baseline justify-between">
-              <h2 className="text-[26px] font-bold tracking-[-0.025em]">전체 20개 종목</h2>
+              <h2 className="text-[26px] font-bold tracking-[-0.025em]">전체 {gains.length}개 종목</h2>
               <span className="text-[15px] text-subtle">종목을 누르면 상세 정보를 볼 수 있어요</span>
             </div>
             <div className="flex flex-col">
@@ -376,9 +368,9 @@ export default function Portfolio({
                     <span className="text-[14px] text-subtle">{h.sector}</span>
                   </div>
                   <span className="w-24 text-right text-[17px] font-bold">{h.pct.toFixed(1)}%</span>
-                  <span className="w-32 text-right text-[16px] text-muted">{won((HOLD_TOTAL * h.pct) / 100)}</span>
-                  <span className={`w-20 text-right text-[16px] font-semibold ${h.chg > 0 ? 'text-up' : h.chg < 0 ? 'text-down' : 'text-subtle'}`}>
-                    {h.chg > 0 ? '+' : ''}{h.chg.toFixed(1)}%
+                  <span className="w-32 text-right text-[16px] text-muted">{HOLD_TOTAL == null ? '-' : won((HOLD_TOTAL * h.pct) / 100)}</span>
+                  <span className={`w-20 text-right text-[16px] font-semibold ${h.chg != null && h.chg > 0 ? 'text-up' : h.chg != null && h.chg < 0 ? 'text-down' : 'text-subtle'}`}>
+                    {h.chg == null ? '-' : `${h.chg > 0 ? '+' : ''}${h.chg.toFixed(1)}%`}
                   </span>
                 </button>
                 );
@@ -397,23 +389,23 @@ export default function Portfolio({
             <div className="flex flex-col gap-3">
               <span className="text-[15px] text-muted">지난 리밸런싱 제안</span>
               <div className="flex items-center gap-3.5 text-[19px] text-[#3F4A43]">
-                <span>AI 제안 <b>{PAST_DECISIONS[0].action}</b></span>
+                <span>AI 제안 <b>-</b></span>
                 <span className="text-[#A6AFA7]">·</span>
-                <span>내 선택 <b>{PAST_DECISIONS[0].choice === '수락' ? '수락함' : '하지 않음 (보류)'}</b></span>
+                <span>내 선택 <b>-</b></span>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
                 <span className="text-[15px] text-muted">AI 제안을 따랐다면</span>
-                <span className="text-[26px] font-bold tracking-[-0.03em] text-up">{PAST_DECISIONS[0].result}</span>
+                <span className="text-[26px] font-bold tracking-[-0.03em]">-</span>
               </div>
               <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
                 <span className="text-[15px] text-muted">실제 내 선택</span>
-                <span className="text-[26px] font-bold tracking-[-0.03em] text-down">현재 자산 -3,800원</span>
+                <span className="text-[26px] font-bold tracking-[-0.03em]">-</span>
               </div>
             </div>
             <p className="text-[17px] leading-7 text-muted">
-              이번에는 AI 제안을 따랐을 때 변동성이 조금 더 낮았어요.
+              실제 판단 이력이 쌓이면 결과를 비교할 수 있어요.
             </p>
             {/* 트리거: 클릭 시 로컬 view state 를 'review' 로 전환해 PDF Page 5 레이아웃(ReviewView)을 렌더링한다 */}
             <button
@@ -475,8 +467,6 @@ export default function Portfolio({
 
 /** PDF Page 5 — "내 투자 판단 돌아보기" 서브뷰. 라우터가 생기면 `/portfolio/review` 로 그대로 옮길 수 있다 */
 function ReviewView({ userName, onNavigate, onBack }: { userName: string; onNavigate: (s: Screen) => void; onBack: () => void }) {
-  const maxVol = Math.max(DECISION_SUMMARY.volIfFollowed, DECISION_SUMMARY.volActual);
-
   return (
     <div className="min-h-screen bg-canvas">
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
@@ -496,44 +486,28 @@ function ReviewView({ userName, onNavigate, onBack }: { userName: string; onNavi
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
             <div className="flex items-center justify-between">
               <h2 className="text-[22px] font-bold tracking-[-0.025em]">요약 통계</h2>
-              <span className="rounded-full bg-[#F4F6F1] px-4 py-2 text-sm font-semibold text-[#3F4A43]">{DECISION_SUMMARY.periodLabel}</span>
+              <span className="rounded-full bg-[#F4F6F1] px-4 py-2 text-sm font-semibold text-[#3F4A43]">-</span>
             </div>
             <div className="grid grid-cols-3 gap-8">
-              <Stat label="AI 제안" value={`${DECISION_SUMMARY.proposed}회`} />
-              <Stat label="수락" value={`${DECISION_SUMMARY.accepted}회`} />
-              <Stat label="보류" value={`${DECISION_SUMMARY.held}회`} />
+              <Stat label="AI 제안" value="-" />
+              <Stat label="수락" value="-" />
+              <Stat label="보류" value="-" />
             </div>
           </section>
 
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
             <h2 className="text-[22px] font-bold tracking-[-0.025em]">AI 제안을 따랐을 때 vs 내 실제 선택</h2>
-            <div className="grid grid-cols-2 gap-10">
-              <VolBar label="AI 제안을 따랐을 때" value={DECISION_SUMMARY.volIfFollowed} max={maxVol} good />
-              <VolBar label="내 실제 선택" value={DECISION_SUMMARY.volActual} max={maxVol} />
-            </div>
-            <Insight>이번 기간에는 AI 제안을 따랐을 때 포트폴리오의 변동성이 조금 더 낮았어요.</Insight>
+            <div className="flex h-32 items-center justify-center rounded-[20px] bg-canvas text-lg text-muted">비교할 실제 판단 이력이 아직 없어요.</div>
+            <Insight>실제 기록이 없는 결과를 임의 값으로 표시하지 않아요.</Insight>
           </section>
 
           <section className="flex flex-col gap-5 rounded-card bg-surface p-12">
             <div className="flex items-baseline justify-between">
               <h2 className="text-[22px] font-bold tracking-[-0.025em]">최근 판단 기록</h2>
-              <span className="text-[15px] text-subtle">최근 {PAST_DECISIONS.length}건</span>
+              <span className="text-[15px] text-subtle">최근 0건</span>
             </div>
             <div className="flex flex-col">
-              {PAST_DECISIONS.map((d) => (
-                <div key={d.date} className="flex items-center gap-6 border-b border-line py-5 last:border-0">
-                  <span className="w-24 shrink-0 text-[14px] text-subtle">{d.date}</span>
-                  <span className="flex-1 text-[17px] font-semibold text-[#3F4A43]">{d.action}</span>
-                  <span
-                    className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm font-bold ${
-                      d.choice === '수락' ? 'bg-[#EAF7EF] text-[#2E9B65]' : 'bg-[#F4F6F1] text-muted'
-                    }`}
-                  >
-                    ● {d.choice}
-                  </span>
-                  <span className="w-48 shrink-0 text-right text-[15px] text-muted">{d.result}</span>
-                </div>
-              ))}
+              <div className="py-8 text-center text-[17px] text-muted">아직 기록된 리밸런싱 판단이 없어요.</div>
             </div>
           </section>
         </div>
@@ -556,26 +530,6 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="flex flex-col gap-2">
       <span className="text-[15px] text-muted">{label}</span>
       <span className="text-[32px] font-bold tracking-[-0.03em]">{value}</span>
-    </div>
-  );
-}
-
-function VolBar({ label, value, max, good }: { label: string; value: number; max: number; good?: boolean }) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between">
-        <span className="text-[17px] font-semibold text-[#3F4A43]">{label}</span>
-        <span className="text-[22px] font-bold tracking-[-0.02em]">{value.toFixed(1)}%</span>
-      </div>
-      <div className="h-2.5 rounded-full bg-[#E5E9E3]">
-        <div
-          className={`h-2.5 rounded-full ${good ? 'bg-lime' : 'bg-[#C3CBC4]'}`}
-          style={{ width: `${(value / max) * 100}%` }}
-        />
-      </div>
-      <span className="text-[15px] text-muted">
-        변동성 지표가 상대적으로 {good ? '낮은' : '높은'} 편이에요.
-      </span>
     </div>
   );
 }

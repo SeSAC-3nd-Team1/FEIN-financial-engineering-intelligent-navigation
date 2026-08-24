@@ -1,10 +1,10 @@
 """내부 가상투자 계좌와 거래 원장을 정의한다."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID as PythonUUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Identity, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Identity, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +22,23 @@ class Strategy(Base):
     rebalance_cycle: Mapped[str] = mapped_column(String(30), nullable=False)
     rule_config: Mapped[dict] = mapped_column(JSONB, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
+
+
+class StrategyTargetWeight(Base):
+    """전략이 명시적으로 산출한 종목별 목표 비중의 유효일 버전이다."""
+
+    __tablename__ = "strategy_target_weights"
+    __table_args__ = (
+        UniqueConstraint("strategy_id", "stock_code", "effective_from", name="uq_strategy_target_weights_version"),
+        CheckConstraint("target_weight >= 0 AND target_weight <= 1", name="target_weight_range"),
+        Index("ix_strategy_target_weights_strategy_effective", "strategy_id", "effective_from"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    strategy_id: Mapped[str] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="CASCADE"), nullable=False)
+    stock_code: Mapped[str] = mapped_column(String(12), nullable=False)
+    target_weight: Mapped[Decimal] = mapped_column(Numeric(9, 8), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class VirtualAccount(TimestampMixin, Base):
@@ -93,6 +110,26 @@ class Position(TimestampMixin, Base):
     quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
     average_price: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
     realized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False, server_default="0")
+
+
+class PortfolioSnapshot(TimestampMixin, Base):
+    """조회 시점의 실제 계좌 평가를 계좌·일자별 한 건으로 보존한다."""
+
+    __tablename__ = "portfolio_snapshots"
+    __table_args__ = (
+        UniqueConstraint("account_id", "snapshot_date", name="uq_portfolio_snapshots_account_date"),
+        Index("ix_portfolio_snapshots_account_date", "account_id", "snapshot_date"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    account_id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"), nullable=False)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    total_purchase_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    total_evaluation_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    total_assets: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    unrealized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    realized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    return_rate: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
 
 
 class Order(Base):

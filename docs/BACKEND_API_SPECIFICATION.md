@@ -36,7 +36,8 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 시장가 주문 | POST | `/orders` | 필요/소유권 | 201, 404, 409, 503 | 전략 기반 자동 운용 계층/Model signal 전용 |
 | 주문 목록 | GET | `/orders?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
-| 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | Portfolio/Dashboard |
+| 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | 실제 metadata·당일 기여·목표비중 제안 포함 |
+| 포트폴리오 이력 | GET | `/portfolio/history?account_id=&period=` | 필요/소유권 | 200, 404 | 실제 snapshot 수익률과 KOSPI 비교 |
 | 한국 금융 뉴스 | GET | `/information/news/kr?page=&size=` | 불필요 | 200, 422, 502, 503 | InformationExam |
 | 기업 기본정보 | GET | `/companies/{stock_code}` | 불필요 | 200, 404 | Agent/향후 기업 화면 |
 | 기업 재무정보 | GET | `/companies/{stock_code}/financials?year=&quarter=` | 불필요 | 200, 404, 422 | Agent/향후 기업 화면 |
@@ -139,10 +140,27 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
   "account_id":"92be9e3e-4364-4428-86c4-b730cc841847","cash_balance":"9300000.00",
   "total_purchase_amount":"700000.00","total_evaluation_amount":"710000.00",
   "total_assets":"10010000.00","unrealized_profit":"10000.00","realized_profit":"0.00",
-  "return_rate":"1.43",
-  "positions":[{"stock_code":"005930","quantity":10,"average_price":"70000.0000","current_price":"71000","purchase_amount":"700000.00","evaluation_amount":"710000.00","unrealized_profit":"10000.00","return_rate":"1.43","realized_profit":"0.00"}]
+  "return_rate":"1.43","today_profit":"10000.00",
+  "top_contributor":{"stock_code":"005930","stock_name":"삼성전자","amount":"10000.00","share_rate":"100.00"},
+  "strategy_targets_available":false,"rebalancing_proposals":[],
+  "positions":[{"stock_code":"005930","stock_name":"삼성전자","sector":"반도체","quantity":10,"average_price":"70000.0000","current_price":"71000","previous_close":"70000","change_rate":"1.43","purchase_amount":"700000.00","evaluation_amount":"710000.00","unrealized_profit":"10000.00","return_rate":"1.43","realized_profit":"0.00","weight":"7.09","today_profit":"10000.00","price_source":"KIS","price_as_of":"2026-08-25T09:00:00+09:00"}]
 }
 ```
+
+종목 metadata는 KRX, 현재가·전일종가는 Redis/KIS를 사용한다. 목표 비중은
+`strategy_target_weights`에 실제 유효 데이터가 있을 때만 계산하며 임의 균등 비중을 만들지
+않는다. 이 GET은 읽기 전용이며 `portfolio_snapshots`를 변경하지 않는다. 스냅샷은
+`Portfolio Daily Snapshot` GitHub Actions가 평일 장 마감 후 19:00 KST에 활성 계좌를 평가해
+18:30 KST KRX 동기화로 적재된 당일·전일 종가를 기준으로 계좌·일자별 UPSERT한다. 휴장일은
+KOSPI 당일 종가가 없어 저장을 건너뛴다. 필요하면 `workflow_dispatch`로 같은 작업을 수동
+실행할 수 있다.
+
+### GET `/portfolio/history?account_id=...&period=1Y`
+
+`period`는 `1M`, `3M`, `1Y`, `ALL`을 지원한다. 실제 snapshot의 첫 값을 0% 기준으로 하고,
+첫 snapshot 날짜의 직전 KRX KOSPI 종가를 benchmark의 0% 기준으로 정규화한다. 동일 날짜의
+provider 표기 중복은 한 건으로 축약한다. 데이터가 부족하면 합성 이력을
+만들지 않고 실제로 저장된 항목만 반환한다.
 
 ### GET `/information/news/kr`
 

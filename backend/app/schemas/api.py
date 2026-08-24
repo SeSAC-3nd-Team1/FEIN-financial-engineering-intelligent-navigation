@@ -343,14 +343,39 @@ class RealtimeStatusResponse(BaseModel):
 
 class PositionResponse(BaseModel):
     stock_code: str
+    stock_name: str | None
+    sector: str | None
     quantity: int
     average_price: Decimal
     current_price: Decimal
+    previous_close: Decimal | None
+    change_rate: Decimal | None
     purchase_amount: Decimal
     evaluation_amount: Decimal
     unrealized_profit: Decimal
     return_rate: Decimal
     realized_profit: Decimal
+    weight: Decimal
+    today_profit: Decimal | None
+    price_source: str
+    price_as_of: datetime
+
+
+class PortfolioContributionResponse(BaseModel):
+    stock_code: str
+    stock_name: str | None
+    amount: Decimal
+    share_rate: Decimal | None
+
+
+class RebalancingProposalResponse(BaseModel):
+    stock_code: str
+    stock_name: str | None
+    current_weight: Decimal
+    target_weight: Decimal
+    weight_diff: Decimal
+    action: Literal["BUY", "SELL"]
+    recommended_amount: Decimal
 
 
 class PortfolioResponse(BaseModel):
@@ -362,7 +387,26 @@ class PortfolioResponse(BaseModel):
     unrealized_profit: Decimal
     realized_profit: Decimal
     return_rate: Decimal
+    today_profit: Decimal | None
+    top_contributor: PortfolioContributionResponse | None
+    contributions: list[PortfolioContributionResponse]
+    strategy_targets_available: bool
+    rebalancing_proposals: list[RebalancingProposalResponse]
     positions: list[PositionResponse]
+
+
+class PortfolioHistoryPointResponse(BaseModel):
+    date: date
+    total_assets: Decimal
+    portfolio_return_rate: Decimal
+    benchmark_return_rate: Decimal | None
+
+
+class PortfolioHistoryResponse(BaseModel):
+    account_id: UUID
+    period: Literal["1M", "3M", "1Y", "ALL"]
+    benchmark_name: str
+    items: list[PortfolioHistoryPointResponse]
 
 
 class ErrorResponse(BaseModel):

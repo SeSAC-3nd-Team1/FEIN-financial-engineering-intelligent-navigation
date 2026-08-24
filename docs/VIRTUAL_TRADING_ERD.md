@@ -5,6 +5,8 @@ erDiagram
   users ||--o| virtual_accounts : owns
   strategies ||--o{ virtual_accounts : selected_by
   virtual_accounts ||--o{ positions : holds
+  virtual_accounts ||--o{ portfolio_snapshots : records
+  strategies ||--o{ strategy_target_weights : defines
   virtual_accounts ||--o{ orders : requests
   orders ||--o| executions : fills
   virtual_accounts ||--o{ executions : records
