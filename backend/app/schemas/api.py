@@ -2,10 +2,13 @@
 
 from datetime import datetime
 from decimal import Decimal
+import re
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.core.config import settings
 
 
 class AgreementRequest(BaseModel):
@@ -132,6 +135,31 @@ class PriceResponse(BaseModel):
     price: Decimal
     source: str
     as_of: datetime
+
+
+class RealtimeSubscriptionRequest(BaseModel):
+    action: Literal["subscribe", "unsubscribe"]
+    stock_codes: list[str] = Field(min_length=1)
+    token: str | None = Field(default=None, min_length=1, max_length=4096)
+
+    @field_validator("stock_codes")
+    @classmethod
+    def validate_stock_codes(cls, value: list[str]) -> list[str]:
+        if len(value) > settings.realtime_max_symbols_per_client:
+            raise ValueError("too many stock codes")
+        normalized = list(dict.fromkeys(value))
+        if any(not re.fullmatch(r"^[0-9A-Z]{6,12}$", code) for code in normalized):
+            raise ValueError("invalid stock code")
+        return normalized
+
+
+class RealtimeStatusResponse(BaseModel):
+    configured: bool
+    connected: bool
+    subscribed_symbols: int
+    downstream_clients: int
+    last_received_at: datetime | None
+    last_error: str | None
 
 
 class PositionResponse(BaseModel):
