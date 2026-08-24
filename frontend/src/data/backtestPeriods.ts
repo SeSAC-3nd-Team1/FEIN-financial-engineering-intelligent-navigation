@@ -1,14 +1,6 @@
 import type { BacktestPeriod } from '../types';
 
-/**
- * 추천 기간 프리셋 — MOCK.
- * 코로나 폭락 / 2022 하락장의 정확한 시작·종료일은 데이터팀이 보유 데이터와
- * 한국 증시 기준으로 확정할 예정이며, 아래 날짜는 그 전까지 쓰는 placeholder다.
- * 실 데이터 연동 시 이 파일 안의 날짜만 교체하면 된다(다른 곳에 하드코딩하지 않는다).
- */
-export const USE_MOCK_PERIODS = true;
-
-// MOCK — 실제 급락/약세장 구간으로 확정된 날짜가 아님
+/** 실제 KRX 데이터에서 조회할 추천 기간 프리셋이다. 데이터 미보유 기간은 Backend가 unavailable로 응답한다. */
 const STATIC_PERIODS: BacktestPeriod[] = [
   {
     id: 'corona-crash',
@@ -41,7 +33,7 @@ function recentFiveYearsPeriod(): BacktestPeriod {
   };
 }
 
-/** 3개 추천 기간 프리셋. 실 API 연동 시 이 함수 내부만 실제 fetch 로 교체하면 된다. */
+/** 3개 추천 기간 프리셋. */
 export function getRecommendedPeriods(): BacktestPeriod[] {
   return [...STATIC_PERIODS, recentFiveYearsPeriod()];
 }

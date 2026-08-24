@@ -83,7 +83,7 @@ export interface ListResponse<T> { items: T[]; totalCount: number; updatedAt: st
 export type InfoTab = 'news' | 'knowledge';
 
 /* ----- Backtest 외부 API 응답 계약 ----- */
-/** "추천 기간" 프리셋 — 실제 시작·종료일은 데이터팀 확정 전까지 backtestPeriods.ts 에서 mock 으로 관리 */
+/** Backend 실제 KRX 백테스트에 전달하는 조회 기간. */
 export interface BacktestPeriod {
   id: string;
   label: string;

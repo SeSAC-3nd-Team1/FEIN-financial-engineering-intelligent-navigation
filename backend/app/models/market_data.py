@@ -46,3 +46,23 @@ class MarketStockPrice(Base):
     source: Mapped[str] = mapped_column(String(20))
     as_of: Mapped[date] = mapped_column(Date)
 
+
+class MarketIndex(Base):
+    __tablename__ = "market_indices"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    index_code: Mapped[str] = mapped_column(String(300))
+    index_name: Mapped[str] = mapped_column(String(200))
+    market: Mapped[str] = mapped_column(String(10))
+    trade_date: Mapped[date] = mapped_column(Date)
+    open_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    high_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    low_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    close_value: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    change_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    change_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    volume: Mapped[int | None] = mapped_column(BigInteger)
+    trading_value: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    market_cap: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    source: Mapped[str] = mapped_column(String(20))
+    as_of: Mapped[date] = mapped_column(Date)
+

@@ -6,7 +6,7 @@ import re
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.core.config import settings
 
@@ -136,6 +136,70 @@ class StrategyResponse(BaseModel):
     description: str
     risk_level: str
     rebalance_cycle: str
+
+
+class BacktestRunRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    strategy_id: str = Field(alias="strategyId", min_length=1, max_length=30)
+    period_id: str = Field(alias="periodId", min_length=1, max_length=50)
+    period_label: str = Field(alias="periodLabel", min_length=1, max_length=100)
+    period_description: str = Field(alias="periodDescription", max_length=500)
+    start_date: date = Field(alias="startDate")
+    end_date: date = Field(alias="endDate")
+
+    @model_validator(mode="after")
+    def validate_period(self) -> "BacktestRunRequest":
+        if self.start_date >= self.end_date:
+            raise ValueError("startDate must be before endDate")
+        if (self.end_date - self.start_date).days > 3660:
+            raise ValueError("backtest period must not exceed 10 years")
+        return self
+
+
+class BacktestPeriodResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    label: str
+    start_date: date = Field(alias="startDate")
+    end_date: date = Field(alias="endDate")
+    description: str
+
+
+class BacktestSeriesPointResponse(BaseModel):
+    t: date
+    strategy: float
+    benchmark: float
+
+
+class BacktestMetricsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cumulative_return: float = Field(alias="cumulativeReturn")
+    cagr: float
+    mdd: float
+    volatility: float
+    sharpe: float | None
+
+
+class BacktestBenchmarkMetricsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cumulative_return: float = Field(alias="cumulativeReturn")
+    mdd: float
+
+
+class BacktestRunResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    strategy_id: str = Field(alias="strategyId")
+    strategy_name: str = Field(alias="strategyName")
+    period: BacktestPeriodResponse
+    series: list[BacktestSeriesPointResponse]
+    metrics: BacktestMetricsResponse
+    benchmark_name: str = Field(alias="benchmarkName")
+    benchmark_metrics: BacktestBenchmarkMetricsResponse = Field(alias="benchmarkMetrics")
 
 
 class StrategySelectRequest(BaseModel):

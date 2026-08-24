@@ -27,6 +27,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 내 계좌 | GET | `/accounts/me` | 필요 | 200, 404 | Portfolio |
 | 전략 선택 | PUT | `/accounts/{account_id}/strategy` | 필요/소유권 | 200, 404 | StartInvesting |
 | 전략 목록 | GET | `/strategies` | 불필요 | 200 | RiskResult/StrategyDetail |
+| 실제 시세 백테스트 | POST | `/backtest/run` | 불필요 | 200, 404, 422 | StrategyDetail |
 | 현재가 | GET | `/market/stocks/{stock_code}/price` | 필요 | 200, 404, 503 | StockDetail |
 | 당일 1분봉 | GET | `/market/stocks/{stock_code}/candles?interval=1m&limit=120` | 필요 | 200, 404, 422, 503 | StockDetail chart |
 | 종목 상세 요약 | GET | `/market/stocks/{stock_code}/summary` | 필요 | 200, 404 | StockDetail |
@@ -256,3 +257,37 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 ```json
 {"stock_code":"005930","period":"3M","source":"KRX","as_of":"2026-08-24T00:00:00Z","items":[{"date":"2026-08-24","open":"70000","high":"71500","low":"69800","close":"71000","volume":1234567}]}
 ```
+
+## 실제 시세 Strategy Backtest
+
+`POST /backtest/run`은 `market_stock_prices`와 `market_indices`의 실제 KRX 일별 종가만 사용한다. 합성 가격, 임의 drift, Mock 지표 fallback은 사용하지 않는다.
+
+```json
+{
+  "strategyId":"low",
+  "periodId":"custom",
+  "periodLabel":"직접 설정",
+  "periodDescription":"",
+  "startDate":"2022-01-01",
+  "endDate":"2026-08-01"
+}
+```
+
+응답 `200`:
+
+```json
+{
+  "strategyId":"low","strategyName":"저변동성 전략",
+  "period":{"id":"custom","label":"직접 설정","startDate":"2022-01-01","endDate":"2026-08-01","description":""},
+  "series":[{"t":"2022-01-03","strategy":0.0,"benchmark":0.0}],
+  "metrics":{"cumulativeReturn":12.3,"cagr":2.7,"mdd":-14.2,"volatility":11.8,"sharpe":0.29},
+  "benchmarkName":"KOSPI","benchmarkMetrics":{"cumulativeReturn":8.1,"mdd":-22.4}
+}
+```
+
+- 시작일 직전 최신 시가총액 상위 100종목으로 universe를 고정한다. 이는 미래 universe 참조를 막지만 원천 master의 보유 범위에 따른 생존편향 가능성은 남는다.
+- `low_volatility`은 직전 최대 60거래일 수익률의 변동성이 낮은 10종목, `momentum`은 직전 최대 126거래일 누적수익률이 높은 10종목을 선택한다.
+- 동일가중 포트폴리오는 월이 바뀐 첫 거래일 종가까지 기존 종목 수익을 반영한 뒤 재선정하며, 새 구성은 다음 거래일부터 적용한다.
+- CAGR은 실제 경과일, 변동성은 일수익률 표준편차에 `sqrt(252)`, Sharpe는 무위험수익률 0 가정으로 계산한다. MDD는 누적자산 고점 대비 최대 하락률이다.
+- 가치 전략은 현재 `company_financials`에 실제 공시 가능일이 없어 PIT 안전한 계산을 할 수 없으므로 `422 BACKTEST_STRATEGY_UNAVAILABLE`을 반환한다.
+- universe, 전략 lookback 또는 KOSPI 데이터가 부족하면 `404 BACKTEST_DATA_UNAVAILABLE`이며 합성 결과를 만들지 않는다.
