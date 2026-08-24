@@ -1,6 +1,6 @@
 # SeSAC 3차 프로젝트 1팀
 
-Docker Compose 기반의 공통 로컬 개발환경입니다. Docker Desktop만 있으면 프런트엔드, 백엔드, PostgreSQL, Redis를 같은 버전으로 실행할 수 있습니다.
+Docker Compose 기반의 공통 개발환경입니다. 서비스 DB는 로컬 PostgreSQL과 팀 공용 Azure Database for PostgreSQL 중 하나를 `DATABASE_URL`로 선택할 수 있습니다.
 
 ## Development setup
 
@@ -34,6 +34,8 @@ Copy-Item .env.example .env
 
 외부 API를 사용하는 작업이라면 `.env`의 빈 Secret 항목을 채웁니다. `.env`는 Git에서 제외되며 실제 키를 소스, Dockerfile, Compose 파일, 문서에 기록하면 안 됩니다.
 
+PostgreSQL은 `.env`의 `DATABASE_URL` 한 줄로 전환합니다. 기본 예시는 로컬 Docker DB이며, 팀 공용 Azure Database for PostgreSQL을 사용할 때는 `?sslmode=require`가 포함된 Azure URL로 교체합니다. 실제 Azure 사용자명·비밀번호·호스트는 GitHub에 올리지 않습니다. 전체 준비 절차와 Portal/CLI 작업은 [Azure PostgreSQL 공용 개발 DB 가이드](docs/AZURE_POSTGRESQL_DEV.md)를 따릅니다.
+
 운영/공유 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 교체합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 가상계좌 초기금은 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값으로 설정합니다.
 
 한국 금융 뉴스는 NAVER Cloud Platform의 NAVER API HUB Search News API를 Backend에서만 호출합니다. 로컬 `.env`에 `NAVER_API_HUB_CLIENT_ID`와 `NAVER_API_HUB_CLIENT_SECRET`을 설정하고 실제 값은 커밋하거나 로그에 출력하지 않습니다. 기본 검색어는 `NEWS_SEARCH_QUERY=증시`, Redis cache TTL은 `NEWS_CACHE_TTL_SECONDS=300`입니다.
@@ -57,6 +59,24 @@ docker compose up -d --build backend frontend
 ```
 
 동일한 `SIGNUP_TERMS_VERSION`으로 `db-init`을 반복해도 `(term_code, version)` UNIQUE와 `ON CONFLICT DO NOTHING` 때문에 중복 약관이 생기지 않습니다. 기본 version의 `dev-` prefix는 로컬 개발 데이터임을 나타냅니다. 운영 약관은 승인된 별도 version·효력 시각·불변 본문 URL을 명시적으로 설정해야 하며 Compose 기본값을 사용하지 않습니다.
+
+### Azure PostgreSQL 공용 개발 DB 실행
+
+`.env`의 `DATABASE_URL`을 팀에서 전달받은 Azure URL로 설정한 뒤 로컬 PostgreSQL을 제외하고 실행합니다.
+
+```bash
+docker compose up -d --build frontend backend redis
+docker compose ps
+curl --fail http://localhost:8000/health/dependencies
+```
+
+`backend`가 의존하는 일회성 `db-init`은 자동으로 Alembic과 약관 seed를 적용합니다. 여러 개발자가 동시에 실행해도 PostgreSQL advisory lock으로 초기화가 직렬화되며 기존 사용자·계좌·주문 데이터는 삭제하거나 덮어쓰지 않습니다. 명시적으로 migration만 준비할 때는 다음 명령을 사용합니다.
+
+```bash
+docker compose run --rm --no-deps db-init
+```
+
+Azure 모드에서는 전체 서비스를 뜻하는 `docker compose up`을 사용하면 사용하지 않는 로컬 `postgres`도 함께 시작됩니다. 공용 DB 연결에는 영향이 없지만 불필요한 컨테이너를 피하려면 위의 서비스 목록을 그대로 사용합니다.
 
 Backend 테스트:
 
@@ -102,10 +122,10 @@ Frontend 가상투자 화면은 FastAPI만 호출한다. `/accounts/me`로 동�
 | Backend health | http://localhost:8000/health |
 | Dependency health | http://localhost:8000/health/dependencies |
 | Swagger UI | http://localhost:8000/docs |
-| PostgreSQL | `localhost:5432` (`app` / `app`) |
+| PostgreSQL | Local 모드: `localhost:5432` (`app` / `app`), Azure 모드: `.env`의 원격 host |
 | Redis | `localhost:6379` |
 
-호스트 포트가 이미 사용 중이면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`만 변경합니다. 컨테이너 간 통신은 항상 `postgres:5432`, `redis:6379`, `backend:8000`을 사용합니다.
+호스트 포트가 이미 사용 중이면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`만 변경합니다. Local 모드의 컨테이너 간 통신은 `postgres:5432`, `redis:6379`, `backend:8000`을 사용하고, Azure 모드의 PostgreSQL host는 `DATABASE_URL`을 따른다.
 
 ## 역할별 Python 개발환경
 
