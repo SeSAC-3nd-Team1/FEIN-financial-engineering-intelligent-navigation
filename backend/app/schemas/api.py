@@ -209,6 +209,49 @@ class ErrorResponse(BaseModel):
     message: str
 
 
+class InvestorAnswerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str = Field(min_length=1, max_length=50)
+    option_id: str = Field(min_length=1, max_length=50)
+
+
+class InvestorProfileAnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    questionnaire_version: str = Field(min_length=1, max_length=20)
+    answers: list[InvestorAnswerRequest] = Field(min_length=1, max_length=20)
+
+
+class InvestorTraitsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stability: int = Field(ge=1, le=5)
+    return_seeking: int = Field(ge=1, le=5)
+    horizon: int = Field(ge=1, le=5)
+
+
+class InvestorProfileAnalysisResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_type: Literal[
+        "안정추구형",
+        "안정투자형",
+        "중립투자형",
+        "성장추구형",
+        "공격투자형",
+    ]
+    tendency_line: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=500)
+    traits: InvestorTraitsResponse
+    analysis_summary: list[str] = Field(min_length=1, max_length=5)
+
+
+class InvestorProfileResponse(InvestorProfileAnalysisResult):
+    questionnaire_version: str
+    analysis_version: Literal["v1"] = "v1"
+
+
 class NewsArticleResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     id: str
