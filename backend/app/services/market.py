@@ -10,7 +10,7 @@ import redis
 from app.core.config import settings
 from app.integrations.kis.client import KisClient
 from app.integrations.kis.hub import REALTIME_PRICE_KEY_PREFIX
-from app.core.errors import NotFoundError, ServiceError
+from app.core.errors import NotFoundError
 from app.integrations.kis.models import CurrentQuote, MinuteCandle, RealtimeQuote
 from app.repositories.market_data import MarketDataRepository
 from app.schemas.api import StockChartItemResponse, StockChartResponse, StockSummaryResponse
@@ -143,10 +143,6 @@ class StockMarketService:
         daily = self.repository.latest_price(stock_code)
         company = self.repository.company(stock_code)
         financial = self.repository.latest_annual_financial(stock_code)
-        try:
-            quote = self.live_market.get_quote(stock_code)
-        except ServiceError:
-            quote = None
 
         market_cap = daily.market_cap if daily else None
         net_income = financial.net_income if financial else None
@@ -168,22 +164,20 @@ class StockMarketService:
             listed_shares=stock.listed_shares,
             security_type=stock.security_type,
             description=" ".join(description_parts) or None,
-            price=quote.price if quote else None,
-            previous_close=quote.previous_close if quote else None,
-            change_amount=quote.change_amount if quote else None,
-            change_rate=quote.change_rate if quote else None,
-            volume=quote.volume if quote else None,
+            price=None,
+            previous_close=None,
+            change_amount=None,
+            change_rate=None,
+            volume=None,
             market_cap=market_cap,
             per=_positive_ratio(market_cap, net_income),
             pbr=_positive_ratio(market_cap, total_equity),
             roe=_positive_ratio(net_income, total_equity, Decimal("100")),
             dividend_yield=None,
             financial_year=financial.business_year if financial else None,
-            as_of=quote.as_of if quote else (
-                datetime.combine(daily.as_of, time.min, tzinfo=UTC) if daily else None
-            ),
+            as_of=datetime.combine(daily.as_of, time.min, tzinfo=UTC) if daily else None,
             sources={
-                "price": quote.source if quote else None,
+                "price": None,
                 "market": daily.source if daily else stock.source,
                 "financial": "OpenDART" if financial else None,
             },

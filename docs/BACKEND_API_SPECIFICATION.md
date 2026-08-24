@@ -239,17 +239,17 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 
 ## StockDetail 실제 데이터 계약
 
-`GET /market/stocks/{stock_code}/price`는 PostgreSQL을 조회하지 않고 Redis/KIS에서 현재가·전일 대비·등락률·거래량을 반환한다. `GET /market/stocks/{stock_code}/summary`는 KRX 종목 마스터·최근 일별시세, KIS 현재가, OpenDART 최근 연결 사업보고서를 조합한다. 외부 데이터가 없거나 계산할 수 없는 필드는 `0`이나 추정값 대신 `null`을 반환한다. PER은 `시가총액/순이익`, PBR은 `시가총액/자본`, ROE는 `순이익/자본*100`이며 분모가 0 이하이면 `null`이다. 배당 원천을 아직 연결하지 않았으므로 `dividend_yield`는 `null`이다. 재무비율은 최신 연간 공시 단순 비율로 금융업 등 업종별 조정이나 TTM 계산을 하지 않는다.
+`GET /market/stocks/{stock_code}/price`는 PostgreSQL을 조회하지 않고 Redis/KIS에서 현재가·전일 대비·등락률·거래량을 반환하는 유일한 현재가 계약이다. `GET /market/stocks/{stock_code}/summary`는 KIS를 호출하지 않고 KRX 종목 마스터·최근 일별시세와 OpenDART 최근 연결 사업보고서를 조합한다. 호환성을 위해 summary의 `price`, `previous_close`, `change_amount`, `change_rate`, `volume` 필드는 유지하지만 항상 `null`이며 Frontend는 `/price` 응답만 사용한다. 외부 데이터가 없거나 계산할 수 없는 필드는 `0`이나 추정값 대신 `null`을 반환한다. PER은 `시가총액/순이익`, PBR은 `시가총액/자본`, ROE는 `순이익/자본*100`이며 분모가 0 이하이면 `null`이다. 배당 원천을 아직 연결하지 않았으므로 `dividend_yield`는 `null`이다. 재무비율은 최신 연간 공시 단순 비율로 금융업 등 업종별 조정이나 TTM 계산을 하지 않는다.
 
 ```json
 {
   "stock_code":"005930","stock_name":"삼성전자","market":"KOSPI","sector":"전기전자",
   "listing_date":"1975-06-11","listed_shares":5969782550,"security_type":"주권",
   "description":"삼성전자은(는) KOSPI 상장 기업입니다.",
-  "price":"71000","previous_close":"70000","change_amount":"1000","change_rate":"1.43","volume":1234567,
+  "price":null,"previous_close":null,"change_amount":null,"change_rate":null,"volume":null,
   "market_cap":"423000000000000","per":"14.1","pbr":"1.4","roe":"9.9","dividend_yield":null,
   "financial_year":"2025","as_of":"2026-08-24T06:30:00Z",
-  "sources":{"price":"KIS_REST","market":"KRX","financial":"OpenDART"}
+  "sources":{"price":null,"market":"KRX","financial":"OpenDART"}
 }
 ```
 

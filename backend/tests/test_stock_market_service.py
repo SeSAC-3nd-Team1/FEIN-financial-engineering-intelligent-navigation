@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.integrations.kis.models import CurrentQuote, MinuteCandle
+from app.integrations.kis.models import MinuteCandle
 from app.services.market import StockMarketService, _positive_ratio
 
 
@@ -51,12 +51,8 @@ class FakeRepository:
 
 
 class FakeLiveMarket:
-    def get_quote(self, stock_code: str) -> CurrentQuote:
-        return CurrentQuote(
-            stock_code=stock_code, price=Decimal("73400"), previous_close=Decimal("72200"),
-            change_amount=Decimal("1200"), change_rate=Decimal("1.66"), volume=12345678,
-            as_of=datetime(2026, 8, 24, tzinfo=UTC), source="KIS_REST",
-        )
+    def get_quote(self, _stock_code: str):
+        raise AssertionError("summary must not request a duplicate KIS quote")
 
     def get_minute_candles(self, stock_code: str, limit: int):
         assert limit == 390
@@ -77,13 +73,17 @@ def test_summary_combines_real_sources_and_calculates_metrics() -> None:
     result = StockMarketService(FakeRepository(), FakeLiveMarket()).summary("005930")
 
     assert result.stock_name == "삼성전자"
-    assert result.price == Decimal("73400")
+    assert result.price is None
+    assert result.previous_close is None
+    assert result.change_amount is None
+    assert result.change_rate is None
+    assert result.volume is None
     assert result.market_cap == Decimal("438000000000000")
     assert result.per == Decimal("14.6")
     assert result.pbr == pytest.approx(Decimal("1.216666666666666666666666667"))
     assert result.roe == pytest.approx(Decimal("8.333333333333333333333333333"))
     assert result.dividend_yield is None
-    assert result.sources == {"price": "KIS_REST", "market": "KRX", "financial": "OpenDART"}
+    assert result.sources == {"price": None, "market": "KRX", "financial": "OpenDART"}
 
 
 @pytest.mark.parametrize(
