@@ -204,7 +204,7 @@ features/_manifests/model-datasets/version=v1/manifest.json
 
 ## PostgreSQL
 
-현재 구현 기준 Alembic head는 `20260824_0016`이다.
+현재 구현 기준 Alembic head는 `20260825_0017`이다.
 
 현재 membership/registration 관계:
 

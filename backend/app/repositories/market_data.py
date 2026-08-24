@@ -5,7 +5,7 @@ from datetime import date
 from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
-from app.models import Company, CompanyFinancial, MarketStock, MarketStockPrice
+from app.models import Company, CompanyFinancial, MarketIndex, MarketStock, MarketStockPrice
 
 
 class MarketDataRepository:
@@ -32,6 +32,15 @@ class MarketDataRepository:
             )
             .order_by(MarketStockPrice.trade_date)
         ))
+
+    def kospi_since(self, start_date: date | None) -> list[MarketIndex]:
+        query = select(MarketIndex).where(
+            MarketIndex.market == "KOSPI",
+            MarketIndex.index_name.in_(("코스피", "KOSPI")),
+        )
+        if start_date is not None:
+            query = query.where(MarketIndex.trade_date >= start_date)
+        return list(self.session.scalars(query.order_by(MarketIndex.trade_date)))
 
     def company(self, stock_code: str) -> Company | None:
         return self.session.scalar(select(Company).where(Company.stock_code == stock_code))

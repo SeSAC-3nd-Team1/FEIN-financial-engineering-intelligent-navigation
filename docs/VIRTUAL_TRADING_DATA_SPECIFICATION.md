@@ -19,6 +19,10 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`.
 | positions.quantity | bigint | NOT NULL | >=0 | 현재 보유수량 |
 | positions.average_price | numeric(20,4) | NOT NULL | >0 | 가중평균 매입가 |
 | positions.realized_profit | numeric(20,2) | DEFAULT 0 |  | 누적 실현손익 |
+| portfolio_snapshots.account_id/snapshot_date | uuid/date | FK, UNIQUE pair |  | 일별 실제 계좌 평가 snapshot |
+| portfolio_snapshots.total_assets/return_rate | numeric | NOT NULL |  | 현금 포함 총자산과 매입원가 기준 수익률 |
+| strategy_target_weights.strategy_id/stock_code/effective_from | varchar | FK, UNIQUE version |  | 전략이 명시적으로 산출한 목표비중 버전 |
+| strategy_target_weights.target_weight | numeric(9,8) | NOT NULL | 0~1 | 리밸런싱 계산용 비율 |
 | orders.id | uuid | PK |  | 주문 ID |
 | orders.account_id | uuid | FK virtual_accounts, NOT NULL | account/requested_at index | 주문 계좌 |
 | orders.stock_code/side/order_type | varchar | NOT NULL | BUY/SELL, MARKET only | 주문 내용 |

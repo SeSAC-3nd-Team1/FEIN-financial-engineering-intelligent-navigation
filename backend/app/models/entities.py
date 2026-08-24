@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -62,6 +62,21 @@ class Strategy(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class StrategyTargetWeight(Base):
+    __tablename__ = "strategy_target_weights"
+    __table_args__ = (
+        UniqueConstraint("strategy_id", "stock_code", "effective_from", name="uq_strategy_target_weights_version"),
+        CheckConstraint("target_weight >= 0 AND target_weight <= 1", name="ck_strategy_target_weights_range"),
+        Index("ix_strategy_target_weights_strategy_effective", "strategy_id", "effective_from"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    strategy_id: Mapped[str] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="CASCADE"))
+    stock_code: Mapped[str] = mapped_column(String(12))
+    target_weight: Mapped[Decimal] = mapped_column(Numeric(9, 8))
+    effective_from: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class VirtualAccount(Base):
     __tablename__ = "virtual_accounts"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -115,6 +130,26 @@ class Position(Base):
     quantity: Mapped[int] = mapped_column(BigInteger)
     average_price: Mapped[Decimal] = mapped_column(Numeric(20, 4))
     realized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2), default=Decimal("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class PortfolioSnapshot(Base):
+    __tablename__ = "portfolio_snapshots"
+    __table_args__ = (
+        UniqueConstraint("account_id", "snapshot_date", name="uq_portfolio_snapshots_account_date"),
+        Index("ix_portfolio_snapshots_account_date", "account_id", "snapshot_date"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"))
+    snapshot_date: Mapped[date] = mapped_column(Date)
+    cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    total_purchase_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    total_evaluation_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    total_assets: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    unrealized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    realized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    return_rate: Mapped[Decimal] = mapped_column(Numeric(12, 6))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

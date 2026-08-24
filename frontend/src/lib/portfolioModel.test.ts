@@ -3,7 +3,11 @@ import { buildPortfolioHoldings } from './portfolioModel';
 import type { PortfolioResponse } from './backendApi';
 
 describe('buildPortfolioHoldings', () => {
-  it('preserves an actual position code even when Mock metadata does not contain it', () => {
+  it('returns an empty list when no real portfolio is available', () => {
+    expect(buildPortfolioHoldings(null)).toEqual([]);
+  });
+
+  it('uses actual portfolio metadata without a Mock fallback', () => {
     const portfolio: PortfolioResponse = {
       account_id: 'account',
       cash_balance: '500000',
@@ -13,21 +17,36 @@ describe('buildPortfolioHoldings', () => {
       unrealized_profit: '100000',
       realized_profit: '0',
       return_rate: '25',
+      today_profit: '1000',
+      top_contributor: null,
+      contributions: [],
+      strategy_targets_available: false,
+      rebalancing_proposals: [],
       positions: [{
         stock_code: '123456',
+        stock_name: '실제 종목',
+        sector: '실제 업종',
         quantity: 1,
         average_price: '400000',
         current_price: '500000',
+        previous_close: '499000',
+        change_rate: '0.2',
         purchase_amount: '400000',
         evaluation_amount: '500000',
         unrealized_profit: '100000',
         return_rate: '25',
         realized_profit: '0',
+        weight: '50',
+        today_profit: '1000',
+        price_source: 'KIS',
+        price_as_of: '2026-08-25T09:00:00+09:00',
       }],
     };
 
-    const result = buildPortfolioHoldings(portfolio, [], {});
+    const result = buildPortfolioHoldings(portfolio);
 
-    expect(result[0]).toMatchObject({ stockCode: '123456', name: '123456', pct: 50 });
+    expect(result[0]).toMatchObject({
+      stockCode: '123456', name: '실제 종목', sector: '실제 업종', pct: 50, chg: 0.2,
+    });
   });
 });
