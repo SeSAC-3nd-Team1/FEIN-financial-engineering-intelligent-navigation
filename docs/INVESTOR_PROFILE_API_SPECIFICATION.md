@@ -2,13 +2,13 @@
 
 ## 1. 개요
 
-사용자가 제출한 투자성향 설문 답변을 Backend가 검증하고 Azure OpenAI에 전달한 뒤, 분석이 완료되면 같은 HTTP 요청에서 구조화된 결과를 반환한다.
+사용자가 제출한 투자성향 설문 답변을 Backend가 검증하고 Azure OpenAI에 전달한 뒤, 분석 결과를 PostgreSQL에 저장하고 같은 HTTP 요청에서 구조화된 결과와 `assessment_id`를 반환한다.
 
 - Base URL: `/api/v1`
 - Content-Type: `application/json`
 - 인증: `Authorization: Bearer <JWT>`
 - 처리 방식: 단일 요청·응답 방식
-- 데이터 저장: 설문 답변과 분석 결과를 PostgreSQL, Redis, Blob에 저장하지 않음
+- 데이터 저장: 원본 설문은 저장하지 않고 파생된 분석 성향과 재현 버전만 PostgreSQL에 저장
 - 지원 설문 버전: `v1`
 
 Backend 내부의 AI 네트워크 호출은 non-blocking `await`로 처리하지만 client 계약은 동기식이다. `202 Accepted`, 작업 ID, polling, SSE, WebSocket은 사용하지 않는다.
@@ -17,7 +17,7 @@ Backend 내부의 AI 네트워크 호출은 non-blocking `await`로 처리하지
 
 ### POST `/investor-profile/analyze`
 
-투자성향 설문 답변을 분석하고 완료된 결과를 반환한다.
+투자성향 설문 답변을 분석·저장하고 완료된 결과를 반환한다. `AI_PERSONALIZATION` 선택 약관 동의가 필요하다.
 
 | 항목 | 값 |
 | --- | --- |
@@ -26,6 +26,10 @@ Backend 내부의 AI 네트워크 호출은 non-blocking `await`로 처리하지
 | 성공 status | `200 OK` |
 | 요청 body | `InvestorProfileAnalyzeRequest` |
 | 응답 body | `InvestorProfileResponse` |
+
+### GET `/investor-profile/me/latest`
+
+인증 사용자의 가장 최근 저장 성향을 반환한다. 저장된 성향이 없으면 `404 INVESTOR_PROFILE_NOT_FOUND`다.
 
 ## 3. Request
 
@@ -41,6 +45,7 @@ Accept: application/json
 
 ```json
 {
+  "assessment_id": "6118bc91-39b0-46f1-b726-7123e254437d",
   "questionnaire_version": "v1",
   "answers": [
     {"question_id": "investment_experience", "option_id": "1_to_3_years"},
@@ -191,7 +196,9 @@ Status: `200 OK`
     "중장기 투자 기간을 선호합니다."
   ],
   "questionnaire_version": "v1",
-  "analysis_version": "v1"
+  "analysis_version": "v1",
+  "model_version": "investor-profile-v1",
+  "created_at": "2026-08-24T15:00:00+09:00"
 }
 ```
 
@@ -199,6 +206,7 @@ Status: `200 OK`
 
 | Field | Type | 제약/의미 |
 | --- | --- | --- |
+| `assessment_id` | UUID | 저장된 분석 성향 식별자 |
 | `profile_type` | string | 정의된 5개 투자유형 중 하나 |
 | `tendency_line` | string | 결과 화면용 한 줄 설명, 1~200자 |
 | `description` | string | 투자성향 상세 설명, 1~500자 |
@@ -208,6 +216,8 @@ Status: `200 OK`
 | `analysis_summary` | string array | 응답에 근거한 분석 요약, 1~5개 |
 | `questionnaire_version` | string | 요청에 사용된 설문 버전 |
 | `analysis_version` | string | Backend 분석 응답 계약 버전, 현재 `v1` |
+| `model_version` | string | 성향 분석 모델 재현 버전 |
+| `created_at` | datetime | 분석 성향 저장 시각 |
 
 허용되는 `profile_type`:
 
@@ -236,6 +246,8 @@ AI가 이 목록에 없는 유형, 범위를 벗어난 trait 점수 또는 필�
 | 400 | `INVALID_INVESTOR_ANSWERS` | 문항 누락·추가·중복 또는 잘못된 선택지 |
 | 401 | `AUTHENTICATION_REQUIRED` | Authorization header 누락 |
 | 401 | `INVALID_TOKEN` | 만료되었거나 유효하지 않은 JWT |
+| 403 | `AI_PERSONALIZATION_CONSENT_REQUIRED` | AI 개인화 선택 약관 미동의 |
+| 404 | `INVESTOR_PROFILE_NOT_FOUND` | 최신 저장 성향 없음 |
 | 422 | FastAPI validation error | JSON 형식 또는 request field type/길이 오류 |
 | 502 | `AI_ANALYSIS_UNAVAILABLE` | Azure OpenAI 연결 실패 또는 처리할 수 없는 provider 4xx |
 | 502 | `AI_INVALID_RESPONSE` | AI 응답 JSON 또는 결과 schema가 유효하지 않음 |
@@ -275,6 +287,8 @@ curl --request POST 'http://localhost:8000/api/v1/investor-profile/analyze' \
 | `AZURE_OPENAI_DEPLOYMENT` | 예 | 없음 | 분석에 사용할 deployment 이름 |
 | `AZURE_OPENAI_API_VERSION` | 아니요 | `2024-10-21` | Azure OpenAI API version |
 | `AI_PROFILE_TIMEOUT_SECONDS` | 아니요 | `15` | Azure OpenAI HTTP 요청 timeout(초) |
+| `AI_PROFILE_MODEL_VERSION` | 아니요 | `investor-profile-v1` | 저장할 분석 모델 버전 |
+| `AI_PROFILE_PROMPT_VERSION` | 아니요 | `v1` | 저장할 분석 prompt 버전 |
 
 설정 누락은 애플리케이션 시작을 막지 않고 분석 API 호출 시 `503 AI_NOT_CONFIGURED`로 처리한다.
 
@@ -285,7 +299,8 @@ curl --request POST 'http://localhost:8000/api/v1/investor-profile/analyze' \
 3. 검증된 질문과 답변만 AI 모델에 전달한다.
 4. AI에는 특정 상품·종목·전략·예상 수익률을 추천하지 않도록 지시한다.
 5. AI 출력은 JSON Schema와 Pydantic schema를 모두 통과해야 한다.
-6. 설문 답변과 결과는 영속화하지 않는다.
-7. API key와 사용자 금융정보를 로그에 기록하지 않는다.
+6. 원본 설문은 영속화하지 않고 분석된 성향과 버전만 저장한다.
+7. 저장과 외부 AI 호출 전에 `AI_PERSONALIZATION` 동의를 확인한다.
+8. API key와 사용자 금융정보를 로그에 기록하지 않는다.
 
 현재 구현은 투자성향 안내용이다. 실제 금융상품 적합성·적정성 판단에 사용하려면 별도로 승인된 고정 분류 기준과 준법 검토가 필요하다.
