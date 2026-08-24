@@ -124,6 +124,19 @@ def test_order_quantity_rejects_more_than_eight_decimal_places() -> None:
         request("BUY", Decimal("0.000000001"))
 
 
+def test_order_rejects_fractional_quantity_that_rounds_below_one_won() -> None:
+    acc = account()
+    svc, session = service(acc, price="70000")
+
+    with pytest.raises(ServiceError, match="최소 주문금액") as error:
+        svc.execute_market_order(1, request("BUY", Decimal("0.00000001")))
+
+    assert error.value.code == "ORDER_AMOUNT_TOO_SMALL"
+    assert session.added == []
+    assert svc.repo.current_position is None
+    assert acc.cash_balance == Decimal("1000000")
+
+
 def test_buy_rejects_insufficient_cash_without_writes() -> None:
     svc, session = service(account("1000"))
     with pytest.raises(ServiceError, match="현금") as error:

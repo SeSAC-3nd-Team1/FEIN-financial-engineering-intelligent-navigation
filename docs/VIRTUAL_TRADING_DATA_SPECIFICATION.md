@@ -47,7 +47,7 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 
 ## Transaction 경계
 
-시장가 체결 시 `virtual_accounts` 행을 `SELECT ... FOR UPDATE`로 잠그고 한 transaction에서 `orders → executions → positions → virtual_accounts.cash_balance → cash_ledger`를 처리한다. 하나라도 실패하면 rollback한다. `cash_balance`는 조회 snapshot, `cash_ledger`는 append-only 감사 이력이다.
+시장가 체결 시 `virtual_accounts` 행을 `SELECT ... FOR UPDATE`로 잠그고 한 transaction에서 `orders → executions → positions → virtual_accounts.cash_balance → cash_ledger`를 처리한다. 원화 반올림 주문금액이 1원 미만이면 어떤 거래 행도 만들지 않고 거부하며, 하나라도 실패하면 rollback한다. `cash_balance`는 조회 snapshot, `cash_ledger`는 append-only 감사 이력이다.
 
 ## 보안·보존
 

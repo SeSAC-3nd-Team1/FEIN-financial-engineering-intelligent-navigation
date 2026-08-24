@@ -11,6 +11,9 @@ from app.schemas.api import OrderCreateRequest
 from app.services.market import MarketService
 
 
+MIN_ORDER_AMOUNT = Decimal("1")
+
+
 class TradingService:
     def __init__(self, session: Session, market: MarketService | None = None) -> None:
         self.session = session
@@ -44,6 +47,12 @@ class TradingService:
                 return existing
 
             total = (price * request.quantity).quantize(Decimal("0.01"))
+            if total < MIN_ORDER_AMOUNT:
+                raise ServiceError(
+                    "ORDER_AMOUNT_TOO_SMALL",
+                    "최소 주문금액은 1원입니다.",
+                    409,
+                )
             position = self.repo.position(account.id, request.stock_code, lock=True)
             if request.side == "BUY" and account.cash_balance < total:
                 raise ServiceError("INSUFFICIENT_CASH", "주문 가능한 현금이 부족합니다.", 409)
