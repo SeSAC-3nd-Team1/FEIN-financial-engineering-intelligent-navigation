@@ -13,7 +13,8 @@ interface Props {
   /** RiskResult/StrategyDetail 에서 선택한 전략의 표시 이름 (예: "저변동성 전략") */
   strategyName: string;
   onNavigate: (s: Screen) => void;
-  onStart: () => Promise<void>;
+  /** "이대로 시작하기" — 선택한 금액/운용방식을 넘기면 App.tsx가 사용자 준비 상태에 맞는 다음 단계로 라우팅한다 */
+  onStart: (amount: number, mode: OperationMode) => void;
   onSelectStock: (index: number) => void;
 }
 
@@ -250,7 +251,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
               <span className="text-[17px] text-[#B9C2BA]">{strategyName} · {ALL_HOLDINGS.length}개 종목 · {mode === 'manual' ? '확인하고 실행' : '자동으로 운용'}</span>
               <span className="text-[32px] font-bold tracking-[-0.03em] text-white">{won(amount)}</span>
             </div>
-            <button onClick={() => { void onStart(); }} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
+            <button onClick={() => onStart(amount, mode)} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
               이대로 시작하기 →
             </button>
           </section>
