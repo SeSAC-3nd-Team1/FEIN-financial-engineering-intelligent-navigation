@@ -38,9 +38,31 @@ class MarketDataRepository:
             MarketIndex.market == "KOSPI",
             MarketIndex.index_name.in_(("코스피", "KOSPI")),
         )
+
+    def closing_prices(self, stock_code: str, effective_on: date) -> list[MarketStockPrice]:
+        return list(self.session.scalars(
+            select(MarketStockPrice)
+            .where(
+                MarketStockPrice.stock_code == stock_code,
+                MarketStockPrice.trade_date <= effective_on,
+            )
+            .order_by(MarketStockPrice.trade_date.desc())
+            .limit(2)
+        ))
+
+    def has_kospi_close(self, trade_date: date) -> bool:
+        return self.session.scalar(
+            select(MarketIndex.id).where(
+                MarketIndex.market == "KOSPI",
+                MarketIndex.index_name.in_(("코스피", "KOSPI")),
+                MarketIndex.trade_date == trade_date,
+            ).limit(1)
+        ) is not None
         if start_date is not None:
             query = query.where(MarketIndex.trade_date >= start_date)
-        return list(self.session.scalars(query.order_by(MarketIndex.trade_date)))
+        rows = self.session.scalars(query.order_by(MarketIndex.trade_date, MarketIndex.id))
+        unique = {row.trade_date: row for row in rows}
+        return [unique[trade_date] for trade_date in sorted(unique)]
 
     def company(self, stock_code: str) -> Company | None:
         return self.session.scalar(select(Company).where(Company.stock_code == stock_code))

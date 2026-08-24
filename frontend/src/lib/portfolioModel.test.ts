@@ -48,5 +48,8 @@ describe('buildPortfolioHoldings', () => {
     expect(result[0]).toMatchObject({
       stockCode: '123456', name: '실제 종목', sector: '실제 업종', pct: 50, chg: 0.2,
     });
+
+    portfolio.positions[0].change_rate = null;
+    expect(buildPortfolioHoldings(portfolio)[0].chg).toBeNull();
   });
 });

@@ -369,8 +369,8 @@ export default function Portfolio({
                   </div>
                   <span className="w-24 text-right text-[17px] font-bold">{h.pct.toFixed(1)}%</span>
                   <span className="w-32 text-right text-[16px] text-muted">{HOLD_TOTAL == null ? '-' : won((HOLD_TOTAL * h.pct) / 100)}</span>
-                  <span className={`w-20 text-right text-[16px] font-semibold ${h.chg > 0 ? 'text-up' : h.chg < 0 ? 'text-down' : 'text-subtle'}`}>
-                    {h.chg > 0 ? '+' : ''}{h.chg.toFixed(1)}%
+                  <span className={`w-20 text-right text-[16px] font-semibold ${h.chg != null && h.chg > 0 ? 'text-up' : h.chg != null && h.chg < 0 ? 'text-down' : 'text-subtle'}`}>
+                    {h.chg == null ? '-' : `${h.chg > 0 ? '+' : ''}${h.chg.toFixed(1)}%`}
                   </span>
                 </button>
                 );

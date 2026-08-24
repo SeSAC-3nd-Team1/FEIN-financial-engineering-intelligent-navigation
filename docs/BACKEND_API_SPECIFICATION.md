@@ -149,12 +149,17 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 종목 metadata는 KRX, 현재가·전일종가는 Redis/KIS를 사용한다. 목표 비중은
 `strategy_target_weights`에 실제 유효 데이터가 있을 때만 계산하며 임의 균등 비중을 만들지
-않는다. 조회 시 실제 평가를 `portfolio_snapshots`에 계좌·일자별 UPSERT한다.
+않는다. 이 GET은 읽기 전용이며 `portfolio_snapshots`를 변경하지 않는다. 스냅샷은
+`Portfolio Daily Snapshot` GitHub Actions가 평일 장 마감 후 19:00 KST에 활성 계좌를 평가해
+18:30 KST KRX 동기화로 적재된 당일·전일 종가를 기준으로 계좌·일자별 UPSERT한다. 휴장일은
+KOSPI 당일 종가가 없어 저장을 건너뛴다. 필요하면 `workflow_dispatch`로 같은 작업을 수동
+실행할 수 있다.
 
 ### GET `/portfolio/history?account_id=...&period=1Y`
 
 `period`는 `1M`, `3M`, `1Y`, `ALL`을 지원한다. 실제 snapshot의 첫 값을 0% 기준으로 하고,
-같은 날짜까지의 KRX KOSPI 종가를 benchmark로 정규화한다. 데이터가 부족하면 합성 이력을
+첫 snapshot 날짜의 직전 KRX KOSPI 종가를 benchmark의 0% 기준으로 정규화한다. 동일 날짜의
+provider 표기 중복은 한 건으로 축약한다. 데이터가 부족하면 합성 이력을
 만들지 않고 실제로 저장된 항목만 반환한다.
 
 ### GET `/information/news/kr`

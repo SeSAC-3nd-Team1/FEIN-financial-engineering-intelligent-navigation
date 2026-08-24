@@ -33,6 +33,11 @@ class TradingRepository:
     def positions(self, account_id: UUID) -> list[Position]:
         return list(self.session.scalars(select(Position).where(Position.account_id == account_id).order_by(Position.id)))
 
+    def active_accounts(self) -> list[VirtualAccount]:
+        return list(self.session.scalars(
+            select(VirtualAccount).where(VirtualAccount.status == "ACTIVE").order_by(VirtualAccount.id)
+        ))
+
     def save_snapshot(self, account_id: UUID, snapshot_date: date, **values) -> None:
         """동시 조회도 계좌·일자 한 행으로 수렴하도록 PostgreSQL UPSERT한다."""
 
@@ -53,18 +58,23 @@ class TradingRepository:
         return list(self.session.scalars(query.order_by(PortfolioSnapshot.snapshot_date)))
 
     def target_weights(self, strategy_id: str, effective_on: date) -> dict[str, Decimal]:
+        latest_effective_from = self.session.scalar(
+            select(func.max(StrategyTargetWeight.effective_from)).where(
+                StrategyTargetWeight.strategy_id == strategy_id,
+                StrategyTargetWeight.effective_from <= effective_on,
+            )
+        )
+        if latest_effective_from is None:
+            return {}
         rows = self.session.scalars(
             select(StrategyTargetWeight)
             .where(
                 StrategyTargetWeight.strategy_id == strategy_id,
-                StrategyTargetWeight.effective_from <= effective_on,
+                StrategyTargetWeight.effective_from == latest_effective_from,
             )
-            .order_by(StrategyTargetWeight.effective_from.desc(), StrategyTargetWeight.id.desc())
+            .order_by(StrategyTargetWeight.id)
         )
-        latest: dict[str, Decimal] = {}
-        for row in rows:
-            latest.setdefault(row.stock_code, row.target_weight)
-        return latest
+        return {row.stock_code: row.target_weight for row in rows}
 
     def order_by_idempotency(self, account_id: UUID, key: str) -> Order | None:
         return self.session.scalar(select(Order).where(Order.account_id == account_id, Order.idempotency_key == key))

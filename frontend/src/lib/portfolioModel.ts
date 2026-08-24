@@ -13,7 +13,7 @@ export function buildPortfolioHoldings(
       name: position.stock_name ?? position.stock_code,
       sector: position.sector ?? '-',
       pct: Number(position.weight),
-      chg: position.change_rate == null ? 0 : Number(position.change_rate),
+      chg: position.change_rate == null ? null : Number(position.change_rate),
       why: '',
   }));
 }
