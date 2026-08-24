@@ -28,6 +28,9 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | Portfolio/Dashboard |
 | 한국 금융 뉴스 | GET | `/information/news/kr?page=&size=` | 불필요 | 200, 422, 502, 503 | InformationExam |
+| 기업 기본정보 | GET | `/companies/{stock_code}` | 불필요 | 200, 404 | Agent/향후 기업 화면 |
+| 기업 재무정보 | GET | `/companies/{stock_code}/financials?year=&quarter=` | 불필요 | 200, 404, 422 | Agent/향후 기업 화면 |
+| 기업 공시 | GET | `/companies/{stock_code}/disclosures?start_date=&end_date=&disclosure_type=&limit=` | 불필요 | 200, 404, 422 | Disclosure Agent |
 | 투자성향 AI 분석 | POST | `/investor-profile/analyze` | 필요 | 200, 400, 401, 422, 502, 503, 504 | RiskProfile/RiskResult |
 
 ## 주요 Request/Response
@@ -158,6 +161,47 @@ Provider는 NAVER Cloud Platform NAVER API HUB Search News API의 `GET /search/v
 
 오류는 설정 누락 `503 NAVER_NEWS_NOT_CONFIGURED`, timeout/4xx/5xx/응답 schema 오류 `502 NAVER_NEWS_UNAVAILABLE`, provider 429 `503 NAVER_NEWS_RATE_LIMIT`이다. API key header와 실제 credential은 응답·exception·로그에 포함하지 않는다.
 
+## OpenDART 기업 조회
+
+데이터 출처는 금융감독원 OpenDART이며 API key는 data 수집 container에서만 사용한다. 공개
+FastAPI endpoint는 PostgreSQL에 적재된 정제 결과만 읽고 외부 사용자의 호출로 전체 수집
+job을 실행하지 않는다. `{stock_code}`는 선행 0을 포함한 문자열이다.
+
+### GET `/companies/{stock_code}`
+
+기업 기본정보를 반환한다. 응답 `200`:
+
+```json
+{"corp_code":"00126380","stock_code":"005930","corp_name":"삼성전자","corp_name_eng":"Samsung Electronics Co., Ltd.","stock_name":"삼성전자","market":"Y","ceo_name":"대표이사","jurir_no":"...","bizr_no":"...","address":"...","homepage_url":"https://...","ir_url":"https://...","phone_number":"...","industry_code":"264","established_date":"1969-01-13","accounting_month":"12","source":"OpenDART"}
+```
+
+### GET `/companies/{stock_code}/financials`
+
+Query parameter는 `year`(선택, `YYYY`)와 `quarter`(선택, `Q1|Q2|Q3|FY`)다. 계정 ID를
+우선해 집계한 매출액, 영업이익, 순이익, 자산·부채·자본, 영업·투자·재무 현금흐름을
+보고서별로 반환한다. 금액이 공시에 없으면 `null`이다.
+
+```json
+{"stock_code":"005930","items":[{"business_year":"2025","report_code":"11011","quarter":"FY","fs_div":"CFS","revenue":"300000000000000.00","operating_income":null,"net_income":null,"total_assets":null,"total_liabilities":null,"total_equity":null,"operating_cash_flow":null,"investing_cash_flow":null,"financing_cash_flow":null}],"source":"OpenDART"}
+```
+
+### GET `/companies/{stock_code}/disclosures`
+
+Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_type`(선택,
+보고서명 부분 일치), `limit`(기본 20, 1~100)이다. 최신 접수일과 접수번호 순으로 반환한다.
+
+```json
+{"stock_code":"005930","items":[{"receipt_no":"202608240001","corp_code":"00126380","stock_code":"005930","corp_name":"삼성전자","report_name":"사업보고서","filer_name":"삼성전자","receipt_date":"2026-08-24","remarks":null}],"source":"OpenDART"}
+```
+
+세 endpoint 모두 종목이 없으면 `404`를 반환한다.
+
+```json
+{"code":"COMPANY_NOT_FOUND","message":"OpenDART 기업정보를 찾을 수 없습니다."}
+```
+
+잘못된 날짜, `year`, `quarter`, `limit`은 FastAPI validation의 `422` 응답이다.
+
 ### POST `/investor-profile/analyze`
 
 인증된 사용자가 `v1` 설문의 8개 `question_id`와 `option_id`를 제출하면 Backend가 서버 카탈로그로 검증·정규화하고 Azure OpenAI 분석 결과를 같은 HTTP 요청에서 반환한다. 답변 순서는 무관하지만 모든 문항이 중복 없이 포함되어야 한다. 답변과 결과는 영속화하지 않는다.
@@ -166,7 +210,7 @@ Provider는 NAVER Cloud Platform NAVER API HUB Search News API의 `GET /search/v
 
 ## 주요 error code
 
-`AI_NOT_CONFIGURED`, `AI_ANALYSIS_UNAVAILABLE`, `AI_ANALYSIS_TIMEOUT`, `AI_INVALID_RESPONSE`, `INVALID_QUESTIONNAIRE_VERSION`, `INVALID_INVESTOR_ANSWERS`, `NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
+`COMPANY_NOT_FOUND`, `AI_NOT_CONFIGURED`, `AI_ANALYSIS_UNAVAILABLE`, `AI_ANALYSIS_TIMEOUT`, `AI_INVALID_RESPONSE`, `INVALID_QUESTIONNAIRE_VERSION`, `INVALID_INVESTOR_ANSWERS`, `NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
 
 ## KIS 현재가와 가상거래 경계
 

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -121,3 +121,69 @@ class CashLedger(Base):
     reference_type: Mapped[str] = mapped_column(String(30))
     reference_id: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Company(Base):
+    __tablename__ = "companies"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    corp_code: Mapped[str] = mapped_column(String(8), unique=True)
+    stock_code: Mapped[str | None] = mapped_column(String(12), index=True)
+    corp_name: Mapped[str] = mapped_column(String(200))
+    corp_name_eng: Mapped[str | None] = mapped_column(String(200))
+    stock_name: Mapped[str | None] = mapped_column(String(200))
+    market: Mapped[str | None] = mapped_column(String(10))
+    ceo_name: Mapped[str | None] = mapped_column(String(200))
+    jurir_no: Mapped[str | None] = mapped_column(String(20))
+    bizr_no: Mapped[str | None] = mapped_column(String(20))
+    address: Mapped[str | None] = mapped_column(Text)
+    homepage_url: Mapped[str | None] = mapped_column(Text)
+    ir_url: Mapped[str | None] = mapped_column(Text)
+    phone_number: Mapped[str | None] = mapped_column(String(100))
+    industry_code: Mapped[str | None] = mapped_column(String(20))
+    established_date: Mapped[date | None]
+    accounting_month: Mapped[str | None] = mapped_column(String(2))
+    dart_modify_date: Mapped[date | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompanyFinancial(Base):
+    __tablename__ = "company_financials"
+    __table_args__ = (UniqueConstraint("corp_code", "business_year", "report_code", "fs_div"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    corp_code: Mapped[str] = mapped_column(String(8), ForeignKey("companies.corp_code"))
+    stock_code: Mapped[str | None] = mapped_column(String(12))
+    business_year: Mapped[str] = mapped_column(String(4))
+    report_code: Mapped[str] = mapped_column(String(5))
+    quarter: Mapped[str] = mapped_column(String(10))
+    fs_div: Mapped[str] = mapped_column(String(10))
+    revenue: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    operating_income: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    net_income: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    total_assets: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    total_liabilities: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    total_equity: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    operating_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    investing_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    financing_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompanyDisclosure(Base):
+    __tablename__ = "company_disclosures"
+    __table_args__ = (
+        Index("ix_company_disclosures_corp_code", "corp_code"),
+        Index("ix_company_disclosures_receipt_date", "receipt_date"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    receipt_no: Mapped[str] = mapped_column(String(20), unique=True)
+    corp_code: Mapped[str] = mapped_column(String(8), ForeignKey("companies.corp_code"))
+    stock_code: Mapped[str | None] = mapped_column(String(12), index=True)
+    corp_name: Mapped[str] = mapped_column(String(200))
+    report_name: Mapped[str] = mapped_column(String(500))
+    filer_name: Mapped[str | None] = mapped_column(String(200))
+    receipt_date: Mapped[date]
+    remarks: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

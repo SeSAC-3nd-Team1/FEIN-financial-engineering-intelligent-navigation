@@ -1,6 +1,6 @@
 """REST request/response schema."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 import re
 from typing import Literal
@@ -268,3 +268,65 @@ class NewsListResponse(BaseModel):
     items: list[NewsArticleResponse]
     total_count: int = Field(alias="totalCount", ge=0)
     updated_at: datetime = Field(alias="updatedAt")
+
+
+class CompanyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    corp_code: str
+    stock_code: str | None
+    corp_name: str
+    corp_name_eng: str | None
+    stock_name: str | None
+    market: str | None
+    ceo_name: str | None
+    jurir_no: str | None
+    bizr_no: str | None
+    address: str | None
+    homepage_url: str | None
+    ir_url: str | None
+    phone_number: str | None
+    industry_code: str | None
+    established_date: date | None
+    accounting_month: str | None
+    source: Literal["OpenDART"] = "OpenDART"
+
+
+class CompanyFinancialResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    business_year: str
+    report_code: str
+    quarter: str
+    fs_div: str
+    revenue: Decimal | None
+    operating_income: Decimal | None
+    net_income: Decimal | None
+    total_assets: Decimal | None
+    total_liabilities: Decimal | None
+    total_equity: Decimal | None
+    operating_cash_flow: Decimal | None
+    investing_cash_flow: Decimal | None
+    financing_cash_flow: Decimal | None
+
+
+class CompanyFinancialListResponse(BaseModel):
+    stock_code: str
+    items: list[CompanyFinancialResponse]
+    source: Literal["OpenDART"] = "OpenDART"
+
+
+class CompanyDisclosureResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    receipt_no: str
+    corp_code: str
+    stock_code: str | None
+    corp_name: str
+    report_name: str
+    filer_name: str | None
+    receipt_date: date
+    remarks: str | None
+
+
+class CompanyDisclosureListResponse(BaseModel):
+    stock_code: str
+    items: list[CompanyDisclosureResponse]
+    source: Literal["OpenDART"] = "OpenDART"

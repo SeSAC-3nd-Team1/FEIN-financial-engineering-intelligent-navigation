@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.routes import accounts, auth, information, investor_profile, market, orders, portfolio, strategies
+from app.api.routes import accounts, auth, companies, information, investor_profile, market, orders, portfolio, strategies
 from app.core.errors import ServiceError
 from app.db.session import engine
 from app.integrations.kis.hub import realtime_hub
@@ -70,5 +70,6 @@ for router in (
     portfolio.router,
     information.router,
     investor_profile.router,
+    companies.router,
 ):
     app.include_router(router, prefix="/api/v1")

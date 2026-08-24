@@ -13,6 +13,7 @@ from db.models.membership import (
     UserAgreement,
 )
 from db.models.trading import CashLedger, Execution, Order, Position, Strategy, VirtualAccount
+from db.models.opendart import Company, CompanyDisclosure, CompanyFinancial, CompanyFinancialAccount
 
 __all__ = [
     "RegistrationAgreement",
@@ -26,4 +27,8 @@ __all__ = [
     "Position",
     "Strategy",
     "VirtualAccount",
+    "Company",
+    "CompanyDisclosure",
+    "CompanyFinancial",
+    "CompanyFinancialAccount",
 ]

@@ -159,7 +159,7 @@ features/_manifests/model-datasets/version=v1/manifest.json
 
 ## PostgreSQL
 
-현재 구현 기준 Alembic head는 `20260823_0012`이다.
+현재 구현 기준 Alembic head는 `20260824_0013`이다.
 
 현재 membership/registration 관계:
 
@@ -169,6 +169,10 @@ public.terms
 public.user_agreements
 public.registration_sessions
 public.registration_agreements
+public.companies
+public.company_financial_accounts
+public.company_financials
+public.company_disclosures
 public.alembic_version
 ```
 
@@ -196,6 +200,39 @@ docker compose run --rm --no-deps data python -m scripts.check_db
 ```
 
 Azure 연결과 전체 공용 개발 절차는 [`docs/AZURE_POSTGRESQL_DEV.md`](../docs/AZURE_POSTGRESQL_DEV.md)를 따른다.
+
+## OpenDART 수집
+
+`.env`에 실제 key를 넣고 Git에는 커밋하지 않는다.
+
+```env
+OPENDART_API_KEY=
+OPENDART_TIMEOUT_SECONDS=10
+```
+
+Migration 적용 후 corp code를 먼저 동기화한다. 모든 종목코드는 숫자가 아니라 문자열로
+저장되므로 `005930`의 선행 0이 유지된다.
+
+```bash
+docker compose run --rm db-init
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart corp-codes
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart company --stock-code 005930
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart companies --limit 100
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart financials --stock-code 005930 --year 2025 --report-code 11011
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart disclosures --stock-code 005930 --limit 20
+```
+
+공시 `--limit`이 100을 초과하면 OpenDART `page_no`/`total_page`를 따라 여러 페이지를
+수집하며, 요청한 건수까지만 PostgreSQL에 적재하고 각 HTTP 페이지 원문은 모두 별도 Raw
+Blob으로 저장한다.
+
+로컬 parser/DB 동작만 진단하고 Azure Blob 업로드를 생략할 때는 최상위 option을 subcommand
+앞에 둔다: `python -m scripts.sync_opendart --skip-blob corp-codes`. 운영 수집에서는 이
+option을 사용하지 않는다. 수집 주기는 corp code 하루 1회 이하, 재무는 분기·사업보고서
+제출 후, 공시는 scheduler에서 작은 조회 기간으로 증분 실행하는 것을 권장한다.
+
+Raw 경로와 테이블 명세는 각각 `data/docs/RAW_DATA_CATALOG.md`,
+`docs/DATABASE_SPECIFICATION.md`를 따른다.
 
 회원가입 상세 구현 가이드는 `data/REGISTRATION_DB.md`를 본다.
 
