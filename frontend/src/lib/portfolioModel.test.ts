@@ -7,7 +7,7 @@ describe('buildPortfolioHoldings', () => {
     expect(buildPortfolioHoldings(null)).toEqual([]);
   });
 
-  it('uses actual portfolio metadata without a Mock fallback', () => {
+  it('keeps actual portfolio metadata ahead of the Mock fallback', () => {
     const portfolio: PortfolioResponse = {
       account_id: 'account',
       cash_balance: '500000',

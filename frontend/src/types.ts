@@ -56,6 +56,7 @@ export interface StockInfo {
   pbr: string;
   per: string;
   roe: string;
+  ai: number[];
   desc: string;
 }
 

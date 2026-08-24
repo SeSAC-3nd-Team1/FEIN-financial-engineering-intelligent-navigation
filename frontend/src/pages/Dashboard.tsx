@@ -4,6 +4,8 @@ import Header from '../components/Header';
 import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
 import type { OperationMode } from '../data/fees';
+import { STOCK_CONTRIBUTION } from '../data/holdings';
+import { STRATEGIES } from '../data/strategies';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
 
@@ -35,6 +37,10 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
   } | null>(null);
 
   const top = portfolio?.top_contributor ?? null;
+  const fallbackTop = top ? null : STOCK_CONTRIBUTION[0] ?? null;
+  const topName = top?.stock_name ?? top?.stock_code ?? fallbackTop?.name ?? null;
+  const topAmount = top ? Number(top.amount) : fallbackTop?.amount ?? null;
+  const selectedStrategy = STRATEGIES.find((item) => item.name === strategyName);
   const proposal = portfolio?.rebalancing_proposals[0] ?? null;
   const holdTotal = portfolio ? Number(portfolio.total_assets) : null;
   const initialCash = account ? Number(account.initial_cash) : 0;
@@ -101,11 +107,12 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
           <section className="flex flex-col gap-6">
             <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">오늘 내 투자에는 무슨 일이 있었나요?</h2>
             <div className="flex flex-col gap-4">
-              <Story title={top ? `${top.stock_name ?? top.stock_code}가 오늘 수익을 가장 많이 만들었어요` : '오늘 종목별 기여 데이터가 아직 없어요'}>
+              <Story title={topName ? `${topName}가 오늘 수익을 가장 많이 만들었어요` : '오늘 종목별 기여 데이터가 아직 없어요'}>
                 <div className="flex items-baseline gap-4">
-                  <span className="text-2xl font-bold text-up">{top ? `${Number(top.amount) >= 0 ? '+' : ''}${Math.round(Number(top.amount)).toLocaleString('ko-KR')}원` : '-'}</span>
+                  <span className="text-2xl font-bold text-up">{topAmount == null ? '-' : `${topAmount >= 0 ? '+' : ''}${Math.round(topAmount).toLocaleString('ko-KR')}원`}</span>
                   <span className="text-[17px] text-muted">{top?.share_rate == null ? '-' : `오늘 전체 수익의 ${Math.round(Number(top.share_rate))}%`}</span>
                 </div>
+                {fallbackTop && <span className="text-sm text-subtle">실제 당일 기여도가 없어 기존 데모 값을 표시합니다.</span>}
               </Story>
 
               <Story title={proposal ? `${proposal.stock_name ?? proposal.stock_code} 비중을 조정할 필요가 있어요` : '현재 확인할 리밸런싱 제안이 없어요'}>
@@ -115,8 +122,8 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
                 <span className="text-[17px] leading-7 text-muted">어떻게 하면 좋을지 아래에서 AI 제안을 확인해보세요.</span>
               </Story>
 
-              <Story title="실제 계좌와 시장 데이터로 계산했어요">
-                <span className="text-[17px] leading-7 text-muted">표시할 수 없는 값은 임의 숫자 대신 비어 있는 상태로 보여드려요.</span>
+              <Story title="실제 계좌와 시장 데이터를 우선 사용해요">
+                <span className="text-[17px] leading-7 text-muted">아직 연동되지 않은 설명·재무·분석 항목만 기존 데모 값으로 보완해요.</span>
               </Story>
             </div>
           </section>
@@ -205,7 +212,7 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
             <div className="flex flex-col gap-2.5">
               <span className="text-[15px] text-muted">현재 전략</span>
               <span className="text-2xl font-bold tracking-[-0.025em]">{strategyName}</span>
-              <span className="text-base text-muted">전략 적합도 -</span>
+              <span className="text-base text-muted">전략 적합도 {selectedStrategy ? `${selectedStrategy.match}%` : '-'}</span>
             </div>
             <button onClick={onChangeStrategy} className="shrink-0 rounded-field bg-[#F4F6F1] px-7 py-4 text-[17px] font-semibold text-[#3F4A43]">
               전략 변경하기

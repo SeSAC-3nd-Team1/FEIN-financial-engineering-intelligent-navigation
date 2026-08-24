@@ -10,6 +10,7 @@ import { useTradingData } from '../hooks/useTradingData';
 import { getPortfolioHistoryApi, getStockEvaluationApi, type PortfolioHistoryResponse, type RebalancingDecisionHistoryResponse, type StockEvaluationResponse } from '../lib/backendApi';
 import { buildPortfolioHoldings } from '../lib/portfolioModel';
 import { formatDecisionReturn } from '../lib/portfolioAnalyticsModel';
+import { hybridContributionData, hybridEvaluation, hybridTrendData } from '../lib/hybridMockData';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
 import { useTradingStore } from '../store/tradingStore';
@@ -117,20 +118,18 @@ export default function Portfolio({
   const todayTotal = portfolio?.today_profit == null ? null : Number(portfolio.today_profit);
 
   // 자산 변화 탭: 선택된 기간만큼 최근 구간을 자른다
-  const trendData = useMemo(() => (history?.items ?? []).map((item) => ({
-    label: item.date,
-    port: Number(item.portfolio_return_rate),
-    kospi: item.benchmark_return_rate == null ? null : Number(item.benchmark_return_rate),
-  })), [history]);
+  const trend = useMemo(
+    () => hybridTrendData(history, TREND_PERIODS[periodIdx].period),
+    [history, periodIdx],
+  );
+  const trendData = trend.items;
 
   // 종목별 기여 탭: 큰 기여 순으로 정렬
-  const contributionData = useMemo(
-    () => (portfolio?.contributions ?? []).map((item) => ({
-      name: item.stock_name ?? item.stock_code,
-      amount: Number(item.amount),
-    })).sort((a, b) => b.amount - a.amount),
-    [portfolio?.contributions]
+  const contribution = useMemo(
+    () => hybridContributionData(portfolio?.contributions ?? []),
+    [portfolio?.contributions],
   );
+  const contributionData = contribution.items;
   const topContributor = contributionData[0];
 
   // 보유 비중 탭: 선택된 종목의 현재 비중 vs 전략 목표 비중
@@ -139,9 +138,18 @@ export default function Portfolio({
   const selectedProposal = portfolio?.rebalancing_proposals.find(
     (item) => item.stock_code === selectedHolding?.stockCode,
   );
-  const targetPct = selectedProposal == null ? null : Number(selectedProposal.target_weight);
-  const weightDiff = selectedProposal == null ? null : Number(selectedProposal.weight_diff);
+  const targetPct = selectedProposal == null
+    ? selectedHolding?.target ?? null
+    : Number(selectedProposal.target_weight);
+  const weightDiff = selectedProposal == null
+    ? targetPct == null || !selectedHolding ? null : selectedHolding.pct - targetPct
+    : Number(selectedProposal.weight_diff);
+  const targetUsesMock = selectedProposal == null && targetPct != null;
   const latestDecision = decisions?.items[0] ?? null;
+  const riskDisplay = useMemo(
+    () => hybridEvaluation(riskEvaluation, selectedHolding?.stockCode ?? ''),
+    [riskEvaluation, selectedHolding?.stockCode],
+  );
 
   useEffect(() => {
     if (!token || !account || tab !== 'risk' || !selectedHolding) {
@@ -193,7 +201,7 @@ export default function Portfolio({
             <div className="flex flex-col gap-2.5">
               <span className="text-[15px] text-muted">현재 전략</span>
               <span className="text-2xl font-bold tracking-[-0.025em]">{selectedStrategy.name}</span>
-              <span className="text-base text-muted">전략 적합도 -</span>
+              <span className="text-base text-muted">전략 적합도 {selectedStrategy.match}%</span>
             </div>
             <button
               onClick={() => setModalOpen(true)}
@@ -269,7 +277,7 @@ export default function Portfolio({
                   </ResponsiveContainer>
                 </div>
 
-                <Insight>{trendData.length < 2 ? '실제 자산 스냅샷이 쌓이면 KOSPI와 수익률을 비교할 수 있어요.' : '실제 계좌 자산 변화와 KOSPI 누적 수익률을 비교한 결과예요.'}</Insight>
+                <Insight>{trend.usesMock ? '실제 자산 스냅샷이 쌓이기 전까지 기존 데모 추이를 표시해요.' : '실제 계좌 자산 변화와 KOSPI 누적 수익률을 비교한 결과예요.'}</Insight>
               </div>
             )}
 
@@ -291,7 +299,7 @@ export default function Portfolio({
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                <Insight>{topContributor ? `${topContributor.name}가 오늘 수익에 가장 많이 기여했어요.` : '당일 기여도를 계산할 수 있는 시세가 아직 없어요.'}</Insight>
+                <Insight>{contribution.usesMock ? '실제 당일 기여도가 없어서 기존 데모 기여도를 표시해요.' : topContributor ? `${topContributor.name}가 오늘 수익에 가장 많이 기여했어요.` : '당일 기여도를 계산할 수 있는 시세가 아직 없어요.'}</Insight>
               </div>
             )}
 
@@ -342,7 +350,9 @@ export default function Portfolio({
                     </div>
                   </div>
                   <Insight>
-                    {weightDiff == null
+                    {targetUsesMock
+                      ? '실제 전략 목표 비중이 연동되기 전까지 기존 데모 목표를 표시해요.'
+                      : weightDiff == null
                       ? '이 전략의 실제 목표 비중 데이터가 아직 없어요.'
                       : weightDiff > 0
                       ? `${selectedHolding.name} 비중이 목표보다 높아요.`
@@ -362,7 +372,7 @@ export default function Portfolio({
               <div className="flex flex-col gap-6">
                 <p className="text-[15px] text-subtle">{selectedHolding ? `${selectedHolding.name} · stock-feature-v1` : '보유 종목을 선택해주세요.'}</p>
                 <div className="flex min-h-[320px] flex-col justify-center gap-5 rounded-[20px] bg-canvas px-10 py-8">
-                  {(riskEvaluation?.axes ?? []).map((axis) => (
+                  {riskDisplay.axes.map((axis) => (
                     <div key={axis.key} className="grid grid-cols-[110px_1fr_50px] items-center gap-4">
                       <span className="font-semibold text-[#3F4A43]">{axis.label}</span>
                       <div className="h-3 overflow-hidden rounded-full bg-[#E0E5DF]">
@@ -372,9 +382,9 @@ export default function Portfolio({
                       <span className="col-span-3 text-[13px] leading-5 text-muted">{axis.basis}</span>
                     </div>
                   ))}
-                  {!riskEvaluation && <div className="text-center text-lg text-muted">계산 가능한 실제 feature 데이터가 아직 없어요.</div>}
+                  {!riskDisplay.axes.length && <div className="text-center text-lg text-muted">계산 가능한 feature 데이터가 아직 없어요.</div>}
                 </div>
-                <Insight>{riskEvaluation?.role_summary ?? '신뢰성 있게 계산할 수 없는 점수는 임의 값으로 표시하지 않아요.'}</Insight>
+                <Insight>{riskDisplay.usesMock ? '실제 재무 feature가 없는 축은 기존 데모 점수로 보완했어요.' : riskDisplay.roleSummary ?? '계산 가능한 평가 데이터가 아직 없어요.'}</Insight>
               </div>
             )}
           </section>
