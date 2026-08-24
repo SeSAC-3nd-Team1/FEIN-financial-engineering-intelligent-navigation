@@ -50,10 +50,23 @@ class OpenDartRepository:
             for column in CASH_FLOW_COLUMNS
         )
         preserve_cash_flows = preserve_existing_cash_flows or sparse_cash_flow_batch
+        conflict_columns = ["corp_code", "business_year", "report_code", "fs_div"]
 
-        update_columns = None
-        if preserve_cash_flows:
-            update_columns = [
+        if not preserve_cash_flows:
+            # 기존 단일회사 전체재무제표 경로는 모든 제공 지표를 그대로 갱신한다.
+            return upsert_rows(
+                self.session,
+                CompanyFinancial,
+                rows,
+                conflict_columns=conflict_columns,
+            )
+
+        return upsert_rows(
+            self.session,
+            CompanyFinancial,
+            rows,
+            conflict_columns=conflict_columns,
+            update_columns=[
                 "stock_code",
                 "quarter",
                 "revenue",
@@ -62,13 +75,7 @@ class OpenDartRepository:
                 "total_assets",
                 "total_liabilities",
                 "total_equity",
-            ]
-        return upsert_rows(
-            self.session,
-            CompanyFinancial,
-            rows,
-            conflict_columns=["corp_code", "business_year", "report_code", "fs_div"],
-            update_columns=update_columns,
+            ],
         )
 
     def upsert_disclosures(self, rows: list[dict]) -> int:
