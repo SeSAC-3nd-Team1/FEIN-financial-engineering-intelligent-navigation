@@ -3,33 +3,40 @@ import {
   ApiError,
   createAccountApi,
   createOrderApi,
+  createRebalancingDecisionApi,
   getExecutionsApi,
   getMyAccountApi,
   getOrdersApi,
   getPortfolioApi,
+  getRebalancingDecisionsApi,
   selectStrategyApi,
   type AccountResponse,
   type ExecutionResponse,
   type OrderCreateRequest,
   type OrderResponse,
   type PortfolioResponse,
+  type RebalancingDecisionCreateRequest,
+  type RebalancingDecisionHistoryResponse,
 } from '../lib/backendApi';
 
 interface TradingState {
   account: AccountResponse | null;
   portfolio: PortfolioResponse | null;
+  decisions: RebalancingDecisionHistoryResponse | null;
   orders: OrderResponse[];
   executions: ExecutionResponse[];
   accountMissing: boolean;
   isLoading: boolean;
   isRefreshing: boolean;
   isSubmitting: boolean;
+  isDecisionSubmitting: boolean;
   lastUpdatedAt: string | null;
   error: ApiError | null;
   orderMessage: string | null;
   refresh: (token: string) => Promise<void>;
   ensureAccount: (token: string, strategyId: string) => Promise<AccountResponse>;
   placeOrder: (token: string, payload: OrderCreateRequest) => Promise<OrderResponse>;
+  recordDecision: (token: string, payload: RebalancingDecisionCreateRequest) => Promise<void>;
   clearError: () => void;
   clear: () => void;
 }
@@ -37,12 +44,14 @@ interface TradingState {
 const EMPTY_STATE = {
   account: null,
   portfolio: null,
+  decisions: null,
   orders: [],
   executions: [],
   accountMissing: false,
   isLoading: false,
   isRefreshing: false,
   isSubmitting: false,
+  isDecisionSubmitting: false,
   lastUpdatedAt: null,
   error: null,
   orderMessage: null,
@@ -55,12 +64,13 @@ function asApiError(error: unknown): ApiError {
 }
 
 async function loadAccountData(account: AccountResponse, token: string) {
-  const [portfolio, orders, executions] = await Promise.all([
+  const [portfolio, orders, executions, decisions] = await Promise.all([
     getPortfolioApi(account.id, token),
     getOrdersApi(account.id, token),
     getExecutionsApi(account.id, token),
+    getRebalancingDecisionsApi(account.id, token),
   ]);
-  return { portfolio, orders, executions };
+  return { portfolio, orders, executions, decisions };
 }
 
 let activeRefresh: { token: string; promise: Promise<void> } | null = null;
@@ -90,7 +100,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         const apiError = asApiError(error);
         if (apiError.code === 'ACCOUNT_NOT_FOUND') {
           set({
-            account: null, portfolio: null, orders: [], executions: [], accountMissing: true,
+            account: null, portfolio: null, decisions: null, orders: [], executions: [], accountMissing: true,
             isLoading: false, isRefreshing: false, error: null,
           });
           return;
@@ -148,6 +158,22 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     } catch (error) {
       const apiError = asApiError(error);
       set({ error: apiError, isSubmitting: false });
+      throw apiError;
+    }
+  },
+
+  recordDecision: async (token, payload) => {
+    if (get().isDecisionSubmitting) {
+      throw new ApiError('DECISION_IN_PROGRESS', '판단을 기록하고 있습니다.', 409);
+    }
+    set({ isDecisionSubmitting: true, error: null });
+    try {
+      await createRebalancingDecisionApi(payload, token);
+      const decisions = await getRebalancingDecisionsApi(payload.account_id, token);
+      set({ decisions, isDecisionSubmitting: false });
+    } catch (error) {
+      const apiError = asApiError(error);
+      set({ error: apiError, isDecisionSubmitting: false });
       throw apiError;
     }
   },

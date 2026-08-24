@@ -13,6 +13,7 @@
 - [KIS 실시간 시장가 및 차트 API 명세](KIS_REALTIME_MARKET_API_SPECIFICATION.md)
 - [가상투자 PostgreSQL 데이터 명세](VIRTUAL_TRADING_DATA_SPECIFICATION.md)
 - [가상투자 ERD](VIRTUAL_TRADING_ERD.md)
+- [Portfolio Feature 평가와 판단 이력 명세](PORTFOLIO_ANALYTICS_SPECIFICATION.md)
 - [Frontend → API → DB 매핑](FRONTEND_API_DB_MAPPING.md)
 - [데이터 아키텍처](DATA_ARCHITECTURE.md)
 - [데이터 레이어 운영](DATA_LAYER_OPERATIONS.md)

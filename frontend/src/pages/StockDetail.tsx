@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { X } from 'lucide-react';
 import Header from '../components/Header';
 import { TERMS } from '../data/terms';
 import {
-  getStockChartApi, getStockPriceApi, getStockSummaryApi, type PriceResponse, type StockChartPeriod,
-  type StockChartResponse, type StockSummaryResponse,
+  getStockChartApi, getStockEvaluationApi, getStockPriceApi, getStockSummaryApi, type PriceResponse, type StockChartPeriod,
+  type StockChartResponse, type StockEvaluationResponse, type StockSummaryResponse,
 } from '../lib/backendApi';
 import { won } from '../lib/validation';
 import {
   calculatePeriodChange, formatMarketCap, formatMetric, isChartUnavailable, numeric, signed, toChartPoints,
 } from '../lib/stockDetailModel';
+import { availableEvaluationAxes } from '../lib/portfolioAnalyticsModel';
 import { useAuthStore } from '../store/authStore';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen, TermKey } from '../types';
@@ -35,6 +36,7 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
   const token = useAuthStore((state) => state.accessToken);
   const logout = useAuthStore((state) => state.logout);
   const portfolio = useTradingStore((state) => state.portfolio);
+  const account = useTradingStore((state) => state.account);
   const [chartMode, setChartMode] = useState<ChartMode>('simple');
   const [aiMode, setAiMode] = useState<AiMode>('bar');
   const [tfIndex, setTfIndex] = useState(2);
@@ -45,6 +47,7 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
   const [summaryError, setSummaryError] = useState(false);
   const [quoteError, setQuoteError] = useState(false);
   const [chartError, setChartError] = useState(false);
+  const [evaluation, setEvaluation] = useState<StockEvaluationResponse | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -95,6 +98,23 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
     return () => { active = false; };
   }, [logout, period, stockCode, token]);
 
+  useEffect(() => {
+    if (!token || !account) {
+      setEvaluation(null);
+      return;
+    }
+    let active = true;
+    setEvaluation(null);
+    void getStockEvaluationApi(account.id, stockCode, token)
+      .then((response) => { if (active) setEvaluation(response); })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setEvaluation(null);
+        if ((error as { status?: number }).status === 401) void logout();
+      });
+    return () => { active = false; };
+  }, [account, logout, stockCode, token]);
+
   const position = portfolio?.positions.find((item) => item.stock_code === stockCode);
   const portfolioWeight = position && portfolio && Number(portfolio.total_assets) > 0
     ? Number(position.evaluation_amount) / Number(portfolio.total_assets) * 100
@@ -117,6 +137,7 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
   ];
   const term = activeTooltip ? TERMS[activeTooltip] : null;
   const timeframe = TIMEFRAMES[tfIndex];
+  const availableAxes = availableEvaluationAxes(evaluation);
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -208,12 +229,39 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
                 <Toggle active={aiMode === 'radar'} onClick={() => setAiMode('radar')}>레이더그래프</Toggle>
               </div>
             </div>
-            <div className="flex h-[340px] w-full items-center justify-center text-[17px] text-muted">신뢰할 수 있는 AI 평가 데이터가 아직 제공되지 않습니다.</div>
+            {aiMode === 'bar' ? (
+              <div className="flex min-h-[340px] flex-col justify-center gap-5">
+                {(evaluation?.axes ?? []).map((axis) => (
+                  <div key={axis.key} className="grid grid-cols-[120px_1fr_52px] items-center gap-5">
+                    <span className="text-[16px] font-semibold text-[#3F4A43]">{axis.label}</span>
+                    <div className="h-3 overflow-hidden rounded-full bg-[#E8ECE6]">
+                      {axis.score != null && <div className="h-full rounded-full bg-navy" style={{ width: `${axis.score}%` }} />}
+                    </div>
+                    <span className="text-right text-[17px] font-bold">{axis.score ?? '-'}</span>
+                    <span className="col-span-3 text-[14px] leading-6 text-muted">{axis.basis}</span>
+                  </div>
+                ))}
+                {!evaluation && <div className="text-center text-[17px] text-muted">계산 가능한 실제 feature 데이터를 불러오지 못했습니다.</div>}
+              </div>
+            ) : availableAxes.length >= 3 ? (
+              <div className="h-[340px] w-full">
+                <ResponsiveContainer>
+                  <RadarChart data={availableAxes} outerRadius="72%">
+                    <PolarGrid stroke="#DDE2DC" />
+                    <PolarAngleAxis dataKey="label" tick={{ fill: '#5C665F', fontSize: 14 }} />
+                    <Radar dataKey="score" stroke="#18243A" fill="#C6F04D" fillOpacity={0.55} strokeWidth={3} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="flex h-[340px] items-center justify-center text-[17px] text-muted">레이더 그래프에는 계산 가능한 축이 3개 이상 필요합니다.</div>
+            )}
+            {evaluation && <p className="text-[14px] text-subtle">기준일 {evaluation.as_of ?? '-'} · 산식 {evaluation.feature_version} · 출처 {evaluation.sources.join(', ') || '-'}</p>}
             <div className="flex gap-5 rounded-[20px] bg-[#F8FCEE] px-9 py-8">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime text-lg text-navy">✦</div>
               <div className="flex flex-col gap-2.5">
                 <span className="text-xl font-bold tracking-[-0.02em]">왜 이 비중으로 담았나요?</span>
-                <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">전략 목표 비중 데이터가 아직 제공되지 않습니다.</p>
+                <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">{evaluation?.role_summary ?? '계산 가능한 feature 또는 전략 목표 비중 데이터가 아직 없습니다.'}</p>
               </div>
             </div>
           </section>

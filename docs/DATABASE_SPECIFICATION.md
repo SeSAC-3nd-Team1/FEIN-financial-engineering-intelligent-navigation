@@ -53,6 +53,7 @@ Redis
 | `market_indices` | 지수·거래일별 KRX OHLCV |
 | `portfolio_snapshots` | 계좌·일자별 실제 평가 자산과 손익 snapshot |
 | `strategy_target_weights` | 전략·종목·유효일별 명시적 목표 비중 |
+| `rebalancing_decisions` | 서버 리밸런싱 제안과 사용자 수락·보류 판단 이력 |
 | `alembic_version` | migration head 관리 |
 
 세부 컬럼/제약은 `data/db/models/membership.py`, `docs/REGISTRATION_DATA_SPECIFICATION.md`, `docs/REGISTRATION_DATA_ERD.md`를 함께 본다.

@@ -81,3 +81,16 @@ class MarketDataRepository:
             .limit(1)
         )
 
+    def annual_financials(self, stock_code: str) -> list[CompanyFinancial]:
+        """연도별 CFS 우선순위로 최근 FY 재무제표 후보를 반환한다."""
+
+        return list(self.session.scalars(
+            select(CompanyFinancial)
+            .where(CompanyFinancial.stock_code == stock_code, CompanyFinancial.quarter == "FY")
+            .order_by(
+                CompanyFinancial.business_year.desc(),
+                case((CompanyFinancial.fs_div == "CFS", 0), else_=1),
+                CompanyFinancial.updated_at.desc(),
+            )
+        ))
+

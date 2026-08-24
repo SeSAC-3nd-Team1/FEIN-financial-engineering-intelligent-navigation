@@ -38,6 +38,9 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | 실제 metadata·당일 기여·목표비중 제안 포함 |
 | 포트폴리오 이력 | GET | `/portfolio/history?account_id=&period=` | 필요/소유권 | 200, 404 | 실제 snapshot 수익률과 KOSPI 비교 |
+| 종목 5축 feature | GET | `/portfolio/stock-evaluation?account_id=&stock_code=` | 필요/소유권 | 200, 404 | KRX·OpenDART·보유종목 기반 평가 |
+| 리밸런싱 판단 기록 | POST | `/portfolio/decisions` | 필요/소유권 | 201, 404, 409 | 현재 서버 제안 수락·보류 기록 |
+| 리밸런싱 판단 이력 | GET | `/portfolio/decisions?account_id=` | 필요/소유권 | 200, 404 | 최근 6개월 실제 판단·후속 수익률 |
 | 한국 금융 뉴스 | GET | `/information/news/kr?page=&size=` | 불필요 | 200, 422, 502, 503 | InformationExam |
 | 기업 기본정보 | GET | `/companies/{stock_code}` | 불필요 | 200, 404 | Agent/향후 기업 화면 |
 | 기업 재무정보 | GET | `/companies/{stock_code}/financials?year=&quarter=` | 불필요 | 200, 404, 422 | Agent/향후 기업 화면 |
@@ -161,6 +164,28 @@ KOSPI 당일 종가가 없어 저장을 건너뛴다. 필요하면 `workflow_dis
 첫 snapshot 날짜의 직전 KRX KOSPI 종가를 benchmark의 0% 기준으로 정규화한다. 동일 날짜의
 provider 표기 중복은 한 건으로 축약한다. 데이터가 부족하면 합성 이력을
 만들지 않고 실제로 저장된 항목만 반환한다.
+
+### GET `/portfolio/stock-evaluation?account_id=...&stock_code=005930`
+
+`stock-feature-v1`의 안정성·재무 건전성·성장성·방어력·분산 기여를 0~100으로 반환한다.
+각 축은 `score`, `AVAILABLE/UNAVAILABLE`, 실제 산출 근거를 포함한다. KRX 가격 표본,
+OpenDART FY 재무 또는 다른 보유종목 표본이 부족하면 해당 축만 null이다. 상세 산식은
+`docs/PORTFOLIO_ANALYTICS_SPECIFICATION.md`를 따른다.
+
+### POST `/portfolio/decisions`
+
+```json
+{"account_id":"92be9e3e-4364-4428-86c4-b730cc841847","stock_code":"005930","decision":"ACCEPTED","idempotency_key":"<uuid>"}
+```
+
+비중·금액·BUY/SELL은 요청에서 받지 않고 Backend가 현재 포트폴리오 제안에서 다시 산출한다.
+유효한 제안이 없으면 `409 REBALANCING_PROPOSAL_NOT_FOUND`다. 같은 계좌의 idempotency key를
+재전송하면 기존 기록을 반환한다.
+
+### GET `/portfolio/decisions?account_id=...`
+
+최근 6개월의 수락·보류 개수와 판단 당시 서버 제안값을 반환한다. 판단 기준일보다 뒤의 일별
+스냅샷이 있으면 실제 포트폴리오 수익률을 제공한다. 반사실 수익률은 제공하지 않는다.
 
 ### GET `/information/news/kr`
 

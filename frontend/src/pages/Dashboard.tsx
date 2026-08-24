@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import Header from '../components/Header';
 import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
+import { formatDecisionReturn } from '../lib/portfolioAnalyticsModel';
 import type { OperationMode } from '../data/fees';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
@@ -20,9 +21,12 @@ interface Props {
 /** 05 포트폴리오 대시보드 — 스토리 → 리밸런싱 제안(운용방식별 분기) → 판단 성적표 → 전략 */
 export default function Dashboard({ userName, strategyName, mode, onNavigate, onOpenHoldings, onChangeStrategy }: Props) {
   const isAuto = mode === 'auto';
-  useTradingData();
+  const token = useTradingData();
   const account = useTradingStore((state) => state.account);
   const portfolio = useTradingStore((state) => state.portfolio);
+  const decisions = useTradingStore((state) => state.decisions);
+  const recordDecision = useTradingStore((state) => state.recordDecision);
+  const isDecisionSubmitting = useTradingStore((state) => state.isDecisionSubmitting);
   const [sheetOpen, setSheetOpen] = useState(false); // 리밸런싱 상세 시트
 
   const top = portfolio?.top_contributor ?? null;
@@ -31,6 +35,23 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
   const initialCash = account ? Number(account.initial_cash) : 0;
   const profit = portfolio && initialCash > 0 ? Number(portfolio.total_assets) - initialCash : null;
   const profitRate = profit != null && initialCash > 0 ? (profit / initialCash) * 100 : null;
+  const latestDecision = decisions?.items[0] ?? null;
+  const actualOutcome = latestDecision?.actual_portfolio_return_rate == null
+    ? null : Number(latestDecision.actual_portfolio_return_rate);
+  const submitDecision = async (decision: 'ACCEPTED' | 'HELD') => {
+    if (!token || !account || !proposal) return;
+    try {
+      await recordDecision(token, {
+        account_id: account.id,
+        stock_code: proposal.stock_code,
+        decision,
+        idempotency_key: crypto.randomUUID(),
+      });
+      setSheetOpen(false);
+    } catch {
+      // Store에 실제 API 오류가 보존되므로 시트를 유지해 사용자가 다시 시도할 수 있게 한다.
+    }
+  };
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -139,24 +160,24 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
               <div className="flex flex-col gap-3">
                 <span className="text-[15px] text-muted">지난 리밸런싱</span>
                 <div className="flex items-center gap-3.5 text-[19px] text-[#3F4A43]">
-                  <span>AI 제안 <b>-</b></span>
+                  <span>AI 제안 <b>{latestDecision ? `${latestDecision.stock_name ?? latestDecision.stock_code} ${latestDecision.action === 'SELL' ? '줄이기' : '늘리기'}` : '-'}</b></span>
                   <span className="text-[#A6AFA7]">·</span>
-                  <span>내 선택 <b>-</b></span>
+                  <span>내 선택 <b>{latestDecision ? (latestDecision.decision === 'ACCEPTED' ? '수락' : '보류') : '-'}</b></span>
                 </div>
-                <span className="text-[17px] text-muted">아직 기록된 리밸런싱 판단이 없어요.</span>
+                <span className="text-[17px] text-muted">{latestDecision ? (actualOutcome == null ? '다음 일별 스냅샷부터 실제 결과를 비교할 수 있어요.' : `${latestDecision.outcome_as_of} 기준 포트폴리오 ${actualOutcome >= 0 ? '+' : ''}${actualOutcome.toFixed(2)}%`) : '아직 기록된 리밸런싱 판단이 없어요.'}</span>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                  <span className="text-[15px] text-muted">AI 제안을 따랐다면</span>
-                  <span className="text-[26px] font-bold tracking-[-0.03em]">-</span>
+                  <span className="text-[15px] text-muted">수락한 판단 이후 평균</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{formatDecisionReturn(decisions?.accepted_average_portfolio_return)}</span>
                 </div>
                 <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                  <span className="text-[15px] text-muted">실제 내 선택</span>
-                  <span className="text-[26px] font-bold tracking-[-0.03em]">-</span>
+                  <span className="text-[15px] text-muted">보류한 판단 이후 평균</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{formatDecisionReturn(decisions?.held_average_portfolio_return)}</span>
                 </div>
               </div>
               <p className="text-[17px] leading-7 text-muted">
-                실제 판단 이력이 쌓이면 결과를 비교할 수 있어요.
+                같은 날의 계좌 스냅샷을 기준으로 이후 실제 포트폴리오 수익률만 비교해요.
               </p>
               <span className="text-base font-semibold text-navy">지난 판단 돌아보기 →</span>
             </div>
@@ -216,10 +237,10 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
               </button>
             ) : (
               <div className="flex gap-3">
-                <button onClick={() => setSheetOpen(false)} className="flex-1 rounded-field bg-lime py-5 text-lg font-bold text-navy">
-                  {won(Number(proposal.recommended_amount))} {proposal.action === 'SELL' ? '줄이기' : '늘리기'}
+                <button disabled={isDecisionSubmitting} onClick={() => void submitDecision('ACCEPTED')} className="flex-1 rounded-field bg-lime py-5 text-lg font-bold text-navy disabled:opacity-50">
+                  제안 수락 기록하기
                 </button>
-                <button onClick={() => setSheetOpen(false)} className="rounded-field bg-[#F4F6F1] px-8 py-5 text-[17px] font-semibold text-[#3F4A43]">
+                <button disabled={isDecisionSubmitting} onClick={() => void submitDecision('HELD')} className="rounded-field bg-[#F4F6F1] px-8 py-5 text-[17px] font-semibold text-[#3F4A43] disabled:opacity-50">
                   이번에는 하지 않을게요
                 </button>
               </div>

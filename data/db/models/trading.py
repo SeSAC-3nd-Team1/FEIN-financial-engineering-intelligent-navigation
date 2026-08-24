@@ -132,6 +132,33 @@ class PortfolioSnapshot(TimestampMixin, Base):
     return_rate: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
 
 
+class RebalancingDecision(Base):
+    """서버가 산출한 리밸런싱 제안과 사용자의 선택을 변경 불가능한 사실로 보존한다."""
+
+    __tablename__ = "rebalancing_decisions"
+    __table_args__ = (
+        UniqueConstraint("account_id", "idempotency_key", name="uq_rebalancing_decisions_account_idempotency"),
+        CheckConstraint("action IN ('BUY', 'SELL')", name="action_values"),
+        CheckConstraint("decision IN ('ACCEPTED', 'HELD')", name="decision_values"),
+        Index("ix_rebalancing_decisions_account_created", "account_id", "created_at"),
+    )
+    id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), default=uuid4, primary_key=True)
+    account_id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"), nullable=False)
+    strategy_id: Mapped[str | None] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="SET NULL"))
+    stock_code: Mapped[str] = mapped_column(String(12), nullable=False)
+    stock_name: Mapped[str | None] = mapped_column(String(200))
+    action: Mapped[str] = mapped_column(String(4), nullable=False)
+    current_weight: Mapped[Decimal] = mapped_column(Numeric(9, 4), nullable=False)
+    target_weight: Mapped[Decimal] = mapped_column(Numeric(9, 4), nullable=False)
+    weight_diff: Mapped[Decimal] = mapped_column(Numeric(9, 4), nullable=False)
+    recommended_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    decision: Mapped[str] = mapped_column(String(10), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    baseline_snapshot_date: Mapped[date | None] = mapped_column(Date)
+    baseline_total_assets: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class Order(Base):
     """시장가 주문 요청과 최종 상태를 저장한다."""
     __tablename__ = "orders"

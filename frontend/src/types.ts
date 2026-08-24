@@ -56,7 +56,6 @@ export interface StockInfo {
   pbr: string;
   per: string;
   roe: string;
-  ai: number[];       // AI_AXES 순서의 5축 점수
   desc: string;
 }
 
