@@ -180,6 +180,8 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             )
             assert prepared.status_code == 200, prepared.text
             assert prepared.json()["created"] is True
+            assert prepared.json()["account"]["initial_cash"] == "1000000.00"
+            assert prepared.json()["account"]["cash_balance"] == "1000000.00"
             account_id = prepared.json()["account"]["id"]
             completed = client.post(
                 f"/api/v1/investment/onboardings/{onboarding_id}/complete",
@@ -220,7 +222,7 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             portfolio = client.get(f"/api/v1/portfolio?account_id={account_id}", headers=headers)
             assert portfolio.status_code == 200, portfolio.text
             assert portfolio.json()["positions"][0]["quantity"] == 10
-            assert portfolio.json()["total_assets"] == "10000000.00"
+            assert portfolio.json()["total_assets"] == "1000000.00"
 
             sell = client.post("/api/v1/orders", headers=headers, json={
                 "account_id": account_id,
@@ -233,7 +235,7 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             assert sell.status_code == 201, sell.text
             after = client.get(f"/api/v1/portfolio?account_id={account_id}", headers=headers).json()
             assert after["positions"][0]["quantity"] == 6
-            assert after["cash_balance"] == "9580000.00"
+            assert after["cash_balance"] == "580000.00"
 
             with SessionLocal() as session:
                 account = session.get(VirtualAccount, account_id)
@@ -246,6 +248,7 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
                 orders = list(session.scalars(select(Order).where(Order.account_id == account_id)))
                 executions = list(session.scalars(select(Execution).where(Execution.account_id == account_id)))
                 assert account is not None and latest_ledger is not None
+                assert account.initial_cash == Decimal("1000000.00")
                 assert account.cash_balance == latest_ledger.balance_after
                 assert len(orders) == len(executions) == 2
                 assert {execution.order_id for execution in executions} == {order.id for order in orders}

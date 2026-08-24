@@ -78,8 +78,13 @@ TERMS_PENDING -> ACCOUNT_PENDING -> READY -> COMPLETED
 {"account_name":"나의 가상 투자계좌"}
 ```
 
-계좌가 없으면 가상계좌와 초기 현금원장을 같은 transaction에서 생성하고 `created=true`를 반환한다.
-이미 사용자 계좌가 있으면 새 계좌를 만들지 않고 해당 계좌와 `created=false`를 반환한다.
+계좌가 없으면 `investment_amount`를 `initial_cash`, `cash_balance`, 최초 `INITIAL_DEPOSIT`의
+`amount`, `balance_after`로 사용해 가상계좌와 초기 현금원장을 같은 transaction에서 생성하고
+`created=true`를 반환한다.
+
+이미 사용자 계좌가 있으면 새 계좌를 만들지 않고 해당 계좌와 `created=false`를 반환한다. 기존 계좌의
+잔액, 계좌명, 포지션과 원장은 변경하거나 초기화하지 않는다. 새로 선택한 투자 금액을 추가 입금하지도
+않으며, 완료 단계에서 현재 `cash_balance`가 선택 금액 이상인지만 검증한다.
 외부 계좌 식별자, 증권사 credential, OTP는 받지 않는다.
 
 ### POST `/api/v1/investment/onboardings/{id}/complete`
@@ -87,5 +92,5 @@ TERMS_PENDING -> ACCOUNT_PENDING -> READY -> COMPLETED
 최신 약관, 계좌 소유권·활성 상태, 가상현금 잔액, 전략 활성 상태를 다시 검증한다. 성공하면 계좌의
 `selected_strategy_id`와 온보딩 `COMPLETED` 상태를 하나의 transaction으로 저장한다.
 
-투자 예정 금액은 가상계좌 초기금과 별도다. 예정 금액이 현재 현금보다 크면
-`409 INSUFFICIENT_VIRTUAL_CASH`를 반환한다.
+신규 계좌의 시작 자금은 투자 예정 금액과 같다. 기존 계좌를 재사용할 때 예정 금액이 현재 현금보다
+크면 `409 INSUFFICIENT_VIRTUAL_CASH`를 반환한다.

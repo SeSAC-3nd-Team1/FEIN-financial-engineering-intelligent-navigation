@@ -7,7 +7,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.errors import NotFoundError, ServiceError
 from app.models import CashLedger, InvestmentOnboarding, Strategy, Term, User, UserAgreement, VirtualAccount
 from app.schemas.api import (
@@ -186,11 +185,14 @@ class InvestmentOnboardingService:
         created = False
         try:
             if account is None:
+                # 신규 계좌의 시작 자금은 사용자가 확인한 투자 금액과 일치해야 한다.
+                # 정책 기본값을 쓰면 선택 금액보다 큰 현금을 주문에 사용할 수 있어 계약이 어긋난다.
+                initial_cash = Decimal(onboarding.investment_amount)
                 account = VirtualAccount(
                     user_id=user.id,
                     account_name=account_name.strip(),
-                    initial_cash=settings.initial_cash,
-                    cash_balance=settings.initial_cash,
+                    initial_cash=initial_cash,
+                    cash_balance=initial_cash,
                     status="ACTIVE",
                 )
                 self.session.add(account)
@@ -198,12 +200,14 @@ class InvestmentOnboardingService:
                 self.session.add(CashLedger(
                     account_id=account.id,
                     transaction_type="INITIAL_DEPOSIT",
-                    amount=settings.initial_cash,
-                    balance_after=settings.initial_cash,
+                    amount=initial_cash,
+                    balance_after=initial_cash,
                     reference_type="ACCOUNT",
                     reference_id=str(account.id),
                 ))
                 created = True
+            # 기존 계좌는 포지션과 append-only 원장 정합성을 위해 잔액·계좌명을 유지한다.
+            # 선택 금액을 추가 입금하거나 계좌를 초기화하지 않고 완료 단계에서 가용 현금만 검증한다.
             elif account.status != "ACTIVE":
                 raise ServiceError("ACCOUNT_NOT_ACTIVE", "사용할 수 없는 가상계좌입니다.", 409)
             onboarding.account_id = account.id

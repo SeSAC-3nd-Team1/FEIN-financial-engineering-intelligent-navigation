@@ -74,8 +74,8 @@ class FakeService:
         account = AccountResponse(
             id=ACCOUNT_ID,
             account_name=account_name,
-            initial_cash=Decimal("10000000"),
-            cash_balance=Decimal("10000000"),
+            initial_cash=Decimal("1000000"),
+            cash_balance=Decimal("1000000"),
             status="ACTIVE",
             selected_strategy_id=None,
             created_at=NOW,
@@ -172,6 +172,8 @@ def test_prepare_and_complete_account_flow() -> None:
 
     assert prepared.status_code == 200
     assert prepared.json()["created"] is True
+    assert prepared.json()["account"]["initial_cash"] == "1000000"
+    assert prepared.json()["account"]["cash_balance"] == "1000000"
     assert prepared.json()["onboarding"]["next_step"] == "CONFIRM"
     assert completed.status_code == 200
     assert completed.json()["next_step"] == "PORTFOLIO"
