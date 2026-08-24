@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -21,6 +21,7 @@ from storage import BlobStorage
 DEFAULT_START_DATE = date(2018, 1, 1)
 DEFAULT_SCHEMA_VERSION = "2"
 DEFAULT_FEATURE_VERSION = "2"
+OPENDART_LOOKBACK_DAYS = 120
 CHECKPOINT_DIR = PROJECT_ROOT / "reports" / "checkpoints"
 REPORT_DIR = PROJECT_ROOT / "reports" / "pipeline-runs"
 STATE_PATH = CHECKPOINT_DIR / "financial-8y-state.json"
@@ -114,7 +115,12 @@ def _incremental_start(
     *,
     refresh: bool,
 ) -> date:
-    """첫 실행은 2018년부터, 이후에는 직전 성공 종료일부터 다시 확인한다."""
+    """첫 실행은 baseline부터, 이후에는 source 특성에 맞는 재조회 구간을 반환한다.
+
+    OpenDART 재무는 분기 종료일과 실제 공시일 사이에 시차가 있다. 직전 성공 종료일만
+    그대로 시작점으로 쓰면 아직 공시되지 않았던 보고서를 영구히 놓칠 수 있으므로 최근
+    120일을 항상 겹쳐 재조회한다. Raw hash와 PostgreSQL UPSERT가 중복을 제거한다.
+    """
 
     if refresh:
         return baseline
@@ -122,6 +128,8 @@ def _incremental_start(
     if not value:
         return baseline
     previous = date.fromisoformat(str(value))
+    if source == "opendart":
+        previous -= timedelta(days=OPENDART_LOOKBACK_DAYS)
     return max(baseline, previous)
 
 
@@ -143,6 +151,7 @@ def _write_report(
         "storage": storage,
         "steps": steps,
         "state": state,
+        "opendart_incremental_lookback_days": OPENDART_LOOKBACK_DAYS,
         "excluded_for_later": [
             "foreign_institutional_flow",
             "kospi200_historical_membership",
@@ -158,6 +167,7 @@ def _write_report(
         f"- 범위: {start_date.isoformat()} ~ {end_date.isoformat()}",
         f"- Azure Storage: {storage['storage_account']}",
         f"- Raw / Processed / Features: {storage['raw_container']} / {storage['processed_container']} / {storage['features_container']}",
+        f"- OpenDART 증분 재조회: 최근 {OPENDART_LOOKBACK_DAYS}일",
         "",
         "## 실행 결과",
         "",
@@ -184,7 +194,7 @@ def _write_report(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """KRX → KRX 파생 → ECOS → OpenDART 순으로 8년 이상 데이터 준비를 실행한다."""
+    """KRX → KRX 파생/연속성 검증 → ECOS → OpenDART 순으로 장기 데이터를 준비한다."""
 
     load_dotenv(PROJECT_ROOT.parent / ".env", override=False)
     args = _parser().parse_args(argv)
@@ -218,11 +228,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         steps.append(
             _run_step(
-                "krx_processed_features_audit",
+                "krx_processed_features",
                 "scripts.run_krx_history_pipeline",
                 [
                     "--stage",
                     "all",
+                    "--start-date",
+                    args.start_date.isoformat(),
+                    "--end-date",
+                    args.end_date.isoformat(),
+                    "--schema-version",
+                    args.schema_version,
+                    "--feature-version",
+                    args.feature_version,
+                ],
+            )
+        )
+        # 기존 manifest 경계 확인 뒤 stock/index를 각각 다시 읽어 월 누락·밀도·내부 gap을 검증한다.
+        steps.append(
+            _run_step(
+                "krx_strict_coverage_audit",
+                "scripts.verify_krx_history_coverage",
+                [
                     "--start-date",
                     args.start_date.isoformat(),
                     "--end-date",
