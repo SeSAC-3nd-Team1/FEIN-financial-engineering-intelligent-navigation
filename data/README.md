@@ -67,6 +67,7 @@ data/
 │  ├─ audit_raw_partition_dates.py
 │  ├─ check_db.py
 │  ├─ init_local_db.py
+│  ├─ seed_investment_terms.py
 │  ├─ seed_signup_terms.py
 │  └─ verify_signup_schema.py
 ├─ storage/             # Blob auth/path/Raw serialization

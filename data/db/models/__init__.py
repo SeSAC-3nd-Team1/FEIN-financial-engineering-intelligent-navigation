@@ -12,7 +12,7 @@ from db.models.membership import (
     User,
     UserAgreement,
 )
-from db.models.trading import CashLedger, Execution, Order, Position, Strategy, VirtualAccount
+from db.models.trading import CashLedger, Execution, InvestmentOnboarding, Order, Position, Strategy, VirtualAccount
 from db.models.opendart import Company, CompanyDisclosure, CompanyFinancial, CompanyFinancialAccount
 from db.models.recommendation import InvestorProfileAssessment, StrategyRecommendation, StrategyRecommendationItem
 
@@ -24,6 +24,7 @@ __all__ = [
     "UserAgreement",
     "CashLedger",
     "Execution",
+    "InvestmentOnboarding",
     "Order",
     "Position",
     "Strategy",
