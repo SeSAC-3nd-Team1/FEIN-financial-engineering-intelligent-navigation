@@ -141,7 +141,18 @@ export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) =
     },
 
     connectSesacAccount: (mode, account) => {
-      set((s) => ({ accountsByMode: { ...s.accountsByMode, [mode]: account } }));
+      set((s) => {
+        // 최종 방어선 — "같은 계좌로는 운용방식을 바꿀 수 없다"는 정책은 UI(InvestAccount)에서도
+        // 막지만, 화면 쪽 경로 하나를 놓치더라도 스토어에서 다른 운용방식과 계좌번호가 겹치는
+        // 저장 자체를 거부해 정책이 깨지지 않게 한다.
+        const usedByOtherMode = (Object.entries(s.accountsByMode) as [OperationMode, SesacAccount][])
+          .some(([m, acc]) => m !== mode && acc.accountNumber === account.accountNumber);
+        if (usedByOtherMode) {
+          console.warn(`[investmentStore] ${account.accountNumber}는 이미 다른 운용방식에 연결된 계좌라 ${mode}에 연결하지 않았습니다.`);
+          return s;
+        }
+        return { accountsByMode: { ...s.accountsByMode, [mode]: account } };
+      });
       persistCurrent();
     },
 

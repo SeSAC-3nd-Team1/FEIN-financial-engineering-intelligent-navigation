@@ -26,7 +26,11 @@ type Phase = 'choice' | 'link-select' | 'link-auth' | 'open-terms' | 'open-auth'
 
 /** MOCK — 실제 SeSAC증권 API 연동 전까지, "조회되는 기존 계좌"는 데모용 고정값 하나만 제공한다 */
 const MOCK_EXISTING_ACCOUNT: SesacAccount = { accountNumber: '123-****-5678', balance: 0 };
-const MOCK_NEW_ACCOUNT: SesacAccount = { accountNumber: '045-****-9081', balance: 0 };
+/** 운용방식마다 계좌가 분리된다는 정책과 일관되도록, 신규 개설 mock 계좌번호도 운용방식별로 다르게 둔다 */
+const MOCK_NEW_ACCOUNT_BY_MODE: Record<OperationMode, SesacAccount> = {
+  auto: { accountNumber: '045-****-9081', balance: 0 },
+  manual: { accountNumber: '067-****-2245', balance: 0 },
+};
 
 const ACCOUNT_OPEN_TERMS_BODY =
   '제1조 (목적)\n본 약관은 SeSAC증권 계좌개설 및 FE!N 서비스 연계 이용에 관한 사항을 규정합니다.\n\n제2조 (계좌 이용)\n개설된 계좌는 FE!N에서 선택한 투자 전략에 따른 매매 실행 및 자산 관리 목적으로 이용됩니다.\n\n제3조 (수수료 및 비용)\n계좌 운용에 따른 이용 수수료 및 거래비용은 FE!N 투자 서비스 약관에 따릅니다.';
@@ -171,7 +175,7 @@ export default function InvestAccount({
             <MockOtpStep
               title="본인인증"
               desc="새 SeSAC증권 계좌 개설을 위해 인증번호를 입력해주세요."
-              onVerified={() => { setLinkedAccount(MOCK_NEW_ACCOUNT); setPhase('done'); }}
+              onVerified={() => { setLinkedAccount(MOCK_NEW_ACCOUNT_BY_MODE[mode]); setPhase('done'); }}
             />
           )}
 
