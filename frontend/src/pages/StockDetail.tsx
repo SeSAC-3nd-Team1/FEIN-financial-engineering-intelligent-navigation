@@ -11,7 +11,7 @@ import { won } from '../lib/validation';
 import {
   calculatePeriodChange, formatMarketCap, formatMetric, isChartUnavailable, numeric, signed, toChartPoints,
 } from '../lib/stockDetailModel';
-import { availableEvaluationAxes } from '../lib/portfolioAnalyticsModel';
+import { hybridEvaluation, mockStockByCode } from '../lib/hybridMockData';
 import { useAuthStore } from '../store/authStore';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen, TermKey } from '../types';
@@ -116,28 +116,35 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
   }, [account, logout, stockCode, token]);
 
   const position = portfolio?.positions.find((item) => item.stock_code === stockCode);
+  const fallback = useMemo(() => mockStockByCode(stockCode), [stockCode]);
   const portfolioWeight = position && portfolio && Number(portfolio.total_assets) > 0
     ? Number(position.evaluation_amount) / Number(portfolio.total_assets) * 100
     : null;
   const portfolioAmount = position ? Number(position.evaluation_amount) : null;
-  const currentPrice = numeric(quote?.price);
-  const changeAmount = numeric(quote?.change_amount);
-  const changeRate = numeric(quote?.change_rate);
+  const currentPrice = numeric(quote?.price) ?? fallback?.info.price ?? null;
+  const changeRate = numeric(quote?.change_rate) ?? fallback?.holding?.chg ?? null;
+  const changeAmount = numeric(quote?.change_amount)
+    ?? (currentPrice != null && changeRate != null ? currentPrice * changeRate / 100 : null);
   const priceData = useMemo(() => toChartPoints(chart), [chart]);
   const prices = priceData.map((item) => item.price);
   const high = prices.length ? Math.max(...prices) : null;
   const low = prices.length ? Math.min(...prices) : null;
   const periodChange = calculatePeriodChange(priceData);
   const metrics: { label: string; value: string; key: TermKey | null }[] = [
-    { label: '시가 총액', value: formatMarketCap(summary?.market_cap ?? null), key: null },
-    { label: '배당 수익률', value: formatMetric(summary?.dividend_yield ?? null, '%'), key: 'div' },
-    { label: 'PBR', value: formatMetric(summary?.pbr ?? null, '배'), key: 'pbr' },
-    { label: 'PER', value: formatMetric(summary?.per ?? null, '배'), key: 'per' },
-    { label: 'ROE', value: formatMetric(summary?.roe ?? null, '%'), key: 'roe' },
+    { label: '시가 총액', value: summary?.market_cap == null ? fallback?.info.cap ?? '-' : formatMarketCap(summary.market_cap), key: null },
+    { label: '배당 수익률', value: summary?.dividend_yield == null ? fallback?.info.div ?? '-' : formatMetric(summary.dividend_yield, '%'), key: 'div' },
+    { label: 'PBR', value: summary?.pbr == null ? fallback?.info.pbr ?? '-' : formatMetric(summary.pbr, '배'), key: 'pbr' },
+    { label: 'PER', value: summary?.per == null ? fallback?.info.per ?? '-' : formatMetric(summary.per, '배'), key: 'per' },
+    { label: 'ROE', value: summary?.roe == null ? fallback?.info.roe ?? '-' : formatMetric(summary.roe, '%'), key: 'roe' },
   ];
   const term = activeTooltip ? TERMS[activeTooltip] : null;
   const timeframe = TIMEFRAMES[tfIndex];
-  const availableAxes = availableEvaluationAxes(evaluation);
+  const evaluationDisplay = useMemo(() => hybridEvaluation(evaluation, stockCode), [evaluation, stockCode]);
+  const availableAxes = evaluationDisplay.axes.filter((axis) => axis.score != null);
+  const summaryUsesMock = Boolean(fallback) && (
+    summary?.description == null || summary?.sector == null || summary?.market_cap == null
+    || summary?.dividend_yield == null || summary?.pbr == null || summary?.per == null || summary?.roe == null
+  );
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -149,9 +156,9 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
           <section className="flex items-end justify-between gap-8">
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
-                <h1 className="text-[40px] font-bold tracking-[-0.035em]">{summary?.stock_name ?? stockCode}</h1>
+                <h1 className="text-[40px] font-bold tracking-[-0.035em]">{summary?.stock_name ?? fallback?.name ?? stockCode}</h1>
                 <span className="text-[17px] text-subtle">{stockCode}</span>
-                <span className="rounded-full bg-[#F1F3EE] px-3 py-1.5 text-sm font-semibold text-muted">{summary?.sector ?? '-'}</span>
+                <span className="rounded-full bg-[#F1F3EE] px-3 py-1.5 text-sm font-semibold text-muted">{summary?.sector ?? fallback?.holding?.sector ?? '-'}</span>
               </div>
               <div className="flex items-baseline gap-4">
                 <span className="text-[44px] font-bold tracking-[-0.035em]">{currentPrice == null ? '-' : won(currentPrice)}</span>
@@ -159,8 +166,9 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
                   {changeAmount == null ? '-' : `${signed(changeAmount, 0)}원`} ({signed(changeRate)}%)
                 </span>
               </div>
-              {quoteError && <span className="text-[15px] text-down">현재가를 불러올 수 없습니다.</span>}
-              {summaryError && <span className="text-[15px] text-down">종목 정보를 불러올 수 없습니다.</span>}
+              {quoteError && <span className="text-[15px] text-muted">실시간 시세 대신 기존 데모 값을 표시합니다.</span>}
+              {summaryError && fallback && <span className="text-[15px] text-muted">연동되지 않은 기업 정보는 기존 데모 값으로 보완했습니다.</span>}
+              {summaryError && !fallback && <span className="text-[15px] text-down">종목 정보를 불러올 수 없습니다.</span>}
             </div>
             <div className="flex flex-col items-end gap-2">
               <span className="text-[15px] text-muted">내 포트폴리오 비중</span>
@@ -215,7 +223,8 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
 
           <section className="flex flex-col gap-4 rounded-card bg-surface p-12">
             <h2 className="text-[26px] font-bold tracking-[-0.025em]">어떤 회사인가요?</h2>
-            <p className="text-lg leading-8 text-[#3F4A43] [text-wrap:pretty]">{summary?.description ?? '기업 정보를 제공할 수 없습니다.'}</p>
+            <p className="text-lg leading-8 text-[#3F4A43] [text-wrap:pretty]">{summary?.description ?? fallback?.info.desc ?? '기업 정보를 제공할 수 없습니다.'}</p>
+            {summary?.description == null && fallback && <span className="text-sm text-subtle">기존 데모 기업 설명</span>}
           </section>
 
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
@@ -231,7 +240,7 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
             </div>
             {aiMode === 'bar' ? (
               <div className="flex min-h-[340px] flex-col justify-center gap-5">
-                {(evaluation?.axes ?? []).map((axis) => (
+                {evaluationDisplay.axes.map((axis) => (
                   <div key={axis.key} className="grid grid-cols-[120px_1fr_52px] items-center gap-5">
                     <span className="text-[16px] font-semibold text-[#3F4A43]">{axis.label}</span>
                     <div className="h-3 overflow-hidden rounded-full bg-[#E8ECE6]">
@@ -241,7 +250,7 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
                     <span className="col-span-3 text-[14px] leading-6 text-muted">{axis.basis}</span>
                   </div>
                 ))}
-                {!evaluation && <div className="text-center text-[17px] text-muted">계산 가능한 실제 feature 데이터를 불러오지 못했습니다.</div>}
+                {!evaluationDisplay.axes.length && <div className="text-center text-[17px] text-muted">계산 가능한 feature 데이터를 불러오지 못했습니다.</div>}
               </div>
             ) : availableAxes.length >= 3 ? (
               <div className="h-[340px] w-full">
@@ -256,12 +265,15 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
             ) : (
               <div className="flex h-[340px] items-center justify-center text-[17px] text-muted">레이더 그래프에는 계산 가능한 축이 3개 이상 필요합니다.</div>
             )}
-            {evaluation && <p className="text-[14px] text-subtle">기준일 {evaluation.as_of ?? '-'} · 산식 {evaluation.feature_version} · 출처 {evaluation.sources.join(', ') || '-'}</p>}
+            <p className="text-[14px] text-subtle">
+              {evaluation ? `기준일 ${evaluation.as_of ?? '-'} · 산식 ${evaluation.feature_version} · 출처 ${evaluation.sources.join(', ') || '-'}` : '실제 평가 데이터 없음'}
+              {evaluationDisplay.usesMock ? ' · 일부 축 기존 데모 보완' : ''}
+            </p>
             <div className="flex gap-5 rounded-[20px] bg-[#F8FCEE] px-9 py-8">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime text-lg text-navy">✦</div>
               <div className="flex flex-col gap-2.5">
                 <span className="text-xl font-bold tracking-[-0.02em]">왜 이 비중으로 담았나요?</span>
-                <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">{evaluation?.role_summary ?? '계산 가능한 feature 또는 전략 목표 비중 데이터가 아직 없습니다.'}</p>
+                <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">{evaluationDisplay.roleSummary ?? '계산 가능한 feature 또는 전략 목표 비중 데이터가 아직 없습니다.'}</p>
               </div>
             </div>
           </section>
@@ -291,7 +303,7 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
             )}
           </section>
 
-          <p className="text-sm leading-[22px] text-subtle">※ 현재가는 KIS, 일별 시세·시가총액은 KRX, 재무지표는 OpenDART 데이터를 사용하며 투자 권유가 아닙니다.</p>
+          <p className="text-sm leading-[22px] text-subtle">※ 현재가는 KIS, 일별 시세·시가총액은 KRX, 재무지표는 OpenDART 데이터를 우선 사용합니다.{summaryUsesMock || evaluationDisplay.usesMock || quoteError ? ' 미연동 항목은 기존 데모 값으로 보완했습니다.' : ''} 투자 권유가 아닙니다.</p>
         </div>
       </main>
     </div>

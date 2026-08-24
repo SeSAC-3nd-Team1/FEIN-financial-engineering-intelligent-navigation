@@ -1,5 +1,6 @@
 """실제 계좌·시세·KRX metadata를 결합해 포트폴리오 분석을 제공한다."""
 
+import logging
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -24,6 +25,7 @@ from app.services.market import MarketService
 
 HISTORY_DAYS = {"1M": 31, "3M": 93, "1Y": 366}
 KST = timezone(timedelta(hours=9))
+logger = logging.getLogger(__name__)
 
 
 def calculate_return(profit: Decimal, purchase: Decimal) -> Decimal:
@@ -137,7 +139,7 @@ class PortfolioService:
         if quote_provider is None:
             if self.market is None:
                 self.market = MarketService()
-            quote_provider = self.market.get_quote
+            quote_provider = self._current_quote
 
         evaluated: list[dict] = []
         purchase_total = Decimal("0")
@@ -229,6 +231,23 @@ class PortfolioService:
             contributions=contributions, strategy_targets_available=bool(targets),
             rebalancing_proposals=proposals, positions=rows,
         )
+
+    def _current_quote(self, stock_code: str) -> CurrentQuote:
+        """KIS 현재가 장애 시 DB에 적재된 최신 KRX 종가로 평가를 계속한다."""
+
+        try:
+            return self.market.get_quote(stock_code)
+        except ServiceError as exc:
+            latest = self.market_repo.latest_price(stock_code)
+            if latest is None:
+                raise
+            logger.warning(
+                "Live quote unavailable; using latest KRX close stock_code=%s code=%s trade_date=%s",
+                stock_code,
+                exc.code,
+                latest.trade_date,
+            )
+            return self._closing_quote(stock_code, latest.trade_date)
 
     def capture_daily_snapshots(self, snapshot_date: date | None = None) -> int:
         """활성 계좌를 평가해 장 마감 후 일별 스냅샷으로 저장한다."""

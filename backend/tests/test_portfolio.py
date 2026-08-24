@@ -165,6 +165,44 @@ def test_evaluate_does_not_report_partial_today_profit_as_complete() -> None:
     assert result.contributions[0].share_rate is None
 
 
+def test_evaluate_falls_back_to_latest_krx_close_when_live_quote_fails() -> None:
+    account_id = uuid4()
+    account = SimpleNamespace(id=account_id, cash_balance=Decimal("300000"), selected_strategy_id=None)
+    position = SimpleNamespace(
+        stock_code="005930", quantity=Decimal("1.5"),
+        average_price=Decimal("70000"), realized_profit=Decimal("0"),
+    )
+    prices = [
+        SimpleNamespace(
+            trade_date=date(2026, 8, 25), close_price=Decimal("71000"),
+            change_amount=Decimal("500"), change_rate=Decimal("0.71"),
+            volume=1000, source="KRX",
+        ),
+        SimpleNamespace(trade_date=date(2026, 8, 24), close_price=Decimal("70500")),
+    ]
+
+    def fail_live_quote(_stock_code: str) -> CurrentQuote:
+        raise ServiceError("KIS_UNAVAILABLE", "현재 시장가격을 조회하지 못했습니다.", 503)
+
+    service = PortfolioService.__new__(PortfolioService)
+    service.session = SimpleNamespace()
+    service.repo = SimpleNamespace(owned_account=lambda *_args: account, positions=lambda *_args: [position])
+    service.market_repo = SimpleNamespace(
+        stock=lambda _code: SimpleNamespace(stock_name="삼성전자", sector="반도체"),
+        latest_price=lambda _code: prices[0],
+        closing_prices=lambda *_args: prices,
+    )
+    service.market = SimpleNamespace(get_quote=fail_live_quote)
+
+    result = service.evaluate(1, account_id)
+
+    assert len(result.positions) == 1
+    assert result.positions[0].quantity == Decimal("1.5")
+    assert result.positions[0].current_price == Decimal("71000")
+    assert result.positions[0].previous_close == Decimal("70500")
+    assert result.positions[0].price_source == "KRX"
+
+
 def test_daily_snapshot_task_writes_and_commits_once() -> None:
     account = SimpleNamespace(id=uuid4())
     response = SimpleNamespace(
