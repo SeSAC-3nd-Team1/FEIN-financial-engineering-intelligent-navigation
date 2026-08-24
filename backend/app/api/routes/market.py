@@ -250,7 +250,7 @@ async def realtime_prices(websocket: WebSocket) -> None:
         for task in tasks:
             if not task.done():
                 task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
         if queue is not None:
             await realtime_hub.remove_subscriber(queue)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
