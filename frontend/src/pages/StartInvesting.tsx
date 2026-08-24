@@ -4,7 +4,8 @@ import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { ChevronDown, ChevronRight, ChevronUp, Info } from 'lucide-react';
 import Header from '../components/Header';
 import { ALL_HOLDINGS } from '../data/holdings';
-import { estimateAnnualFee, INVESTMENT_FEES, type OperationMode } from '../data/fees';
+import { estimateAnnualFee, type OperationMode } from '../data/fees';
+import { OPERATING_MODE_ORDER, OPERATING_MODES } from '../data/operatingModes';
 import { won } from '../lib/validation';
 import type { Holding, Screen } from '../types';
 
@@ -32,7 +33,8 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
   const [custom, setCustom] = useState<string | null>(null); // null = 직접 입력 꺼짐
   const [selection, setSelection] = useState<Selection>({ kind: 'holding', index: 0 });
   const [restExpanded, setRestExpanded] = useState(false);
-  const [mode, setMode] = useState<OperationMode>('manual');
+  // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
+  const [mode, setMode] = useState<OperationMode>('auto');
 
   const topHoldings = ALL_HOLDINGS.slice(0, 4);
   const restHoldings = ALL_HOLDINGS.slice(4);
@@ -226,29 +228,25 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
           <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
             <h2 className="text-[26px] font-bold tracking-[-0.025em]">어떻게 운용할까요?</h2>
             <div className="grid grid-cols-2 gap-5">
-              <ModeCard
-                active={mode === 'manual'}
-                onClick={() => setMode('manual')}
-                badge="처음이라면 추천"
-                title="확인하고 실행"
-                flow={['물방개가 제안해요', '내가 확인해요', '실행']}
-                mode="manual"
-                amount={amount}
-              />
-              <ModeCard
-                active={mode === 'auto'}
-                onClick={() => setMode('auto')}
-                title="자동으로 운용"
-                flow={['물방개가 관리해요', '자동 실행']}
-                mode="auto"
-                amount={amount}
-              />
+              {OPERATING_MODE_ORDER.map((m) => (
+                <ModeCard
+                  key={m}
+                  active={mode === m}
+                  onClick={() => setMode(m)}
+                  badge={OPERATING_MODES[m].recommendation}
+                  title={OPERATING_MODES[m].label}
+                  flow={OPERATING_MODES[m].flow}
+                  mode={m}
+                  amount={amount}
+                />
+              ))}
             </div>
+            <AccountPolicyNote />
           </section>
 
           <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
             <div className="flex flex-col gap-2.5">
-              <span className="text-[17px] text-[#B9C2BA]">{strategyName} · {ALL_HOLDINGS.length}개 종목 · {mode === 'manual' ? '확인하고 실행' : '자동으로 운용'}</span>
+              <span className="text-[17px] text-[#B9C2BA]">{strategyName} · {ALL_HOLDINGS.length}개 종목 · {OPERATING_MODES[mode].label}</span>
               <span className="text-[32px] font-bold tracking-[-0.03em] text-white">{won(amount)}</span>
             </div>
             <button onClick={() => onStart(amount, mode)} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
@@ -320,7 +318,7 @@ function StockRow({
 function ModeCard({
   active, onClick, badge, title, flow, mode, amount,
 }: { active: boolean; onClick: () => void; badge?: string; title: string; flow: string[]; mode: OperationMode; amount: number }) {
-  const feeRate = INVESTMENT_FEES[mode];
+  const feeRate = OPERATING_MODES[mode].feeRate;
   const feeAmount = estimateAnnualFee(amount, mode);
   const amountLabel = `${(amount / 10000).toLocaleString('ko-KR')}만원`;
 
@@ -403,6 +401,30 @@ function FeeInfoTooltip() {
   );
 }
 
+/**
+ * "운용방식마다 계좌가 따로 필요해요" 안내 — warning처럼 보이지 않게 secondary 톤을 유지하고,
+ * 클릭하면 같은 줄 아래로 설명이 펼쳐진다(FaqAccordion과 동일한 인라인 확장 패턴).
+ */
+function AccountPolicyNote() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-2">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 self-start text-[14px] text-subtle">
+        <Info size={15} className="shrink-0" />
+        <span>운용방식마다 계좌가 따로 필요해요</span>
+        <span className="font-semibold text-navy underline">자세히 보기</span>
+      </button>
+      {open && (
+        <p className="pl-[23px] text-[13px] leading-[22px] text-subtle">
+          선택한 운용방식은 해당 계좌에서 유지돼요.<br />
+          다른 운용방식을 이용하려면 별도의 계좌가 필요해요.<br />
+          투자 전략은 언제든 변경할 수 있어요.
+        </p>
+      )}
+    </div>
+  );
+}
+
 interface FaqEntry { id: string; question: string; answer: ReactNode }
 
 /** MVP에 실제로 구현된 기능 범위에 맞춘 FAQ 답변 — 없는 기능을 있다고 서술하지 않는다 */
@@ -420,16 +442,16 @@ function buildFaqEntries(amount: number): FaqEntry[] {
           <p>선택한 운용 방식에 따라 이용 수수료가 달라져요.</p>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1 rounded-[12px] bg-canvas px-5 py-4">
-              <span className="text-[13px] font-semibold text-ink">확인하고 실행</span>
-              <span className="text-lg font-bold text-navy">연 {(INVESTMENT_FEES.manual * 100).toFixed(1)}%</span>
-              <span className="text-xs text-subtle">{amountLabel} 기준 연 약 {won(manualFee)}</span>
-              <p className="pt-1 text-[13px] text-muted">물방개가 제안한 내용을 사용자가 직접 확인한 후 실행해요.</p>
-            </div>
-            <div className="flex flex-col gap-1 rounded-[12px] bg-canvas px-5 py-4">
-              <span className="text-[13px] font-semibold text-ink">자동으로 운용</span>
-              <span className="text-lg font-bold text-navy">연 {(INVESTMENT_FEES.auto * 100).toFixed(1)}%</span>
+              <span className="text-[13px] font-semibold text-ink">{OPERATING_MODES.auto.label}</span>
+              <span className="text-lg font-bold text-navy">연 {(OPERATING_MODES.auto.feeRate * 100).toFixed(1)}%</span>
               <span className="text-xs text-subtle">{amountLabel} 기준 연 약 {won(autoFee)}</span>
               <p className="pt-1 text-[13px] text-muted">포트폴리오 관리와 리밸런싱 등을 자동으로 진행해요.</p>
+            </div>
+            <div className="flex flex-col gap-1 rounded-[12px] bg-canvas px-5 py-4">
+              <span className="text-[13px] font-semibold text-ink">{OPERATING_MODES.manual.label}</span>
+              <span className="text-lg font-bold text-navy">연 {(OPERATING_MODES.manual.feeRate * 100).toFixed(1)}%</span>
+              <span className="text-xs text-subtle">{amountLabel} 기준 연 약 {won(manualFee)}</span>
+              <p className="pt-1 text-[13px] text-muted">물방개가 제안한 내용을 사용자가 직접 확인한 후 실행해요.</p>
             </div>
           </div>
           <div className="flex flex-col gap-1 text-xs text-subtle">
@@ -442,12 +464,12 @@ function buildFaqEntries(amount: number): FaqEntry[] {
     },
     {
       id: 'diff',
-      question: '확인하고 실행과 자동으로 운용은 무엇이 다른가요?',
+      question: '자동으로 운용과 확인하고 실행은 무엇이 다른가요?',
       answer: (
         <div className="flex flex-col gap-3">
-          <p><b className="text-ink">확인하고 실행</b> · 물방개가 투자 또는 리밸런싱을 제안해요. 사용자가 내용을 확인한 뒤 실행 여부를 결정해요.</p>
-          <p><b className="text-ink">자동으로 운용</b> · 물방개가 포트폴리오를 관리하고, 운용 기준에 따라 필요한 조정을 자동으로 실행해요.</p>
-          <p>직접 확인하고 결정하고 싶다면 &apos;확인하고 실행&apos;, 운용을 맡기고 싶다면 &apos;자동으로 운용&apos;을 선택할 수 있어요.</p>
+          <p><b className="text-ink">자동으로 운용</b> · 물방개가 선택한 전략에 따라 포트폴리오를 관리하고, 필요한 조정을 자동으로 실행해요. 투자 판단을 매번 직접 하지 않아도 돼요.</p>
+          <p><b className="text-ink">확인하고 실행</b> · 물방개가 투자 또는 리밸런싱을 제안해요. 사용자가 내용을 직접 확인한 뒤 실행 여부를 결정해요.</p>
+          <p>판단 부담을 줄이고 싶다면 &apos;자동으로 운용&apos;, 직접 확인하고 결정하고 싶다면 &apos;확인하고 실행&apos;을 선택할 수 있어요.</p>
         </div>
       ),
     },
@@ -464,9 +486,17 @@ function buildFaqEntries(amount: number): FaqEntry[] {
     },
     {
       id: 'change-mode',
-      question: '투자 중에도 운용 방식을 바꿀 수 있나요?',
-      // 현재 실제 구현된 운용 방식 변경 기능이 없어, 가능하다고 서술하지 않는다.
-      answer: <p>현재 MVP에서는 투자 시작 후 운용 방식 변경 기능을 제공하지 않아요.</p>,
+      question: '운용방식은 나중에 변경할 수 있나요?',
+      answer: (
+        <div className="flex flex-col gap-2">
+          <p>같은 계좌에서는 다른 운용방식으로 변경할 수 없어요.</p>
+          <p>
+            &apos;자동으로 운용&apos;과 &apos;확인하고 실행&apos;은 각각 다른 계좌에서 이용해요.
+            선택한 운용방식 안에서 투자 전략은 언제든 변경할 수 있지만, 다른 운용방식을 이용하려면
+            별도의 계좌가 필요해요.
+          </p>
+        </div>
+      ),
     },
     {
       id: 'stop',

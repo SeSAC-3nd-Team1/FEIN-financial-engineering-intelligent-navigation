@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Header from '../components/Header';
 import InvestmentProgress from '../components/InvestmentProgress';
 import type { OperationMode } from '../data/fees';
+import { OPERATING_MODES } from '../data/operatingModes';
 import { won } from '../lib/validation';
 import type { SesacAccount } from '../store/investmentStore';
 import type { Screen } from '../types';
@@ -17,8 +18,6 @@ interface Props {
   /** "투자 시작하기" — 실제 계좌 생성/전략 반영 후 Portfolio로 이동한다 */
   onConfirm: () => Promise<void>;
 }
-
-const MODE_LABEL: Record<OperationMode, string> = { manual: '확인하고 실행', auto: '자동으로 운용' };
 
 export default function InvestConfirm({
   userName, strategyName, amount, mode, account, onNavigate, onBack, onConfirm,
@@ -57,7 +56,7 @@ export default function InvestConfirm({
           <section className="flex flex-col gap-5 rounded-card bg-surface p-9">
             <div className="flex items-center justify-between">
               <span className="text-[20px] font-bold tracking-[-0.02em]">{strategyName}</span>
-              <span className="text-base text-muted">{MODE_LABEL[mode]}</span>
+              <span className="text-base text-muted">{OPERATING_MODES[mode].label}</span>
             </div>
             <div className="h-px bg-line" />
             <div className="flex items-center justify-between">

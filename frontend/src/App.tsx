@@ -66,8 +66,9 @@ export default function App() {
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
   // 투자 시작 Flow(약관 → 계좌 준비 → 입금 → 최종 확인) 동안 유지해야 하는 선택 금액/운용방식
+  // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
   const [investmentAmount, setInvestmentAmount] = useState(1_000_000);
-  const [investmentMode, setInvestmentMode] = useState<OperationMode>('manual');
+  const [investmentMode, setInvestmentMode] = useState<OperationMode>('auto');
   const register = useAuthStore((s) => s.register);
   const initialize = useAuthStore((s) => s.initialize);
   const authenticatedUser = useAuthStore((s) => s.user);
@@ -76,10 +77,13 @@ export default function App() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const ensureAccount = useTradingStore((s) => s.ensureAccount);
   const termsAcceptedStrategyIds = useInvestmentStore((s) => s.termsAcceptedStrategyIds);
-  const sesacAccount = useInvestmentStore((s) => s.sesacAccount);
+  const accountsByMode = useInvestmentStore((s) => s.accountsByMode);
+  // 운용방식은 같은 계좌를 공유할 수 없어(정책), "지금 선택된 운용방식의 계좌"만 이 이름으로 다룬다
+  const sesacAccount = accountsByMode[investmentMode] ?? null;
   // StrategyDetail의 "입금이 필요해요" 배너 렌더링용 — navigate('portfolio')의 리다이렉트 판단은
   // 타이밍 이슈 때문에 별도로 getState()에서 직접 읽는다(위 주석 참고), 여기 반응형 값은 렌더링 전용
   const pendingInvestment = useInvestmentStore((s) => s.pendingInvestment);
+  const activeMode = useInvestmentStore((s) => s.activeMode);
   const acceptStrategyTerms = useInvestmentStore((s) => s.acceptStrategyTerms);
   const connectSesacAccount = useInvestmentStore((s) => s.connectSesacAccount);
   const deposit = useInvestmentStore((s) => s.deposit);
@@ -87,6 +91,7 @@ export default function App() {
   const hydrateForUser = useInvestmentStore((s) => s.hydrateForUser);
   const setInFlightStep = useInvestmentStore((s) => s.setInFlightStep);
   const clearInFlight = useInvestmentStore((s) => s.clearInFlight);
+  const setActiveMode = useInvestmentStore((s) => s.setActiveMode);
 
   /**
    * invest-terms~invest-confirm 중 한 화면으로 이동할 때 항상 이 함수를 거친다.
@@ -101,9 +106,14 @@ export default function App() {
     setScreen(step);
   };
 
-  /** StartInvesting "이대로 시작하기" — 이미 완료한 단계는 건너뛰고 다음 필요한 단계로 이동한다 */
+  /**
+   * StartInvesting "이대로 시작하기" — 이미 완료한 단계는 건너뛰고 다음 필요한 단계로 이동한다.
+   * 방금 고른 mode가 지금까지의 investmentMode와 다를 수 있으므로(운용방식 전환 시도), 클로저의
+   * sesacAccount(현재 investmentMode 기준)를 그대로 쓰면 안 되고 mode에 맞는 계좌를 다시 찾아야 한다.
+   */
   const enterInvestmentFlow = (amount: number, mode: OperationMode) => {
-    const step = resolveInvestmentEntryStep({ strategyId, amount, termsAcceptedStrategyIds, sesacAccount });
+    const accountForMode = accountsByMode[mode] ?? null;
+    const step = resolveInvestmentEntryStep({ strategyId, amount, termsAcceptedStrategyIds, sesacAccount: accountForMode });
     enterInvestmentStep(step, strategyId, amount, mode);
   };
 
@@ -306,8 +316,8 @@ export default function App() {
           onStart={handleStartInvesting}
           pendingDeposit={
             pendingInvestment && pendingInvestment.strategyId === strategyId
-              // InvestDeposit과 동일하게, 이미 보유한 잔액을 제외한 부족분만 안내한다
-              ? { amount: Math.max(0, pendingInvestment.amount - (sesacAccount?.balance ?? 0)) }
+              // InvestDeposit과 동일하게, 이미 보유한 잔액(대기 중인 투자와 같은 운용방식 계좌 기준)을 제외한 부족분만 안내한다
+              ? { amount: Math.max(0, pendingInvestment.amount - (accountsByMode[pendingInvestment.mode]?.balance ?? 0)) }
               : null
           }
           onResumeDeposit={() => {
@@ -349,10 +359,16 @@ export default function App() {
         <InvestAccount
           userName={userName}
           strategyName={strategy.name}
+          mode={investmentMode}
+          otherModeAccount={(() => {
+            const otherMode: OperationMode = investmentMode === 'auto' ? 'manual' : 'auto';
+            const otherAccount = accountsByMode[otherMode];
+            return otherAccount ? { mode: otherMode, accountNumber: otherAccount.accountNumber } : null;
+          })()}
           onNavigate={navigate}
           onBack={() => goBackInInvestmentFlow('invest-account')}
           onComplete={(account) => {
-            connectSesacAccount(account);
+            connectSesacAccount(investmentMode, account);
             const step = resolveInvestmentEntryStep({
               strategyId, amount: investmentAmount, termsAcceptedStrategyIds, sesacAccount: account,
             });
@@ -370,7 +386,7 @@ export default function App() {
           onNavigate={navigate}
           onBack={() => goBackInInvestmentFlow('invest-deposit')}
           onDeposit={(shortfall) => {
-            deposit(shortfall);
+            deposit(investmentMode, shortfall);
             const step = resolveInvestmentEntryStep({
               strategyId,
               amount: investmentAmount,
@@ -403,6 +419,7 @@ export default function App() {
               throw new Error('로그인이 필요합니다.');
             }
             await ensureAccount(accessToken, strategyId);
+            setActiveMode(investmentMode);
             clearInFlight();
             setScreen('portfolio');
           }}
@@ -415,6 +432,7 @@ export default function App() {
         <Dashboard
           userName={userName}
           strategyName={strategy.name}
+          mode={activeMode}
           onNavigate={navigate}
           onOpenHoldings={() => navigate('portfolio')}
           onChangeStrategy={() => navigate('portfolio')}

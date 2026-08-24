@@ -15,6 +15,12 @@ export interface SesacAccount {
   balance: number;
 }
 
+/**
+ * 운용방식별 SeSAC증권 계좌 — 같은 계좌로 운용방식을 바꿀 수 없다는 정책에 따라, 운용방식마다
+ * 별도의 계좌를 갖는다. 전략은 계좌 안에서 자유롭게 바꿀 수 있어 계좌와 묶이지 않는다.
+ */
+export type AccountsByMode = Partial<Record<OperationMode, SesacAccount>>;
+
 export interface PendingInvestment {
   strategyId: string;
   strategyName: string;
@@ -35,18 +41,30 @@ export interface InFlightInvestment {
 interface PersistedOnboarding {
   /** 상품설명서·필수 약관 동의를 완료한 전략 id 목록 — 전략마다 상품설명서가 달라 전략 단위로 저장 */
   termsAcceptedStrategyIds: string[];
-  sesacAccount: SesacAccount | null;
+  accountsByMode: AccountsByMode;
   /** "나중에 입금할게요"로 대기 중인 투자 — null이면 대기 중인 입금 없음 */
   pendingInvestment: PendingInvestment | null;
   inFlight: InFlightInvestment | null;
+  /**
+   * 실제 투자가 시작된(ensureAccount 성공) 운용방식 — Portfolio/Dashboard가 "지금 어떤 방식으로
+   * 운용 중인지" 판단하는 데 쓴다. 백엔드 계좌 모델에 아직 운용방식 필드가 없어 프론트에서만
+   * 별도로 추적하는 값이며, 추후 계좌 API에 operating_mode가 추가되면 그쪽 값으로 교체하면 된다.
+   */
+  activeMode: OperationMode | null;
 }
 
 const EMPTY_ONBOARDING: PersistedOnboarding = {
   termsAcceptedStrategyIds: [],
-  sesacAccount: null,
+  accountsByMode: {},
   pendingInvestment: null,
   inFlight: null,
+  activeMode: null,
 };
+
+/** 이 변경(운용방식별 계좌) 이전에 저장된 단일 계좌 필드 — 마이그레이션 판단에만 쓰고 새 상태에는 남기지 않는다 */
+interface LegacyPersistedOnboardingV1 {
+  sesacAccount?: SesacAccount | null;
+}
 
 /** userId가 없으면(비로그인) 저장할 곳이 없으니 빈 상태를 돌려준다 — 이 상태는 persist 대상도 아니다 */
 function loadPersisted(userId: string | null): PersistedOnboarding {
@@ -54,7 +72,19 @@ function loadPersisted(userId: string | null): PersistedOnboarding {
   try {
     const raw = localStorage.getItem(storageKey(userId));
     if (!raw) return EMPTY_ONBOARDING;
-    return { ...EMPTY_ONBOARDING, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw) as Partial<PersistedOnboarding> & LegacyPersistedOnboardingV1;
+    const merged: PersistedOnboarding = { ...EMPTY_ONBOARDING, ...parsed, accountsByMode: parsed.accountsByMode ?? {} };
+
+    // 이 변경 전에는 sesacAccount 하나만 저장했다 — 그 계좌가 어느 운용방식이었는지는 저장돼 있지
+    // 않으므로, pendingInvestment/inFlight에 남은 mode를 우선 쓰고 없으면 이 변경 전 기본값이던
+    // 'manual'로 간주한다. 마이그레이션하지 않으면 invest-deposit 등에서 해당 mode의 계좌를 찾지
+    // 못해 화면이 비어 보이는 문제가 생긴다.
+    if (parsed.sesacAccount && Object.keys(merged.accountsByMode).length === 0) {
+      const inferredMode: OperationMode = parsed.pendingInvestment?.mode ?? parsed.inFlight?.mode ?? 'manual';
+      merged.accountsByMode = { [inferredMode]: parsed.sesacAccount };
+    }
+
+    return merged;
   } catch {
     return EMPTY_ONBOARDING;
   }
@@ -72,10 +102,10 @@ interface InvestmentOnboardingState extends PersistedOnboarding {
   hydrateForUser: (userId: string | null) => void;
   /** 선택 전략 상품설명/필수 약관 동의 완료 */
   acceptStrategyTerms: (strategyId: string) => void;
-  /** SeSAC증권 계좌 연결 — 기존 계좌 연동/신규 계좌 개설 모두 동일하게 사용 */
-  connectSesacAccount: (account: SesacAccount) => void;
-  /** 입금 — 잔액에 반영하고, 대기 중이던 투자가 있었다면 해소 */
-  deposit: (amount: number) => void;
+  /** 특정 운용방식의 SeSAC증권 계좌 연결 — 기존 계좌 연동/신규 계좌 개설 모두 동일하게 사용 */
+  connectSesacAccount: (mode: OperationMode, account: SesacAccount) => void;
+  /** 특정 운용방식 계좌에 입금 — 잔액에 반영하고, 대기 중이던 투자가 있었다면 해소 */
+  deposit: (mode: OperationMode, amount: number) => void;
   /** "나중에 입금할게요" — 재로그인 시 입금 요청 화면으로 복귀시키기 위해 저장 */
   deferDeposit: (investment: PendingInvestment) => void;
   clearPendingInvestment: () => void;
@@ -83,12 +113,14 @@ interface InvestmentOnboardingState extends PersistedOnboarding {
   setInFlightStep: (step: InFlightInvestment) => void;
   /** Flow를 벗어나거나(뒤로가기로 금액 선택 화면 등) 완료했을 때 호출 */
   clearInFlight: () => void;
+  /** 실제 투자 시작(ensureAccount 성공) 시점에 호출 — 현재 활성 운용방식을 기록 */
+  setActiveMode: (mode: OperationMode) => void;
 }
 
 export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) => {
   const persistCurrent = () => {
-    const { currentUserId, termsAcceptedStrategyIds, sesacAccount, pendingInvestment, inFlight } = get();
-    persist(currentUserId, { termsAcceptedStrategyIds, sesacAccount, pendingInvestment, inFlight });
+    const { currentUserId, termsAcceptedStrategyIds, accountsByMode, pendingInvestment, inFlight, activeMode } = get();
+    persist(currentUserId, { termsAcceptedStrategyIds, accountsByMode, pendingInvestment, inFlight, activeMode });
   };
 
   return {
@@ -108,16 +140,29 @@ export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) =
       persistCurrent();
     },
 
-    connectSesacAccount: (account) => {
-      set({ sesacAccount: account });
+    connectSesacAccount: (mode, account) => {
+      set((s) => {
+        // 최종 방어선 — "같은 계좌로는 운용방식을 바꿀 수 없다"는 정책은 UI(InvestAccount)에서도
+        // 막지만, 화면 쪽 경로 하나를 놓치더라도 스토어에서 다른 운용방식과 계좌번호가 겹치는
+        // 저장 자체를 거부해 정책이 깨지지 않게 한다.
+        const usedByOtherMode = (Object.entries(s.accountsByMode) as [OperationMode, SesacAccount][])
+          .some(([m, acc]) => m !== mode && acc.accountNumber === account.accountNumber);
+        if (usedByOtherMode) {
+          console.warn(`[investmentStore] ${account.accountNumber}는 이미 다른 운용방식에 연결된 계좌라 ${mode}에 연결하지 않았습니다.`);
+          return s;
+        }
+        return { accountsByMode: { ...s.accountsByMode, [mode]: account } };
+      });
       persistCurrent();
     },
 
-    deposit: (amount) => {
-      set((s) => ({
-        sesacAccount: s.sesacAccount ? { ...s.sesacAccount, balance: s.sesacAccount.balance + amount } : s.sesacAccount,
-        pendingInvestment: null,
-      }));
+    deposit: (mode, amount) => {
+      set((s) => {
+        const account = s.accountsByMode[mode];
+        if (!account) return s;
+        return { accountsByMode: { ...s.accountsByMode, [mode]: { ...account, balance: account.balance + amount } } };
+      });
+      set({ pendingInvestment: null });
       persistCurrent();
     },
 
@@ -138,6 +183,11 @@ export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) =
 
     clearInFlight: () => {
       set({ inFlight: null });
+      persistCurrent();
+    },
+
+    setActiveMode: (mode) => {
+      set({ activeMode: mode });
       persistCurrent();
     },
   };
