@@ -1,0 +1,141 @@
+"""OpenDART parsing, 정규화, UPSERT 충돌키를 검증한다."""
+
+from datetime import date
+from decimal import Decimal
+import io
+import zipfile
+
+import pytest
+
+from collectors.opendart_client import (
+    OpenDartApiError,
+    OpenDartClient,
+    OpenDartNotConfiguredError,
+    parse_corp_code_zip,
+)
+from loaders.opendart import OpenDartRepository
+from processing.opendart import disclosure_rows, financial_account_rows, financial_summary_row
+from storage.blob import BlobObject
+from storage.opendart import OpenDartRawWriter
+
+
+def _corp_zip() -> bytes:
+    xml = b"""<?xml version='1.0' encoding='UTF-8'?>
+    <result><list><corp_code>00126380</corp_code><corp_name>Samsung Electronics</corp_name>
+    <corp_eng_name>Samsung Electronics Co., Ltd.</corp_eng_name><stock_code>005930</stock_code>
+    <modify_date>20260824</modify_date></list></result>"""
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("CORPCODE.xml", xml)
+    return output.getvalue()
+
+
+def test_corp_code_xml_parsing_preserves_stock_code_leading_zero() -> None:
+    records = parse_corp_code_zip(_corp_zip())
+    assert len(records) == 1
+    assert records[0].corp_code == "00126380"
+    assert records[0].stock_code == "005930"
+
+
+def test_missing_api_key_fails_without_http_request() -> None:
+    with pytest.raises(OpenDartNotConfiguredError):
+        OpenDartClient("")
+
+
+class _Response:
+    status_code = 200
+    content = b"content"
+
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self.payload
+
+
+class _Session:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+        self.params = None
+
+    def get(self, _url, *, params, timeout):
+        self.params = params
+        return _Response(self.payload)
+
+
+def test_client_includes_key_and_returns_validated_response() -> None:
+    session = _Session({"status": "000", "list": [{"corp_code": "00126380"}]})
+    client = OpenDartClient("secret", session=session, min_interval_seconds=0)
+    payload = client.disclosures("00126380")
+    assert payload["list"][0]["corp_code"] == "00126380"
+    assert session.params["crtfc_key"] == "secret"
+
+
+def test_client_raises_for_opendart_status_error() -> None:
+    client = OpenDartClient("secret", session=_Session({"status": "010", "message": "invalid key"}), min_interval_seconds=0)
+    with pytest.raises(OpenDartApiError) as error:
+        client.company("00126380")
+    assert error.value.status == "010"
+    assert "secret" not in str(error.value)
+
+
+def test_financial_response_parsing_and_metric_aliases() -> None:
+    payload = {"list": [
+        {"corp_code": "00126380", "bsns_year": "2025", "reprt_code": "11011", "fs_div": "CFS", "sj_div": "IS", "account_id": "ifrs-full_Revenue", "account_nm": "매출액", "thstrm_amount": "300,000", "frmtrm_amount": "250,000", "currency": "KRW"},
+        {"corp_code": "00126380", "bsns_year": "2025", "reprt_code": "11011", "fs_div": "CFS", "sj_div": "BS", "account_id": "ifrs-full_Assets", "account_nm": "자산총계", "thstrm_amount": "(10,000)", "frmtrm_amount": "9,000", "currency": "KRW"},
+    ]}
+    rows = financial_account_rows(payload, stock_code="005930")
+    summary = financial_summary_row(rows)
+    assert rows[0]["stock_code"] == "005930"
+    assert rows[1]["current_amount"] == Decimal("-10000")
+    assert summary["revenue"] == Decimal("300000")
+    assert summary["total_assets"] == Decimal("-10000")
+    assert summary["quarter"] == "FY"
+
+
+def test_disclosure_rows_keep_unique_receipt_identity_fields() -> None:
+    rows = disclosure_rows({"list": [{
+        "rcept_no": "202608240001", "corp_code": "00126380", "corp_name": "삼성전자",
+        "stock_code": "005930", "report_nm": "사업보고서", "flr_nm": "삼성전자", "rcept_dt": "20260824", "rm": "유",
+    }]}, stock_code="005930")
+    assert rows[0]["receipt_no"] == "202608240001"
+    assert rows[0]["receipt_date"] == date(2026, 8, 24)
+
+
+def test_repository_uses_domain_conflict_keys(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr("loaders.opendart.upsert_rows", lambda session, model, rows, *, conflict_columns: calls.append((model.__tablename__, tuple(conflict_columns))) or len(rows))
+    repository = OpenDartRepository(object())
+    assert repository.upsert_companies([{"corp_code": "1"}]) == 1
+    assert repository.upsert_financials([{"corp_code": "1"}]) == 1
+    assert repository.upsert_disclosures([{"receipt_no": "1"}]) == 1
+    assert calls == [
+        ("companies", ("corp_code",)),
+        ("company_financials", ("corp_code", "business_year", "report_code", "fs_div")),
+        ("company_disclosures", ("receipt_no",)),
+    ]
+
+
+def test_opendart_raw_writer_keeps_original_bytes_and_daily_path() -> None:
+    captured = {}
+
+    class Storage:
+        def upload_bytes(self, container, path, data, *, metadata, content_type):
+            captured.update(container=container, path=path, data=data, metadata=metadata, content_type=content_type)
+            return BlobObject(container, path, len(data), "etag", metadata, True)
+
+    content = b"unchanged-opendart-response"
+    blob = OpenDartRawWriter(Storage(), container="raw").upload_bytes(
+        dataset="financial",
+        stock_code="005930",
+        content=content,
+        partition_date=date(2026, 8, 24),
+        extension="json",
+        content_type="application/json",
+    )
+    assert captured["data"] == content
+    assert blob.path.startswith("opendart/financial/005930/2026/08/24/")
+    assert blob.path.endswith(".json")

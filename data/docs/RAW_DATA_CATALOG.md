@@ -42,12 +42,12 @@ Raw에 저장하는 데까지만 포함한다. 정규화, 결측 처리, Parquet
 |---|---|---:|---|---|
 | KOSPI/KOSDAQ 일별 매매·valuation | [KRX OPEN API](https://openapi.krx.co.kr/contents/OPP/USES/service/OPPUSES002_S2.cmd?BO_ID=JvJFzlAENzZlPBDNGAWC) | 5년 | PER/PBR/배당수익률, 거래소 원천 대조 | `KRX_AUTH_KEY` 발급 후 별도 Issue |
 | 과거 KOSPI 200 구성종목 | KRX Data Marketplace | 5년+ | survivorship bias 없는 과거 universe | 제공 방식·라이선스 확인 후 별도 Issue |
-| 공시 접수시각·원문 | [OpenDART 공시검색](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001) | 5년 | 재무정보의 실제 공개 가능시각과 point-in-time 결합 | `OPENDART_API_KEY` 사용 별도 Issue |
+| 공시 접수시각·원문 | [OpenDART 공시검색](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001) | 실행일부터 축적 | 재무정보의 실제 공개 가능시각과 point-in-time 결합 | Issue #65 collector/Raw/PostgreSQL 구현; 과거 5년 backfill은 후속 운영 작업 |
 | 기준금리·환율·CPI | [한국은행 ECOS Open API](https://ecos.bok.or.kr/api/) | 5년+ | 시장 국면과 거시 설명 | `ECOS_API_KEY` 사용 별도 Issue |
 | 실시간 시세·모의투자 | KIS Developers | 축적 시작일 이후 | 화면 현재가와 모의 주문 | 학습용 5년 Raw와 분리 |
 
-OpenDART·KRX·ECOS는 프로젝트에 필요하지만 인증·호출 계약·Raw 경로가 서로 다르므로 현재
-금융위 수집기에 억지로 섞지 않는다. 각 source는 별도 collector와
+OpenDART·KRX·ECOS는 인증·호출 계약·Raw 경로가 서로 다르므로 금융위 수집기에 섞지
+않는다. OpenDART는 별도 collector로 구현했고, 나머지 source도 각각 별도 collector와
 `raw/{source}/{dataset}/...` lineage를 갖도록 후속 작업으로 분리한다.
 
 ## Raw 저장 계약
@@ -190,3 +190,19 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
 배당일·발행일 같은 실제 event 날짜는 payload의 별도 필드에 존재하며 이 작업에서는
 해석하거나 전처리하지 않는다. 공시처럼 사건이 없을 수 있는 데이터의 빈 월도 수집 실패로
 간주하지 않는다.
+## OpenDART Raw
+
+금융감독원 OpenDART 응답은 공공데이터포털 월 partition과 분리해 API 수집일 기준 일자
+partition에 원문 그대로 저장한다. 파일명은 원문 SHA-256이므로 같은 응답의 재수집은 기존
+Blob을 재사용한다.
+
+| Dataset | API | Format | Raw path | 주요 식별자 |
+| --- | --- | --- | --- | --- |
+| `corp_code` | `corpCode.xml` | ZIP/XML | `opendart/corp_code/YYYY/MM/DD/{sha256}.zip` | `corp_code`, `stock_code` |
+| `company` | `company.json` | JSON | `opendart/company/{stock_code}/YYYY/MM/DD/{sha256}.json` | `corp_code` |
+| `financial` | `fnlttSinglAcntAll.json` | JSON | `opendart/financial/{stock_code}/YYYY/MM/DD/{sha256}.json` | 연도·보고서·계정 ID |
+| `disclosure` | `list.json` | JSON | `opendart/disclosure/{stock_code}/YYYY/MM/DD/{sha256}.json` | `rcept_no` |
+
+Raw는 API 응답의 status/message/list를 유지한다. 분석용 숫자 변환, 계정 alias, 날짜 변환은
+PostgreSQL 정제 적재 단계에서만 수행한다. 인증은 `DefaultAzureCredential`을 사용하며 실제
+Azure Shared Key를 코드나 문서에 넣지 않는다.
