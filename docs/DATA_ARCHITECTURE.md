@@ -20,7 +20,7 @@ flowchart TD
     RD["Redis"] --> B
 ```
 
-OpenDART, KRX, ECOS 등 추가 소스는 필요한 시점에 같은 Raw 원칙으로 보강한다. KIS는 실시간/최신 시세와 모의투자 등 서비스용 온라인 경로이며 현재 오프라인 학습 Raw 파이프라인과 분리한다.
+OpenDART, KRX, ECOS는 source별 collector와 같은 불변 Raw 원칙으로 보강한다. KRX 정제 결과 중 StockDetail 조회에 필요한 종목·일별시세·지수만 PostgreSQL serving table에도 멱등 적재한다. KIS는 실시간/최신 시세와 모의투자 등 서비스용 온라인 경로이며 오프라인 학습 Raw 파이프라인과 분리한다.
 
 ## 저장소별 책임
 

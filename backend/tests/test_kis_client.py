@@ -1,6 +1,7 @@
 """KIS OAuth token을 요청 인스턴스 간에 재사용하는지 검증한다."""
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 
 from app.integrations.kis.client import KisClient
@@ -83,6 +84,44 @@ class CandleResponse:
                 },
             ],
         }
+
+
+class QuoteResponse:
+    status_code = 200
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, object]:
+        return {
+            "rt_cd": "0",
+            "output": {
+                "stck_prpr": "73400", "stck_sdpr": "72200", "prdy_vrss": "1200",
+                "prdy_ctrt": "1.66", "acml_vol": "12345678",
+            },
+        }
+
+
+def test_current_quote_maps_change_and_volume(monkeypatch) -> None:
+    monkeypatch.setattr("app.integrations.kis.client.httpx.get", lambda *_args, **_kwargs: QuoteResponse())
+    monkeypatch.setattr(
+        "app.integrations.kis.client.settings",
+        SimpleNamespace(
+            kis_app_key="key", kis_app_secret="secret", kis_base_url="https://example.invalid",
+            request_timeout_seconds=1,
+        ),
+    )
+    client = KisClient()
+    client._token = "existing-token"
+    client._token_expires_at = 10**12
+
+    quote = client.get_current_quote("005930")
+
+    assert quote.price == 73400
+    assert quote.previous_close == 72200
+    assert quote.change_amount == 1200
+    assert quote.change_rate == Decimal("1.66")
+    assert quote.volume == 12345678
 
 
 def test_minute_candles_reuse_client_token_and_are_sorted(monkeypatch) -> None:

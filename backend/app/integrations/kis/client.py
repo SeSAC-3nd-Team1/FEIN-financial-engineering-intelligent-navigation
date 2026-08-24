@@ -13,7 +13,7 @@ import redis
 
 from app.core.config import settings
 from app.core.errors import ServiceError
-from app.integrations.kis.models import MinuteCandle
+from app.integrations.kis.models import CurrentQuote, MinuteCandle
 
 logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
@@ -66,7 +66,7 @@ class KisClient:
                 logger.warning("Redis KIS token cache write failed")
         return self._token
 
-    def get_current_price(self, stock_code: str) -> tuple[Decimal, datetime]:
+    def get_current_quote(self, stock_code: str) -> CurrentQuote:
         headers = {
             "authorization": f"Bearer {self._access_token()}",
             "appkey": settings.kis_app_key,
@@ -89,16 +89,53 @@ class KisClient:
                 payload = response.json()
                 if payload.get("rt_cd") != "0":
                     raise ServiceError("STOCK_NOT_FOUND", "조회할 수 없는 종목입니다.", 404)
-                price = Decimal(payload["output"]["stck_prpr"])
+                output = payload["output"]
+                price = Decimal(output["stck_prpr"])
                 if not price.is_finite() or price <= 0:
                     raise ValueError("invalid current price")
-                return price, datetime.now(UTC)
+                change_amount = self._optional_decimal(output.get("prdy_vrss"))
+                previous_close = self._optional_decimal(output.get("stck_sdpr"))
+                if previous_close is None and change_amount is not None and price - change_amount > 0:
+                    previous_close = price - change_amount
+                return CurrentQuote(
+                    stock_code=stock_code,
+                    price=price,
+                    previous_close=previous_close,
+                    change_amount=change_amount,
+                    change_rate=self._optional_decimal(output.get("prdy_ctrt")),
+                    volume=self._optional_int(output.get("acml_vol")),
+                    as_of=datetime.now(UTC),
+                )
             except ServiceError:
                 raise
             except (httpx.HTTPError, InvalidOperation, ValueError, KeyError, TypeError) as exc:
                 last_error = exc
                 logger.warning("KIS price request attempt=%s failed stock_code=%s error=%s", attempt + 1, stock_code, type(exc).__name__)
         raise ServiceError("KIS_UNAVAILABLE", "현재 시장가격을 조회하지 못했습니다.", 503) from last_error
+
+    def get_current_price(self, stock_code: str) -> tuple[Decimal, datetime]:
+        """주문/평가 기존 계약을 유지하는 현재가 호환 wrapper다."""
+
+        quote = self.get_current_quote(stock_code)
+        return quote.price, quote.as_of
+
+    @staticmethod
+    def _optional_decimal(value: object) -> Decimal | None:
+        if value in (None, ""):
+            return None
+        result = Decimal(str(value))
+        if not result.is_finite():
+            raise ValueError("invalid quote number")
+        return result
+
+    @staticmethod
+    def _optional_int(value: object) -> int | None:
+        if value in (None, ""):
+            return None
+        result = int(value)
+        if result < 0:
+            raise ValueError("invalid quote volume")
+        return result
 
     def get_minute_candles(
         self,

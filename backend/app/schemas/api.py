@@ -178,8 +178,53 @@ class ExecutionResponse(BaseModel):
 class PriceResponse(BaseModel):
     stock_code: str
     price: Decimal
+    previous_close: Decimal | None = None
+    change_amount: Decimal | None = None
+    change_rate: Decimal | None = None
+    volume: int | None = None
     source: str
     as_of: datetime
+
+
+class StockSummaryResponse(BaseModel):
+    stock_code: str
+    stock_name: str
+    market: str
+    sector: str | None
+    listing_date: date | None
+    listed_shares: int | None
+    security_type: str | None
+    description: str | None
+    price: Decimal | None
+    previous_close: Decimal | None
+    change_amount: Decimal | None
+    change_rate: Decimal | None
+    volume: int | None
+    market_cap: Decimal | None
+    per: Decimal | None
+    pbr: Decimal | None
+    roe: Decimal | None
+    dividend_yield: Decimal | None
+    financial_year: str | None
+    as_of: datetime | None
+    sources: dict[str, str | None]
+
+
+class StockChartItemResponse(BaseModel):
+    date: str
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int
+
+
+class StockChartResponse(BaseModel):
+    stock_code: str
+    period: Literal["1D", "1W", "3M", "6M", "1Y", "5Y"]
+    source: str
+    as_of: datetime
+    items: list[StockChartItemResponse]
 
 
 class MinuteCandleResponse(BaseModel):

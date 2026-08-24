@@ -119,6 +119,9 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PYTHONPATH: /app
       DATA_GO_KR_API_KEY: ${DATA_GO_KR_API_KEY:-}
+      KRX_AUTH_KEY: ${KRX_AUTH_KEY:-}
+      KRX_BASE_URL: ${KRX_BASE_URL:-https://data-dbg.krx.co.kr/svc/apis}
+      KRX_TIMEOUT_SECONDS: ${KRX_TIMEOUT_SECONDS:-10}
       OPENDART_API_KEY: ${OPENDART_API_KEY:-}
       OPENDART_TIMEOUT_SECONDS: ${OPENDART_TIMEOUT_SECONDS:-10}
       ECOS_API_KEY: ${ECOS_API_KEY:-}

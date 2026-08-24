@@ -44,8 +44,55 @@ export interface AccountResponse {
 export interface PriceResponse {
   stock_code: string;
   price: DecimalString;
+  previous_close: DecimalString | null;
+  change_amount: DecimalString | null;
+  change_rate: DecimalString | null;
+  volume: number | null;
   source: 'KIS' | 'REDIS' | string;
   as_of: string;
+}
+
+export type StockChartPeriod = '1D' | '1W' | '3M' | '6M' | '1Y' | '5Y';
+
+export interface StockSummaryResponse {
+  stock_code: string;
+  stock_name: string;
+  market: string;
+  sector: string | null;
+  listing_date: string | null;
+  listed_shares: number | null;
+  security_type: string | null;
+  description: string | null;
+  price: DecimalString | null;
+  previous_close: DecimalString | null;
+  change_amount: DecimalString | null;
+  change_rate: DecimalString | null;
+  volume: number | null;
+  market_cap: DecimalString | null;
+  per: DecimalString | null;
+  pbr: DecimalString | null;
+  roe: DecimalString | null;
+  dividend_yield: DecimalString | null;
+  financial_year: string | null;
+  as_of: string | null;
+  sources: Record<string, string | null>;
+}
+
+export interface StockChartItemResponse {
+  date: string;
+  open: DecimalString;
+  high: DecimalString;
+  low: DecimalString;
+  close: DecimalString;
+  volume: number;
+}
+
+export interface StockChartResponse {
+  stock_code: string;
+  period: StockChartPeriod;
+  source: string;
+  as_of: string;
+  items: StockChartItemResponse[];
 }
 
 export interface PositionResponse {
@@ -188,6 +235,18 @@ export function getStockPriceApi(stockCode: string, token: string): Promise<Pric
     });
   priceRequests.set(stockCode, { token, promise: next });
   return next;
+}
+
+export function getStockSummaryApi(stockCode: string, token: string): Promise<StockSummaryResponse> {
+  return request<StockSummaryResponse>(`/market/stocks/${encodeURIComponent(stockCode)}/summary`, {}, token);
+}
+
+export function getStockChartApi(stockCode: string, period: StockChartPeriod, token: string): Promise<StockChartResponse> {
+  return request<StockChartResponse>(
+    `/market/stocks/${encodeURIComponent(stockCode)}/chart?period=${encodeURIComponent(period)}`,
+    {},
+    token,
+  );
 }
 
 export function getPortfolioApi(accountId: string, token: string): Promise<PortfolioResponse> {

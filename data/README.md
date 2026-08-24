@@ -1,11 +1,11 @@
 # Data
 
-데이터 수집, Azure Blob Raw 저장, Raw profiling, Processed Parquet, 모델용 Features, PostgreSQL 회원가입/약관 migration을 담당한다.
+데이터 수집, Azure Blob Raw 저장, Raw profiling, Processed Parquet, 모델용 Features, PostgreSQL migration과 화면 조회용 정제 데이터 적재를 담당한다.
 
 ## 현재 구조
 
 ```text
-Public Data API
+Public Data API / KRX OPEN API
   ↓
 Azure Blob raw (JSONL.gz)
   ↓
@@ -18,7 +18,7 @@ Feature Engineering
 Azure Blob features (Parquet)
 ```
 
-금융 Raw/Processed/Features 파이프라인은 PostgreSQL을 경유하지 않는다. PostgreSQL은 현재 회원가입/약관/가입 진행 상태 등 관계형 서비스 데이터를 담당한다.
+금융 Raw/Processed/Features 파이프라인은 PostgreSQL을 경유하지 않는다. PostgreSQL은 회원가입·가상투자 같은 관계형 서비스 데이터와 KRX/OpenDART의 화면 조회용 정제 결과만 담당한다.
 
 ## 현재 원칙
 
@@ -47,20 +47,21 @@ Azure Blob features (Parquet)
 data/
 ├─ AGENTS.md
 ├─ Dockerfile.db-init  # Alembic + 약관 seed 전용 경량 이미지
-├─ collectors/          # data.go.kr API client/config
+├─ collectors/          # data.go.kr/KRX/OpenDART/ECOS API client/config
 ├─ db/
 │  ├─ connection/       # PostgreSQL 연결
 │  ├─ migrations/       # Alembic history
-│  └─ models/           # membership/registration ORM
+│  └─ models/           # 관계형 서비스/시장 조회용 ORM
 ├─ docs/                # 금융 pipeline/model 문서
 ├─ features/            # 모델용 Dataset/Feature 생성
-├─ loaders/             # 범용 PostgreSQL UPSERT 유틸
+├─ loaders/             # PostgreSQL UPSERT repository
 ├─ notebooks/           # 분석 Notebook 공간
 ├─ processing/          # Raw → Processed 정규화/품질/계약
 ├─ reports/
 │  └─ raw-profile/      # 기계용 JSON + 사람용 Markdown
 ├─ scripts/
 │  ├─ collect_public_data.py
+│  ├─ sync_krx.py
 │  ├─ profile_raw_data.py
 │  ├─ run_financial_pipeline.py
 │  ├─ audit_model_data_outputs.py
@@ -81,7 +82,8 @@ Canonical layout:
 
 ```text
 raw/
-└─ data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/{sha256}.jsonl.gz
+├─ data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/{sha256}.jsonl.gz
+└─ krx/{dataset}/operation={operation}/year=YYYY/month=MM/{sha256}.jsonl.gz
 ```
 
 `payload.basDt`가 Raw partition/filter의 권위 있는 기준일이다. `day=DD`, `migration/` prefix, page-number filename은 신규 canonical 경로에서 사용하지 않는다.
@@ -111,6 +113,17 @@ docker compose --profile data run --rm --no-deps data python -m scripts.audit_ra
 
 데이터 목록, 출처, 우선순위, 현재 관측 범위와 후속 source는
 [`docs/RAW_DATA_CATALOG.md`](docs/RAW_DATA_CATALOG.md)를 기준으로 한다.
+
+## KRX OPEN API 동기화
+
+승인된 7개 endpoint에서 KOSPI·KOSDAQ 종목기본정보와 일별 OHLCV, KOSPI·KOSDAQ·KRX 지수를 수집한다. `AUTH_KEY` header와 `basDd=YYYYMMDD` query를 사용하며, 6자리 종목코드는 문자열로 보존한다. 원문은 `raw/krx/...`에 불변 저장하고 화면 조회에 필요한 정제 결과만 `market_stocks`, `market_stock_prices`, `market_indices`에 멱등 UPSERT한다.
+
+```bash
+docker compose --profile migration run --rm --no-deps db-init
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_krx --date 2026-08-24
+```
+
+로컬 parser와 PostgreSQL 적재만 진단할 때는 `--skip-blob`을 사용할 수 있으나 운영 동기화에서는 사용하지 않는다. `.github/workflows/krx-daily-sync.yml`은 평일 18:30 KST에 실행하며 GitHub Actions Secret `KRX_AUTH_KEY`, `DATABASE_URL`과 기존 Azure OIDC Secret/Blob 쓰기 권한이 필요하다. 이 workflow는 공용 DB migration을 자동 적용하지 않으므로 `20260824_0016`이 승인·반영된 뒤 migration 담당자가 먼저 `db-init`을 실행해야 한다. 휴장일처럼 KRX가 빈 목록을 반환하면 임의 값을 생성하지 않는다.
 
 ## 금융 데이터 파이프라인
 
@@ -162,7 +175,7 @@ features/_manifests/model-datasets/version=v1/manifest.json
 
 ## PostgreSQL
 
-현재 구현 기준 Alembic head는 `20260824_0013`이다.
+현재 구현 기준 Alembic head는 `20260824_0016`이다.
 
 현재 membership/registration 관계:
 
@@ -176,6 +189,9 @@ public.companies
 public.company_financial_accounts
 public.company_financials
 public.company_disclosures
+public.market_stocks
+public.market_stock_prices
+public.market_indices
 public.alembic_version
 ```
 
