@@ -159,6 +159,7 @@ class StrategyRecommendation(Base):
             "model_version",
             "prompt_version",
             "strategy_catalog_version",
+            "dataset_version",
             name="uq_strategy_recommendations_reproducible_input",
         ),
         Index("ix_strategy_recommendations_assessment_created", "assessment_id", "created_at"),

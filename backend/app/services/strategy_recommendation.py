@@ -101,6 +101,7 @@ class StrategyRecommendationService:
             self.model_version,
             self.prompt_version,
             self.strategy_catalog_version,
+            self.dataset_version,
         )
         if existing:
             return self._response(existing)
@@ -141,6 +142,7 @@ class StrategyRecommendationService:
                 self.model_version,
                 self.prompt_version,
                 self.strategy_catalog_version,
+                self.dataset_version,
             )
             if concurrent:
                 return self._response(concurrent)

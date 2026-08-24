@@ -9,6 +9,13 @@ def _foreign_key_targets(model: type) -> set[str]:
     return {foreign_key.target_fullname for foreign_key in model.__table__.foreign_keys}
 
 
+def _constraint_columns(model: type, constraint_name: str) -> tuple[str, ...]:
+    constraint = next(
+        item for item in model.__table__.constraints if item.name == constraint_name
+    )
+    return tuple(column.name for column in constraint.columns)
+
+
 def test_assessment_stores_derived_profile_without_raw_answers() -> None:
     columns = set(InvestorProfileAssessment.__table__.columns.keys())
     assert {"profile_type", "stability", "return_seeking", "horizon", "model_version", "prompt_version"} <= columns
@@ -18,6 +25,16 @@ def test_assessment_stores_derived_profile_without_raw_answers() -> None:
 
 def test_recommendation_is_versioned_and_idempotent_per_input() -> None:
     assert "uq_strategy_recommendations_reproducible_input" in _constraint_names(StrategyRecommendation)
+    assert _constraint_columns(
+        StrategyRecommendation,
+        "uq_strategy_recommendations_reproducible_input",
+    ) == (
+        "assessment_id",
+        "model_version",
+        "prompt_version",
+        "strategy_catalog_version",
+        "dataset_version",
+    )
     assert _foreign_key_targets(StrategyRecommendation) == {"investor_profile_assessments.id"}
 
 

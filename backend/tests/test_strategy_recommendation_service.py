@@ -4,6 +4,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import ServiceError
 from app.models import InvestorProfileAssessment, Strategy, StrategyRecommendation, StrategyRecommendationItem
@@ -46,33 +47,76 @@ class FakeClient:
 
 
 class FakeSession:
-    def __init__(self) -> None:
+    def __init__(self, commit_error=None) -> None:
         self.added = []
         self.commits = 0
+        self.commit_error = commit_error
+        self.rollbacks = 0
 
     def add(self, value):
         self.added.append(value)
 
     def commit(self):
         self.commits += 1
+        if self.commit_error:
+            raise self.commit_error
 
     def rollback(self):
-        pass
+        self.rollbacks += 1
 
 
 class FakeRepo:
-    def __init__(self, session, assessment, *, consent=True, existing=None, strategies=None, existing_items=None) -> None:
+    def __init__(
+        self,
+        session,
+        assessment,
+        *,
+        consent=True,
+        existing=None,
+        strategies=None,
+        existing_items=None,
+        recommendation_lookup_results=None,
+    ) -> None:
         self.session = session
         self.assessment = assessment
         self.consent = consent
         self.existing = existing
         self.strategies = catalog() if strategies is None else strategies
         self.existing_items = existing_items
+        self.recommendation_lookup_results = recommendation_lookup_results
+        self.recommendation_lookup_inputs = []
 
     def has_ai_personalization_consent(self, _user_id): return self.consent
     def assessment_for_user(self, assessment_id, user_id):
         return self.assessment if self.assessment and self.assessment.id == assessment_id and self.assessment.user_id == user_id else None
-    def recommendation_for_input(self, *_args): return self.existing
+    def recommendation_for_input(
+        self,
+        assessment_id,
+        model_version,
+        prompt_version,
+        strategy_catalog_version,
+        dataset_version,
+    ):
+        lookup_input = (
+            assessment_id,
+            model_version,
+            prompt_version,
+            strategy_catalog_version,
+            dataset_version,
+        )
+        self.recommendation_lookup_inputs.append(lookup_input)
+        if self.recommendation_lookup_results is not None:
+            return self.recommendation_lookup_results.pop(0)
+        if self.existing is None:
+            return None
+        existing_input = (
+            self.existing.assessment_id,
+            self.existing.model_version,
+            self.existing.prompt_version,
+            self.existing.strategy_catalog_version,
+            self.existing.dataset_version,
+        )
+        return self.existing if existing_input == lookup_input else None
     def active_strategies(self): return self.strategies
     def latest_recommendation(self, _user_id): return self.existing
     def recommendation_items(self, recommendation_id):
@@ -84,11 +128,18 @@ class FakeRepo:
         )
 
 
-def make_service(client, assessment, **repo_kwargs):
-    session = FakeSession()
+def make_service(
+    client,
+    assessment,
+    *,
+    dataset_version="financial-8y-v1",
+    commit_error=None,
+    **repo_kwargs,
+):
+    session = FakeSession(commit_error=commit_error)
     service = StrategyRecommendationService(
         session, client, model_version="recommendation-v1", prompt_version="v1",
-        strategy_catalog_version="v1", dataset_version="financial-8y-v1",
+        strategy_catalog_version="v1", dataset_version=dataset_version,
     )
     service.repo = FakeRepo(session, assessment, **repo_kwargs)
     return service, session
@@ -131,6 +182,64 @@ def test_recommend_returns_existing_result_without_ai_call() -> None:
     assert response.recommendation_id == recommendation.id
     assert client.calls == 0
     assert session.commits == 0
+
+
+def test_recommend_does_not_reuse_result_from_previous_dataset_version() -> None:
+    assessment = profile()
+    previous = StrategyRecommendation(
+        id=uuid4(), assessment_id=assessment.id, model_version="recommendation-v1",
+        prompt_version="v1", strategy_catalog_version="v1", dataset_version="financial-8y-v1",
+        created_at=datetime.now(UTC),
+    )
+    client = FakeClient()
+    service, session = make_service(
+        client,
+        assessment,
+        dataset_version="financial-8y-v2",
+        existing=previous,
+    )
+
+    response = asyncio.run(service.recommend(7, assessment.id))
+
+    assert response.recommendation_id != previous.id
+    assert response.dataset_version == "financial-8y-v2"
+    assert client.calls == 1
+    assert session.commits == 1
+    assert service.repo.recommendation_lookup_inputs[0][-1] == "financial-8y-v2"
+
+
+def test_integrity_error_requery_uses_dataset_version() -> None:
+    assessment = profile()
+    concurrent = StrategyRecommendation(
+        id=uuid4(), assessment_id=assessment.id, model_version="recommendation-v1",
+        prompt_version="v1", strategy_catalog_version="v1", dataset_version="financial-8y-v2",
+        created_at=datetime.now(UTC),
+    )
+    items = [
+        StrategyRecommendationItem(
+            recommendation_id=concurrent.id, strategy_id=item.strategy_id, rank=item.rank,
+            score=Decimal(str(item.score)), match_level=item.match_level,
+            reason=item.reason, caution=item.caution,
+        )
+        for item in VALID_RESULT.recommendations
+    ]
+    service, session = make_service(
+        FakeClient(),
+        assessment,
+        dataset_version="financial-8y-v2",
+        commit_error=IntegrityError("insert", {}, Exception("duplicate")),
+        existing_items=items,
+        recommendation_lookup_results=[None, concurrent],
+    )
+
+    response = asyncio.run(service.recommend(7, assessment.id))
+
+    assert response.recommendation_id == concurrent.id
+    assert session.rollbacks == 1
+    assert [lookup[-1] for lookup in service.repo.recommendation_lookup_inputs] == [
+        "financial-8y-v2",
+        "financial-8y-v2",
+    ]
 
 
 @pytest.mark.parametrize("result", [

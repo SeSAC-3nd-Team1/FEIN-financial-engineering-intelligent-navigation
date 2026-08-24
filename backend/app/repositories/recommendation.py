@@ -1,5 +1,6 @@
 """투자성향과 전략 추천 이력 조회를 캡슐화한다."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -20,13 +21,22 @@ class RecommendationRepository:
         self.session = session
 
     def has_ai_personalization_consent(self, user_id: int) -> bool:
+        current_term_id = (
+            select(Term.id)
+            .where(
+                Term.term_code == "AI_PERSONALIZATION",
+                Term.effective_at <= datetime.now(UTC),
+            )
+            .order_by(Term.effective_at.desc(), Term.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
         statement = (
             select(UserAgreement.id)
-            .join(Term, Term.id == UserAgreement.term_id)
             .where(
                 UserAgreement.user_id == user_id,
+                UserAgreement.term_id == current_term_id,
                 UserAgreement.is_agreed.is_(True),
-                Term.term_code == "AI_PERSONALIZATION",
             )
             .limit(1)
         )
@@ -61,6 +71,7 @@ class RecommendationRepository:
         model_version: str,
         prompt_version: str,
         strategy_catalog_version: str,
+        dataset_version: str,
     ) -> StrategyRecommendation | None:
         return self.session.scalar(
             select(StrategyRecommendation).where(
@@ -68,6 +79,7 @@ class RecommendationRepository:
                 StrategyRecommendation.model_version == model_version,
                 StrategyRecommendation.prompt_version == prompt_version,
                 StrategyRecommendation.strategy_catalog_version == strategy_catalog_version,
+                StrategyRecommendation.dataset_version == dataset_version,
             )
         )
 

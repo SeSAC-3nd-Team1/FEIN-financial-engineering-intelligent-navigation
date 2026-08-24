@@ -14,7 +14,7 @@ from app.schemas.api import StrategyRecommendationAnalysisResult
 
 SYSTEM_PROMPT = """당신은 최근 8년 금융 데이터로 학습된 투자전략 추천 모델입니다.
 
-입력으로 제공된 투자성향과 available_strategies만 사용해 모든 전략의 적합도를 순위화하세요.
+입력으로 제공된 투자성향과 available_strategies만 사용해 적합도가 높은 상위 최대 3개 전략을 순위화하세요.
 1. 제공되지 않은 strategy_id를 만들지 마세요.
 2. strategy_id와 rank는 중복될 수 없고 rank는 1부터 연속되어야 합니다.
 3. score는 성향과 전략의 적합도이며 수익 확률이나 예상수익률이 아닙니다.

@@ -68,6 +68,7 @@ def upgrade() -> None:
             "model_version",
             "prompt_version",
             "strategy_catalog_version",
+            "dataset_version",
             name="uq_strategy_recommendations_reproducible_input",
         ),
     )

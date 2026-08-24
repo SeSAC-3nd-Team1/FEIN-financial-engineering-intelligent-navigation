@@ -68,6 +68,9 @@ def test_client_sends_stored_profile_and_strategy_catalog_only() -> None:
     assert {item["strategy_id"] for item in user_payload["available_strategies"]} == {"low", "value", "momentum"}
     assert "answers" not in user_payload
     assert captured["body"]["response_format"]["json_schema"]["strict"] is True
+    system_prompt = captured["body"]["messages"][0]["content"]
+    assert "상위 최대 3개 전략" in system_prompt
+    assert "모든 전략의 적합도" not in system_prompt
     assert result.recommendations[0].strategy_id == "value"
 
 

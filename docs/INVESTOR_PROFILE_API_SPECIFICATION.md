@@ -17,7 +17,7 @@ Backend 내부의 AI 네트워크 호출은 non-blocking `await`로 처리하지
 
 ### POST `/investor-profile/analyze`
 
-투자성향 설문 답변을 분석·저장하고 완료된 결과를 반환한다. `AI_PERSONALIZATION` 선택 약관 동의가 필요하다.
+투자성향 설문 답변을 분석·저장하고 완료된 결과를 반환한다. 현재 유효한 최신 `AI_PERSONALIZATION` 선택 약관 동의가 필요하다.
 
 | 항목 | 값 |
 | --- | --- |
@@ -300,7 +300,7 @@ curl --request POST 'http://localhost:8000/api/v1/investor-profile/analyze' \
 4. AI에는 특정 상품·종목·전략·예상 수익률을 추천하지 않도록 지시한다.
 5. AI 출력은 JSON Schema와 Pydantic schema를 모두 통과해야 한다.
 6. 원본 설문은 영속화하지 않고 분석된 성향과 버전만 저장한다.
-7. 저장과 외부 AI 호출 전에 `AI_PERSONALIZATION` 동의를 확인한다.
+7. 저장과 외부 AI 호출 전에 현재 발효된 최신 `AI_PERSONALIZATION` 약관 version에 대한 동의를 확인한다.
 8. API key와 사용자 금융정보를 로그에 기록하지 않는다.
 
 현재 구현은 투자성향 안내용이다. 실제 금융상품 적합성·적정성 판단에 사용하려면 별도로 승인된 고정 분류 기준과 준법 검토가 필요하다.

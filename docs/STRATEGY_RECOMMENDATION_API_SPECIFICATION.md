@@ -6,9 +6,9 @@
 
 - Base URL: `/api/v1`
 - 인증: Bearer JWT 필수
-- 선행 조건: 사용자의 `AI_PERSONALIZATION` 동의와 저장된 투자성향
+- 선행 조건: 사용자의 현재 유효한 최신 `AI_PERSONALIZATION` 약관 동의와 저장된 투자성향
 - 추천 모델 데이터셋 기본 버전: `financial-8y-v1`
-- 멱등 기준: `assessment_id + model_version + prompt_version + strategy_catalog_version`
+- 멱등 기준: `assessment_id + model_version + prompt_version + strategy_catalog_version + dataset_version`
 
 ## 2. POST `/strategy-recommendations`
 
@@ -19,6 +19,8 @@
 ```
 
 Backend는 해당 `assessment_id`가 인증 사용자 소유인지 확인한다. 저장된 성향의 `profile_type`, `stability`, `return_seeking`, `horizon`, `description`과 DB의 활성 전략 ID·이름·위험등급·리밸런싱 주기만 추천 모델에 전달한다.
+
+`AI_PERSONALIZATION` 동의는 `effective_at <= now()`인 약관 중 가장 최근에 발효된 version을 기준으로 확인한다. 과거 version에 동의했더라도 현재 version에 동의하지 않았다면 추천을 요청할 수 없다.
 
 ### Response
 
