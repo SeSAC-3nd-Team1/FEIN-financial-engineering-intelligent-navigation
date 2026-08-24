@@ -103,6 +103,9 @@ async def _reject_websocket(
 async def realtime_prices(websocket: WebSocket) -> None:
     await websocket.accept()
     queue = None
+    quote_task: asyncio.Task | None = None
+    receive_task: asyncio.Task | None = None
+    heartbeat_task: asyncio.Task | None = None
     try:
         try:
             initial = await asyncio.wait_for(_receive_subscription(websocket, require_token=True), timeout=5)
@@ -174,47 +177,51 @@ async def realtime_prices(websocket: WebSocket) -> None:
             "connected": realtime_hub.connected,
         })
 
+        quote_task = asyncio.create_task(queue.get())
+        receive_task = asyncio.create_task(websocket.receive_json())
+        heartbeat_task = asyncio.create_task(asyncio.sleep(15))
         while True:
             if token_expires_at is not None and datetime.now(UTC) >= token_expires_at:
                 await websocket.send_json({"type": "error", "code": "INVALID_TOKEN", "message": "인증 토큰이 만료되었습니다."})
                 await websocket.close(code=4401)
                 return
-            quote_task = asyncio.create_task(queue.get())
-            receive_task = asyncio.create_task(websocket.receive_json())
-            heartbeat_task = asyncio.create_task(asyncio.sleep(15))
-            done, pending = await asyncio.wait(
+            done, _ = await asyncio.wait(
                 {quote_task, receive_task, heartbeat_task},
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            for task in pending:
-                task.cancel()
-            if pending:
-                await asyncio.gather(*pending, return_exceptions=True)
 
             if quote_task in done:
                 await websocket.send_json(quote_task.result().to_payload())
-                continue
+                quote_task = asyncio.create_task(queue.get())
             if heartbeat_task in done:
                 await websocket.send_json({
                     "type": "heartbeat",
                     "connected": realtime_hub.connected,
                     "last_received_at": realtime_hub.last_received_at.isoformat() if realtime_hub.last_received_at else None,
                 })
-                continue
+                heartbeat_task = asyncio.create_task(asyncio.sleep(15))
 
-            try:
-                request = RealtimeSubscriptionRequest.model_validate(receive_task.result())
-                codes = set(request.stock_codes)
-                subscribed = await realtime_hub.update_subscriber(
-                    queue,
-                    add=codes if request.action == "subscribe" else set(),
-                    remove=codes if request.action == "unsubscribe" else set(),
-                )
-                await websocket.send_json({"type": "subscribed", "stock_codes": sorted(subscribed), "connected": realtime_hub.connected})
-            except (ValidationError, ValueError):
-                await websocket.send_json({"type": "error", "code": "INVALID_SUBSCRIPTION", "message": "구독 요청 형식이 올바르지 않습니다."})
+            if receive_task in done:
+                try:
+                    request = RealtimeSubscriptionRequest.model_validate(receive_task.result())
+                    codes = set(request.stock_codes)
+                    subscribed = await realtime_hub.update_subscriber(
+                        queue,
+                        add=codes if request.action == "subscribe" else set(),
+                        remove=codes if request.action == "unsubscribe" else set(),
+                    )
+                    await websocket.send_json({"type": "subscribed", "stock_codes": sorted(subscribed), "connected": realtime_hub.connected})
+                except (ValidationError, ValueError):
+                    await websocket.send_json({"type": "error", "code": "INVALID_SUBSCRIPTION", "message": "구독 요청 형식이 올바르지 않습니다."})
+                receive_task = asyncio.create_task(websocket.receive_json())
     except WebSocketDisconnect:
         return
     finally:
+        tasks = [task for task in (quote_task, receive_task, heartbeat_task) if task is not None]
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         if queue is not None:
             await realtime_hub.remove_subscriber(queue)
