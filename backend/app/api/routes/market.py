@@ -5,6 +5,7 @@ from typing import Literal
 import jwt
 from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import current_user
@@ -16,6 +17,14 @@ from app.schemas.api import MinuteCandleListResponse, PriceResponse, RealtimeSta
 from app.services.market import MarketService
 
 router = APIRouter(prefix="/market", tags=["market"])
+
+
+class WebSocketTokenError(Exception):
+    """초기 WebSocket 인증 토큰이 유효하지 않다."""
+
+
+class WebSocketAuthUnavailable(Exception):
+    """WebSocket 사용자 인증 의존성을 사용할 수 없다."""
 
 
 @router.get("/stocks/{stock_code}/price", response_model=PriceResponse)
@@ -60,11 +69,14 @@ def _authenticate_websocket_token(token: str) -> datetime:
         user_id = int(payload["sub"])
         expires_at = datetime.fromtimestamp(float(payload["exp"]), tz=UTC)
     except (jwt.PyJWTError, ValueError, KeyError) as exc:
-        raise ValueError("invalid token") from exc
-    with SessionLocal() as session:
-        user = session.get(User, user_id)
-        if not user or user.account_status != "ACTIVE":
-            raise ValueError("inactive user")
+        raise WebSocketTokenError("invalid token") from exc
+    try:
+        with SessionLocal() as session:
+            user = session.get(User, user_id)
+            if not user or user.account_status != "ACTIVE":
+                raise WebSocketTokenError("inactive user")
+    except SQLAlchemyError as exc:
+        raise WebSocketAuthUnavailable("authentication dependency unavailable") from exc
     return expires_at
 
 
@@ -72,8 +84,19 @@ async def _receive_subscription(websocket: WebSocket, *, require_token: bool) ->
     message = await websocket.receive_json()
     request = RealtimeSubscriptionRequest.model_validate(message)
     if require_token and not request.token:
-        raise ValueError("token is required")
+        raise WebSocketTokenError("token is required")
     return request
+
+
+async def _reject_websocket(
+    websocket: WebSocket,
+    *,
+    error_code: str,
+    message: str,
+    close_code: int,
+) -> None:
+    await websocket.send_json({"type": "error", "code": error_code, "message": message})
+    await websocket.close(code=close_code)
 
 
 @router.websocket("/realtime")
@@ -82,16 +105,58 @@ async def realtime_prices(websocket: WebSocket) -> None:
     queue = None
     try:
         try:
-            initial = await asyncio.wait_for(
-                _receive_subscription(websocket, require_token=True),
-                timeout=5,
+            initial = await asyncio.wait_for(_receive_subscription(websocket, require_token=True), timeout=5)
+        except asyncio.TimeoutError:
+            await _reject_websocket(
+                websocket,
+                error_code="SUBSCRIPTION_TIMEOUT",
+                message="초기 구독 요청 시간이 초과되었습니다.",
+                close_code=4408,
             )
-            if initial.action != "subscribe":
-                raise ValueError("first action must be subscribe")
+            return
+        except WebSocketTokenError:
+            await _reject_websocket(
+                websocket,
+                error_code="INVALID_TOKEN",
+                message="유효한 인증 토큰이 필요합니다.",
+                close_code=4401,
+            )
+            return
+        except (ValidationError, ValueError):
+            await _reject_websocket(
+                websocket,
+                error_code="INVALID_SUBSCRIPTION",
+                message="구독 요청 형식이 올바르지 않습니다.",
+                close_code=4400,
+            )
+            return
+
+        if initial.action != "subscribe":
+            await _reject_websocket(
+                websocket,
+                error_code="INVALID_SUBSCRIPTION",
+                message="최초 요청은 종목 구독이어야 합니다.",
+                close_code=4400,
+            )
+            return
+
+        try:
             token_expires_at = await run_in_threadpool(_authenticate_websocket_token, initial.token or "")
-        except (asyncio.TimeoutError, ValidationError, ValueError):
-            await websocket.send_json({"type": "error", "code": "INVALID_SUBSCRIPTION", "message": "인증 토큰과 유효한 구독 종목이 필요합니다."})
-            await websocket.close(code=4401)
+        except WebSocketTokenError:
+            await _reject_websocket(
+                websocket,
+                error_code="INVALID_TOKEN",
+                message="유효한 인증 토큰이 필요합니다.",
+                close_code=4401,
+            )
+            return
+        except WebSocketAuthUnavailable:
+            await _reject_websocket(
+                websocket,
+                error_code="AUTH_SERVICE_UNAVAILABLE",
+                message="인증 서비스를 사용할 수 없습니다.",
+                close_code=1011,
+            )
             return
 
         try:
