@@ -4,7 +4,7 @@
 
 이 문서는 현재 `develop`의 SQLAlchemy 모델과 Alembic migration history를 기준으로 PostgreSQL의 역할을 요약한다.
 
-- 현재 Alembic 구현 기준: `20260824_0013`
+- 현재 Alembic 구현 기준: `20260824_0015`
 - 금융/API 대용량 Raw source of truth: Azure Blob Storage
 - PostgreSQL 역할: 회원가입/약관/가입 진행 상태 등 관계형 서비스 데이터
 - 과거 금융/API PostgreSQL `raw`, `processed` schema: retire 완료
@@ -41,6 +41,8 @@ Redis
 | `user_agreements` | 회원별 약관 동의 감사 이력 |
 | `registration_sessions` | 가입 완료 전 임시 개인정보/검증 상태 |
 | `registration_agreements` | 가입 진행 중 약관 선택 상태 |
+| `investment_onboardings` | 전략·투자 예정 금액·운용방식과 가상계좌 준비 상태 |
+| `virtual_accounts` | 사용자별 단일 내부 가상투자 계좌 |
 | `companies` | DART 기업 마스터와 종목코드 매핑 |
 | `company_financial_accounts` | 공시 재무제표의 계정별 정제 행 |
 | `company_financials` | FastAPI용 핵심 재무지표 집계 |
@@ -69,7 +71,7 @@ erDiagram
 
 ## Migration history
 
-`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을 추가한다.
+`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을, `20260824_0014`는 투자성향·전략 추천 이력을, `20260824_0015`는 가상투자 시작 상태를 추가한다.
 
 과거 migration 파일은 오래된 runtime 설계를 의미하는 것이 아니라 새 DB를 head까지 재현하기 위한 역사이므로 삭제하지 않는다.
 
