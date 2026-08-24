@@ -116,7 +116,7 @@ docker compose --profile data run --rm --no-deps data python -m scripts.audit_ra
 
 ## KRX OPEN API 동기화
 
-승인된 7개 endpoint에서 KOSPI·KOSDAQ 종목기본정보와 일별 OHLCV, KOSPI·KOSDAQ·KRX 지수를 수집한다. `AUTH_KEY` header와 `basDd=YYYYMMDD` query를 사용하며, 6자리 종목코드는 문자열로 보존한다. 원문은 `raw/krx/...`에 불변 저장하고 화면 조회에 필요한 정제 결과만 `market_stocks`, `market_stock_prices`, `market_indices`에 멱등 UPSERT한다.
+승인된 7개 endpoint에서 KOSPI·KOSDAQ 종목기본정보와 일별 OHLCV, KOSPI·KOSDAQ·KRX 지수를 수집한다. `AUTH_KEY` header와 `basDd=YYYYMMDD` query를 사용하며, 서비스 계약인 숫자 6자리 종목코드는 선행 0을 포함한 문자열로 보존한다. 영문 혼합 단축코드는 현재 StockDetail·가상거래 계약 밖이므로 해당 행만 제외하고, 종가가 비어 있는 보조 지수도 저장하지 않는다. 원문은 필터 전 상태로 `raw/krx/...`에 불변 저장하고 화면 조회에 필요한 정제 결과만 `market_stocks`, `market_stock_prices`, `market_indices`에 멱등 UPSERT한다.
 
 ```bash
 docker compose --profile migration run --rm --no-deps db-init

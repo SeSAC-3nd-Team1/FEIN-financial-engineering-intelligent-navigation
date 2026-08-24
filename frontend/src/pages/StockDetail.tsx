@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 import Header from '../components/Header';
 import { TERMS } from '../data/terms';
 import {
-  getStockChartApi, getStockSummaryApi, type StockChartPeriod,
+  getStockChartApi, getStockPriceApi, getStockSummaryApi, type PriceResponse, type StockChartPeriod,
   type StockChartResponse, type StockSummaryResponse,
 } from '../lib/backendApi';
 import { won } from '../lib/validation';
@@ -40,9 +40,27 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
   const [tfIndex, setTfIndex] = useState(2);
   const [activeTooltip, setActiveTooltip] = useState<TermKey | null>(null);
   const [summary, setSummary] = useState<StockSummaryResponse | null>(null);
+  const [quote, setQuote] = useState<PriceResponse | null>(null);
   const [chart, setChart] = useState<StockChartResponse | null>(null);
   const [summaryError, setSummaryError] = useState(false);
+  const [quoteError, setQuoteError] = useState(false);
   const [chartError, setChartError] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    setQuote(null);
+    setQuoteError(false);
+    void getStockPriceApi(stockCode, token)
+      .then((response) => { if (active) setQuote(response); })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setQuote(null);
+        setQuoteError(true);
+        if ((error as { status?: number }).status === 401) void logout();
+      });
+    return () => { active = false; };
+  }, [logout, stockCode, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -82,9 +100,9 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
     ? Number(position.evaluation_amount) / Number(portfolio.total_assets) * 100
     : null;
   const portfolioAmount = position ? Number(position.evaluation_amount) : null;
-  const currentPrice = numeric(summary?.price);
-  const changeAmount = numeric(summary?.change_amount);
-  const changeRate = numeric(summary?.change_rate);
+  const currentPrice = numeric(quote?.price);
+  const changeAmount = numeric(quote?.change_amount);
+  const changeRate = numeric(quote?.change_rate);
   const priceData = useMemo(() => toChartPoints(chart), [chart]);
   const prices = priceData.map((item) => item.price);
   const high = prices.length ? Math.max(...prices) : null;
@@ -120,6 +138,7 @@ export default function StockDetail({ stockCode, userName, onNavigate, onBack }:
                   {changeAmount == null ? '-' : `${signed(changeAmount, 0)}원`} ({signed(changeRate)}%)
                 </span>
               </div>
+              {quoteError && <span className="text-[15px] text-down">현재가를 불러올 수 없습니다.</span>}
               {summaryError && <span className="text-[15px] text-down">종목 정보를 불러올 수 없습니다.</span>}
             </div>
             <div className="flex flex-col items-end gap-2">

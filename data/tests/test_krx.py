@@ -102,6 +102,20 @@ def test_stock_price_mapping_keeps_source_and_market_cap() -> None:
     assert rows[0]["source"] == "KRX"
 
 
+def test_stock_rows_skip_six_character_alphanumeric_instruments() -> None:
+    master = stock_master_rows([{
+        "ISU_SRT_CD": "00104K", "ISU_NM": "지원 밖 종목", "MKT_TP_NM": "KOSPI",
+    }], market="KOSPI", as_of=date(2026, 8, 21))
+    prices = stock_price_rows([{
+        "BAS_DD": "20260821", "ISU_CD": "00104K", "MKT_NM": "KOSPI",
+        "TDD_CLSPRC": "1", "TDD_OPNPRC": "1", "TDD_HGPRC": "1",
+        "TDD_LWPRC": "1", "ACC_TRDVOL": "0",
+    }], market="KOSPI", as_of=date(2026, 8, 21))
+
+    assert master == []
+    assert prices == []
+
+
 def test_mapping_rejects_stock_code_without_leading_zero() -> None:
     with pytest.raises(ValueError, match="stock code"):
         stock_price_rows([{
@@ -125,6 +139,17 @@ def test_market_index_mapping_allows_missing_optional_ohlc() -> None:
     assert rows[0]["index_code"] == "KOSPI:KOSPI:코스피"
     assert rows[0]["open_value"] is None
     assert rows[0]["close_value"] == Decimal("3000.12")
+
+
+def test_market_index_mapping_skips_row_without_close_value() -> None:
+    rows = market_index_rows([{
+        "BAS_DD": "20260821",
+        "IDX_CLSS": "KOSPI",
+        "IDX_NM": "코스피 (외국주포함)",
+        "CLSPRC_IDX": "",
+    }], market="KOSPI", as_of=date(2026, 8, 21))
+
+    assert rows == []
 
 
 def test_sync_dates_returns_inclusive_weekday_backfill_range() -> None:

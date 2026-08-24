@@ -190,8 +190,6 @@ class StockMarketService:
         )
 
     def chart(self, stock_code: str, period: str) -> StockChartResponse:
-        if self.repository.stock(stock_code) is None:
-            raise NotFoundError("STOCK_NOT_FOUND", "KRX 종목정보를 찾을 수 없습니다.")
         if period == "1D":
             # 정규장 6시간 30분 전체를 조회해 API period와 UI의 '1일' 의미를 일치시킨다.
             candles, as_of, source = self.live_market.get_minute_candles(stock_code, 390)
@@ -205,7 +203,13 @@ class StockMarketService:
                     low=item.low, close=item.close, volume=item.volume,
                 ) for item in candles],
             )
-        start_date = date.today() - timedelta(days=PERIOD_DAYS[period])
+        if self.repository.stock(stock_code) is None:
+            raise NotFoundError("STOCK_NOT_FOUND", "KRX 종목정보를 찾을 수 없습니다.")
+        latest = self.repository.latest_price(stock_code)
+        if latest is None:
+            raise NotFoundError("CHART_DATA_UNAVAILABLE", "해당 종목의 KRX 일별시세가 없습니다.")
+        # 시스템 시각보다 KRX 적재일이 늦을 수 있으므로 최신 실제 거래일을 기간의 끝으로 삼는다.
+        start_date = latest.trade_date - timedelta(days=PERIOD_DAYS[period])
         prices = self.repository.prices_since(stock_code, start_date)
         if not prices:
             raise NotFoundError("CHART_DATA_UNAVAILABLE", "해당 기간의 KRX 일별시세가 없습니다.")

@@ -239,7 +239,7 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 
 ## StockDetail 실제 데이터 계약
 
-`GET /market/stocks/{stock_code}/summary`는 KRX 종목 마스터·최근 일별시세, KIS 현재가, OpenDART 최근 연결 사업보고서를 조합한다. 외부 데이터가 없거나 계산할 수 없는 필드는 `0`이나 추정값 대신 `null`을 반환한다. PER은 `시가총액/순이익`, PBR은 `시가총액/자본`, ROE는 `순이익/자본*100`이며 분모가 0 이하이면 `null`이다. 배당 원천을 아직 연결하지 않았으므로 `dividend_yield`는 `null`이다. 재무비율은 최신 연간 공시 단순 비율로 금융업 등 업종별 조정이나 TTM 계산을 하지 않는다.
+`GET /market/stocks/{stock_code}/price`는 PostgreSQL을 조회하지 않고 Redis/KIS에서 현재가·전일 대비·등락률·거래량을 반환한다. `GET /market/stocks/{stock_code}/summary`는 KRX 종목 마스터·최근 일별시세, KIS 현재가, OpenDART 최근 연결 사업보고서를 조합한다. 외부 데이터가 없거나 계산할 수 없는 필드는 `0`이나 추정값 대신 `null`을 반환한다. PER은 `시가총액/순이익`, PBR은 `시가총액/자본`, ROE는 `순이익/자본*100`이며 분모가 0 이하이면 `null`이다. 배당 원천을 아직 연결하지 않았으므로 `dividend_yield`는 `null`이다. 재무비율은 최신 연간 공시 단순 비율로 금융업 등 업종별 조정이나 TTM 계산을 하지 않는다.
 
 ```json
 {
@@ -253,7 +253,7 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 }
 ```
 
-`GET /market/stocks/{stock_code}/chart`의 `period`는 `1D|1W|3M|6M|1Y|5Y`다. `1D`는 KIS 당일 1분봉 최대 390개로 정규장 전체를 조회하고 그 외 기간은 PostgreSQL의 KRX 일별 OHLCV를 날짜 오름차순으로 반환한다. 저장된 기간에 실제 행이 없으면 `404 CHART_DATA_UNAVAILABLE`이며 빈 선이나 합성 시계열을 만들지 않는다.
+`GET /market/stocks/{stock_code}/chart`의 `period`는 `1D|1W|3M|6M|1Y|5Y`다. `1D`는 KRX DB 존재 여부와 무관하게 KIS 당일 1분봉 최대 390개로 정규장 전체를 조회한다. 그 외 기간은 종목별 최신 KRX 거래일을 기간의 끝으로 삼아 PostgreSQL의 일별 OHLCV를 날짜 오름차순으로 반환한다. 저장된 기간에 실제 행이 없으면 `404 CHART_DATA_UNAVAILABLE`이며 빈 선이나 합성 시계열을 만들지 않는다.
 
 ```json
 {"stock_code":"005930","period":"3M","source":"KRX","as_of":"2026-08-24T00:00:00Z","items":[{"date":"2026-08-24","open":"70000","high":"71500","low":"69800","close":"71000","volume":1234567}]}
