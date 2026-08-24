@@ -77,6 +77,9 @@ export default function App() {
   const ensureAccount = useTradingStore((s) => s.ensureAccount);
   const termsAcceptedStrategyIds = useInvestmentStore((s) => s.termsAcceptedStrategyIds);
   const sesacAccount = useInvestmentStore((s) => s.sesacAccount);
+  // StrategyDetail의 "입금이 필요해요" 배너 렌더링용 — navigate('portfolio')의 리다이렉트 판단은
+  // 타이밍 이슈 때문에 별도로 getState()에서 직접 읽는다(위 주석 참고), 여기 반응형 값은 렌더링 전용
+  const pendingInvestment = useInvestmentStore((s) => s.pendingInvestment);
   const acceptStrategyTerms = useInvestmentStore((s) => s.acceptStrategyTerms);
   const connectSesacAccount = useInvestmentStore((s) => s.connectSesacAccount);
   const deposit = useInvestmentStore((s) => s.deposit);
@@ -85,16 +88,21 @@ export default function App() {
   const setInFlightStep = useInvestmentStore((s) => s.setInFlightStep);
   const clearInFlight = useInvestmentStore((s) => s.clearInFlight);
 
-  /** invest-terms~invest-confirm 중 한 화면으로 이동할 때 항상 이 함수를 거친다 — 새로고침 복원용 진행 상태를 함께 기록한다 */
+  /**
+   * invest-terms~invest-confirm 중 한 화면으로 이동할 때 항상 이 함수를 거친다.
+   * strategyId/금액/운용방식을 항상 함께 동기화해서 화면에 보이는 값과 새로고침 복원용
+   * inFlight 기록이 어긋나지 않게 한다(호출부마다 따로 setStrategyId 등을 챙길 필요 없음).
+   */
   const enterInvestmentStep = (step: InvestmentEntryStep, ctxStrategyId: string, ctxAmount: number, ctxMode: OperationMode) => {
+    setStrategyId(ctxStrategyId);
+    setInvestmentAmount(ctxAmount);
+    setInvestmentMode(ctxMode);
     setInFlightStep({ step, strategyId: ctxStrategyId, amount: ctxAmount, mode: ctxMode });
     setScreen(step);
   };
 
   /** StartInvesting "이대로 시작하기" — 이미 완료한 단계는 건너뛰고 다음 필요한 단계로 이동한다 */
   const enterInvestmentFlow = (amount: number, mode: OperationMode) => {
-    setInvestmentAmount(amount);
-    setInvestmentMode(mode);
     const step = resolveInvestmentEntryStep({ strategyId, amount, termsAcceptedStrategyIds, sesacAccount });
     enterInvestmentStep(step, strategyId, amount, mode);
   };
@@ -131,9 +139,6 @@ export default function App() {
       hydrateForUser(userId);
       const pending = useInvestmentStore.getState().pendingInvestment;
       if (pending) {
-        setStrategyId(pending.strategyId);
-        setInvestmentAmount(pending.amount);
-        setInvestmentMode(pending.mode);
         enterInvestmentStep('invest-deposit', pending.strategyId, pending.amount, pending.mode);
         return;
       }
@@ -299,6 +304,15 @@ export default function App() {
           userName={userName}
           onNavigate={navigate}
           onStart={handleStartInvesting}
+          pendingDeposit={
+            pendingInvestment && pendingInvestment.strategyId === strategyId
+              ? { amount: pendingInvestment.amount }
+              : null
+          }
+          onResumeDeposit={() => {
+            if (!pendingInvestment) return;
+            enterInvestmentStep('invest-deposit', pendingInvestment.strategyId, pendingInvestment.amount, pendingInvestment.mode);
+          }}
         />
       )}
       {screen === 'start' && (
