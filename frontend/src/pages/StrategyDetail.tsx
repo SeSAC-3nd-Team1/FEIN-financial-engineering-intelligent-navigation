@@ -3,8 +3,9 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import type { TooltipProps } from 'recharts';
 import Header from '../components/Header';
 import TermTooltip from '../components/TermTooltip';
-import { fetchAiExplanation, runBacktest } from '../data/backtestApi';
-import { AVAILABLE_DATA_RANGE, getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
+import { fetchAiExplanation, getBacktestAvailableRange, runBacktest } from '../data/backtestApi';
+import type { BacktestAvailableRange } from '../data/backtestApi';
+import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
 import { STRATEGIES } from '../data/strategies';
 import { won } from '../lib/validation';
 import type { BacktestAiContext, BacktestPeriod, BacktestResult, Screen } from '../types';
@@ -39,10 +40,11 @@ const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 /** 03 전략 상세 — 추천 기간(또는 직접 설정한 기간)으로 전략을 직접 체험한 뒤 바로 투자 시작으로 이어진다 */
 export default function StrategyDetail({ strategyId, userName, onNavigate, onStart, pendingDeposit, onResumeDeposit }: Props) {
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
-  const periods = useMemo(() => getRecommendedPeriods(), []);
+  const [availableRange, setAvailableRange] = useState<BacktestAvailableRange | null>(null);
+  const [periods, setPeriods] = useState<BacktestPeriod[]>([]);
 
   const [periodMode, setPeriodMode] = useState<'preset' | 'custom'>('preset');
-  const [presetPeriodId, setPresetPeriodId] = useState(periods[0].id);
+  const [presetPeriodId, setPresetPeriodId] = useState('');
   const [customPeriod, setCustomPeriod] = useState<{ startDate: string; endDate: string } | null>(null);
 
   const [customPanelOpen, setCustomPanelOpen] = useState(false);
@@ -62,15 +64,37 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
   const [aiError, setAiError] = useState<string | null>(null);
 
   // 추천 기간 또는 직접 설정 중 지금 적용된 기간 하나 — 두 모드가 항상 이 값 하나로 합쳐진다
-  const activePeriod: BacktestPeriod = useMemo(() => {
+  const activePeriod: BacktestPeriod | null = useMemo(() => {
     if (periodMode === 'custom' && customPeriod) {
       return { id: 'custom', label: '직접 설정', startDate: customPeriod.startDate, endDate: customPeriod.endDate, description: '' };
     }
-    return periods.find((p) => p.id === presetPeriodId) ?? periods[0];
+    return periods.find((p) => p.id === presetPeriodId) ?? periods[0] ?? null;
   }, [periodMode, customPeriod, presetPeriodId, periods]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setResultLoading(true);
+    setResultError(null);
+    getBacktestAvailableRange()
+      .then((range) => {
+        if (cancelled) return;
+        const recommended = getRecommendedPeriods(range);
+        setAvailableRange(range);
+        setPeriods(recommended);
+        setPresetPeriodId((current) => recommended.some((period) => period.id === current) ? current : recommended[0].id);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setResultError(e instanceof Error ? e.message : '백테스트 가능 기간을 불러오지 못했어요.');
+          setResultLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [retryToken]);
 
   // 전략이 바뀌면(다른 strategyId로 재진입) 기간 선택은 추천 기간 기본값으로 되돌린다
   useEffect(() => {
+    if (periods.length === 0) return;
     setPeriodMode('preset');
     setPresetPeriodId(periods[0].id);
     setCustomPeriod(null);
@@ -84,7 +108,8 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
   };
 
   const applyCustomPeriod = () => {
-    const err = validateCustomPeriod(draftStart, draftEnd);
+    if (!availableRange) return;
+    const err = validateCustomPeriod(draftStart, draftEnd, availableRange);
     if (err) { setCustomError(err); return; }
     setCustomError(null);
     setCustomPeriod({ startDate: draftStart, endDate: draftEnd });
@@ -93,6 +118,7 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
 
   // 기간이 바뀌면 이전 결과와 AI 설명을 함께 리셋하고 새로 받아온다 — 전략은 그대로 둔다.
   useEffect(() => {
+    if (!activePeriod) return;
     let cancelled = false;
     setResultLoading(true);
     setResultError(null);
@@ -201,8 +227,10 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
             </div>
 
             <p className="text-[15px] leading-6 text-muted">
-              {activePeriod.label} · {fmtDate(activePeriod.startDate)} — {fmtDate(activePeriod.endDate)}
-              {periodMode === 'preset' && activePeriod.description && <><br />{activePeriod.description}</>}
+              {activePeriod && <>
+                {activePeriod.label} · {fmtDate(activePeriod.startDate)} — {fmtDate(activePeriod.endDate)}
+                {periodMode === 'preset' && activePeriod.description && <><br />{activePeriod.description}</>}
+              </>}
             </p>
 
             <button
@@ -219,8 +247,8 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
                   <input
                     type="date"
                     value={draftStart}
-                    min={AVAILABLE_DATA_RANGE.minDate}
-                    max={AVAILABLE_DATA_RANGE.maxDate}
+                    min={availableRange?.minDate}
+                    max={availableRange?.maxDate}
                     onChange={(e) => setDraftStart(e.target.value)}
                     className="rounded-field bg-surface px-4 py-3 text-[15px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
                   />
@@ -228,8 +256,8 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
                   <input
                     type="date"
                     value={draftEnd}
-                    min={AVAILABLE_DATA_RANGE.minDate}
-                    max={AVAILABLE_DATA_RANGE.maxDate}
+                    min={availableRange?.minDate}
+                    max={availableRange?.maxDate}
                     onChange={(e) => setDraftEnd(e.target.value)}
                     className="rounded-field bg-surface px-4 py-3 text-[15px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
                   />
