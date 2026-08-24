@@ -20,6 +20,21 @@ import { useAuthStore } from './store/authStore';
 import { useTradingStore } from './store/tradingStore';
 import type { Screen, SignupPersonal } from './types';
 
+/** 새로고침해도 유지할 최소한의 내비게이션 상태 — sessionStorage 에 저장한다(탭을 닫으면 사라짐).
+ *  회원가입 입력값처럼 민감하거나 오래 들고 있을 필요 없는 값은 여기 포함하지 않는다. */
+const SESSION_KEY = 'fein.session-nav';
+interface PersistedNav { screen: Screen; strategyId: string; stockIndex: number; stockBackTarget: Screen }
+function loadPersistedNav(): Partial<PersistedNav> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as Partial<PersistedNav>) : {};
+  } catch {
+    return {};
+  }
+}
+/** 로그인이 필요한 화면 — 새로고침 후 토큰이 없거나 만료된 걸로 확인되면 이 화면들에서는 로그인으로 돌려보낸다 */
+const PROTECTED_SCREENS: Screen[] = ['dashboard', 'portfolio', 'stock', 'strategy', 'start'];
+
 /**
  * 라우팅 상태 머신 — 전체 사용자 흐름
  *
@@ -39,7 +54,10 @@ import type { Screen, SignupPersonal } from './types';
  * 챗봇 FAB 는 라우팅 밖에 있어 모든 화면에 상주한다.
  */
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('home');
+  // screen/strategyId/stockIndex/stockBackTarget 은 새로고침 직후 첫 렌더에서 sessionStorage 값으로
+  // 곧바로 초기화한다(useState lazy initializer) — 그래야 'home' 으로 한 번 그렸다가 다시 튀는 깜빡임이 없다.
+  const [persistedNav] = useState(loadPersistedNav);
+  const [screen, setScreen] = useState<Screen>(persistedNav.screen ?? 'home');
   const [personal, setPersonal] = useState<SignupPersonal>({
     name: '', birthdate: '', phone: '', aiPersonalizationConsent: false,
     agreements: { a1: false, a2: false, a3: false, a4: false, b: false, c: false, ai: false },
@@ -47,17 +65,19 @@ export default function App() {
   // 전략 선택은 strategyId(=STRATEGIES 의 id) 하나만 상태로 두고, 화면별 표시 이름은 여기서 파생시킨다.
   // (과거엔 strategyId 와 별도로 strategy 표시 이름을 따로 들고 있어, 전략 선택 후에도
   //  StartInvesting/Portfolio 가 갱신되지 않는 불일치가 있었다.)
-  const [strategyId, setStrategyId] = useState<string>('low');
+  const [strategyId, setStrategyId] = useState<string>(persistedNav.strategyId ?? 'low');
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
-  const [stockIndex, setStockIndex] = useState(0);
+  const [stockIndex, setStockIndex] = useState(persistedNav.stockIndex ?? 0);
   // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio로)
-  const [stockBackTarget, setStockBackTarget] = useState<Screen>('portfolio');
+  const [stockBackTarget, setStockBackTarget] = useState<Screen>(persistedNav.stockBackTarget ?? 'portfolio');
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
   const register = useAuthStore((s) => s.register);
   const initialize = useAuthStore((s) => s.initialize);
   const authenticatedUser = useAuthStore((s) => s.user);
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const isHydrating = useAuthStore((s) => s.isHydrating);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -66,6 +86,20 @@ export default function App() {
   const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
 
   useEffect(() => { void initialize(); }, [initialize]);
+
+  // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
+  useEffect(() => {
+    const nav: PersistedNav = { screen, strategyId, stockIndex, stockBackTarget };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(nav));
+  }, [screen, strategyId, stockIndex, stockBackTarget]);
+
+  // 로그인이 필요한 화면을 새로고침으로 복원했는데, 토큰 검증(initialize)이 끝난 뒤
+  // 실제로는 로그인 상태가 아닌 것으로 확인되면(토큰 만료 등) 로그인 화면으로 돌려보낸다.
+  useEffect(() => {
+    if (!isHydrating && !isLoggedIn && PROTECTED_SCREENS.includes(screen)) {
+      setScreen('login');
+    }
+  }, [isHydrating, isLoggedIn, screen]);
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
