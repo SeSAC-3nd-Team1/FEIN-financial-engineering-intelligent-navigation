@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$StartDate = "2020-08-25",
-    [string]$EndDate = "2025-08-25"
+    [string]$StartDate,
+    [string]$EndDate
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,8 +53,22 @@ if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
     throw ".env was not found at $envPath"
 }
 
-$parsedStartDate = Assert-IsoDate -Value $StartDate -Name "StartDate"
-$parsedEndDate = Assert-IsoDate -Value $EndDate -Name "EndDate"
+$parsedEndDate = if ($EndDate) {
+    Assert-IsoDate -Value $EndDate -Name "EndDate"
+}
+else {
+    (Get-Date).Date
+}
+$EndDate = $parsedEndDate.ToString("yyyy-MM-dd")
+
+$parsedStartDate = if ($StartDate) {
+    Assert-IsoDate -Value $StartDate -Name "StartDate"
+}
+else {
+    $parsedEndDate.AddYears(-5)
+}
+$StartDate = $parsedStartDate.ToString("yyyy-MM-dd")
+
 if ($parsedStartDate -gt $parsedEndDate) {
     throw "StartDate must not be after EndDate"
 }

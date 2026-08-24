@@ -1,7 +1,7 @@
 """KRX client와 canonical mapping의 외부 계약을 검증한다."""
 
 from argparse import Namespace
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -164,10 +164,13 @@ def test_sync_dates_returns_inclusive_weekday_backfill_range() -> None:
 
 
 def test_backfill_coverage_allows_weekend_boundaries() -> None:
+    trade_dates = tuple(
+        date(2021, 8, 24) + timedelta(days=offset)
+        for offset in range((date(2026, 8, 24) - date(2021, 8, 24)).days + 1)
+        if (date(2021, 8, 24) + timedelta(days=offset)).weekday() < 5
+    )
     coverage = Coverage(
-        first_date=date(2021, 8, 24),
-        last_date=date(2026, 8, 24),
-        trading_days=1_230,
+        trade_dates=trade_dates,
         rows=3_000_000,
     )
 
@@ -176,13 +179,25 @@ def test_backfill_coverage_allows_weekend_boundaries() -> None:
 
 def test_backfill_coverage_rejects_partial_range() -> None:
     coverage = Coverage(
-        first_date=date(2025, 5, 26),
-        last_date=date(2025, 8, 25),
-        trading_days=63,
+        trade_dates=(date(2025, 5, 26), date(2025, 8, 25)),
         rows=172_219,
     )
 
     assert not _is_complete(coverage, date(2020, 8, 25), date(2025, 8, 25))
+
+
+def test_backfill_coverage_rejects_missing_middle_year() -> None:
+    start_date = date(2021, 8, 25)
+    end_date = date(2026, 8, 25)
+    trade_dates = tuple(
+        start_date + timedelta(days=offset)
+        for offset in range((end_date - start_date).days + 1)
+        if (start_date + timedelta(days=offset)).weekday() < 5
+        and (start_date + timedelta(days=offset)).year != 2023
+    )
+    coverage = Coverage(trade_dates=trade_dates, rows=2_000_000)
+
+    assert not _is_complete(coverage, start_date, end_date)
 
 
 def test_sync_dates_requires_complete_ordered_range() -> None:

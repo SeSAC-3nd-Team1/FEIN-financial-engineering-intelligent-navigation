@@ -131,9 +131,10 @@ docker compose --profile data run --rm --no-deps data python -m scripts.sync_krx
 
 GitHub Actions의 Azure OIDC나 Raw Blob 권한 없이 화면 조회용 PostgreSQL만 로컬에서
 초기 백필하려면 저장소 루트의 Windows 실행기를 사용한다. `.env`의 `DATABASE_URL`과
-`KRX_AUTH_KEY`, 실행 중인 Docker Desktop만 필요하다. 기본 범위는
-`2020-08-25`부터 `2025-08-25`까지이며 완료 후 종목 가격과 시장 지수의 실제 적재 범위를
-자동 검증한다. 날짜별 UPSERT가 멱등이므로 중간에 중단되면 같은 명령을 다시 실행할 수 있다.
+`KRX_AUTH_KEY`, 실행 중인 Docker Desktop만 필요하다. 기본 종료일은 실행 당일이고 시작일은
+그로부터 5년 전으로 동적 계산한다. 완료 후 종목 가격과 시장 지수의 기간 경계, 평일 대비
+거래일 밀도, 내부 최대 공백을 자동 검증한다. 날짜별 UPSERT가 멱등이므로 중간에 중단되면
+같은 명령을 다시 실행할 수 있다.
 
 ```cmd
 run-krx-backfill.cmd
