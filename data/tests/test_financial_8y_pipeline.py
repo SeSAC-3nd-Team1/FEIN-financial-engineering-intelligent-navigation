@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from argparse import Namespace
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
 
 from collectors.opendart_client import OpenDartClient
+from loaders.opendart import CASH_FLOW_COLUMNS, OpenDartRepository
+from processing.coverage import coverage_is_complete, summarize_trading_dates
 from scripts.backfill_opendart_8y import (
     DEFAULT_START_DATE as DART_START_DATE,
     _normalize_multi_financial_items,
@@ -16,9 +17,11 @@ from scripts.backfill_opendart_8y import (
 )
 from scripts.run_financial_8y_pipeline import (
     DEFAULT_START_DATE,
+    OPENDART_LOOKBACK_DAYS,
     _incremental_start,
 )
 from scripts.sync_krx import _load_checkpoint, _save_checkpoint
+from scripts.verify_krx_history_coverage import _expected_months
 
 
 class _Response:
@@ -121,11 +124,111 @@ def test_multi_financial_rows_recover_corp_code_from_requested_stock_mapping() -
     assert grouped[("005930", "CFS")][0]["corp_code"] == "00126380"
 
 
-def test_incremental_start_uses_baseline_on_first_run_and_last_success_afterward() -> None:
+def test_incremental_start_uses_baseline_on_first_run_and_last_success_for_ecos() -> None:
     assert _incremental_start({}, "ecos", DEFAULT_START_DATE, refresh=False) == DEFAULT_START_DATE
     state = {"ecos": {"last_success_end": "2026-08-24"}}
     assert _incremental_start(state, "ecos", DEFAULT_START_DATE, refresh=False) == date(2026, 8, 24)
     assert _incremental_start(state, "ecos", DEFAULT_START_DATE, refresh=True) == DEFAULT_START_DATE
+
+
+def test_opendart_incremental_start_rechecks_recent_quarter_for_late_filing() -> None:
+    """4월 초 실행에서 비었던 1분기 보고서를 이후 실행이 다시 조회해야 한다."""
+
+    state = {"opendart": {"last_success_end": "2026-04-05"}}
+    start = _incremental_start(state, "opendart", DEFAULT_START_DATE, refresh=False)
+
+    assert OPENDART_LOOKBACK_DAYS == 120
+    assert start == date(2025, 12, 6)
+    assert start <= date(2026, 3, 31)
+
+
+def test_sparse_dart_summary_does_not_update_cash_flow_columns(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_upsert(session, model, rows, *, conflict_columns, update_columns=None):
+        captured["update_columns"] = update_columns
+        return len(rows)
+
+    monkeypatch.setattr("loaders.opendart.upsert_rows", fake_upsert)
+    row = {
+        "corp_code": "00126380",
+        "stock_code": "005930",
+        "business_year": "2025",
+        "report_code": "11011",
+        "quarter": "FY",
+        "fs_div": "CFS",
+        "revenue": 1,
+        "operating_income": 1,
+        "net_income": 1,
+        "total_assets": 1,
+        "total_liabilities": 1,
+        "total_equity": 1,
+        "operating_cash_flow": None,
+        "investing_cash_flow": None,
+        "financing_cash_flow": None,
+    }
+
+    assert OpenDartRepository(object()).upsert_financials([row]) == 1
+    assert captured["update_columns"] is not None
+    assert all(column not in captured["update_columns"] for column in CASH_FLOW_COLUMNS)
+
+
+def test_full_dart_summary_can_still_update_cash_flow_columns(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_upsert(session, model, rows, *, conflict_columns, update_columns=None):
+        captured["update_columns"] = update_columns
+        return len(rows)
+
+    monkeypatch.setattr("loaders.opendart.upsert_rows", fake_upsert)
+    row = {
+        "corp_code": "00126380",
+        "business_year": "2025",
+        "report_code": "11011",
+        "fs_div": "CFS",
+        "operating_cash_flow": 10,
+        "investing_cash_flow": -5,
+        "financing_cash_flow": 2,
+    }
+
+    OpenDartRepository(object()).upsert_financials([row])
+    assert captured["update_columns"] is None
+
+
+def test_krx_coverage_rejects_missing_middle_year() -> None:
+    start = date(2018, 1, 1)
+    end = date(2026, 8, 25)
+    dates = [
+        start + timedelta(days=offset)
+        for offset in range((end - start).days + 1)
+        if (start + timedelta(days=offset)).weekday() < 5
+        and (start + timedelta(days=offset)).year != 2023
+    ]
+    coverage = summarize_trading_dates(dates, start_date=start, end_date=end)
+
+    assert coverage.max_gap_days > 300
+    assert not coverage_is_complete(coverage, start_date=start, end_date=end)
+
+
+def test_krx_coverage_rejects_stock_series_starting_two_years_late() -> None:
+    start = date(2018, 1, 1)
+    end = date(2026, 8, 25)
+    stock_start = date(2020, 1, 2)
+    dates = [
+        stock_start + timedelta(days=offset)
+        for offset in range((end - stock_start).days + 1)
+        if (stock_start + timedelta(days=offset)).weekday() < 5
+    ]
+    coverage = summarize_trading_dates(dates, start_date=start, end_date=end)
+
+    assert not coverage_is_complete(coverage, start_date=start, end_date=end)
+
+
+def test_krx_expected_months_exposes_missing_partition() -> None:
+    expected = _expected_months(date(2022, 11, 1), date(2023, 2, 28))
+    actual = {(2022, 11), (2022, 12), (2023, 2)}
+
+    assert expected - actual == {(2023, 1)}
 
 
 def test_krx_checkpoint_round_trip_is_sorted_and_resume_safe(tmp_path: Path) -> None:
