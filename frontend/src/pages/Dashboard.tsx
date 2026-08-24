@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import Header from '../components/Header';
-import { ALL_HOLDINGS, HOLD_TOTAL } from '../data/holdings';
+import { ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL } from '../data/holdings';
+import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
+import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
 
 interface Props {
@@ -15,16 +17,22 @@ interface Props {
 
 /** 05 포트폴리오 대시보드 — 스토리 → 리밸런싱 제안 → 판단 성적표 → 전략 */
 export default function Dashboard({ userName, strategyName, onNavigate, onOpenHoldings, onChangeStrategy }: Props) {
+  useTradingData();
+  const account = useTradingStore((state) => state.account);
+  const portfolio = useTradingStore((state) => state.portfolio);
   const [sheetOpen, setSheetOpen] = useState(false); // 리밸런싱 상세 시트
 
   /** 오늘 손익 = 평가금액 × 등락률. 스토리와 요약이 같은 계산을 공유한다 */
   const { todayTotal, top } = useMemo(() => {
-    const gains = ALL_HOLDINGS.map((h) => ({ name: h.name, gain: (HOLD_TOTAL * h.pct) / 100 * (h.chg / 100) }));
+    const gains = MOCK_HOLDINGS.map((h) => ({ name: h.name, gain: (MOCK_HOLD_TOTAL * h.pct) / 100 * (h.chg / 100) }));
     const total = gains.reduce((a, g) => a + g.gain, 0);
     return { todayTotal: total, top: [...gains].sort((a, b) => b.gain - a.gain)[0] };
   }, []);
 
-  const profit = 83_400;
+  const holdTotal = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
+  const initialCash = account ? Number(account.initial_cash) : 0;
+  const profit = portfolio && initialCash > 0 ? Number(portfolio.total_assets) - initialCash : 83_400;
+  const profitRate = initialCash > 0 ? (profit / initialCash) * 100 : 8.34;
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -38,8 +46,8 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
               {userName}님의 투자는<br />오늘도 전략대로 움직이고 있어요.
             </h1>
             <div className="flex items-baseline gap-4">
-              <span className="text-[32px] font-bold tracking-[-0.03em]">{won(HOLD_TOTAL)}</span>
-              <span className="text-[19px] font-semibold text-up">+{profit.toLocaleString('ko-KR')}원 (+8.34%)</span>
+              <span className="text-[32px] font-bold tracking-[-0.03em]">{won(holdTotal)}</span>
+              <span className="text-[19px] font-semibold text-up">{profit >= 0 ? '+' : ''}{Math.round(profit).toLocaleString('ko-KR')}원 ({profitRate >= 0 ? '+' : ''}{profitRate.toFixed(2)}%)</span>
             </div>
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-2 rounded-full bg-[#EAF7EF] px-3.5 py-2 text-[15px] font-semibold text-[#2E9B65]">

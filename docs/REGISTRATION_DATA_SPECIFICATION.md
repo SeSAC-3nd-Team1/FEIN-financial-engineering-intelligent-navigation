@@ -175,6 +175,13 @@ account_status = 'WITHDRAWN' -> deleted_at IS NOT NULL
 - 기존 version row를 수정하지 않고 새 version row를 추가한다.
 - `user_agreements` 또는 `registration_agreements`가 참조한 약관은 삭제하지 않는다.
 
+### 현재 유효 catalog와 seed
+
+- API에서 현재 유효한 약관은 `effective_at <= now()`인 row 중 `term_code`별 최신 version이다.
+- 별도 `is_active` 컬럼은 두지 않는다. 미래 효력 version과 최신 version으로 대체된 과거 row는 신규 가입에 사용할 수 없다.
+- 현재 유효한 필수 약관이 한 건도 없으면 회원가입은 `TERMS_CATALOG_UNAVAILABLE`로 중단한다.
+- 로컬 Docker는 migration 후 기존 6종 약관을 `dev-` version으로 멱등 seed한다. 운영은 승인된 version과 효력 시각, 불변 `content_reference`를 별도로 지정한다.
+
 # 6.3 user_agreements
 
 가입 완료 회원의 약관 version별 동의 사실을 저장한다.
@@ -347,32 +354,21 @@ API 명세의 target/IP rate limit을 Redis counter + TTL로 구현한다.
    registration 임시 개인정보 정리 예약
 ```
 
-## 10. 현재 구현과 목표 설계 차이
+## 10. 현재 구현 상태
 
-현재 `users`, `terms`, `user_agreements`는 이미 존재하지만 다음 부분을 후속 migration에서 수정해야 한다.
+Alembic `20260816_0011`에서 회원가입 관계의 3NF 전환이 완료되었다. `users`는 인증 timestamp만 사용하고, `user_agreements`는 `term_id` FK만 보유하며, 회원/약관 감사 FK는 `RESTRICT`다. Backend 회원가입은 현재 유효 catalog의 필수 동의를 검증하고 같은 transaction에서 `users`와 `user_agreements`를 생성한다.
 
-| 현재 | 목표 |
-| --- | --- |
-| `users.phone_verified` + `phone_verified_at` | `phone_verified_at`만 사용 |
-| `users.email_verified` + `email_verified_at` | `email_verified_at`만 사용 |
-| `user_agreements.term_code` | `term_id` FK |
-| `user_agreements.term_version` | `term_id` FK를 통해 조회 |
-| `user_agreements.is_required` snapshot | `terms.is_required`에서 조회 |
-| 가입 전 상태 Redis 중심 | 개인정보/동의는 PostgreSQL registration tables, OTP/token은 Redis |
-| `users -> user_agreements ON DELETE CASCADE` | 감사 보존을 위해 `RESTRICT` + users soft delete |
+`registration_sessions`와 `registration_agreements` schema는 준비되어 있지만 실제 OTP provider 및 가입 세션 API 연결은 후속 범위다. 현재 Backend request의 `phone_verified`/`email_verified`는 MVP API 계약이며 실제 외부 인증 완료 증명으로 교체해야 한다.
 
 ## 11. 후속 구현 범위
 
 설계 승인 후 별도 구현 단계에서 수행한다.
 
-1. `membership.py` 목표 ORM으로 수정
-2. `RegistrationSession`, `RegistrationAgreement` ORM 추가
-3. Alembic `0011` forward migration 작성
-4. 기존 데이터가 있으면 migration preflight 및 backfill 전략 작성
-5. Redis signup verification repository 구현
-6. 회원가입 backend API와 transaction 연동
-7. 제약조건/unique/FK/rollback 통합 테스트
-8. Azure PostgreSQL 적용
+1. Redis signup verification repository 구현
+2. 실제 휴대폰/이메일 OTP provider 연결
+3. `registration_sessions` 기반 단계별 가입 API 연결
+4. 가입 transaction과 verification token consume 상태 전이 구현
+5. Azure PostgreSQL 운영 약관 version 적용
 
 ## 12. 구현 전 확인할 정책
 

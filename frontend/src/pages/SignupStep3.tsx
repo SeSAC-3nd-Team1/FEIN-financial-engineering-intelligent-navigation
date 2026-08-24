@@ -6,7 +6,7 @@ import { RE, digitsOnly } from '../lib/validation';
 import type { Credentials, Screen } from '../types';
 
 interface Props {
-  onComplete: (userId: string, password: string) => void;
+  onComplete: (userId: string, password: string, email: string) => Promise<void>;
   onBack: () => void;
   userName: string;
   onNavigate: (s: Screen) => void;
@@ -19,6 +19,8 @@ export default function SignupStep3({ onComplete, onBack, userName, onNavigate }
   const [showPw, setShowPw] = useState(false);
   const [showPwConfirm, setShowPwConfirm] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const timer = useCountdown(300);
 
   const idValid = RE.userId.test(v.userId);
@@ -32,6 +34,19 @@ export default function SignupStep3({ onComplete, onBack, userName, onNavigate }
   /** TEST MODE: 이메일 인증 요청 시 OTP 입력란과 5분 타이머를 생성 */
   const sendEmailOtp = () => { setOtpSent(true); timer.start(); };
   const verifyEmailOtp = () => { if (v.emailOtp.length === 6) setV({ ...v, emailVerified: true }); };
+
+  const completeSignup = async () => {
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await onComplete(v.userId, v.password, v.email);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : '회원가입을 완료하지 못했습니다.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -121,13 +136,14 @@ export default function SignupStep3({ onComplete, onBack, userName, onNavigate }
           이전
         </button>
         <button
-          onClick={() => onComplete(v.userId, v.password)}
-          disabled={!canSubmit}
+          onClick={() => void completeSignup()}
+          disabled={!canSubmit || submitting}
           className="flex-1 rounded-field py-5 text-[19px] font-bold disabled:cursor-default disabled:bg-[#E8EBE5] disabled:text-[#A6AFA7] enabled:bg-lime enabled:text-navy"
         >
-          가입하기
+          {submitting ? '가입 중...' : '가입하기'}
         </button>
       </div>
+      {submitError && <p className="text-sm text-up">{submitError}</p>}
       </div>
     </div>
   );

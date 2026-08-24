@@ -34,6 +34,10 @@ Copy-Item .env.example .env
 
 외부 API를 사용하는 작업이라면 `.env`의 빈 Secret 항목을 채웁니다. `.env`는 Git에서 제외되며 실제 키를 소스, Dockerfile, Compose 파일, 문서에 기록하면 안 됩니다.
 
+운영/공유 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 교체합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 가상계좌 초기금은 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값으로 설정합니다.
+
+한국 금융 뉴스는 NAVER Cloud Platform의 NAVER API HUB Search News API를 Backend에서만 호출합니다. 로컬 `.env`에 `NAVER_API_HUB_CLIENT_ID`와 `NAVER_API_HUB_CLIENT_SECRET`을 설정하고 실제 값은 커밋하거나 로그에 출력하지 않습니다. 기본 검색어는 `NEWS_SEARCH_QUERY=증시`, Redis cache TTL은 `NEWS_CACHE_TTL_SECONDS=300`입니다.
+
 Azure Blob을 사용하는 Data 작업은 별도의 로컬 `.env.azure` 설정과 Azure CLI/Entra ID 인증을 사용합니다. Shared Key 기반 실제 Azure connection string은 사용하지 않습니다.
 
 ### 3. 기본 개발환경 실행
@@ -42,7 +46,54 @@ Azure Blob을 사용하는 Data 작업은 별도의 로컬 `.env.azure` 설정�
 docker compose up -d
 ```
 
-최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, PostgreSQL, Redis만 포함되며 Data와 AI는 profile로 분리됩니다.
+최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, PostgreSQL, Redis와 일회성 `db-init`이 포함됩니다. `db-init`은 Backend보다 먼저 Alembic migration을 적용하고 `.env`의 `SIGNUP_TERMS_*` 개발용 약관을 멱등 seed한 뒤 종료합니다. Data와 AI 작업용 장기 실행 컨테이너는 profile로 분리됩니다.
+
+DB 준비만 다시 실행하려면:
+
+```bash
+docker compose up -d postgres redis
+docker compose run --rm db-init
+docker compose up -d --build backend frontend
+```
+
+동일한 `SIGNUP_TERMS_VERSION`으로 `db-init`을 반복해도 `(term_code, version)` UNIQUE와 `ON CONFLICT DO NOTHING` 때문에 중복 약관이 생기지 않습니다. 기본 version의 `dev-` prefix는 로컬 개발 데이터임을 나타냅니다. 운영 약관은 승인된 별도 version·효력 시각·불변 본문 URL을 명시적으로 설정해야 하며 Compose 기본값을 사용하지 않습니다.
+
+Backend 테스트:
+
+```bash
+docker compose run --rm --no-deps backend pytest -q
+```
+
+Seeded PostgreSQL/Redis E2E 테스트:
+
+```bash
+docker compose run --rm db-init
+docker compose exec -T backend env RUN_INTEGRATION=1 pytest -q tests/test_integration_flow.py
+```
+
+E2E는 `GET /auth/terms`부터 회원가입 동의 저장, 계좌·전략·매수·멱등 재시도·포트폴리오·매도·원장 정합성까지 확인합니다. 생성한 사용자와 가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 개발 데이터 전체를 삭제하지 않습니다.
+
+실제 KIS 시세→Redis 통합 테스트는 유효한 KIS 환경 변수가 있는 경우에만 명시적으로 실행합니다. 이 테스트는 현재가 조회만 수행하고 KIS 주문 API나 실제·모의 계좌 주문을 호출하지 않습니다.
+
+```bash
+docker compose exec -T backend env RUN_KIS_INTEGRATION=1 pytest -q tests/test_kis_integration.py
+docker compose exec -T redis redis-cli --scan --pattern "price:*"
+docker compose exec -T redis redis-cli TTL price:005930
+```
+
+실제 NAVER 뉴스→Redis 통합 테스트도 credential이 있는 로컬에서만 명시적으로 실행합니다.
+
+```bash
+docker compose exec -T backend env RUN_NAVER_NEWS_INTEGRATION=1 pytest -q tests/test_naver_news_integration.py
+docker compose exec -T redis redis-cli --scan --pattern "information:news:kr:*"
+docker compose exec -T redis redis-cli TTL "information:news:kr:증시:1:20"
+```
+
+뉴스 API는 `GET /api/v1/information/news/kr?page=1&size=20`이다. NAVER 검색 결과만 정규화하며 뉴스 본문을 scraping하지 않는다. 뉴스는 PostgreSQL이나 Azure Blob에 저장하지 않고 Redis에만 단기 cache한다. Information 화면의 새로고침은 Backend를 다시 호출하지만 TTL 동안은 Redis 응답을 사용한다.
+
+Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다. JWT는 브라우저에 보관되어 새로고침 후 검증·복원되며, 로그아웃 시 제거된다.
+
+Frontend 가상투자 화면은 FastAPI만 호출한다. `/accounts/me`로 동적 계좌 ID를 얻고 `/portfolio` 한 번으로 현금·보유종목·현재 평가를 조회한다. 시장가 BUY/SELL은 UUID idempotency key와 함께 `/orders`로 보내며 성공 후 portfolio/orders/executions를 다시 조회한다. KIS는 Backend `MarketService`의 가격 공급자로만 사용하고, 가상계좌·주문·체결·포지션·현금원장은 PostgreSQL에서 관리한다. 브라우저 bundle에는 KIS key/secret이나 KIS 직접 호출 URL이 포함되지 않는다.
 
 | 서비스 | 접속/확인 위치 |
 | --- | --- |

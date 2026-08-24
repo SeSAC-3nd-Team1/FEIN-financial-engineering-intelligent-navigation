@@ -32,37 +32,3 @@ export const STRATEGIES: Strategy[] = [
     why: '최근 오르고 있는 종목을 따라 담아요. 수익 기회가 크지만 방향이 바뀔 때 손실도 함께 커져요.',
   },
 ];
-
-/** 백테스트 구간 — 03 전략 상세의 기간 선택 */
-export interface Scenario {
-  id: string; label: string; period: string; amount: number;
-  strat: number[]; kospi: number[]; stratEnd: number; kospiEnd: number;
-  headline: string; body: string;
-}
-
-export const SCENARIOS: Scenario[] = [
-  {
-    id: 'corona', label: '코로나 폭락', period: '2020.01 – 2020.06', amount: 10_000_000,
-    strat: [0, -2, -5, -9, -14, -17, -15, -11, -8, -5, -3, -1],
-    kospi: [0, -4, -11, -19, -28, -32, -28, -22, -17, -12, -8, -5],
-    stratEnd: -17, kospiEnd: -32,
-    headline: '폭락장에서 시장보다 15%p 덜 떨어졌어요',
-    body: '많이 흔들리는 종목의 비중을 낮게 유지해서, 시장 전체보다 충격을 덜 받았어요.',
-  },
-  {
-    id: 'rate', label: '2022 금리인상', period: '2022.01 – 2022.12', amount: 10_000_000,
-    strat: [0, -3, -6, -8, -11, -13, -12, -14, -16, -13, -10, -8],
-    kospi: [0, -5, -9, -14, -19, -23, -21, -25, -28, -24, -20, -17],
-    stratEnd: -8, kospiEnd: -17,
-    headline: '금리가 오르는 동안에도 시장보다 9%p 덜 빠졌어요',
-    body: '이익이 꾸준한 기업 위주로 담아서, 금리 부담이 큰 성장주보다 덜 흔들렸어요.',
-  },
-  {
-    id: 'full', label: '전체 5년', period: '2021.01 – 2026.06', amount: 10_000_000,
-    strat: [0, 8, 14, 9, 18, 26, 22, 31, 38, 44, 51, 58],
-    kospi: [0, 6, 11, 4, 12, 19, 14, 21, 26, 30, 35, 41],
-    stratEnd: 58, kospiEnd: 41,
-    headline: '5년 동안 시장보다 17%p 더 벌었어요',
-    body: '크게 떨어지는 구간을 덜 겪으면서 회복이 빨랐고, 그 차이가 시간이 지날수록 벌어졌어요.',
-  },
-];
