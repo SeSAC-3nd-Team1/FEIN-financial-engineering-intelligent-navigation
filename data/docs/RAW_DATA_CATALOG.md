@@ -43,7 +43,7 @@ Raw에 저장하는 데까지만 포함한다. 정규화, 결측 처리, Parquet
 | KOSPI/KOSDAQ 일별 매매·valuation | [KRX OPEN API](https://openapi.krx.co.kr/contents/OPP/USES/service/OPPUSES002_S2.cmd?BO_ID=JvJFzlAENzZlPBDNGAWC) | 5년 | PER/PBR/배당수익률, 거래소 원천 대조 | `KRX_AUTH_KEY` 발급 후 별도 Issue |
 | 과거 KOSPI 200 구성종목 | KRX Data Marketplace | 5년+ | survivorship bias 없는 과거 universe | 제공 방식·라이선스 확인 후 별도 Issue |
 | 공시 접수시각·원문 | [OpenDART 공시검색](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001) | 실행일부터 축적 | 재무정보의 실제 공개 가능시각과 point-in-time 결합 | Issue #65 collector/Raw/PostgreSQL 구현; 과거 5년 backfill은 후속 운영 작업 |
-| 기준금리·환율·CPI | [한국은행 ECOS Open API](https://ecos.bok.or.kr/api/) | 5년+ | 시장 국면과 거시 설명 | `ECOS_API_KEY` 사용 별도 Issue |
+| 기준금리·환율·CPI·국고채 | [한국은행 ECOS Open API](https://ecos.bok.or.kr/api/) | 2021년~ | 시장 국면과 거시 설명 | 수집·Processed·PIT feature 구현 |
 | 실시간 시세·모의투자 | KIS Developers | 축적 시작일 이후 | 화면 현재가와 모의 주문 | 학습용 5년 Raw와 분리 |
 
 OpenDART·KRX·ECOS는 인증·호출 계약·Raw 경로가 서로 다르므로 금융위 수집기에 섞지
@@ -208,3 +208,23 @@ hash·업로드한다. 공시 pagination의 각 페이지도 별도 Raw object�
 변환, 계정 alias, 날짜 변환은 PostgreSQL 정제 적재 단계에서만 수행한다. 인증은
 `DefaultAzureCredential`을 사용하며 실제
 Azure Shared Key를 코드나 문서에 넣지 않는다.
+## 한국은행 ECOS
+
+| dataset/operation | ECOS 통계표 | 항목 | 주기 | 단위 | 업데이트 | 주요 Feature |
+|---|---|---|---|---|---|---|
+| `ecos/base_rate` | `722Y001` | `0101000` | D | 연% | 증분 일별 | `base_rate`, change |
+| `ecos/usd_krw` | `731Y001` | `0000001` | D | 원 | 증분 일별 | 환율 return/volatility |
+| `ecos/cpi` | `901Y009` | `0` | M | 2020=100 | 증분 월별 | `cpi`, MoM, YoY |
+| `ecos/treasury_3y` | `817Y002` | `010200000` | D | 연% | 증분 일별 | 3Y, change, spread |
+| `ecos/treasury_10y` | `817Y002` | `010210000` | D | 연% | 증분 일별 | 10Y, change, spread |
+
+경로는 `ecos-bok/ecos/operation={series}/year=YYYY/month=MM/{batch_sha256}.jsonl.gz`다.
+각 줄은 `dataset`, `operation`, `source`, `collectedAt`, `payloadHash`, `payload` envelope이며,
+`payload`는 ECOS 응답 행을 수정하지 않는다. 기준금리의 반복 일별 값도 Raw에는 그대로
+남고 Processed에서만 변경 이벤트로 축약된다. 같은 원문 batch 재수집은 같은 hash 경로를
+사용한다.
+
+Processed 공통 경로는
+`ecos/operation={series}/schema=v1/year=YYYY/month=MM/part-00000.parquet`, Feature 경로는
+`macro_daily/version=v1/year=YYYY/month=MM/part-00000.parquet`다. 출처는 한국은행 ECOS이며
+위 조합은 ECOS `StatisticItemList` metadata와 `StatisticSearch` 응답으로 검증했다.

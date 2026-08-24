@@ -232,3 +232,18 @@ Audit은 Processed/Features 객체 수, metadata record count, quality manifest,
 ```
 
 120개 관측치 momentum/60개 관측치 변동성 등이 있으므로 Feature 증분 계산은 현재 월만 읽어서는 안 된다.
+## ECOS 거시경제 파이프라인
+
+ECOS는 `Raw → Processed(schema=v1) → macro_daily(version=v1)` 순서로 처리한다.
+
+- Raw: provider 행을 손실 없이 월별 JSONL.gz로 저장한다.
+- Processed: `ecos/operation={series}/schema=v1/year=YYYY/month=MM/part-00000.parquet`에
+  숫자·날짜·단위·lineage를 정규화한다. 동일 자연키의 값 충돌은 실패 처리한다.
+- Features: 환율과 국고채 실제 관측일의 합집합을 거래일 축으로 삼아
+  `macro_daily/version=v1/year=YYYY/month=MM/part-00000.parquet`에 저장한다.
+- 품질: 시계열별 source/accepted/rejected/duplicate/null/날짜 범위와 source blob을
+  `processed/_quality/ecos/.../manifest.json`에 기록한다.
+
+ECOS `StatisticSearch`에는 CPI 공표 timestamp가 없으므로 관측월의 두 번째 다음 달 1일을
+보수적 `available_at`으로 사용한다. 모든 as-of 결합은 `available_at <= feature date`만
+허용한다. 따라서 최신성은 실제 공표일보다 늦을 수 있지만 미래 정보 유입은 줄어든다.
