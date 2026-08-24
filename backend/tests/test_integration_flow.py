@@ -1,6 +1,7 @@
 """seeded PostgreSQL/Redis를 사용하는 회원→가상거래 E2E."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 import json
 import os
 from uuid import uuid4
