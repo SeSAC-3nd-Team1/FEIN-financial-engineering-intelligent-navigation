@@ -3,13 +3,17 @@ import type { Screen } from '../types';
 
 interface Props { onNavigate: (s: Screen) => void; }
 
-/** 00 홈 — 로그인 전 랜딩. 두 CTA 모두 로그인 화면으로 보낸다 */
+/** 00 홈 — 랜딩. 미로그인 시 CTA는 로그인 화면으로, 로그인 상태면 포트폴리오로 보낸다 */
 export default function Home({ onNavigate }: Props) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const authUser = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   // "전략 둘러보기"/"나의 포트폴리오"는 로그인이 필요해 미로그인 시 로그인 화면으로 보낸다
   const goStrategy = () => onNavigate(isLoggedIn ? 'strategy' : 'login');
   // "나의 포트폴리오" → Portfolio.tsx (PDF 1~4p 통합 Power BI 대시보드가 기본 화면)
   const goPortfolio = () => onNavigate(isLoggedIn ? 'portfolio' : 'login');
+  // 하단 CTA들도 로그인 여부에 따라 로그인/시작하기 화면이 아니라 실제 목적지로 보낸다
+  const getStarted = () => onNavigate(isLoggedIn ? 'portfolio' : 'login');
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -24,12 +28,20 @@ export default function Home({ onNavigate }: Props) {
             <button onClick={goPortfolio}>나의 포트폴리오</button>
           </nav>
         </div>
-        <div className="flex items-center gap-4">
-          <button onClick={() => onNavigate('login')} className="text-base text-muted">로그인</button>
-          <button onClick={() => onNavigate('login')} className="rounded-[10px] bg-lime px-5 py-3 text-base font-bold text-navy">
-            무료로 시작하기
-          </button>
-        </div>
+        {isLoggedIn ? (
+          <div className="flex items-center gap-2.5 text-[15px] text-muted">
+            <span>{authUser?.name ?? ''}님</span>
+            <div className="h-[34px] w-[34px] rounded-full bg-[#EAEEE7]" />
+            <button onClick={() => { void logout(); onNavigate('home'); }} className="ml-2 text-sm underline">로그아웃</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-4">
+            <button onClick={() => onNavigate('login')} className="text-base text-muted">로그인</button>
+            <button onClick={() => onNavigate('login')} className="rounded-[10px] bg-lime px-5 py-3 text-base font-bold text-navy">
+              무료로 시작하기
+            </button>
+          </div>
+        )}
       </header>
 
       <main className="flex flex-col items-center pb-24">
@@ -45,7 +57,7 @@ export default function Home({ onNavigate }: Props) {
               내 투자성향에 맞는 전략을 찾고, 과거 시장에서 내 돈이 어떻게 움직였을지 먼저 체험해보세요.
             </p>
             <div className="flex gap-3 pt-3">
-              <button onClick={() => onNavigate('login')} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
+              <button onClick={getStarted} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
                 무료로 시작하기
               </button>
               <button onClick={() => onNavigate('login')} className="rounded-field bg-[#F4F6F1] px-8 py-5 text-[19px] font-semibold text-[#3F4A43]">
@@ -91,8 +103,8 @@ export default function Home({ onNavigate }: Props) {
                 </div>
                 <span className="text-[17px] text-muted">같은 기간 KOSPI는 -32%였어요</span>
               </div>
-              <button onClick={() => onNavigate('login')} className="shrink-0 rounded-field bg-lime px-8 py-[18px] text-lg font-bold text-navy">
-                로그인하고 시작하기 →
+              <button onClick={getStarted} className="shrink-0 rounded-field bg-lime px-8 py-[18px] text-lg font-bold text-navy">
+                {isLoggedIn ? '내 포트폴리오 보기 →' : '로그인하고 시작하기 →'}
               </button>
             </div>
           </div>
@@ -103,7 +115,7 @@ export default function Home({ onNavigate }: Props) {
             1분이면 돼요.<br />내 투자 성향부터 확인해볼까요?
           </h2>
           <p className="text-center text-lg text-[#B9C2BA]">진단은 무료이고, 결과는 전략 추천에만 쓰여요.</p>
-          <button onClick={() => onNavigate('login')} className="rounded-field bg-lime px-10 py-5 text-[19px] font-bold text-navy">
+          <button onClick={getStarted} className="rounded-field bg-lime px-10 py-5 text-[19px] font-bold text-navy">
             무료로 시작하기
           </button>
         </section>
