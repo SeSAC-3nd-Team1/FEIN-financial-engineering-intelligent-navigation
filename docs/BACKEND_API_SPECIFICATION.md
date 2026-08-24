@@ -28,6 +28,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | Portfolio/Dashboard |
 | 한국 금융 뉴스 | GET | `/information/news/kr?page=&size=` | 불필요 | 200, 422, 502, 503 | InformationExam |
+| 투자성향 AI 분석 | POST | `/investor-profile/analyze` | 필요 | 200, 400, 401, 422, 502, 503, 504 | RiskProfile/RiskResult |
 
 ## 주요 Request/Response
 
@@ -157,9 +158,15 @@ Provider는 NAVER Cloud Platform NAVER API HUB Search News API의 `GET /search/v
 
 오류는 설정 누락 `503 NAVER_NEWS_NOT_CONFIGURED`, timeout/4xx/5xx/응답 schema 오류 `502 NAVER_NEWS_UNAVAILABLE`, provider 429 `503 NAVER_NEWS_RATE_LIMIT`이다. API key header와 실제 credential은 응답·exception·로그에 포함하지 않는다.
 
+### POST `/investor-profile/analyze`
+
+인증된 사용자가 `v1` 설문의 8개 `question_id`와 `option_id`를 제출하면 Backend가 서버 카탈로그로 검증·정규화하고 Azure OpenAI 분석 결과를 같은 HTTP 요청에서 반환한다. 답변 순서는 무관하지만 모든 문항이 중복 없이 포함되어야 한다. 답변과 결과는 영속화하지 않는다.
+
+상세 request/response, 전체 문항 ID, 선택지 ID와 오류 계약은 [투자성향 AI 분석 API 명세](INVESTOR_PROFILE_API_SPECIFICATION.md)를 따른다.
+
 ## 주요 error code
 
-`NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
+`AI_NOT_CONFIGURED`, `AI_ANALYSIS_UNAVAILABLE`, `AI_ANALYSIS_TIMEOUT`, `AI_INVALID_RESPONSE`, `INVALID_QUESTIONNAIRE_VERSION`, `INVALID_INVESTOR_ANSWERS`, `NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
 
 ## KIS 현재가와 가상거래 경계
 

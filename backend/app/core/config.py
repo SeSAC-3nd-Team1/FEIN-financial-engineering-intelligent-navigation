@@ -14,6 +14,11 @@ class Settings:
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = int(os.getenv("ACCESS_TOKEN_MINUTES", "60"))
     initial_cash: Decimal = Decimal(os.getenv("VIRTUAL_ACCOUNT_INITIAL_CASH", "10000000"))
+    azure_openai_endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    azure_openai_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
+    azure_openai_deployment: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
+    azure_openai_api_version: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
+    ai_profile_timeout_seconds: float = float(os.getenv("AI_PROFILE_TIMEOUT_SECONDS", "15"))
     kis_app_key: str = os.getenv("KIS_APP_KEY", "")
     kis_app_secret: str = os.getenv("KIS_APP_SECRET", "")
     kis_base_url: str = os.getenv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
