@@ -187,4 +187,4 @@ Azure Blob raw
 
 `market_stock_prices.stock_code`는 `market_stocks.stock_code`를 참조하므로 동기화는 종목 마스터를 먼저 적재한다. 종목코드는 `VARCHAR(6)`으로 선행 0을 보존하며, 원천 결측값은 임의의 0으로 채우지 않는다. `source='KRX'`, `as_of`에는 동기화 기준일을 기록한다.
 
-Strategy Backtest는 별도 결과 테이블이나 합성 시세를 만들지 않고 이 serving table을 읽기 전용으로 사용한다. 시작일 직전 시총으로 universe를 고정하고 factor 계산에는 해당 리밸런싱일 이하의 가격만 사용한다. `close_price`는 원천 비수정 종가이므로 `listed_shares` 변동일을 corporate action 경계로 보고 당일 수익률을 연결하지 않으며, 해당 경계가 팩터 lookback 안에 있는 종목은 후보에서 제외한다. 거래정지로 관측이 비는 경우에는 재개 종가를 마지막 관측 종가와 비교한다. 가치 factor에 필요한 재무 공시 가능일이 현재 `company_financials`에 없으므로 최신 재무를 과거에 소급 적용하지 않는다.
+Strategy Backtest는 별도 결과 테이블이나 합성 시세를 만들지 않고 이 serving table을 읽기 전용으로 사용한다. 시작일 직전 시총으로 universe를 고정하고 factor 계산에는 해당 리밸런싱일 이하의 가격만 사용하며, 신규 편입은 리밸런싱일 종가가 있는 종목으로 제한한다. `close_price`는 원천 비수정 종가이므로 `listed_shares` 변동일을 corporate action 경계로 보고 당일 수익률을 연결하지 않으며, 해당 경계가 팩터 lookback 안에 있는 종목은 후보에서 제외한다. 거래정지로 관측이 비는 기존 보유종목은 재개 종가를 마지막 관측 종가와 비교한다. 가치 factor에 필요한 재무 공시 가능일이 현재 `company_financials`에 없으므로 최신 재무를 과거에 소급 적용하지 않는다.

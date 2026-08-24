@@ -132,6 +132,24 @@ def test_suspended_holding_applies_full_return_when_trading_resumes() -> None:
     assert values == pytest.approx([1.0, 1.0, 1.0, 0.8])
 
 
+def test_suspended_stock_is_not_selected_for_new_position() -> None:
+    rebalance_date = date(2026, 1, 31)
+    suspended_code = "000000"
+    prices: dict[str, dict[date, float]] = {}
+    for index in range(11):
+        code = f"{index:06d}"
+        first_offset = 1 if code == suspended_code else 0
+        prices[code] = {
+            rebalance_date - timedelta(days=offset): 100.0
+            for offset in range(first_offset, first_offset + 61)
+        }
+
+    selected = BacktestService._select("low_volatility", prices, rebalance_date)
+
+    assert len(selected) == 10
+    assert suspended_code not in selected
+
+
 def test_unadjusted_corporate_action_resets_price_without_false_return() -> None:
     start = date(2026, 1, 5)
     split_day = start + timedelta(days=1)

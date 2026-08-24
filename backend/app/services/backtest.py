@@ -196,6 +196,10 @@ class BacktestService:
         action_dates = corporate_actions or set()
         scores: list[tuple[float, str]] = []
         for code, history in prices.items():
+            # 신규 편입은 리밸런싱일에 실제 매수 가능한 종목으로 제한한다.
+            # 기존 보유종목의 거래정지 평가는 _simulate()의 last_observed가 담당한다.
+            if as_of not in history:
+                continue
             observations = [(trade_date, close) for trade_date, close in sorted(history.items()) if trade_date <= as_of]
             if factor == "low_volatility":
                 recent = observations[-(LOW_VOL_WINDOW + 1):]
