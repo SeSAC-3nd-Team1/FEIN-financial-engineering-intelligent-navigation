@@ -284,13 +284,13 @@ export default function App() {
           account={sesacAccount}
           onNavigate={navigate}
           onBack={() => setScreen('invest-account')}
-          onDeposit={() => {
-            deposit(investmentAmount);
+          onDeposit={(shortfall) => {
+            deposit(shortfall);
             setScreen(resolveInvestmentEntryStep({
               strategyId,
               amount: investmentAmount,
               termsAcceptedStrategyIds,
-              sesacAccount: { ...sesacAccount, balance: sesacAccount.balance + investmentAmount },
+              sesacAccount: { ...sesacAccount, balance: sesacAccount.balance + shortfall },
             }));
           }}
           onDeferDeposit={() => {

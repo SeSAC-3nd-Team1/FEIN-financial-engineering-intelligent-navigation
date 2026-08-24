@@ -14,8 +14,8 @@ interface Props {
   account: SesacAccount;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
-  /** 입금 완료 → 최종 확인 단계로 */
-  onDeposit: () => void;
+  /** 입금 완료 → 최종 확인 단계로. 이미 보유한 잔액을 제외한 부족분(shortfall)을 인자로 넘긴다 */
+  onDeposit: (shortfall: number) => void;
   /** "나중에 입금할게요" — DEPOSIT_PENDING으로 저장하고 홈으로 나간다 */
   onDeferDeposit: () => void;
 }
@@ -27,11 +27,14 @@ export default function InvestDeposit({
 }: Props) {
   const [depositing, setDepositing] = useState(false);
   const maskedAccount = `••••${account.accountNumber.slice(-4)}`;
+  // 재투자 등으로 계좌에 이미 잔액이 있는 경우, 목표 금액 전체가 아니라 부족한 만큼만 입금하면 된다
+  const hasExistingBalance = account.balance > 0;
+  const shortfall = Math.max(0, amount - account.balance);
 
   const handleDeposit = () => {
     setDepositing(true);
     // PoC Mock — 실제 이체 연동 전까지 짧은 처리 지연만 흉내낸다
-    setTimeout(onDeposit, 500);
+    setTimeout(() => onDeposit(shortfall), 500);
   };
 
   return (
@@ -66,6 +69,12 @@ export default function InvestDeposit({
               <span className="text-base text-muted">투자 예정 금액</span>
               <span className="text-[22px] font-bold tracking-[-0.02em] text-ink">{won(amount)}</span>
             </div>
+            {hasExistingBalance && (
+              <div className="flex items-center justify-between">
+                <span className="text-base text-muted">현재 보유 잔액</span>
+                <span className="text-lg font-semibold text-ink">{won(account.balance)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-base text-muted">연결 계좌</span>
               <span className="text-lg font-semibold text-ink">SeSAC증권 {maskedAccount}</span>
@@ -78,7 +87,7 @@ export default function InvestDeposit({
               disabled={depositing}
               className="rounded-field bg-lime py-5 text-[19px] font-bold text-navy disabled:opacity-60"
             >
-              {depositing ? '입금 처리 중...' : `${won(amount)} 입금하기 →`}
+              {depositing ? '입금 처리 중...' : `${won(shortfall)} 입금하기 →`}
             </button>
             <button onClick={onDeferDeposit} disabled={depositing} className="py-2 text-base font-semibold text-muted underline">
               나중에 입금할게요
