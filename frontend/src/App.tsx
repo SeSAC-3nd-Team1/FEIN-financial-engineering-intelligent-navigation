@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Chatbot from './components/Chatbot';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
@@ -21,7 +21,7 @@ import StrategyDetail from './pages/StrategyDetail';
 import { STRATEGIES } from './data/strategies';
 import type { OperationMode } from './data/fees';
 import { signupTermsApi } from './lib/backendApi';
-import { resolveInvestmentEntryStep } from './lib/investmentFlow';
+import { resolveInvestmentEntryStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
 import { useTradingStore } from './store/tradingStore';
@@ -74,37 +74,82 @@ export default function App() {
   const ensureAccount = useTradingStore((s) => s.ensureAccount);
   const termsAcceptedStrategyIds = useInvestmentStore((s) => s.termsAcceptedStrategyIds);
   const sesacAccount = useInvestmentStore((s) => s.sesacAccount);
-  const pendingInvestment = useInvestmentStore((s) => s.pendingInvestment);
   const acceptStrategyTerms = useInvestmentStore((s) => s.acceptStrategyTerms);
   const connectSesacAccount = useInvestmentStore((s) => s.connectSesacAccount);
   const deposit = useInvestmentStore((s) => s.deposit);
   const deferDeposit = useInvestmentStore((s) => s.deferDeposit);
+  const hydrateForUser = useInvestmentStore((s) => s.hydrateForUser);
+  const setInFlightStep = useInvestmentStore((s) => s.setInFlightStep);
+  const clearInFlight = useInvestmentStore((s) => s.clearInFlight);
+
+  /** invest-terms~invest-confirm 중 한 화면으로 이동할 때 항상 이 함수를 거친다 — 새로고침 복원용 진행 상태를 함께 기록한다 */
+  const enterInvestmentStep = (step: InvestmentEntryStep, ctxStrategyId: string, ctxAmount: number, ctxMode: OperationMode) => {
+    setInFlightStep({ step, strategyId: ctxStrategyId, amount: ctxAmount, mode: ctxMode });
+    setScreen(step);
+  };
 
   /** StartInvesting "이대로 시작하기" — 이미 완료한 단계는 건너뛰고 다음 필요한 단계로 이동한다 */
   const enterInvestmentFlow = (amount: number, mode: OperationMode) => {
     setInvestmentAmount(amount);
     setInvestmentMode(mode);
-    setScreen(resolveInvestmentEntryStep({ strategyId, amount, termsAcceptedStrategyIds, sesacAccount }));
+    const step = resolveInvestmentEntryStep({ strategyId, amount, termsAcceptedStrategyIds, sesacAccount });
+    enterInvestmentStep(step, strategyId, amount, mode);
   };
 
   /**
    * Header "나의 포트폴리오"/로그인 성공 등 Portfolio로 향하는 모든 경로가 거치는 관문.
    * DEPOSIT_PENDING(계좌는 연결됐지만 입금이 남은) 상태라면 Portfolio 대신 입금 요청 화면으로 보낸다.
+   *
+   * 로그인 직후에는 Login.tsx가 login() 완료와 동시에 이 함수를 동기적으로 호출하는데, 이 시점엔
+   * "사용자별 hydrate" useEffect가 아직 커밋되지 않았을 수 있다(리액트 이펙트는 렌더 이후 실행).
+   * 그래서 반응형 클로저 값(pendingInvestment)을 믿는 대신, 여기서 현재 로그인된 사용자 기준으로
+   * 강제로 다시 hydrate한 뒤 스토어에서 바로 최신 값을 읽는다.
    */
   const navigate = (target: Screen) => {
-    if (target === 'portfolio' && pendingInvestment) {
-      setStrategyId(pendingInvestment.strategyId);
-      setInvestmentAmount(pendingInvestment.amount);
-      setInvestmentMode(pendingInvestment.mode);
-      setScreen('invest-deposit');
-      return;
+    if (target === 'portfolio') {
+      const userId = useAuthStore.getState().user?.user_id ?? null;
+      hydrateForUser(userId);
+      const pending = useInvestmentStore.getState().pendingInvestment;
+      if (pending) {
+        setStrategyId(pending.strategyId);
+        setInvestmentAmount(pending.amount);
+        setInvestmentMode(pending.mode);
+        enterInvestmentStep('invest-deposit', pending.strategyId, pending.amount, pending.mode);
+        return;
+      }
     }
     setScreen(target);
   };
 
   const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
 
-  useEffect(() => { void initialize(); }, [initialize]);
+  const hasRestoredInvestFlowRef = useRef(false);
+
+  // 앱 최초 로드(새로고침 포함) — 토큰이 있으면 로그인 사용자를 복원하고, 그 사용자의 투자 Flow가
+  // invest-terms~invest-confirm 중간에 있었다면 화면/선택값(strategyId·금액·운용방식)까지 그대로 복원한다.
+  useEffect(() => {
+    (async () => {
+      await initialize();
+      const userId = useAuthStore.getState().user?.user_id ?? null;
+      hydrateForUser(userId);
+      if (!hasRestoredInvestFlowRef.current) {
+        hasRestoredInvestFlowRef.current = true;
+        const restored = useInvestmentStore.getState().inFlight;
+        if (restored) {
+          setStrategyId(restored.strategyId);
+          setInvestmentAmount(restored.amount);
+          setInvestmentMode(restored.mode);
+          setScreen(restored.step);
+        }
+      }
+    })();
+  }, [initialize, hydrateForUser]);
+
+  // 세션 중 로그인/로그아웃으로 사용자가 바뀔 때마다 해당 사용자의 저장된 상태로 다시 hydrate한다.
+  // (화면 복원은 위 최초 로드 시점에만 하고, 로그인 직후 명시적 이동(navigate('portfolio') 등)과는 겹치지 않게 한다)
+  useEffect(() => {
+    hydrateForUser(authenticatedUser?.user_id ?? null);
+  }, [authenticatedUser?.user_id, hydrateForUser]);
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
@@ -249,15 +294,16 @@ export default function App() {
           amount={investmentAmount}
           mode={investmentMode}
           onNavigate={navigate}
-          onBack={() => setScreen('start')}
+          onBack={() => { clearInFlight(); setScreen('start'); }}
           onComplete={() => {
             acceptStrategyTerms(strategyId);
-            setScreen(resolveInvestmentEntryStep({
+            const step = resolveInvestmentEntryStep({
               strategyId,
               amount: investmentAmount,
               termsAcceptedStrategyIds: [...termsAcceptedStrategyIds, strategyId],
               sesacAccount,
-            }));
+            });
+            enterInvestmentStep(step, strategyId, investmentAmount, investmentMode);
           }}
         />
       )}
@@ -266,12 +312,13 @@ export default function App() {
           userName={userName}
           strategyName={strategy.name}
           onNavigate={navigate}
-          onBack={() => setScreen('invest-terms')}
+          onBack={() => enterInvestmentStep('invest-terms', strategyId, investmentAmount, investmentMode)}
           onComplete={(account) => {
             connectSesacAccount(account);
-            setScreen(resolveInvestmentEntryStep({
+            const step = resolveInvestmentEntryStep({
               strategyId, amount: investmentAmount, termsAcceptedStrategyIds, sesacAccount: account,
-            }));
+            });
+            enterInvestmentStep(step, strategyId, investmentAmount, investmentMode);
           }}
         />
       )}
@@ -283,20 +330,22 @@ export default function App() {
           mode={investmentMode}
           account={sesacAccount}
           onNavigate={navigate}
-          onBack={() => setScreen('invest-account')}
+          onBack={() => enterInvestmentStep('invest-account', strategyId, investmentAmount, investmentMode)}
           onDeposit={(shortfall) => {
             deposit(shortfall);
-            setScreen(resolveInvestmentEntryStep({
+            const step = resolveInvestmentEntryStep({
               strategyId,
               amount: investmentAmount,
               termsAcceptedStrategyIds,
               sesacAccount: { ...sesacAccount, balance: sesacAccount.balance + shortfall },
-            }));
+            });
+            enterInvestmentStep(step, strategyId, investmentAmount, investmentMode);
           }}
           onDeferDeposit={() => {
             // Home 은 비로그인 전용 랜딩이라 로그인 상태가 반영되지 않는다 — 전략 상세로 돌려보낸다
             // (Header에 로그인 상태가 정상 표시되고, 필요하면 "이 전략으로 시작하기"로 바로 이 화면에 재진입할 수 있다)
             deferDeposit({ strategyId, strategyName: strategy.name, amount: investmentAmount, mode: investmentMode });
+            clearInFlight();
             setScreen('strategy');
           }}
         />
@@ -309,13 +358,14 @@ export default function App() {
           mode={investmentMode}
           account={sesacAccount}
           onNavigate={navigate}
-          onBack={() => setScreen('invest-deposit')}
+          onBack={() => enterInvestmentStep('invest-deposit', strategyId, investmentAmount, investmentMode)}
           onConfirm={async () => {
             if (!accessToken) {
               setScreen('login');
               throw new Error('로그인이 필요합니다.');
             }
             await ensureAccount(accessToken, strategyId);
+            clearInFlight();
             setScreen('portfolio');
           }}
         />
