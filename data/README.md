@@ -88,14 +88,14 @@ raw/
 Raw 수집 예시:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --date 2026-08-16 --all-pages --rows 10000
+docker compose --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --date 2026-08-16 --all-pages --rows 10000
 ```
 
 최소 5년 백필과 실제 Raw 월 보유기간 감사:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
+docker compose --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
+docker compose --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
 ```
 
 매일 자동 증분 수집은 `.github/workflows/raw-daily-collection.yml`에서 15:30 KST에 실행한다.
@@ -130,7 +130,7 @@ run-financial-pipeline.cmd all
 직접 Python CLI:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage all --schema-version 1 --feature-version 1
+docker compose --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage all --schema-version 1 --feature-version 1
 ```
 
 ### Raw Profile

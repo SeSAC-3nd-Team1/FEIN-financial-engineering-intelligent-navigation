@@ -37,7 +37,7 @@ git pull origin develop
 ## 1. Docker data 이미지 준비
 
 ```cmd
-docker compose --env-file .env.azure --profile data build data
+docker compose --profile data build data
 ```
 
 코드는 `./data:/app` volume으로 연결되므로 이후 Python 코드만 수정했다면 이미지를 매번 다시 build할 필요는 없다. `requirements.txt` 또는 `Dockerfile`이 바뀌었을 때 다시 build한다.
@@ -47,13 +47,13 @@ docker compose --env-file .env.azure --profile data build data
 기존 Azure CLI 로그인 volume이 유효하면 건너뛸 수 있다.
 
 ```cmd
-docker compose --env-file .env.azure --profile data run --rm --no-deps data az account show
+docker compose --profile data run --rm --no-deps data az account show
 ```
 
 로그인이 필요하면:
 
 ```cmd
-docker compose --env-file .env.azure --profile data run --rm --no-deps data az login --use-device-code
+docker compose --profile data run --rm --no-deps data az login --use-device-code
 ```
 
 Shared Key는 사용하지 않는다. `AZURE_STORAGE_ACCOUNT_NAME` + Entra ID/DefaultAzureCredential 경로를 사용한다.
@@ -116,7 +116,7 @@ Profile이 있어야 Processed 계약을 만들 수 있고, 필요한 Processed 
 강제로 다시 전수 분석할 때만:
 
 ```cmd
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage profile --refresh-profile --schema-version 1 --feature-version 1
+docker compose --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage profile --refresh-profile --schema-version 1 --feature-version 1
 ```
 
 주의: Raw에 신규 schema/field가 들어왔는데 기존 profile을 계속 재사용하면 Processed 계약에 반영되지 않을 수 있다. 증분 수집 이후 schema drift를 의심하면 profile을 재생성하고 version 정책을 검토한다.
@@ -132,7 +132,7 @@ PROCESSED SKIP dataset=... operation=... year=... month=... rows=...
 의도적으로 같은 version을 다시 만들 때만:
 
 ```cmd
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage processed --schema-version 1 --overwrite
+docker compose --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage processed --schema-version 1 --overwrite
 ```
 
 ### Features 재실행 주의

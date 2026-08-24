@@ -157,7 +157,7 @@ run-financial-pipeline.cmd all
 OS와 무관하게 직접 실행하려면 현재 환경 파일에도 필수 `DATABASE_URL`이 포함되어 있어야 합니다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage check --schema-version 1 --feature-version 1
+docker compose --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage check --schema-version 1 --feature-version 1
 ```
 
 데이터 구조와 운영 방법은 [data/README.md](data/README.md), [docs/DATA_ARCHITECTURE.md](docs/DATA_ARCHITECTURE.md), [data/docs/FINANCIAL_PIPELINE_RUNBOOK.md](data/docs/FINANCIAL_PIPELINE_RUNBOOK.md)를 기준으로 합니다.

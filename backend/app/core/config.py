@@ -5,9 +5,18 @@ from decimal import Decimal
 import os
 
 
+def _required_database_url() -> str:
+    """필수 DATABASE_URL을 읽고 누락되면 애플리케이션 시작 전에 실패한다."""
+
+    value = os.getenv("DATABASE_URL", "").strip()
+    if not value:
+        raise RuntimeError("DATABASE_URL is required")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
-    database_url: str = os.getenv("DATABASE_URL", "postgresql://app:app@postgres:5432/app")
+    database_url: str = _required_database_url()
     database_connect_timeout_seconds: int = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
     redis_url: str = os.getenv("REDIS_URL", "redis://redis:6379/0")
     jwt_secret: str = os.getenv("JWT_SECRET", "local-development-only-change-me")
