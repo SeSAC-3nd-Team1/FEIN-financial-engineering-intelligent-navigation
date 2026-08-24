@@ -17,6 +17,8 @@ from app.integrations.kis.models import CurrentQuote, MinuteCandle
 
 logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
+KIS_RATE_LIMIT_MESSAGE_CODE = "EGW00201"
+KIS_RATE_LIMIT_ATTEMPTS = 3
 
 
 class KisClient:
@@ -159,7 +161,10 @@ class KisClient:
             "custtype": "P",
         }
 
-        for _ in range((limit + 29) // 30):
+        for page_index in range((limit + 29) // 30):
+            if page_index:
+                # 모의투자 API의 낮은 초당 호출 제한에서도 390분봉 pagination이 burst가 되지 않게 한다.
+                time.sleep(max(0, settings.kis_rest_page_interval_seconds))
             rows = self._get_minute_candle_page(stock_code, cursor, headers)
             before_count = len(candles)
             parsed_count = 0
@@ -192,7 +197,7 @@ class KisClient:
         headers: dict[str, str],
     ) -> list[dict[str, object]]:
         last_error: Exception | None = None
-        for attempt in range(2):
+        for attempt in range(KIS_RATE_LIMIT_ATTEMPTS):
             try:
                 response = httpx.get(
                     f"{settings.kis_base_url}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
@@ -207,11 +212,19 @@ class KisClient:
                     timeout=settings.request_timeout_seconds,
                 )
                 if response.status_code == 429:
-                    raise ServiceError("KIS_RATE_LIMIT", "시장가격 조회 한도를 초과했습니다.", 503)
+                    if attempt + 1 == KIS_RATE_LIMIT_ATTEMPTS:
+                        raise ServiceError("KIS_RATE_LIMIT", "시장가격 조회 한도를 초과했습니다.", 503)
+                    self._wait_for_rate_limit(attempt, stock_code)
+                    continue
                 response.raise_for_status()
                 payload = response.json()
                 if not isinstance(payload, dict):
                     raise ValueError("invalid minute candle response")
+                if payload.get("msg_cd") == KIS_RATE_LIMIT_MESSAGE_CODE:
+                    if attempt + 1 == KIS_RATE_LIMIT_ATTEMPTS:
+                        raise ServiceError("KIS_RATE_LIMIT", "시장가격 조회 한도를 초과했습니다.", 503)
+                    self._wait_for_rate_limit(attempt, stock_code)
+                    continue
                 if payload.get("rt_cd") != "0":
                     raise ServiceError("STOCK_NOT_FOUND", "조회할 수 없는 종목입니다.", 404)
                 rows = payload.get("output2")
@@ -229,6 +242,19 @@ class KisClient:
                     type(exc).__name__,
                 )
         raise ServiceError("KIS_UNAVAILABLE", "분봉 데이터를 조회하지 못했습니다.", 503) from last_error
+
+    @staticmethod
+    def _wait_for_rate_limit(attempt: int, stock_code: str) -> None:
+        """KIS의 HTTP/업무 응답 rate limit을 동일한 지수 backoff로 재시도한다."""
+
+        delay = max(0, settings.kis_rest_page_interval_seconds) * (2 ** attempt)
+        logger.warning(
+            "KIS minute candle rate limited stock_code=%s retry_after_seconds=%.3f",
+            stock_code,
+            delay,
+        )
+        if delay:
+            time.sleep(delay)
 
     @staticmethod
     def _parse_minute_candle(

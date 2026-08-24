@@ -4,6 +4,9 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
+from app.core.errors import ServiceError
 from app.integrations.kis.client import KisClient
 
 
@@ -167,7 +170,27 @@ def test_minute_candles_reuse_client_token_and_are_sorted(monkeypatch) -> None:
     }
 
 
-def test_minute_candles_accepts_full_regular_session_limit(monkeypatch) -> None:
+def test_minute_candles_fetches_full_regular_session_with_pacing(monkeypatch) -> None:
+    page_cursors: list[datetime] = []
+    sleeps: list[float] = []
+
+    def fake_page(_stock_code: str, cursor: datetime, _headers: dict[str, str]) -> list[dict[str, object]]:
+        page_cursors.append(cursor)
+        page_end = cursor.replace(second=0, microsecond=0)
+        return [
+            {
+                "stck_bsop_date": started_at.strftime("%Y%m%d"),
+                "stck_cntg_hour": started_at.strftime("%H%M%S"),
+                "stck_oprc": "70000",
+                "stck_hgpr": "70200",
+                "stck_lwpr": "69900",
+                "stck_prpr": "70100",
+                "cntg_vol": "10",
+            }
+            for offset in range(30)
+            for started_at in [page_end - timedelta(minutes=offset)]
+        ]
+
     monkeypatch.setattr(
         "app.integrations.kis.client.settings",
         SimpleNamespace(
@@ -175,13 +198,89 @@ def test_minute_candles_accepts_full_regular_session_limit(monkeypatch) -> None:
             kis_app_secret="secret",
             kis_base_url="https://example.invalid",
             request_timeout_seconds=1,
+            kis_rest_page_interval_seconds=0.5,
         ),
     )
+    monkeypatch.setattr("app.integrations.kis.client.time.sleep", sleeps.append)
     client = KisClient()
     client._token = "existing-token"
     client._token_expires_at = 10**12
-    monkeypatch.setattr(client, "_get_minute_candle_page", lambda *_args: [])
+    monkeypatch.setattr(client, "_get_minute_candle_page", fake_page)
+    kst = timezone(timedelta(hours=9))
 
-    candles, _ = client.get_minute_candles("005930", limit=390)
+    candles, _ = client.get_minute_candles(
+        "005930",
+        limit=390,
+        end_at=datetime(2026, 8, 24, 15, 30, 30, tzinfo=kst),
+    )
 
-    assert candles == []
+    assert len(candles) == 390
+    assert candles[0].started_at.strftime("%H%M%S") == "090100"
+    assert candles[-1].started_at.strftime("%H%M%S") == "153000"
+    assert len(page_cursors) == 13
+    assert sleeps == [0.5] * 12
+
+
+class RateLimitResponse:
+    status_code = 200
+
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, object]:
+        return self.payload
+
+
+def test_minute_candle_page_retries_egw00201_with_backoff(monkeypatch) -> None:
+    responses = [
+        RateLimitResponse({"rt_cd": "1", "msg_cd": "EGW00201", "msg1": "초당 거래건수 초과"}),
+        CandleResponse(),
+    ]
+    sleeps: list[float] = []
+    monkeypatch.setattr("app.integrations.kis.client.httpx.get", lambda *_args, **_kwargs: responses.pop(0))
+    monkeypatch.setattr("app.integrations.kis.client.time.sleep", sleeps.append)
+    monkeypatch.setattr(
+        "app.integrations.kis.client.settings",
+        SimpleNamespace(
+            kis_app_key="key", kis_app_secret="secret", kis_base_url="https://example.invalid",
+            request_timeout_seconds=1, kis_rest_page_interval_seconds=0.5,
+        ),
+    )
+    client = KisClient()
+    kst = timezone(timedelta(hours=9))
+
+    rows = client._get_minute_candle_page(
+        "005930",
+        datetime(2026, 8, 24, 10, 1, tzinfo=kst),
+        {"authorization": "Bearer token"},
+    )
+
+    assert len(rows) == 2
+    assert sleeps == [0.5]
+
+
+def test_minute_candle_page_returns_rate_limit_after_retries(monkeypatch) -> None:
+    response = RateLimitResponse({"rt_cd": "1", "msg_cd": "EGW00201"})
+    monkeypatch.setattr("app.integrations.kis.client.httpx.get", lambda *_args, **_kwargs: response)
+    monkeypatch.setattr("app.integrations.kis.client.time.sleep", lambda _delay: None)
+    monkeypatch.setattr(
+        "app.integrations.kis.client.settings",
+        SimpleNamespace(
+            kis_app_key="key", kis_app_secret="secret", kis_base_url="https://example.invalid",
+            request_timeout_seconds=1, kis_rest_page_interval_seconds=0.5,
+        ),
+    )
+    client = KisClient()
+
+    with pytest.raises(ServiceError) as exc_info:
+        client._get_minute_candle_page(
+            "005930",
+            datetime(2026, 8, 24, 10, 1, tzinfo=timezone(timedelta(hours=9))),
+            {"authorization": "Bearer token"},
+        )
+
+    assert exc_info.value.code == "KIS_RATE_LIMIT"
+    assert exc_info.value.status_code == 503
