@@ -22,6 +22,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 전략 선택 | PUT | `/accounts/{account_id}/strategy` | 필요/소유권 | 200, 404 | StartInvesting |
 | 전략 목록 | GET | `/strategies` | 불필요 | 200 | RiskResult/StrategyDetail |
 | 현재가 | GET | `/market/stocks/{stock_code}/price` | 필요 | 200, 404, 503 | StockDetail |
+| 당일 1분봉 | GET | `/market/stocks/{stock_code}/candles?interval=1m&limit=120` | 필요 | 200, 404, 422, 503 | StockDetail chart |
 | 시장가 주문 | POST | `/orders` | 필요/소유권 | 201, 404, 409, 503 | 전략 기반 자동 운용 계층/Model signal 전용 |
 | 주문 목록 | GET | `/orders?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
@@ -162,4 +163,4 @@ Provider는 NAVER Cloud Platform NAVER API HUB Search News API의 `GET /search/v
 
 ## KIS 현재가와 가상거래 경계
 
-`GET /market/stocks/{stock_code}/price`와 주문/포트폴리오 평가는 `price:{stock_code}` Redis key를 먼저 조회한다. cache miss이면 KIS 현재가 API를 호출하고 `{price, as_of}` JSON을 `PRICE_CACHE_TTL_SECONDS` 동안 저장하며 응답 source는 `KIS`다. cache hit 응답 source는 `REDIS`다. KIS OAuth token도 Redis에 만료 60초 전까지 공유한다. KIS 주문 API는 구현하거나 호출하지 않으며 주문·체결·잔액·원장은 PostgreSQL 가상계좌에서만 변경된다.
+`GET /market/stocks/{stock_code}/price`와 주문/포트폴리오 평가는 실시간 KIS WebSocket Redis 값, 기존 REST Redis 값, KIS REST 순으로 현재가를 조회한다. `GET /market/stocks/{stock_code}/candles`는 기존 `KisClient`로 KIS 당일 분봉을 조회하고 `market:candles:1m:{stock_code}`에 단기 캐시한다. 상세 계약은 [KIS 실시간 시장가 및 차트 API 명세](KIS_REALTIME_MARKET_API_SPECIFICATION.md)를 따른다. KIS OAuth token은 Redis에 만료 60초 전까지 공유한다. KIS 주문 API는 구현하거나 호출하지 않으며 주문·체결·잔액·원장은 PostgreSQL 가상계좌에서만 변경된다.

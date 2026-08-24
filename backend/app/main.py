@@ -1,5 +1,6 @@
 """SeSAC 금융 서비스 FastAPI 진입점."""
 
+from contextlib import asynccontextmanager
 import os
 
 import redis
@@ -12,11 +13,22 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.routes import accounts, auth, information, market, orders, portfolio, strategies
 from app.core.errors import ServiceError
 from app.db.session import engine
+from app.integrations.kis.hub import realtime_hub
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await realtime_hub.start()
+    try:
+        yield
+    finally:
+        await realtime_hub.stop()
 
 app = FastAPI(
     title="SeSAC Team 1 Virtual Trading API",
     version="1.0.0",
     description="KIS 현재가를 사용하고 주문/체결/잔액은 내부 PostgreSQL에서 관리하는 가상투자 API",
+    lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,

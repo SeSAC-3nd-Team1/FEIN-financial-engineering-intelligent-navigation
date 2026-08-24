@@ -6,6 +6,7 @@
 
 - [현재 PostgreSQL 데이터 명세](DATABASE_SPECIFICATION.md)
 - [Backend API 명세](BACKEND_API_SPECIFICATION.md)
+- [KIS 실시간 시장가 및 차트 API 명세](KIS_REALTIME_MARKET_API_SPECIFICATION.md)
 - [가상투자 PostgreSQL 데이터 명세](VIRTUAL_TRADING_DATA_SPECIFICATION.md)
 - [가상투자 ERD](VIRTUAL_TRADING_ERD.md)
 - [Frontend → API → DB 매핑](FRONTEND_API_DB_MAPPING.md)
