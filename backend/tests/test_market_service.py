@@ -5,6 +5,7 @@ from decimal import Decimal
 import json
 
 from app.services.market import MarketService
+from app.integrations.kis.models import MinuteCandle
 
 
 class FakeCache:
@@ -28,6 +29,25 @@ class FakeKis:
         self.calls += 1
         assert stock_code == "005930"
         return Decimal("70000"), datetime.now(UTC)
+
+    def get_minute_candles(self, stock_code: str, *, limit: int):
+        self.calls += 1
+        assert stock_code == "005930"
+        assert limit == 2
+        as_of = datetime.now(UTC)
+        candles = [
+            MinuteCandle(
+                stock_code=stock_code,
+                started_at=as_of,
+                open=Decimal("70000"),
+                high=Decimal("70200"),
+                low=Decimal("69900"),
+                close=Decimal("70100"),
+                volume=10,
+                is_closed=False,
+            )
+        ]
+        return candles, as_of
 
 
 def test_kis_price_is_cached_in_redis_format() -> None:
@@ -94,3 +114,20 @@ def test_stale_realtime_price_falls_back_to_rest_cache() -> None:
     assert price == Decimal("70000")
     assert source == "REDIS"
     assert kis.calls == 0
+
+
+def test_minute_candles_are_cached_and_reused() -> None:
+    cache = FakeCache()
+    kis = FakeKis()
+    market = MarketService(kis=kis, cache=cache)
+
+    first_items, first_as_of, first_source = market.get_minute_candles("005930", 2)
+    second_items, second_as_of, second_source = market.get_minute_candles("005930", 2)
+
+    assert [item.close for item in first_items] == [Decimal("70100")]
+    assert first_items == second_items
+    assert first_as_of == second_as_of
+    assert first_source == "KIS"
+    assert second_source == "REDIS"
+    assert kis.calls == 1
+    assert cache.ttls["market:candles:1m:005930"] > 0
