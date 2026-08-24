@@ -1,4 +1,6 @@
 import asyncio
+from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 
@@ -46,16 +48,56 @@ class FakeAIClient:
         )
 
 
+class FakeSession:
+    def __init__(self) -> None:
+        self.added = []
+        self.committed = False
+
+    def add(self, value):
+        self.added.append(value)
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        pass
+
+
+class FakeRepo:
+    def __init__(self, consent: bool = True) -> None:
+        self.consent = consent
+
+    def has_ai_personalization_consent(self, _user_id):
+        return self.consent
+
+
+def make_service(client: FakeAIClient, *, consent: bool = True):
+    session = FakeSession()
+    service = InvestorProfileService(
+        session,
+        client,
+        model_version="profile-model-v1",
+        prompt_version="v1",
+    )
+    service.repo = FakeRepo(consent)
+    return service, session
+
+
 def test_analyze_resolves_server_catalog_and_returns_versioned_result() -> None:
     client = FakeAIClient()
-    result = asyncio.run(InvestorProfileService(client).analyze(make_request()))
+    service, session = make_service(client)
+    result = asyncio.run(service.analyze(7, make_request()))
 
+    assert isinstance(result.assessment_id, UUID)
     assert result.profile_type == "중립투자형"
     assert result.questionnaire_version == "v1"
     assert result.analysis_version == "v1"
     assert len(client.answers) == 8
     assert client.answers[0].question == "투자를 해본 경험이 얼마나 있나요?"
     assert client.answers[0].answer == "1~3년"
+    assert result.model_version == "profile-model-v1"
+    assert session.committed is True
+    assert session.added[0].user_id == 7
 
 
 @pytest.mark.parametrize(
@@ -75,8 +117,23 @@ def test_analyze_resolves_server_catalog_and_returns_versioned_result() -> None:
 )
 def test_analyze_rejects_invalid_questionnaire_answers(payload, expected_code) -> None:
     client = FakeAIClient()
+    service, session = make_service(client)
     with pytest.raises(ServiceError) as raised:
-        asyncio.run(InvestorProfileService(client).analyze(payload))
+        asyncio.run(service.analyze(7, payload))
 
     assert raised.value.code == expected_code
     assert client.answers == []
+    assert session.added == []
+
+
+def test_analyze_requires_ai_personalization_consent() -> None:
+    client = FakeAIClient()
+    service, session = make_service(client, consent=False)
+
+    with pytest.raises(ServiceError) as raised:
+        asyncio.run(service.analyze(7, make_request()))
+
+    assert raised.value.code == "AI_PERSONALIZATION_CONSENT_REQUIRED"
+    assert raised.value.status_code == 403
+    assert client.answers == []
+    assert session.added == []

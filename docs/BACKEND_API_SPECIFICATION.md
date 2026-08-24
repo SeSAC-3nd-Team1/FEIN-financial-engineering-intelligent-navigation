@@ -32,6 +32,9 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 기업 재무정보 | GET | `/companies/{stock_code}/financials?year=&quarter=` | 불필요 | 200, 404, 422 | Agent/향후 기업 화면 |
 | 기업 공시 | GET | `/companies/{stock_code}/disclosures?start_date=&end_date=&disclosure_type=&limit=` | 불필요 | 200, 404, 422 | Disclosure Agent |
 | 투자성향 AI 분석 | POST | `/investor-profile/analyze` | 필요 | 200, 400, 401, 422, 502, 503, 504 | RiskProfile/RiskResult |
+| 최신 투자성향 | GET | `/investor-profile/me/latest` | 필요 | 200, 401, 404 | RiskResult |
+| AI 전략 추천 | POST | `/strategy-recommendations` | 필요/소유권 | 201, 401, 403, 404, 502, 503, 504 | RiskResult |
+| 최신 AI 전략 추천 | GET | `/strategy-recommendations/me/latest` | 필요 | 200, 401, 404 | RiskResult |
 
 ## 주요 Request/Response
 
@@ -204,13 +207,17 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 
 ### POST `/investor-profile/analyze`
 
-인증된 사용자가 `v1` 설문의 8개 `question_id`와 `option_id`를 제출하면 Backend가 서버 카탈로그로 검증·정규화하고 Azure OpenAI 분석 결과를 같은 HTTP 요청에서 반환한다. 답변 순서는 무관하지만 모든 문항이 중복 없이 포함되어야 한다. 답변과 결과는 영속화하지 않는다.
+인증된 사용자가 `v1` 설문의 8개 `question_id`와 `option_id`를 제출하면 Backend가 서버 카탈로그로 검증·정규화하고 Azure OpenAI 분석 결과를 PostgreSQL에 저장한 뒤 `assessment_id`와 함께 반환한다. 원본 답변은 저장하지 않는다.
 
 상세 request/response, 전체 문항 ID, 선택지 ID와 오류 계약은 [투자성향 AI 분석 API 명세](INVESTOR_PROFILE_API_SPECIFICATION.md)를 따른다.
 
+### POST `/strategy-recommendations`
+
+인증 사용자가 소유한 `assessment_id`를 전달하면 Backend가 저장된 성향과 활성 전략 catalog를 최근 8년 데이터로 학습된 추천 모델에 전달한다. 구조화 출력과 전략·순위·점수를 검증한 뒤 버전 정보와 함께 저장한다. 상세 계약은 [AI 전략 추천 API 명세](STRATEGY_RECOMMENDATION_API_SPECIFICATION.md)를 따른다.
+
 ## 주요 error code
 
-`COMPANY_NOT_FOUND`, `AI_NOT_CONFIGURED`, `AI_ANALYSIS_UNAVAILABLE`, `AI_ANALYSIS_TIMEOUT`, `AI_INVALID_RESPONSE`, `INVALID_QUESTIONNAIRE_VERSION`, `INVALID_INVESTOR_ANSWERS`, `NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
+`COMPANY_NOT_FOUND`, `AI_PERSONALIZATION_CONSENT_REQUIRED`, `AI_NOT_CONFIGURED`, `AI_ANALYSIS_UNAVAILABLE`, `AI_ANALYSIS_TIMEOUT`, `AI_INVALID_RESPONSE`, `AI_RECOMMENDATION_NOT_CONFIGURED`, `AI_RECOMMENDATION_UNAVAILABLE`, `AI_RECOMMENDATION_TIMEOUT`, `AI_INVALID_RECOMMENDATION`, `INVESTOR_PROFILE_NOT_FOUND`, `STRATEGY_RECOMMENDATION_NOT_FOUND`, `STRATEGY_CATALOG_UNAVAILABLE`, `INVALID_QUESTIONNAIRE_VERSION`, `INVALID_INVESTOR_ANSWERS`, `NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
 
 ## KIS 현재가와 가상거래 경계
 

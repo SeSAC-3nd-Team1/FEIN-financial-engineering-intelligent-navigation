@@ -18,7 +18,10 @@ TERM_TITLES = {
     "A4_KCB": "KCB 본인확인 서비스 동의",
     "B_PRIVACY": "개인정보 수집 및 이용 동의",
     "C_ASSOCIATE_TERMS": "준회원 이용약관 동의",
+    "AI_PERSONALIZATION": "AI 기반 맞춤형 서비스 제공을 위한 개인정보 이용 동의",
 }
+
+OPTIONAL_TERM_CODES = {"AI_PERSONALIZATION"}
 
 
 def parse_timestamp(value: str) -> datetime:
@@ -66,7 +69,7 @@ def build_term_rows(version: str, effective_at: datetime, content_base_url: str 
                 "version": version,
                 "title": title,
                 "content_reference": content_reference,
-                "is_required": True,
+                "is_required": code not in OPTIONAL_TERM_CODES,
                 "effective_at": effective_at,
             }
         )
