@@ -16,7 +16,7 @@ exit /b 2
 
 :run
 echo [financial-pipeline] stage=%MODE%
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage %MODE% --schema-version 1 --feature-version 1
+docker compose --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage %MODE% --schema-version 1 --feature-version 1
 set EXIT_CODE=%ERRORLEVEL%
 
 if not "%EXIT_CODE%"=="0" (
