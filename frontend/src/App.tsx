@@ -362,7 +362,8 @@ export default function App() {
           mode={investmentMode}
           otherModeAccount={(() => {
             const otherMode: OperationMode = investmentMode === 'auto' ? 'manual' : 'auto';
-            return accountsByMode[otherMode] ? { mode: otherMode } : null;
+            const otherAccount = accountsByMode[otherMode];
+            return otherAccount ? { mode: otherMode, accountNumber: otherAccount.accountNumber } : null;
           })()}
           onNavigate={navigate}
           onBack={() => goBackInInvestmentFlow('invest-account')}

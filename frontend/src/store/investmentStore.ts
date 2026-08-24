@@ -61,13 +61,30 @@ const EMPTY_ONBOARDING: PersistedOnboarding = {
   activeMode: null,
 };
 
+/** 이 변경(운용방식별 계좌) 이전에 저장된 단일 계좌 필드 — 마이그레이션 판단에만 쓰고 새 상태에는 남기지 않는다 */
+interface LegacyPersistedOnboardingV1 {
+  sesacAccount?: SesacAccount | null;
+}
+
 /** userId가 없으면(비로그인) 저장할 곳이 없으니 빈 상태를 돌려준다 — 이 상태는 persist 대상도 아니다 */
 function loadPersisted(userId: string | null): PersistedOnboarding {
   if (!userId) return EMPTY_ONBOARDING;
   try {
     const raw = localStorage.getItem(storageKey(userId));
     if (!raw) return EMPTY_ONBOARDING;
-    return { ...EMPTY_ONBOARDING, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw) as Partial<PersistedOnboarding> & LegacyPersistedOnboardingV1;
+    const merged: PersistedOnboarding = { ...EMPTY_ONBOARDING, ...parsed, accountsByMode: parsed.accountsByMode ?? {} };
+
+    // 이 변경 전에는 sesacAccount 하나만 저장했다 — 그 계좌가 어느 운용방식이었는지는 저장돼 있지
+    // 않으므로, pendingInvestment/inFlight에 남은 mode를 우선 쓰고 없으면 이 변경 전 기본값이던
+    // 'manual'로 간주한다. 마이그레이션하지 않으면 invest-deposit 등에서 해당 mode의 계좌를 찾지
+    // 못해 화면이 비어 보이는 문제가 생긴다.
+    if (parsed.sesacAccount && Object.keys(merged.accountsByMode).length === 0) {
+      const inferredMode: OperationMode = parsed.pendingInvestment?.mode ?? parsed.inFlight?.mode ?? 'manual';
+      merged.accountsByMode = { [inferredMode]: parsed.sesacAccount };
+    }
+
+    return merged;
   } catch {
     return EMPTY_ONBOARDING;
   }

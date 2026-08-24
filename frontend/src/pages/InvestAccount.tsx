@@ -11,8 +11,11 @@ interface Props {
   userName: string;
   strategyName: string;
   mode: OperationMode;
-  /** 다른 운용방식으로 이미 연결한 계좌가 있으면 전달된다 — 같은 계좌로는 운용방식을 바꿀 수 없다는 정책 안내에 사용 */
-  otherModeAccount?: { mode: OperationMode } | null;
+  /**
+   * 다른 운용방식으로 이미 연결한 계좌가 있으면 전달된다 — 같은 계좌로는 운용방식을 바꿀 수 없다는
+   * 정책 안내뿐 아니라, 그 계좌번호와 같은 계좌를 이 운용방식에 다시 연결하지 못하게 막는 데도 쓴다.
+   */
+  otherModeAccount?: { mode: OperationMode; accountNumber: string } | null;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
   /** 계좌 연결 완료 — App.tsx가 investmentStore에 반영하고 다음 단계로 라우팅한다 */
@@ -96,16 +99,38 @@ export default function InvestAccount({
 
           {phase === 'link-select' && (
             <StepCard title="SeSAC증권 계좌 확인" desc="FE!N과 연결할 계좌를 선택해주세요.">
-              <button
-                onClick={() => { setLinkedAccount(MOCK_EXISTING_ACCOUNT); setPhase('link-auth'); }}
-                className="flex items-center justify-between rounded-[16px] bg-canvas px-7 py-6 text-left shadow-[0_0_0_1px_#E5E9E3_inset]"
-              >
-                <div className="flex flex-col gap-1">
-                  <span className="text-[17px] font-bold text-ink">SeSAC증권 종합계좌</span>
-                  <span className="text-base text-muted">{MOCK_EXISTING_ACCOUNT.accountNumber}</span>
+              {MOCK_EXISTING_ACCOUNT.accountNumber === otherModeAccount?.accountNumber ? (
+                <div className="flex flex-col gap-3 rounded-[16px] bg-canvas px-7 py-6">
+                  <div className="flex items-center justify-between opacity-50">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[17px] font-bold text-ink">SeSAC증권 종합계좌</span>
+                      <span className="text-base text-muted">{MOCK_EXISTING_ACCOUNT.accountNumber}</span>
+                    </div>
+                    <span className="text-base font-semibold text-subtle">연결 불가</span>
+                  </div>
+                  <p className="text-[15px] leading-[24px] text-muted">
+                    이미 {OPERATING_MODES[otherModeAccount.mode].label}에 연결된 계좌예요.
+                    다른 운용방식에는 같은 계좌를 연결할 수 없어요.
+                  </p>
+                  <button
+                    onClick={() => setPhase('open-terms')}
+                    className="self-start text-base font-semibold text-navy underline"
+                  >
+                    새 계좌 만들기 →
+                  </button>
                 </div>
-                <span className="text-base font-semibold text-navy">선택 →</span>
-              </button>
+              ) : (
+                <button
+                  onClick={() => { setLinkedAccount(MOCK_EXISTING_ACCOUNT); setPhase('link-auth'); }}
+                  className="flex items-center justify-between rounded-[16px] bg-canvas px-7 py-6 text-left shadow-[0_0_0_1px_#E5E9E3_inset]"
+                >
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[17px] font-bold text-ink">SeSAC증권 종합계좌</span>
+                    <span className="text-base text-muted">{MOCK_EXISTING_ACCOUNT.accountNumber}</span>
+                  </div>
+                  <span className="text-base font-semibold text-navy">선택 →</span>
+                </button>
+              )}
             </StepCard>
           )}
 
