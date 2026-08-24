@@ -222,7 +222,7 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
 
             portfolio = client.get(f"/api/v1/portfolio?account_id={account_id}", headers=headers)
             assert portfolio.status_code == 200, portfolio.text
-            assert portfolio.json()["positions"][0]["quantity"] == 10
+            assert Decimal(portfolio.json()["positions"][0]["quantity"]) == Decimal("10")
             assert portfolio.json()["total_assets"] == "1000000.00"
 
             sell = client.post("/api/v1/orders", headers=headers, json={
@@ -235,7 +235,7 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             })
             assert sell.status_code == 201, sell.text
             after = client.get(f"/api/v1/portfolio?account_id={account_id}", headers=headers).json()
-            assert after["positions"][0]["quantity"] == 6
+            assert Decimal(after["positions"][0]["quantity"]) == Decimal("6")
             assert after["cash_balance"] == "580000.00"
 
             with SessionLocal() as session:

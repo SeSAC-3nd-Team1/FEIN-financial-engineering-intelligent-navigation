@@ -17,10 +17,10 @@ erDiagram
   users { bigint id PK }
   strategies { varchar id PK jsonb rule_config }
   virtual_accounts { uuid id PK bigint user_id FK numeric cash_balance varchar selected_strategy_id FK }
-  positions { bigint id PK uuid account_id FK varchar stock_code bigint quantity numeric average_price }
+  positions { bigint id PK uuid account_id FK varchar stock_code numeric quantity numeric average_price }
   rebalancing_decisions { uuid id PK uuid account_id FK varchar stock_code varchar decision numeric recommended_amount }
-  orders { uuid id PK uuid account_id FK varchar side bigint quantity varchar status varchar idempotency_key }
-  executions { bigint id PK uuid order_id FK uuid account_id FK numeric execution_price }
+  orders { uuid id PK uuid account_id FK varchar side numeric quantity varchar status varchar idempotency_key }
+  executions { bigint id PK uuid order_id FK uuid account_id FK numeric quantity numeric execution_price }
   cash_ledger { bigint id PK uuid account_id FK numeric amount numeric balance_after varchar reference_id }
 ```
 

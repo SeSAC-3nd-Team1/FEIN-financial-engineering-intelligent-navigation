@@ -1,6 +1,6 @@
 # 가상투자 데이터 명세서
 
-Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0018_rebalancing_decisions.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
+Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0019_fractional_quantities.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
 
 | Table.Column | PostgreSQL Type | PK/FK/NULL/Default | Constraint/Index | 설명 |
 | --- | --- | --- | --- | --- |
@@ -16,7 +16,7 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | virtual_accounts.selected_strategy_id | varchar(30) | FK strategies.id, NULL | SET NULL | 선택 전략 |
 | positions.id | bigint identity | PK |  | 포지션 ID |
 | positions.account_id/stock_code | uuid/varchar(12) | FK, NOT NULL | UNIQUE pair, account index | 계좌별 종목 |
-| positions.quantity | bigint | NOT NULL | >=0 | 현재 보유수량 |
+| positions.quantity | numeric(20,8) | NOT NULL | >=0 | 소수점 매매를 포함한 현재 보유수량 |
 | positions.average_price | numeric(20,4) | NOT NULL | >0 | 가중평균 매입가 |
 | positions.realized_profit | numeric(20,2) | DEFAULT 0 |  | 누적 실현손익 |
 | portfolio_snapshots.account_id/snapshot_date | uuid/date | FK, UNIQUE pair |  | 일별 실제 계좌 평가 snapshot |
@@ -31,12 +31,12 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | orders.id | uuid | PK |  | 주문 ID |
 | orders.account_id | uuid | FK virtual_accounts, NOT NULL | account/requested_at index | 주문 계좌 |
 | orders.stock_code/side/order_type | varchar | NOT NULL | BUY/SELL, MARKET only | 주문 내용 |
-| orders.quantity/requested_price | bigint/numeric(20,4) | >0 / NULL | CHECK | 수량/체결에 사용한 현재가 snapshot |
+| orders.quantity/requested_price | numeric(20,8)/numeric(20,4) | >0 / NULL | CHECK | 소수점 주문 수량/체결에 사용한 현재가 snapshot |
 | orders.status | varchar(12) | NOT NULL | PENDING/FILLED/REJECTED/CANCELLED | 주문 상태 |
 | orders.idempotency_key | varchar(100) | NOT NULL | UNIQUE(account,key) | 중복 요청 방지 |
 | executions.id/order_id | bigint identity/uuid | PK/FK | order_id UNIQUE, RESTRICT | MVP 주문당 단일 체결 |
 | executions.account_id | uuid | FK, NOT NULL | account/executed_at index | 체결 계좌 |
-| executions.stock_code/side/quantity/price | varchar/varchar/bigint/numeric | NOT NULL | 양수/CHECK | 체결 사실 |
+| executions.stock_code/side/quantity/price | varchar/varchar/numeric(20,8)/numeric | NOT NULL | 양수/CHECK | 소수점 수량을 포함한 체결 사실 |
 | cash_ledger.id | bigint identity | PK |  | 원장 ID |
 | cash_ledger.account_id | uuid | FK, NOT NULL | account/created_at index, RESTRICT | 계좌 |
 | cash_ledger.transaction_type | varchar(30) | NOT NULL | INITIAL_DEPOSIT/BUY/SELL/ADJUSTMENT | 증감 이유 |
@@ -47,7 +47,7 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 
 ## Transaction 경계
 
-시장가 체결 시 `virtual_accounts` 행을 `SELECT ... FOR UPDATE`로 잠그고 한 transaction에서 `orders → executions → positions → virtual_accounts.cash_balance → cash_ledger`를 처리한다. 하나라도 실패하면 rollback한다. `cash_balance`는 조회 snapshot, `cash_ledger`는 append-only 감사 이력이다.
+시장가 체결 시 `virtual_accounts` 행을 `SELECT ... FOR UPDATE`로 잠그고 한 transaction에서 `orders → executions → positions → virtual_accounts.cash_balance → cash_ledger`를 처리한다. 원화 반올림 주문금액이 1원 미만이면 어떤 거래 행도 만들지 않고 거부하며, 하나라도 실패하면 rollback한다. `cash_balance`는 조회 snapshot, `cash_ledger`는 append-only 감사 이력이다.
 
 ## 보안·보존
 

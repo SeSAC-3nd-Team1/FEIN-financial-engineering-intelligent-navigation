@@ -92,6 +92,19 @@ docker compose exec -T backend env RUN_INTEGRATION=1 pytest -q tests/test_integr
 
 E2E는 `GET /auth/terms`부터 회원가입 동의 저장, 계좌·전략·매수·멱등 재시도·포트폴리오·매도·원장 정합성까지 확인합니다. 생성한 사용자와 가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 공용 개발 데이터 전체를 삭제하지 않습니다. 전체 schema drop/recreate, 전체 truncate, migration rollback 같은 파괴적 테스트는 별도 임시 PostgreSQL에서만 수행합니다.
 
+기존 Frontend Mock의 20개 종목·비중을 특정 개발용 가상계좌에 PostgreSQL 최신 KRX 종가
+기준의 실제 가상 주문으로 한 번만
+적용하려면 다음 명령을 사용합니다. 소수점 8자리 수량으로 각 Mock 목표 비중을 맞추고,
+전체 비용이 계좌 현금 이내인지 주문 전에 검증합니다.
+먼저 `--dry-run`으로 수량을 확인할 수 있으며, 종목별 고정
+idempotency key를 사용하므로 중간 실패 후 같은 명령을 다시 실행해도 완료된 주문은 중복되지
+않습니다. 비밀번호나 이메일 대신 로그인 아이디만 인자로 전달합니다.
+
+```bash
+docker compose run --rm backend python -m scripts.seed_demo_portfolio --user-id <개발용-로그인-id> --dry-run
+docker compose run --rm backend python -m scripts.seed_demo_portfolio --user-id <개발용-로그인-id>
+```
+
 실제 KIS 시세→Redis 통합 테스트는 유효한 KIS 환경 변수가 있는 경우에만 명시적으로 실행합니다. 이 테스트는 현재가 조회만 수행하고 KIS 주문 API나 실제·모의 계좌 주문을 호출하지 않습니다.
 
 ```bash

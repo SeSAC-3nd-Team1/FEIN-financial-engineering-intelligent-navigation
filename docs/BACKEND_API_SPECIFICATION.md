@@ -117,12 +117,12 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 ### POST `/orders`
 
-`idempotency_key`는 계좌 안에서 유일하다. 같은 payload로 재전송하면 기존 주문을 반환하고, 다른 payload면 `409 IDEMPOTENCY_CONFLICT`다.
+`idempotency_key`는 계좌 안에서 유일하다. 같은 payload로 재전송하면 기존 주문을 반환하고, 다른 payload면 `409 IDEMPOTENCY_CONFLICT`다. 가격×수량을 원화 소수 둘째 자리로 반올림한 주문금액이 1원 미만이면 포지션이나 원장을 만들지 않고 `409 ORDER_AMOUNT_TOO_SMALL`을 반환한다.
 
 ```json
 {
   "account_id":"92be9e3e-4364-4428-86c4-b730cc841847","stock_code":"005930",
-  "side":"BUY","order_type":"MARKET","quantity":10,"idempotency_key":"client-uuid-0001"
+  "side":"BUY","order_type":"MARKET","quantity":10.125,"idempotency_key":"client-uuid-0001"
 }
 ```
 
@@ -131,7 +131,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 ```json
 {
   "id":"82b2e790-79ee-4d7f-b94f-f37a7a99a7e6","account_id":"92be9e3e-4364-4428-86c4-b730cc841847",
-  "stock_code":"005930","side":"BUY","order_type":"MARKET","quantity":10,
+  "stock_code":"005930","side":"BUY","order_type":"MARKET","quantity":"10.12500000",
   "status":"FILLED","requested_price":"70000.0000","requested_at":"2026-08-23T12:00:00Z"
 }
 ```
@@ -146,7 +146,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
   "return_rate":"1.43","today_profit":"10000.00",
   "top_contributor":{"stock_code":"005930","stock_name":"삼성전자","amount":"10000.00","share_rate":"100.00"},
   "strategy_targets_available":false,"rebalancing_proposals":[],
-  "positions":[{"stock_code":"005930","stock_name":"삼성전자","sector":"반도체","quantity":10,"average_price":"70000.0000","current_price":"71000","previous_close":"70000","change_rate":"1.43","purchase_amount":"700000.00","evaluation_amount":"710000.00","unrealized_profit":"10000.00","return_rate":"1.43","realized_profit":"0.00","weight":"7.09","today_profit":"10000.00","price_source":"KIS","price_as_of":"2026-08-25T09:00:00+09:00"}]
+  "positions":[{"stock_code":"005930","stock_name":"삼성전자","sector":"반도체","quantity":"10.12500000","average_price":"70000.0000","current_price":"71000","previous_close":"70000","change_rate":"1.43","purchase_amount":"708750.00","evaluation_amount":"718875.00","unrealized_profit":"10125.00","return_rate":"1.43","realized_profit":"0.00","weight":"7.09","today_profit":"10125.00","price_source":"KIS","price_as_of":"2026-08-25T09:00:00+09:00"}]
 }
 ```
 
@@ -277,7 +277,7 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 
 ## 주요 error code
 
-`COMPANY_NOT_FOUND`, `CHART_DATA_UNAVAILABLE`, `AI_PERSONALIZATION_CONSENT_REQUIRED`, `AI_NOT_CONFIGURED`, `AI_ANALYSIS_UNAVAILABLE`, `AI_ANALYSIS_TIMEOUT`, `AI_INVALID_RESPONSE`, `AI_RECOMMENDATION_NOT_CONFIGURED`, `AI_RECOMMENDATION_UNAVAILABLE`, `AI_RECOMMENDATION_TIMEOUT`, `AI_INVALID_RECOMMENDATION`, `INVESTOR_PROFILE_NOT_FOUND`, `STRATEGY_RECOMMENDATION_NOT_FOUND`, `STRATEGY_CATALOG_UNAVAILABLE`, `INVALID_QUESTIONNAIRE_VERSION`, `INVALID_INVESTOR_ANSWERS`, `NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
+`COMPANY_NOT_FOUND`, `CHART_DATA_UNAVAILABLE`, `AI_PERSONALIZATION_CONSENT_REQUIRED`, `AI_NOT_CONFIGURED`, `AI_ANALYSIS_UNAVAILABLE`, `AI_ANALYSIS_TIMEOUT`, `AI_INVALID_RESPONSE`, `AI_RECOMMENDATION_NOT_CONFIGURED`, `AI_RECOMMENDATION_UNAVAILABLE`, `AI_RECOMMENDATION_TIMEOUT`, `AI_INVALID_RECOMMENDATION`, `INVESTOR_PROFILE_NOT_FOUND`, `STRATEGY_RECOMMENDATION_NOT_FOUND`, `STRATEGY_CATALOG_UNAVAILABLE`, `INVALID_QUESTIONNAIRE_VERSION`, `INVALID_INVESTOR_ANSWERS`, `NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `ORDER_AMOUNT_TOO_SMALL`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
 
 ## KIS 현재가와 가상거래 경계
 
