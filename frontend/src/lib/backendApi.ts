@@ -99,7 +99,7 @@ export interface PositionResponse {
   stock_code: string;
   stock_name: string | null;
   sector: string | null;
-  quantity: number;
+  quantity: DecimalString;
   average_price: DecimalString;
   current_price: DecimalString;
   previous_close: DecimalString | null;
@@ -232,7 +232,7 @@ export interface OrderResponse {
   stock_code: string;
   side: 'BUY' | 'SELL';
   order_type: string;
-  quantity: number;
+  quantity: DecimalString;
   status: string;
   requested_price: DecimalString | null;
   requested_at: string;
@@ -243,7 +243,7 @@ export interface ExecutionResponse {
   order_id: string;
   stock_code: string;
   side: 'BUY' | 'SELL';
-  quantity: number;
+  quantity: DecimalString;
   execution_price: DecimalString;
   executed_at: string;
 }

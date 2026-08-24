@@ -218,7 +218,7 @@ class OrderCreateRequest(BaseModel):
     stock_code: str = Field(pattern=r"^[0-9A-Z]{6,12}$")
     side: Literal["BUY", "SELL"]
     order_type: Literal["MARKET"] = "MARKET"
-    quantity: int = Field(gt=0, le=1_000_000)
+    quantity: Decimal = Field(gt=0, le=1_000_000, decimal_places=8)
     idempotency_key: str = Field(min_length=8, max_length=100)
 
 
@@ -229,7 +229,7 @@ class OrderResponse(BaseModel):
     stock_code: str
     side: str
     order_type: str
-    quantity: int
+    quantity: Decimal
     status: str
     requested_price: Decimal | None
     requested_at: datetime
@@ -241,7 +241,7 @@ class ExecutionResponse(BaseModel):
     order_id: UUID
     stock_code: str
     side: str
-    quantity: int
+    quantity: Decimal
     execution_price: Decimal
     executed_at: datetime
 
@@ -345,7 +345,7 @@ class PositionResponse(BaseModel):
     stock_code: str
     stock_name: str | None
     sector: str | None
-    quantity: int
+    quantity: Decimal
     average_price: Decimal
     current_price: Decimal
     previous_close: Decimal | None

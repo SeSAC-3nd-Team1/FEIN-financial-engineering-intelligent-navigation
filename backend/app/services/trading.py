@@ -64,10 +64,16 @@ class TradingService:
             self.session.flush()
 
             if request.side == "BUY":
-                old_quantity = position.quantity if position else 0
+                old_quantity = position.quantity if position else Decimal("0")
                 old_cost = (position.average_price * old_quantity) if position else Decimal("0")
                 if not position:
-                    position = Position(account_id=account.id, stock_code=request.stock_code, quantity=0, average_price=price, realized_profit=0)
+                    position = Position(
+                        account_id=account.id,
+                        stock_code=request.stock_code,
+                        quantity=Decimal("0"),
+                        average_price=price,
+                        realized_profit=0,
+                    )
                     self.session.add(position)
                 position.quantity = old_quantity + request.quantity
                 position.average_price = ((old_cost + total) / position.quantity).quantize(Decimal("0.0001"))

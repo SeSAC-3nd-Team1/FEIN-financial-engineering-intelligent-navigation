@@ -107,7 +107,7 @@ class Position(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     account_id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"), nullable=False)
     stock_code: Mapped[str] = mapped_column(String(12), nullable=False)
-    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
     average_price: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
     realized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False, server_default="0")
 
@@ -171,7 +171,7 @@ class Order(Base):
     stock_code: Mapped[str] = mapped_column(String(12), nullable=False)
     side: Mapped[str] = mapped_column(String(4), nullable=False)
     order_type: Mapped[str] = mapped_column(String(10), nullable=False)
-    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
     requested_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
     status: Mapped[str] = mapped_column(String(12), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -188,7 +188,7 @@ class Execution(Base):
     account_id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"), nullable=False)
     stock_code: Mapped[str] = mapped_column(String(12), nullable=False)
     side: Mapped[str] = mapped_column(String(4), nullable=False)
-    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
     execution_price: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

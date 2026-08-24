@@ -26,7 +26,7 @@ describe('buildPortfolioHoldings', () => {
         stock_code: '123456',
         stock_name: '실제 종목',
         sector: '실제 업종',
-        quantity: 1,
+        quantity: '1.00000000',
         average_price: '400000',
         current_price: '500000',
         previous_close: '499000',

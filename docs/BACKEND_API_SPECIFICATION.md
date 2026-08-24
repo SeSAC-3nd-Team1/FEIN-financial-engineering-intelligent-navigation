@@ -122,7 +122,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 ```json
 {
   "account_id":"92be9e3e-4364-4428-86c4-b730cc841847","stock_code":"005930",
-  "side":"BUY","order_type":"MARKET","quantity":10,"idempotency_key":"client-uuid-0001"
+  "side":"BUY","order_type":"MARKET","quantity":10.125,"idempotency_key":"client-uuid-0001"
 }
 ```
 
@@ -131,7 +131,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 ```json
 {
   "id":"82b2e790-79ee-4d7f-b94f-f37a7a99a7e6","account_id":"92be9e3e-4364-4428-86c4-b730cc841847",
-  "stock_code":"005930","side":"BUY","order_type":"MARKET","quantity":10,
+  "stock_code":"005930","side":"BUY","order_type":"MARKET","quantity":"10.12500000",
   "status":"FILLED","requested_price":"70000.0000","requested_at":"2026-08-23T12:00:00Z"
 }
 ```
@@ -146,7 +146,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
   "return_rate":"1.43","today_profit":"10000.00",
   "top_contributor":{"stock_code":"005930","stock_name":"삼성전자","amount":"10000.00","share_rate":"100.00"},
   "strategy_targets_available":false,"rebalancing_proposals":[],
-  "positions":[{"stock_code":"005930","stock_name":"삼성전자","sector":"반도체","quantity":10,"average_price":"70000.0000","current_price":"71000","previous_close":"70000","change_rate":"1.43","purchase_amount":"700000.00","evaluation_amount":"710000.00","unrealized_profit":"10000.00","return_rate":"1.43","realized_profit":"0.00","weight":"7.09","today_profit":"10000.00","price_source":"KIS","price_as_of":"2026-08-25T09:00:00+09:00"}]
+  "positions":[{"stock_code":"005930","stock_name":"삼성전자","sector":"반도체","quantity":"10.12500000","average_price":"70000.0000","current_price":"71000","previous_close":"70000","change_rate":"1.43","purchase_amount":"708750.00","evaluation_amount":"718875.00","unrealized_profit":"10125.00","return_rate":"1.43","realized_profit":"0.00","weight":"7.09","today_profit":"10125.00","price_source":"KIS","price_as_of":"2026-08-25T09:00:00+09:00"}]
 }
 ```
 

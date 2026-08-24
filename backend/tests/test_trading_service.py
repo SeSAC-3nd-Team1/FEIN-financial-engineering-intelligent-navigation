@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.errors import ServiceError
 from app.models import CashLedger, Execution, Order, Position, VirtualAccount
@@ -62,7 +63,7 @@ def account(cash: str = "1000000") -> VirtualAccount:
     return VirtualAccount(id=uuid4(), user_id=1, account_name="test", initial_cash=Decimal(cash), cash_balance=Decimal(cash), status="ACTIVE")
 
 
-def request(side: str, quantity: int = 10) -> OrderCreateRequest:
+def request(side: str, quantity: Decimal | int = 10) -> OrderCreateRequest:
     return OrderCreateRequest(account_id=uuid4(), stock_code="005930", side=side, quantity=quantity, idempotency_key=f"test-key-{side}-{quantity}")
 
 
@@ -96,6 +97,31 @@ def test_sell_updates_quantity_cash_and_realized_profit() -> None:
     assert existing.quantity == 6
     assert existing.realized_profit == Decimal("40000.00")
     assert acc.cash_balance == Decimal("380000.00")
+
+
+def test_fractional_buy_and_sell_preserve_quantity_and_cash() -> None:
+    acc = account()
+    svc, _ = service(acc, price="70000")
+
+    svc.execute_market_order(1, request("BUY", Decimal("0.125")))
+
+    assert svc.repo.current_position is None
+    position = next(
+        item for item in svc.session.added if isinstance(item, Position)
+    )
+    assert position.quantity == Decimal("0.125")
+    assert acc.cash_balance == Decimal("991250.00")
+
+    svc.repo.current_position = position
+    svc.execute_market_order(1, request("SELL", Decimal("0.025")))
+
+    assert position.quantity == Decimal("0.100")
+    assert acc.cash_balance == Decimal("993000.00")
+
+
+def test_order_quantity_rejects_more_than_eight_decimal_places() -> None:
+    with pytest.raises(ValidationError):
+        request("BUY", Decimal("0.000000001"))
 
 
 def test_buy_rejects_insufficient_cash_without_writes() -> None:
