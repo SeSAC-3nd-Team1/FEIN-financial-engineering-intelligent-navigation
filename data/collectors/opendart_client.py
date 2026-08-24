@@ -56,7 +56,11 @@ def parse_corp_code_zip(content: bytes) -> list[CorpCodeRecord]:
 
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
-            names = [name for name in archive.namelist() if name.rsplit("/", 1)[-1].lower() == "corpcode.xml"]
+            names = [
+                name
+                for name in archive.namelist()
+                if name.rsplit("/", 1)[-1].lower() == "corpcode.xml"
+            ]
             if len(names) != 1:
                 raise OpenDartError("corpCode ZIP must contain exactly one CORPCODE.xml")
             xml_bytes = archive.read(names[0])
@@ -72,13 +76,15 @@ def parse_corp_code_zip(content: bytes) -> list[CorpCodeRecord]:
             continue
         # 숫자 변환을 하지 않아 '005930' 같은 거래소 코드의 선행 0을 보존한다.
         stock_code = (item.findtext("stock_code") or "").strip() or None
-        records.append(CorpCodeRecord(
-            corp_code=corp_code,
-            corp_name=corp_name,
-            corp_name_eng=(item.findtext("corp_eng_name") or "").strip() or None,
-            stock_code=stock_code,
-            modify_date=(item.findtext("modify_date") or "").strip() or None,
-        ))
+        records.append(
+            CorpCodeRecord(
+                corp_code=corp_code,
+                corp_name=corp_name,
+                corp_name_eng=(item.findtext("corp_eng_name") or "").strip() or None,
+                stock_code=stock_code,
+                modify_date=(item.findtext("modify_date") or "").strip() or None,
+            )
+        )
     return records
 
 
@@ -113,18 +119,28 @@ class OpenDartClient:
         if remaining > 0:
             time.sleep(remaining)
 
-    def _request(self, endpoint: str, params: dict[str, Any], *, expect_json: bool = True) -> Any:
+    def _request(
+        self,
+        endpoint: str,
+        params: dict[str, Any],
+        *,
+        expect_json: bool = True,
+    ) -> Any:
         safe_params = {**params, "crtfc_key": self.api_key}
         last_error: Exception | None = None
         for attempt in range(1, self.max_attempts + 1):
             self._wait_for_rate_limit()
             try:
                 response = self.session.get(
-                    f"{self.base_url}/{endpoint}", params=safe_params, timeout=self.timeout_seconds
+                    f"{self.base_url}/{endpoint}",
+                    params=safe_params,
+                    timeout=self.timeout_seconds,
                 )
                 self._last_request_at = time.monotonic()
                 if response.status_code == 429 or response.status_code >= 500:
-                    raise requests.HTTPError(f"retryable HTTP {response.status_code}", response=response)
+                    raise requests.HTTPError(
+                        f"retryable HTTP {response.status_code}", response=response
+                    )
                 response.raise_for_status()
                 if not expect_json:
                     return response.content
@@ -147,7 +163,12 @@ class OpenDartClient:
                 last_error = exc
                 if attempt == self.max_attempts:
                     break
-            logger.warning("OpenDART request retry endpoint=%s attempt=%s error=%s", endpoint, attempt, type(last_error).__name__)
+            logger.warning(
+                "OpenDART request retry endpoint=%s attempt=%s error=%s",
+                endpoint,
+                attempt,
+                type(last_error).__name__,
+            )
             time.sleep(min(2 ** (attempt - 1), 8))
         raise OpenDartError(f"OpenDART request failed endpoint={endpoint}") from last_error
 
@@ -161,12 +182,52 @@ class OpenDartClient:
 
         return self._request("company.json", {"corp_code": corp_code})
 
-    def financials(self, corp_code: str, business_year: str, report_code: str, fs_div: str = "CFS") -> OpenDartJsonResponse:
+    def financials(
+        self,
+        corp_code: str,
+        business_year: str,
+        report_code: str,
+        fs_div: str = "CFS",
+    ) -> OpenDartJsonResponse:
         """단일회사 전체 재무제표의 HTTP 원문과 payload를 반환한다."""
 
-        return self._request("fnlttSinglAcntAll.json", {
-            "corp_code": corp_code, "bsns_year": business_year, "reprt_code": report_code, "fs_div": fs_div,
-        })
+        return self._request(
+            "fnlttSinglAcntAll.json",
+            {
+                "corp_code": corp_code,
+                "bsns_year": business_year,
+                "reprt_code": report_code,
+                "fs_div": fs_div,
+            },
+        )
+
+    def financials_multi(
+        self,
+        corp_codes: list[str],
+        business_year: str,
+        report_code: str,
+    ) -> OpenDartJsonResponse:
+        """최대 100개 회사의 주요 재무계정을 한 요청으로 조회한다.
+
+        OpenDART 다중회사 주요계정 API의 회사 수 제한을 client 계약에서 먼저 검증해
+        잘못된 대량 요청이 provider의 021 오류와 불필요한 quota 사용으로 이어지지 않게 한다.
+        """
+
+        normalized = [str(code).strip() for code in corp_codes if str(code).strip()]
+        if not normalized:
+            raise ValueError("corp_codes must not be empty")
+        if len(normalized) > 100:
+            raise ValueError("OpenDART financials_multi supports at most 100 companies")
+        if any(len(code) != 8 or not code.isdigit() for code in normalized):
+            raise ValueError("OpenDART corp_code must be 8 digits")
+        return self._request(
+            "fnlttMultiAcnt.json",
+            {
+                "corp_code": ",".join(normalized),
+                "bsns_year": business_year,
+                "reprt_code": report_code,
+            },
+        )
 
     def disclosures(
         self,
@@ -186,7 +247,10 @@ class OpenDartClient:
 
         if limit < 1:
             raise ValueError("limit must be at least 1")
-        params: dict[str, Any] = {"corp_code": corp_code, "page_count": min(limit, 100)}
+        params: dict[str, Any] = {
+            "corp_code": corp_code,
+            "page_count": min(limit, 100),
+        }
         if start_date:
             params["bgn_de"] = start_date
         if end_date:
@@ -208,6 +272,54 @@ class OpenDartClient:
             except (TypeError, ValueError) as exc:
                 raise OpenDartError("invalid OpenDART disclosure total_page") from exc
             if received >= limit or page_no >= total_page or not items:
+                break
+            page_no += 1
+        return pages
+
+    def disclosures_market(
+        self,
+        *,
+        start_date: str,
+        end_date: str,
+        corp_cls: str,
+    ) -> list[OpenDartJsonResponse]:
+        """한 시장의 기간 공시를 마지막 페이지까지 전수 조회한다.
+
+        corp_code 없이 공시검색 API를 사용하면 provider가 검색기간을 최대 3개월로 제한하므로
+        호출자는 그보다 짧은 구간을 넘겨야 한다. 이 메서드는 기간을 임의로 잘라 누락시키지
+        않고 pagination만 책임진다.
+        """
+
+        if corp_cls not in {"Y", "K"}:
+            raise ValueError("corp_cls must be Y(KOSPI) or K(KOSDAQ)")
+        if len(start_date) != 8 or not start_date.isdigit():
+            raise ValueError("start_date must be YYYYMMDD")
+        if len(end_date) != 8 or not end_date.isdigit():
+            raise ValueError("end_date must be YYYYMMDD")
+        if start_date > end_date:
+            raise ValueError("start_date must not be after end_date")
+
+        params: dict[str, Any] = {
+            "bgn_de": start_date,
+            "end_de": end_date,
+            "corp_cls": corp_cls,
+            "page_count": 100,
+            "sort": "date",
+            "sort_mth": "asc",
+        }
+        pages: list[OpenDartJsonResponse] = []
+        page_no = 1
+        while True:
+            response = self._request("list.json", {**params, "page_no": page_no})
+            items = response.payload.get("list", [])
+            if not isinstance(items, list):
+                raise OpenDartError("OpenDART disclosure list must be an array")
+            pages.append(response)
+            try:
+                total_page = max(1, int(response.payload.get("total_page", 1)))
+            except (TypeError, ValueError) as exc:
+                raise OpenDartError("invalid OpenDART disclosure total_page") from exc
+            if page_no >= total_page or not items:
                 break
             page_no += 1
         return pages
