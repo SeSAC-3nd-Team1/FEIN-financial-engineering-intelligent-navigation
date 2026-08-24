@@ -10,6 +10,14 @@ on:
         description: "동기화할 KRX 기준일(YYYY-MM-DD, 비우면 UTC 오늘)"
         required: false
         type: string
+      start_date:
+        description: "과거 백필 시작일(YYYY-MM-DD, end_date와 함께 사용)"
+        required: false
+        type: string
+      end_date:
+        description: "과거 백필 종료일(YYYY-MM-DD, start_date와 함께 사용)"
+        required: false
+        type: string
 
 permissions:
   id-token: write
@@ -22,7 +30,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 360
     env:
       AZURE_STORAGE_ACCOUNT_NAME: stfeindata
       AZURE_STORAGE_CONTAINER_RAW: raw
@@ -32,6 +40,8 @@ jobs:
       KRX_TIMEOUT_SECONDS: "10"
       PYTHONPATH: .
       REQUESTED_BASE_DATE: ${{ github.event.inputs.base_date || '' }}
+      REQUESTED_START_DATE: ${{ github.event.inputs.start_date || '' }}
+      REQUESTED_END_DATE: ${{ github.event.inputs.end_date || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,14 +71,36 @@ jobs:
             echo "KRX_AUTH_KEY and DATABASE_URL GitHub Secrets are required." >&2
             exit 1
           fi
-          base_date="${REQUESTED_BASE_DATE:-$(date -u +%F)}"
-          if ! [[ "${base_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-            echo "base_date must use YYYY-MM-DD." >&2
-            exit 1
+          if [[ -n "${REQUESTED_START_DATE}" || -n "${REQUESTED_END_DATE}" ]]; then
+            if [[ -n "${REQUESTED_BASE_DATE}" || -z "${REQUESTED_START_DATE}" || -z "${REQUESTED_END_DATE}" ]]; then
+              echo "start_date and end_date must be provided together without base_date." >&2
+              exit 1
+            fi
+            if ! [[ "${REQUESTED_START_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "${REQUESTED_END_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "start_date and end_date must use YYYY-MM-DD." >&2
+              exit 1
+            fi
+            echo "mode=range" >> "${GITHUB_OUTPUT}"
+            echo "start_date=${REQUESTED_START_DATE}" >> "${GITHUB_OUTPUT}"
+            echo "end_date=${REQUESTED_END_DATE}" >> "${GITHUB_OUTPUT}"
+          else
+            base_date="${REQUESTED_BASE_DATE:-$(date -u +%F)}"
+            if ! [[ "${base_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "base_date must use YYYY-MM-DD." >&2
+              exit 1
+            fi
+            echo "mode=single" >> "${GITHUB_OUTPUT}"
+            echo "base_date=${base_date}" >> "${GITHUB_OUTPUT}"
           fi
-          echo "base_date=${base_date}" >> "${GITHUB_OUTPUT}"
 
       - name: Sync approved KRX datasets
         working-directory: data
-        run: python -m scripts.sync_krx --date "${{ steps.settings.outputs.base_date }}"
-
+        shell: bash
+        run: |
+          if [[ "${{ steps.settings.outputs.mode }}" == "range" ]]; then
+            python -m scripts.sync_krx \
+              --start-date "${{ steps.settings.outputs.start_date }}" \
+              --end-date "${{ steps.settings.outputs.end_date }}"
+          else
+            python -m scripts.sync_krx --date "${{ steps.settings.outputs.base_date }}"
+          fi

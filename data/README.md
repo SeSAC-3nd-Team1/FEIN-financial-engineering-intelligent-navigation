@@ -123,6 +123,12 @@ docker compose --profile migration run --rm --no-deps db-init
 docker compose --profile data run --rm --no-deps data python -m scripts.sync_krx --date 2026-08-24
 ```
 
+Migration 직후 5년 차트에 필요한 과거 시세를 초기 적재할 때는 양끝을 포함하는 범위 백필을 실행한다. 범위에서는 거래가 없는 주말을 건너뛰고 날짜별 transaction으로 커밋하므로, 중간 실패 시 같은 명령을 다시 실행해 멱등 재개할 수 있다. GitHub Actions의 수동 실행에서도 `start_date`와 `end_date`를 함께 입력할 수 있다.
+
+```bash
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_krx --start-date 2021-08-24 --end-date 2026-08-24
+```
+
 로컬 parser와 PostgreSQL 적재만 진단할 때는 `--skip-blob`을 사용할 수 있으나 운영 동기화에서는 사용하지 않는다. `.github/workflows/krx-daily-sync.yml`은 평일 18:30 KST에 실행하며 GitHub Actions Secret `KRX_AUTH_KEY`, `DATABASE_URL`과 기존 Azure OIDC Secret/Blob 쓰기 권한이 필요하다. 이 workflow는 공용 DB migration을 자동 적용하지 않으므로 `20260824_0016`이 승인·반영된 뒤 migration 담당자가 먼저 `db-init`을 실행해야 한다. 휴장일처럼 KRX가 빈 목록을 반환하면 임의 값을 생성하지 않는다.
 
 ## 금융 데이터 파이프라인

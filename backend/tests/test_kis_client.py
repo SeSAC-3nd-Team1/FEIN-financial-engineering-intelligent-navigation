@@ -165,3 +165,23 @@ def test_minute_candles_reuse_client_token_and_are_sorted(monkeypatch) -> None:
         "FID_PW_DATA_INCU_YN": "Y",
         "FID_ETC_CLS_CODE": "",
     }
+
+
+def test_minute_candles_accepts_full_regular_session_limit(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.integrations.kis.client.settings",
+        SimpleNamespace(
+            kis_app_key="key",
+            kis_app_secret="secret",
+            kis_base_url="https://example.invalid",
+            request_timeout_seconds=1,
+        ),
+    )
+    client = KisClient()
+    client._token = "existing-token"
+    client._token_expires_at = 10**12
+    monkeypatch.setattr(client, "_get_minute_candle_page", lambda *_args: [])
+
+    candles, _ = client.get_minute_candles("005930", limit=390)
+
+    assert candles == []

@@ -57,7 +57,7 @@ class FakeLiveMarket:
         )
 
     def get_minute_candles(self, stock_code: str, limit: int):
-        assert limit == 120
+        assert limit == 390
         now = datetime(2026, 8, 24, tzinfo=UTC)
         return [MinuteCandle(
             stock_code=stock_code, started_at=now, open=Decimal("73000"),

@@ -251,7 +251,7 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 }
 ```
 
-`GET /market/stocks/{stock_code}/chart`의 `period`는 `1D|1W|3M|6M|1Y|5Y`다. `1D`는 KIS 당일 1분봉 최대 120개를 사용하고 그 외 기간은 PostgreSQL의 KRX 일별 OHLCV를 날짜 오름차순으로 반환한다. 저장된 기간에 실제 행이 없으면 `404 CHART_DATA_UNAVAILABLE`이며 빈 선이나 합성 시계열을 만들지 않는다.
+`GET /market/stocks/{stock_code}/chart`의 `period`는 `1D|1W|3M|6M|1Y|5Y`다. `1D`는 KIS 당일 1분봉 최대 390개로 정규장 전체를 조회하고 그 외 기간은 PostgreSQL의 KRX 일별 OHLCV를 날짜 오름차순으로 반환한다. 저장된 기간에 실제 행이 없으면 `404 CHART_DATA_UNAVAILABLE`이며 빈 선이나 합성 시계열을 만들지 않는다.
 
 ```json
 {"stock_code":"005930","period":"3M","source":"KRX","as_of":"2026-08-24T00:00:00Z","items":[{"date":"2026-08-24","open":"70000","high":"71500","low":"69800","close":"71000","volume":1234567}]}

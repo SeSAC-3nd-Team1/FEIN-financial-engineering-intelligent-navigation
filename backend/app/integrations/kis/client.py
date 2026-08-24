@@ -145,8 +145,8 @@ class KisClient:
         end_at: datetime | None = None,
     ) -> tuple[list[MinuteCandle], datetime]:
         """KIS 당일 분봉 API를 페이지당 최대 30건씩 조회한다."""
-        if not 1 <= limit <= 120:
-            raise ValueError("limit must be between 1 and 120")
+        if not 1 <= limit <= 390:
+            raise ValueError("limit must be between 1 and 390")
 
         requested_at = (end_at or datetime.now(KST)).astimezone(KST)
         cursor = requested_at

@@ -193,7 +193,8 @@ class StockMarketService:
         if self.repository.stock(stock_code) is None:
             raise NotFoundError("STOCK_NOT_FOUND", "KRX 종목정보를 찾을 수 없습니다.")
         if period == "1D":
-            candles, as_of, source = self.live_market.get_minute_candles(stock_code, 120)
+            # 정규장 6시간 30분 전체를 조회해 API period와 UI의 '1일' 의미를 일치시킨다.
+            candles, as_of, source = self.live_market.get_minute_candles(stock_code, 390)
             return StockChartResponse(
                 stock_code=stock_code,
                 period=period,

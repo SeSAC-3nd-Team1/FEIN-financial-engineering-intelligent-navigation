@@ -1,5 +1,6 @@
 """KRX client와 canonical mapping의 외부 계약을 검증한다."""
 
+from argparse import Namespace
 from datetime import date
 from decimal import Decimal
 
@@ -8,6 +9,7 @@ import pytest
 from collectors.krx_client import KrxApiError, KrxClient
 from collectors.krx_config import OPERATIONS
 from processing.krx import market_index_rows, stock_master_rows, stock_price_rows
+from scripts.sync_krx import _parser, _sync_dates
 
 
 class FakeResponse:
@@ -123,3 +125,29 @@ def test_market_index_mapping_allows_missing_optional_ohlc() -> None:
     assert rows[0]["index_code"] == "KOSPI:KOSPI:코스피"
     assert rows[0]["open_value"] is None
     assert rows[0]["close_value"] == Decimal("3000.12")
+
+
+def test_sync_dates_returns_inclusive_weekday_backfill_range() -> None:
+    args = Namespace(date=None, start_date="2026-08-21", end_date="2026-08-25")
+
+    assert list(_sync_dates(args, _parser())) == [
+        date(2026, 8, 21),
+        date(2026, 8, 24),
+        date(2026, 8, 25),
+    ]
+
+
+def test_sync_dates_requires_complete_ordered_range() -> None:
+    with pytest.raises(SystemExit):
+        list(_sync_dates(Namespace(date=None, start_date="2026-08-25", end_date=None), _parser()))
+    with pytest.raises(SystemExit):
+        list(_sync_dates(
+            Namespace(date=None, start_date="2026-08-25", end_date="2026-08-24"),
+            _parser(),
+        ))
+
+
+def test_sync_dates_keeps_explicit_weekend_date_for_manual_diagnostics() -> None:
+    args = Namespace(date="2026-08-23", start_date=None, end_date=None)
+
+    assert list(_sync_dates(args, _parser())) == [date(2026, 8, 23)]
