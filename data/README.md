@@ -234,6 +234,24 @@ option을 사용하지 않는다. 수집 주기는 corp code 하루 1회 이하,
 Raw 경로와 테이블 명세는 각각 `data/docs/RAW_DATA_CATALOG.md`,
 `docs/DATABASE_SPECIFICATION.md`를 따른다.
 
+## 한국은행 ECOS 거시경제 데이터
+
+`.env`에 `ECOS_API_KEY`를 설정한 뒤 2021년부터 기준금리, 원/달러 환율, CPI,
+국고채 3년·10년을 수집한다. 백필과 증분 실행은 동일 CLI를 사용하며 Raw는 원문을
+content-addressed JSONL.gz로 보존한다.
+
+```bash
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage raw --start-date 2021-01-01 --validate-metadata
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage all --incremental
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage raw --series base_rate --start-date 2026-01-01
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage processed
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage features
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage audit
+```
+
+API key가 없는 환경에서도 parser, 품질 규칙, PIT feature 단위 테스트는 실행되며 실제
+endpoint smoke test만 skip된다. Blob은 Azure CLI/Managed Identity 기반 Entra ID로 인증한다.
+
 회원가입 상세 구현 가이드는 `data/REGISTRATION_DB.md`를 본다.
 
 ## 테스트

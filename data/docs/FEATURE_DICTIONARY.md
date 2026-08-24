@@ -106,3 +106,21 @@
 | `point_in_time_join_ready` | 현재 항상 `false` |
 
 이 Dataset은 전체 관측값에서 사업연도별 latest Snapshot을 선택하므로 실제 공시 availability date가 없는 상태에서 역사적 가격과 JOIN하지 않는다.
+## ECOS `macro_daily` v1
+
+| column | 정의 |
+|---|---|
+| `date` | 환율·국고채 ECOS 관측일 합집합 |
+| `base_rate` | 해당 일자에 가용한 최근 기준금리(연%) |
+| `base_rate_change` | 직전 거래일 대비 기준금리 변화 |
+| `usd_krw` | 원/미국달러 매매기준율 |
+| `usd_krw_return_{1,5,20}d` | 환율 단순 수익률 |
+| `usd_krw_volatility_20d` | 1일 수익률 20일 표준편차 × √252 |
+| `cpi` | 해당 일자에 가용한 최근 CPI(2020=100) |
+| `cpi_mom`, `cpi_yoy` | 월간 원자료에서 계산한 전월비·전년동월비 |
+| `treasury_3y`, `treasury_10y` | 국고채 3년·10년 수익률(연%) |
+| `treasury_3y_change`, `treasury_10y_change` | 직전 거래일 대비 금리 변화 |
+| `yield_spread_10y_3y` | 10년 수익률 - 3년 수익률 |
+
+결측은 임의의 0으로 채우지 않는다. rolling feature의 초기 구간과 CPI 가용일 이전 값은
+의도적으로 null이며, 학습자는 해당 feature별 warm-up 정책을 적용해야 한다.
