@@ -21,11 +21,14 @@ import StrategyDetail from './pages/StrategyDetail';
 import { STRATEGIES } from './data/strategies';
 import type { OperationMode } from './data/fees';
 import { signupTermsApi } from './lib/backendApi';
-import { resolveInvestmentEntryStep, type InvestmentEntryStep } from './lib/investmentFlow';
+import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
 import { useTradingStore } from './store/tradingStore';
 import type { Screen, SignupPersonal } from './types';
+
+/** 투자 시작 Flow(약관~최종확인) 화면 목록 — Header 등으로 이 밖으로 나가면 inFlight(새로고침 복원용 진행 상태)를 정리한다 */
+const INVEST_FLOW_SCREENS: Screen[] = ['invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm'];
 
 /**
  * 라우팅 상태 머신 — 전체 사용자 흐름
@@ -97,8 +100,25 @@ export default function App() {
   };
 
   /**
+   * 투자 Flow 화면들의 "이전으로" — 고정된 이전 화면이 아니라, 현재 상태 기준으로 아직 필요한
+   * 가장 가까운 이전 단계로 돌아간다. 더 돌아갈 단계가 없으면(이미 완료된 상태로 이 화면에
+   * 들어온 경우) 금액 선택 화면('start')으로 나가고, 그 시점에 inFlight도 정리한다.
+   */
+  const goBackInInvestmentFlow = (currentStep: InvestmentEntryStep) => {
+    const prev = resolvePreviousStep(currentStep, { strategyId, amount: investmentAmount, termsAcceptedStrategyIds, sesacAccount });
+    if (prev === 'start') {
+      clearInFlight();
+      setScreen('start');
+    } else {
+      enterInvestmentStep(prev, strategyId, investmentAmount, investmentMode);
+    }
+  };
+
+  /**
    * Header "나의 포트폴리오"/로그인 성공 등 Portfolio로 향하는 모든 경로가 거치는 관문.
    * DEPOSIT_PENDING(계좌는 연결됐지만 입금이 남은) 상태라면 Portfolio 대신 입금 요청 화면으로 보낸다.
+   * 투자 Flow 화면에서 그 밖의 목적지(정보/전략 둘러보기 등)로 명시적으로 이동할 때는
+   * inFlight(새로고침 복원용 진행 상태)를 정리한다 — "나중에 입금할게요"의 pendingInvestment는 별개로 유지된다.
    *
    * 로그인 직후에는 Login.tsx가 login() 완료와 동시에 이 함수를 동기적으로 호출하는데, 이 시점엔
    * "사용자별 hydrate" useEffect가 아직 커밋되지 않았을 수 있다(리액트 이펙트는 렌더 이후 실행).
@@ -117,6 +137,9 @@ export default function App() {
         enterInvestmentStep('invest-deposit', pending.strategyId, pending.amount, pending.mode);
         return;
       }
+    }
+    if (INVEST_FLOW_SCREENS.includes(screen) && !INVEST_FLOW_SCREENS.includes(target)) {
+      clearInFlight();
     }
     setScreen(target);
   };
@@ -294,7 +317,7 @@ export default function App() {
           amount={investmentAmount}
           mode={investmentMode}
           onNavigate={navigate}
-          onBack={() => { clearInFlight(); setScreen('start'); }}
+          onBack={() => goBackInInvestmentFlow('invest-terms')}
           onComplete={() => {
             acceptStrategyTerms(strategyId);
             const step = resolveInvestmentEntryStep({
@@ -312,7 +335,7 @@ export default function App() {
           userName={userName}
           strategyName={strategy.name}
           onNavigate={navigate}
-          onBack={() => enterInvestmentStep('invest-terms', strategyId, investmentAmount, investmentMode)}
+          onBack={() => goBackInInvestmentFlow('invest-account')}
           onComplete={(account) => {
             connectSesacAccount(account);
             const step = resolveInvestmentEntryStep({
@@ -330,7 +353,7 @@ export default function App() {
           mode={investmentMode}
           account={sesacAccount}
           onNavigate={navigate}
-          onBack={() => enterInvestmentStep('invest-account', strategyId, investmentAmount, investmentMode)}
+          onBack={() => goBackInInvestmentFlow('invest-deposit')}
           onDeposit={(shortfall) => {
             deposit(shortfall);
             const step = resolveInvestmentEntryStep({
@@ -358,7 +381,7 @@ export default function App() {
           mode={investmentMode}
           account={sesacAccount}
           onNavigate={navigate}
-          onBack={() => enterInvestmentStep('invest-deposit', strategyId, investmentAmount, investmentMode)}
+          onBack={() => goBackInInvestmentFlow('invest-confirm')}
           onConfirm={async () => {
             if (!accessToken) {
               setScreen('login');
