@@ -42,12 +42,12 @@ Raw에 저장하는 데까지만 포함한다. 정규화, 결측 처리, Parquet
 |---|---|---:|---|---|
 | KOSPI/KOSDAQ 일별 매매·valuation | [KRX OPEN API](https://openapi.krx.co.kr/contents/OPP/USES/service/OPPUSES002_S2.cmd?BO_ID=JvJFzlAENzZlPBDNGAWC) | 5년 | PER/PBR/배당수익률, 거래소 원천 대조 | `KRX_AUTH_KEY` 발급 후 별도 Issue |
 | 과거 KOSPI 200 구성종목 | KRX Data Marketplace | 5년+ | survivorship bias 없는 과거 universe | 제공 방식·라이선스 확인 후 별도 Issue |
-| 공시 접수시각·원문 | [OpenDART 공시검색](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001) | 5년 | 재무정보의 실제 공개 가능시각과 point-in-time 결합 | `OPENDART_API_KEY` 사용 별도 Issue |
-| 기준금리·환율·CPI | [한국은행 ECOS Open API](https://ecos.bok.or.kr/api/) | 5년+ | 시장 국면과 거시 설명 | `ECOS_API_KEY` 사용 별도 Issue |
+| 공시 접수시각·원문 | [OpenDART 공시검색](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001) | 실행일부터 축적 | 재무정보의 실제 공개 가능시각과 point-in-time 결합 | Issue #65 collector/Raw/PostgreSQL 구현; 과거 5년 backfill은 후속 운영 작업 |
+| 기준금리·환율·CPI·국고채 | [한국은행 ECOS Open API](https://ecos.bok.or.kr/api/) | 2021년~ | 시장 국면과 거시 설명 | 수집·Processed·PIT feature 구현 |
 | 실시간 시세·모의투자 | KIS Developers | 축적 시작일 이후 | 화면 현재가와 모의 주문 | 학습용 5년 Raw와 분리 |
 
-OpenDART·KRX·ECOS는 프로젝트에 필요하지만 인증·호출 계약·Raw 경로가 서로 다르므로 현재
-금융위 수집기에 억지로 섞지 않는다. 각 source는 별도 collector와
+OpenDART·KRX·ECOS는 인증·호출 계약·Raw 경로가 서로 다르므로 금융위 수집기에 섞지
+않는다. OpenDART는 별도 collector로 구현했고, 나머지 source도 각각 별도 collector와
 `raw/{source}/{dataset}/...` lineage를 갖도록 후속 작업으로 분리한다.
 
 ## Raw 저장 계약
@@ -80,7 +80,7 @@ raw/data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/{sha256}.jsonl
 ### 모델 핵심 데이터 5년 백필
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.collect_public_data \
   --dataset stock_price \
   --dataset market_index \
@@ -100,7 +100,7 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
 기준 일 10,000회이므로, 필요하면 dataset 단위로 나누어 재실행한다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.collect_public_data \
   --all-datasets \
   --all-operations \
@@ -112,7 +112,7 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
 장기간 범위 요청이 시간 초과되는 operation은 날짜 분할 백필을 사용한다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.backfill_public_data_by_date \
   --dataset stock_issuance \
   --operation getStocIssuStat_V3 \
@@ -127,7 +127,7 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
 ### 증분 수집
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.collect_public_data \
   --all-datasets \
   --all-operations \
@@ -159,7 +159,7 @@ payload를 전수 다운로드하지 않고 canonical 경로의 월 partition을
 `stock_price/getstockpriceinfo`와 `market_index/getstockmarketindex`다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.audit_raw_coverage --minimum-years 5
 ```
 
@@ -190,3 +190,41 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
 배당일·발행일 같은 실제 event 날짜는 payload의 별도 필드에 존재하며 이 작업에서는
 해석하거나 전처리하지 않는다. 공시처럼 사건이 없을 수 있는 데이터의 빈 월도 수집 실패로
 간주하지 않는다.
+## OpenDART Raw
+
+금융감독원 OpenDART 응답은 공공데이터포털 월 partition과 분리해 API 수집일 기준 일자
+partition에 원문 그대로 저장한다. 파일명은 원문 SHA-256이므로 같은 응답의 재수집은 기존
+Blob을 재사용한다.
+
+| Dataset | API | Format | Raw path | 주요 식별자 |
+| --- | --- | --- | --- | --- |
+| `corp_code` | `corpCode.xml` | ZIP/XML | `opendart/corp_code/YYYY/MM/DD/{sha256}.zip` | `corp_code`, `stock_code` |
+| `company` | `company.json` | JSON | `opendart/company/{stock_code}/YYYY/MM/DD/{sha256}.json` | `corp_code` |
+| `financial` | `fnlttSinglAcntAll.json` | JSON | `opendart/financial/{stock_code}/YYYY/MM/DD/{sha256}.json` | 연도·보고서·계정 ID |
+| `disclosure` | `list.json` | JSON | `opendart/disclosure/{stock_code}/YYYY/MM/DD/{sha256}.json` | `rcept_no` |
+
+JSON Raw는 `response.json()`을 다시 직렬화하지 않고 HTTP `response.content` bytes를 그대로
+hash·업로드한다. 공시 pagination의 각 페이지도 별도 Raw object로 보존한다. 분석용 숫자
+변환, 계정 alias, 날짜 변환은 PostgreSQL 정제 적재 단계에서만 수행한다. 인증은
+`DefaultAzureCredential`을 사용하며 실제
+Azure Shared Key를 코드나 문서에 넣지 않는다.
+## 한국은행 ECOS
+
+| dataset/operation | ECOS 통계표 | 항목 | 주기 | 단위 | 업데이트 | 주요 Feature |
+|---|---|---|---|---|---|---|
+| `ecos/base_rate` | `722Y001` | `0101000` | D | 연% | 증분 일별 | `base_rate`, change |
+| `ecos/usd_krw` | `731Y001` | `0000001` | D | 원 | 증분 일별 | 환율 return/volatility |
+| `ecos/cpi` | `901Y009` | `0` | M | 2020=100 | 증분 월별 | `cpi`, MoM, YoY |
+| `ecos/treasury_3y` | `817Y002` | `010200000` | D | 연% | 증분 일별 | 3Y, change, spread |
+| `ecos/treasury_10y` | `817Y002` | `010210000` | D | 연% | 증분 일별 | 10Y, change, spread |
+
+경로는 `ecos-bok/ecos/operation={series}/year=YYYY/month=MM/{batch_sha256}.jsonl.gz`다.
+각 줄은 `dataset`, `operation`, `source`, `collectedAt`, `payloadHash`, `payload` envelope이며,
+`payload`는 ECOS 응답 행을 수정하지 않는다. 기준금리의 반복 일별 값도 Raw에는 그대로
+남고 Processed에서만 변경 이벤트로 축약된다. 같은 원문 batch 재수집은 같은 hash 경로를
+사용한다.
+
+Processed 공통 경로는
+`ecos/operation={series}/schema=v1/year=YYYY/month=MM/part-00000.parquet`, Feature 경로는
+`macro_daily/version=v1/year=YYYY/month=MM/part-00000.parquet`다. 출처는 한국은행 ECOS이며
+위 조합은 ECOS `StatisticItemList` metadata와 `StatisticSearch` 응답으로 검증했다.

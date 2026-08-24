@@ -4,19 +4,23 @@ import Header from '../components/Header';
 import { ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL } from '../data/holdings';
 import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
+import type { OperationMode } from '../data/fees';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
 
 interface Props {
   userName: string;
   strategyName: string;
+  /** 실제 투자 시작 시점의 운용방식 — null이면 판단할 수 없는 상태로, 안전하게 "확인하고 실행" 쪽 UI를 기본값으로 쓴다 */
+  mode: OperationMode | null;
   onNavigate: (s: Screen) => void;
   onOpenHoldings: () => void;
   onChangeStrategy: () => void;
 }
 
-/** 05 포트폴리오 대시보드 — 스토리 → 리밸런싱 제안 → 판단 성적표 → 전략 */
-export default function Dashboard({ userName, strategyName, onNavigate, onOpenHoldings, onChangeStrategy }: Props) {
+/** 05 포트폴리오 대시보드 — 스토리 → 리밸런싱 제안(운용방식별 분기) → 판단 성적표 → 전략 */
+export default function Dashboard({ userName, strategyName, mode, onNavigate, onOpenHoldings, onChangeStrategy }: Props) {
+  const isAuto = mode === 'auto';
   useTradingData();
   const account = useTradingStore((state) => state.account);
   const portfolio = useTradingStore((state) => state.portfolio);
@@ -82,24 +86,34 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
             </div>
           </section>
 
-          {/* AI 리밸런싱 제안 — 명령이 아니라 제안 */}
+          {/* 리밸런싱 — 확인하고 실행은 제안(사용자 실행 필요), 자동으로 운용은 이미 처리된 상태를 안내 */}
           <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
             <div className="flex gap-5">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime text-lg text-navy">✦</div>
               <div className="flex flex-1 flex-col gap-4">
-                <span className="text-[26px] font-bold tracking-[-0.025em]">AI가 확인할 게 하나 있어요</span>
+                <span className="text-[26px] font-bold tracking-[-0.025em]">
+                  {isAuto ? '물방개가 운용 중이에요' : 'AI가 확인할 게 하나 있어요'}
+                </span>
                 <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">
-                  SK하이닉스 비중이 전략 목표보다 높아졌어요.
+                  {isAuto
+                    ? 'SK하이닉스 비중이 전략 목표보다 높아져서 물방개가 비중을 자동으로 조정했어요.'
+                    : 'SK하이닉스 비중이 전략 목표보다 높아졌어요.'}
                 </p>
                 <div className="flex gap-10 rounded-[18px] bg-canvas px-8 py-6">
                   <Fact label="목표" value="14%" />
-                  <Fact label="현재" value="18.7%" warn />
-                  <Fact label="추천" value="약 47,000원 줄이기" />
+                  <Fact label={isAuto ? '조정 전' : '현재'} value="18.7%" warn />
+                  {isAuto ? <Fact label="조정 후" value="14.2%" /> : <Fact label="추천" value="약 47,000원 줄이기" />}
                 </div>
                 <div className="flex items-center gap-3 pt-1">
-                  <button onClick={() => setSheetOpen(true)} className="rounded-field bg-lime px-8 py-4 text-[17px] font-bold text-navy">
-                    제안 확인하기
-                  </button>
+                  {isAuto ? (
+                    <button onClick={() => setSheetOpen(true)} className="text-base font-semibold text-navy underline">
+                      자세히 보기 →
+                    </button>
+                  ) : (
+                    <button onClick={() => setSheetOpen(true)} className="rounded-field bg-lime px-8 py-4 text-[17px] font-bold text-navy">
+                      제안 확인하기
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -170,7 +184,9 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8" onClick={() => setSheetOpen(false)}>
           <div className="flex w-[720px] flex-col gap-7 rounded-card bg-surface p-12" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-6">
-              <h2 className="text-[28px] font-bold leading-10 tracking-[-0.03em]">왜 지금 비중을 조정하라고 하나요?</h2>
+              <h2 className="text-[28px] font-bold leading-10 tracking-[-0.03em]">
+                {isAuto ? '왜 비중을 조정했나요?' : '왜 지금 비중을 조정하라고 하나요?'}
+              </h2>
               <button aria-label="닫기" onClick={() => setSheetOpen(false)} className="rounded-[9px] bg-canvas p-2 text-muted">
                 <X size={18} />
               </button>
@@ -192,19 +208,25 @@ export default function Dashboard({ userName, strategyName, onNavigate, onOpenHo
               </div>
             </div>
             <div className="flex flex-col gap-2.5 rounded-[18px] bg-[#F8FCEE] px-8 py-7">
-              <span className="text-lg font-bold tracking-[-0.02em]">조정하지 않으면?</span>
+              <span className="text-lg font-bold tracking-[-0.02em]">{isAuto ? '조정하지 않았다면?' : '조정하지 않으면?'}</span>
               <p className="text-[17px] leading-7 text-[#3F4A43]">
                 특정 종목의 영향이 커져 저변동성 전략보다 포트폴리오가 더 많이 흔들릴 수 있어요.
               </p>
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setSheetOpen(false)} className="flex-1 rounded-field bg-lime py-5 text-lg font-bold text-navy">
-                47,000원 조정하기
+            {isAuto ? (
+              <button onClick={() => setSheetOpen(false)} className="rounded-field bg-lime py-5 text-lg font-bold text-navy">
+                확인했어요
               </button>
-              <button onClick={() => setSheetOpen(false)} className="rounded-field bg-[#F4F6F1] px-8 py-5 text-[17px] font-semibold text-[#3F4A43]">
-                이번에는 하지 않을게요
-              </button>
-            </div>
+            ) : (
+              <div className="flex gap-3">
+                <button onClick={() => setSheetOpen(false)} className="flex-1 rounded-field bg-lime py-5 text-lg font-bold text-navy">
+                  47,000원 조정하기
+                </button>
+                <button onClick={() => setSheetOpen(false)} className="rounded-field bg-[#F4F6F1] px-8 py-5 text-[17px] font-semibold text-[#3F4A43]">
+                  이번에는 하지 않을게요
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

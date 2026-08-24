@@ -1,6 +1,6 @@
 # SeSAC 3차 프로젝트 1팀
 
-Docker Compose 기반의 공통 로컬 개발환경입니다. Docker Desktop만 있으면 프런트엔드, 백엔드, PostgreSQL, Redis를 같은 버전으로 실행할 수 있습니다.
+Docker Compose 기반의 공통 개발환경입니다. 일반 개발·시연용 서비스 DB는 팀 공용 **Azure Database for PostgreSQL Flexible Server 1개**만 사용합니다. 로컬 PostgreSQL fallback은 제공하지 않습니다.
 
 ## Development setup
 
@@ -32,13 +32,15 @@ PowerShell:
 Copy-Item .env.example .env
 ```
 
-외부 API를 사용하는 작업이라면 `.env`의 빈 Secret 항목을 채웁니다. `.env`는 Git에서 제외되며 실제 키를 소스, Dockerfile, Compose 파일, 문서에 기록하면 안 됩니다.
+외부 API를 사용하는 작업이라면 `.env`의 빈 Secret 항목을 채웁니다. 로컬 환경 파일은 루트 `.env` 하나만 사용하며, 과거의 `.env.azure` 같은 서비스별 환경 파일은 사용하지 않습니다. `.env`와 `.env.*`는 Git에서 제외되며 실제 키를 소스, Dockerfile, Compose 파일, 문서에 기록하면 안 됩니다. 변수별 설정 위치와 관리 원칙은 [환경 변수 관리 가이드](docs/ENVIRONMENT_VARIABLES.md)를 따릅니다.
 
-운영/공유 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 교체합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 가상계좌 초기금은 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값으로 설정합니다.
+PostgreSQL은 `.env`의 `DATABASE_URL`에 팀 공용 Azure Database for PostgreSQL URL을 반드시 설정합니다. 공공데이터 수집 시 사용하는 `DATA_GO_KR_API_KEY`를 포함한 외부 API 키도 같은 `.env`에 설정합니다. `DATABASE_URL`에는 `?sslmode=require`를 포함하며 실제 Azure 사용자명·비밀번호·호스트는 GitHub에 올리지 않습니다. `DATABASE_URL`이 없거나 빈 값이면 Docker Compose는 실행을 중단합니다. 전체 준비 절차와 Portal/CLI 작업은 [Azure PostgreSQL 단일 프로젝트 DB 가이드](docs/AZURE_POSTGRESQL_DEV.md)를 따릅니다.
+
+공용 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 설정하고 팀 Backend가 동일한 값을 사용합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 가상계좌 초기금은 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값으로 설정합니다.
 
 한국 금융 뉴스는 NAVER Cloud Platform의 NAVER API HUB Search News API를 Backend에서만 호출합니다. 로컬 `.env`에 `NAVER_API_HUB_CLIENT_ID`와 `NAVER_API_HUB_CLIENT_SECRET`을 설정하고 실제 값은 커밋하거나 로그에 출력하지 않습니다. 기본 검색어는 `NEWS_SEARCH_QUERY=증시`, Redis cache TTL은 `NEWS_CACHE_TTL_SECONDS=300`입니다.
 
-Azure Blob을 사용하는 Data 작업은 별도의 로컬 `.env.azure` 설정과 Azure CLI/Entra ID 인증을 사용합니다. Shared Key 기반 실제 Azure connection string은 사용하지 않습니다.
+Azure Blob을 사용하는 Data 작업은 Azure CLI/Entra ID 인증을 사용합니다. Shared Key 기반 실제 Azure connection string은 사용하지 않습니다.
 
 ### 3. 기본 개발환경 실행
 
@@ -46,17 +48,34 @@ Azure Blob을 사용하는 Data 작업은 별도의 로컬 `.env.azure` 설정�
 docker compose up -d
 ```
 
-최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, PostgreSQL, Redis와 일회성 `db-init`이 포함됩니다. `db-init`은 Backend보다 먼저 Alembic migration을 적용하고 `.env`의 `SIGNUP_TERMS_*` 개발용 약관을 멱등 seed한 뒤 종료합니다. Data와 AI 작업용 장기 실행 컨테이너는 profile로 분리됩니다.
+최초 실행이거나 Dockerfile 및 dependency가 변경되었다면 `docker compose up -d --build`를 사용합니다. 기본 실행에는 Frontend, Backend, Redis만 포함되며 로컬 PostgreSQL 컨테이너와 migration job은 생성하지 않습니다. Data, AI, migration 작업은 profile로 분리됩니다.
 
-DB 준비만 다시 실행하려면:
+DB schema 변경 담당자는 migration을 임시/CI PostgreSQL에서 먼저 검증하고 `develop` 반영 후에만 공용 Azure DB에 적용합니다.
 
 ```bash
-docker compose up -d postgres redis
-docker compose run --rm db-init
-docker compose up -d --build backend frontend
+git switch develop
+git pull origin develop
+docker compose --profile migration run --rm --no-deps db-init
 ```
 
-동일한 `SIGNUP_TERMS_VERSION`으로 `db-init`을 반복해도 `(term_code, version)` UNIQUE와 `ON CONFLICT DO NOTHING` 때문에 중복 약관이 생기지 않습니다. 기본 version의 `dev-` prefix는 로컬 개발 데이터임을 나타냅니다. 운영 약관은 승인된 별도 version·효력 시각·불변 본문 URL을 명시적으로 설정해야 하며 Compose 기본값을 사용하지 않습니다.
+`db-init`은 Alembic migration과 약관 seed를 명시적으로 실행합니다. 동일한 `SIGNUP_TERMS_VERSION`으로 반복해도 `(term_code, version)` UNIQUE와 `ON CONFLICT DO NOTHING` 때문에 중복 약관이 생기지 않습니다. feature branch에서 공용 Azure DB에 실행하면 아직 merge되지 않은 schema가 먼저 적용될 수 있으므로 금지합니다.
+
+실행 후 dependency 상태를 확인합니다.
+
+```bash
+docker compose ps
+curl --fail http://localhost:8000/health/dependencies
+```
+
+정상 결과는 `{"postgres":"ok","redis":"ok"}`입니다.
+
+Backend가 실제 Azure DB를 보고 있는지 비밀번호 노출 없이 확인할 수 있습니다.
+
+```bash
+docker compose exec backend python -c "from app.core.config import settings; from urllib.parse import urlsplit; u=urlsplit(settings.database_url); print('DB HOST =', u.hostname); print('DB =', u.path.lstrip('/'))"
+```
+
+`DB HOST = postgres`가 아니라 `<server>.postgres.database.azure.com` 형태여야 합니다.
 
 Backend 테스트:
 
@@ -64,14 +83,14 @@ Backend 테스트:
 docker compose run --rm --no-deps backend pytest -q
 ```
 
-Seeded PostgreSQL/Redis E2E 테스트:
+공용 Azure PostgreSQL/Redis E2E 테스트:
 
 ```bash
-docker compose run --rm db-init
+docker compose --profile migration run --rm --no-deps db-init
 docker compose exec -T backend env RUN_INTEGRATION=1 pytest -q tests/test_integration_flow.py
 ```
 
-E2E는 `GET /auth/terms`부터 회원가입 동의 저장, 계좌·전략·매수·멱등 재시도·포트폴리오·매도·원장 정합성까지 확인합니다. 생성한 사용자와 가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 개발 데이터 전체를 삭제하지 않습니다.
+E2E는 `GET /auth/terms`부터 회원가입 동의 저장, 계좌·전략·매수·멱등 재시도·포트폴리오·매도·원장 정합성까지 확인합니다. 생성한 사용자와 가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 공용 개발 데이터 전체를 삭제하지 않습니다. 전체 schema drop/recreate, 전체 truncate, migration rollback 같은 파괴적 테스트는 별도 임시 PostgreSQL에서만 수행합니다.
 
 실제 KIS 시세→Redis 통합 테스트는 유효한 KIS 환경 변수가 있는 경우에만 명시적으로 실행합니다. 이 테스트는 현재가 조회만 수행하고 KIS 주문 API나 실제·모의 계좌 주문을 호출하지 않습니다.
 
@@ -93,7 +112,9 @@ docker compose exec -T redis redis-cli TTL "information:news:kr:증시:1:20"
 
 Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다. JWT는 브라우저에 보관되어 새로고침 후 검증·복원되며, 로그아웃 시 제거된다.
 
-Frontend 가상투자 화면은 FastAPI만 호출한다. `/accounts/me`로 동적 계좌 ID를 얻고 `/portfolio` 한 번으로 현금·보유종목·현재 평가를 조회한다. 시장가 BUY/SELL은 UUID idempotency key와 함께 `/orders`로 보내며 성공 후 portfolio/orders/executions를 다시 조회한다. KIS는 Backend `MarketService`의 가격 공급자로만 사용하고, 가상계좌·주문·체결·포지션·현금원장은 PostgreSQL에서 관리한다. 브라우저 bundle에는 KIS key/secret이나 KIS 직접 호출 URL이 포함되지 않는다.
+투자성향 분석은 인증된 `POST /api/v1/investor-profile/analyze` 요청으로 처리한다. Backend는 `v1` 설문의 8개 문항 ID와 선택지 ID를 검증한 뒤 Azure OpenAI에 전달하고, 모델 분석이 끝나면 같은 HTTP 요청에서 5단계 투자유형과 설명을 구조화된 JSON으로 반환한다. 답변과 분석 결과는 DB에 저장하지 않는다. 로컬 실행 전 `.env`에 `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`를 설정한다.
+
+Frontend 가상투자 화면은 FastAPI만 호출한다. `/accounts/me`로 동적 계좌 ID를 얻고 `/portfolio` 한 번으로 현금·보유종목·현재 평가를 조회한다. 시장가 BUY/SELL은 UUID idempotency key와 함께 `/orders`로 보내며 성공 후 portfolio/orders/executions를 다시 조회한다. KIS는 Backend `MarketService`의 가격 공급자로만 사용하고, 가상계좌·주문·체결·포지션·현금원장은 Azure PostgreSQL에서 관리한다. 브라우저 bundle에는 KIS key/secret이나 KIS 직접 호출 URL이 포함되지 않는다.
 
 | 서비스 | 접속/확인 위치 |
 | --- | --- |
@@ -102,10 +123,10 @@ Frontend 가상투자 화면은 FastAPI만 호출한다. `/accounts/me`로 동�
 | Backend health | http://localhost:8000/health |
 | Dependency health | http://localhost:8000/health/dependencies |
 | Swagger UI | http://localhost:8000/docs |
-| PostgreSQL | `localhost:5432` (`app` / `app`) |
+| PostgreSQL | `.env`의 Azure PostgreSQL 원격 host |
 | Redis | `localhost:6379` |
 
-호스트 포트가 이미 사용 중이면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, `REDIS_PORT`만 변경합니다. 컨테이너 간 통신은 항상 `postgres:5432`, `redis:6379`, `backend:8000`을 사용합니다.
+호스트 포트가 이미 사용 중이면 `.env`의 `FRONTEND_PORT`, `BACKEND_PORT`, `REDIS_PORT`만 변경합니다. 컨테이너 간 통신은 `redis:6379`, `backend:8000`을 사용하고 PostgreSQL host는 필수 `DATABASE_URL`을 따릅니다.
 
 ## 역할별 Python 개발환경
 
@@ -134,10 +155,10 @@ run-financial-pipeline.cmd check
 run-financial-pipeline.cmd all
 ```
 
-OS와 무관하게 직접 실행하려면:
+OS와 무관하게 직접 실행하려면 현재 환경 파일에도 필수 `DATABASE_URL`이 포함되어 있어야 합니다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage check --schema-version 1 --feature-version 1
+docker compose --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage check --schema-version 1 --feature-version 1
 ```
 
 데이터 구조와 운영 방법은 [data/README.md](data/README.md), [docs/DATA_ARCHITECTURE.md](docs/DATA_ARCHITECTURE.md), [data/docs/FINANCIAL_PIPELINE_RUNBOOK.md](data/docs/FINANCIAL_PIPELINE_RUNBOOK.md)를 기준으로 합니다.
@@ -248,13 +269,13 @@ docker compose restart backend
 docker compose up --build -d backend
 ```
 
-### 데이터베이스 초기화
+### 로컬 Docker 볼륨 초기화
 
 ```bash
 docker compose down -v
 ```
 
-주의: 이 명령은 PostgreSQL과 Redis named volume까지 삭제합니다. 로컬 데이터가 모두 사라져도 되는 경우에만 실행하세요.
+이 명령은 로컬 Redis 및 기타 Compose named volume을 삭제하지만 **Azure PostgreSQL 데이터는 삭제하지 않습니다.** 공용 Azure DB 초기화 용도로 사용하면 안 됩니다.
 
 ## 구성 버전
 
@@ -262,5 +283,5 @@ docker compose down -v
 - Backend: Python 3.13, FastAPI
 - Data: Python 3.13 (Compose profile: `data`)
 - AI: Python 3.13 (Compose profile: `ai`)
-- Database: PostgreSQL 17
+- Database: Azure Database for PostgreSQL Flexible Server (PostgreSQL 17)
 - Cache: Redis 8

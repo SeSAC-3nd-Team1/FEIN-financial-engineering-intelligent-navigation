@@ -26,13 +26,13 @@ The legacy financial/API PostgreSQL `raw` and `processed` schemas were retired i
 Apply migrations from the data container:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data alembic upgrade head
+docker compose --profile data run --rm --no-deps data alembic upgrade head
 ```
 
 Check the current database:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.check_db
+docker compose --profile data run --rm --no-deps data python -m scripts.check_db
 ```
 
 ## Raw collection
@@ -42,7 +42,7 @@ The public-data collector writes canonical Raw to Azure Blob and has no financia
 Example one-day collection:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --all-datasets --all-operations --date 2026-08-16 --all-pages --rows 10000
+docker compose --profile data run --rm --no-deps data python -m scripts.collect_public_data --all-datasets --all-operations --date 2026-08-16 --all-pages --rows 10000
 ```
 
 Historical collection uses `--start-date` and `--end-date`. `payload.basDt` is the authoritative partition/filter date. Invalid or missing `basDt` aborts the affected operation rather than using another date as fallback.
@@ -50,8 +50,8 @@ Historical collection uses `--start-date` and `--end-date`. `payload.basDt` is t
 Five-calendar-year backfill and Raw month-coverage audit:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
+docker compose --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
+docker compose --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
 ```
 
 The coverage audit reads canonical Blob paths only. It proves the span between the first and last

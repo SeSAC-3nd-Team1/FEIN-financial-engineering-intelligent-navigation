@@ -24,6 +24,8 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       JWT_SECRET: ci-only-integration-secret
       RUN_INTEGRATION: "1"
+      SIGNUP_TERMS_VERSION: ci-e2e
+      SIGNUP_TERMS_EFFECTIVE_AT: "2026-08-23T00:00:00+00:00"
     services:
       postgres:
         image: postgres:17
@@ -65,12 +67,11 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r data/requirements.txt -r backend/requirements.txt
 
-      - name: Apply migrations and seed test terms twice
+      - name: Initialize schema and seed test terms twice
         working-directory: data
         run: |
-          alembic upgrade head
-          python -m scripts.seed_signup_terms --version ci-e2e --effective-at 2026-08-23T00:00:00+00:00
-          python -m scripts.seed_signup_terms --version ci-e2e --effective-at 2026-08-23T00:00:00+00:00
+          python -m scripts.init_local_db
+          python -m scripts.init_local_db
           alembic check
 
       - name: Run Backend unit and E2E tests

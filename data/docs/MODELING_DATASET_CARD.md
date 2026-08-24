@@ -202,3 +202,18 @@ model_stock_daily
 - 전체 manifest: `features/_manifests/model-datasets/version=v1/manifest.json`
 
 Feature 정의나 horizon 의미를 바꾸는 경우 같은 v1의 의미를 조용히 변경하지 않고 새 version을 검토한다.
+## ECOS macro_daily v1
+
+한국은행 ECOS의 기준금리·환율·CPI·국고채를 일별 시장 모델에 결합하기 위한 보조
+데이터셋이다. 2021-01-01 이후를 기본 백필 범위로 한다.
+
+- 시간축: 환율 및 국고채 중 하나 이상이 관측된 날짜
+- PIT 정책: `available_at <= date` as-of join만 허용
+- CPI 제한: 공식 조회 응답에 공표 timestamp가 없어 관측월 + 2개월의 1일을 보수적으로 사용
+- 생존자/미래 정보: 종목 universe를 만들지 않으며 target 컬럼도 포함하지 않음
+- 재현성: Raw content hash, Processed schema version, feature version, git SHA 및 입력 lineage 기록
+- 권장 용도: 시장 국면 feature, 환율·금리 민감도 연구
+- 비권장 용도: 장중 의사결정, 정확한 CPI 발표 시각 반응 연구
+
+공표 시각이 확보되면 새 feature version에서 `available_at` 정책을 변경해야 하며 기존
+version을 덮어쓰지 않는다.

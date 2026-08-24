@@ -6,6 +6,7 @@ import TermTooltip from '../components/TermTooltip';
 import { fetchAiExplanation, runBacktest } from '../data/backtestApi';
 import { AVAILABLE_DATA_RANGE, getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
 import { STRATEGIES } from '../data/strategies';
+import { won } from '../lib/validation';
 import type { BacktestAiContext, BacktestPeriod, BacktestResult, Screen } from '../types';
 
 interface Props {
@@ -13,6 +14,10 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   onStart: () => void;
+  /** 이 전략으로 계좌 연결까지는 끝냈지만 "나중에 입금할게요"로 미룬 투자가 있으면 전달된다 */
+  pendingDeposit?: { amount: number } | null;
+  /** 위 배너의 CTA — 약관/계좌 단계를 다시 거치지 않고 곧장 입금 화면으로 이동한다 */
+  onResumeDeposit?: () => void;
 }
 
 const PRINCIPAL = 10_000_000;
@@ -32,7 +37,7 @@ const fmtWon = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}
 const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 
 /** 03 전략 상세 — 추천 기간(또는 직접 설정한 기간)으로 전략을 직접 체험한 뒤 바로 투자 시작으로 이어진다 */
-export default function StrategyDetail({ strategyId, userName, onNavigate, onStart }: Props) {
+export default function StrategyDetail({ strategyId, userName, onNavigate, onStart, pendingDeposit, onResumeDeposit }: Props) {
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const periods = useMemo(() => getRecommendedPeriods(), []);
 
@@ -157,6 +162,23 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
             <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">{strategy.name}</h1>
             <p className="max-w-[820px] text-[19px] leading-8 text-muted">{strategy.why}</p>
           </section>
+
+          {pendingDeposit && (
+            <section className="flex items-center justify-between gap-6 rounded-card bg-[#F8FCEE] px-9 py-7 shadow-[0_0_0_1px_#C6F04D_inset]">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[15px] font-semibold text-[#3F5222]">입금이 필요해요</span>
+                <p className="text-lg font-bold text-ink">
+                  {won(pendingDeposit.amount)} 입금하면 {strategy.name}으로 투자를 시작할 수 있어요.
+                </p>
+              </div>
+              <button
+                onClick={onResumeDeposit}
+                className="shrink-0 rounded-field bg-lime px-7 py-4 text-base font-bold text-navy"
+              >
+                입금하러 가기 →
+              </button>
+            </section>
+          )}
 
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
             <div className="flex flex-col gap-2.5">

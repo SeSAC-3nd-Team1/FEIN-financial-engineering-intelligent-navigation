@@ -4,8 +4,12 @@
 
 ## 현재 기준 문서
 
+- [환경 변수 관리 가이드](ENVIRONMENT_VARIABLES.md)
+- [Azure PostgreSQL 단일 프로젝트 DB 가이드](AZURE_POSTGRESQL_DEV.md)
 - [현재 PostgreSQL 데이터 명세](DATABASE_SPECIFICATION.md)
 - [Backend API 명세](BACKEND_API_SPECIFICATION.md)
+- [투자성향 AI 분석 API 명세](INVESTOR_PROFILE_API_SPECIFICATION.md)
+- [KIS 실시간 시장가 및 차트 API 명세](KIS_REALTIME_MARKET_API_SPECIFICATION.md)
 - [가상투자 PostgreSQL 데이터 명세](VIRTUAL_TRADING_DATA_SPECIFICATION.md)
 - [가상투자 ERD](VIRTUAL_TRADING_ERD.md)
 - [Frontend → API → DB 매핑](FRONTEND_API_DB_MAPPING.md)

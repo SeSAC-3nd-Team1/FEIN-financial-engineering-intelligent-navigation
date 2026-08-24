@@ -26,15 +26,34 @@ services:
     build:
       context: ./backend
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
+      AI_PROFILE_TIMEOUT_SECONDS: ${AI_PROFILE_TIMEOUT_SECONDS:-15}
+      AI_PROFILE_MODEL_VERSION: ${AI_PROFILE_MODEL_VERSION:-investor-profile-v1}
+      AI_PROFILE_PROMPT_VERSION: ${AI_PROFILE_PROMPT_VERSION:-v1}
+      AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT:-}
+      AI_RECOMMENDATION_TIMEOUT_SECONDS: ${AI_RECOMMENDATION_TIMEOUT_SECONDS:-15}
+      AI_RECOMMENDATION_MODEL_VERSION: ${AI_RECOMMENDATION_MODEL_VERSION:-strategy-recommender-v1}
+      AI_RECOMMENDATION_PROMPT_VERSION: ${AI_RECOMMENDATION_PROMPT_VERSION:-v1}
+      AI_RECOMMENDATION_DATASET_VERSION: ${AI_RECOMMENDATION_DATASET_VERSION:-financial-8y-v1}
+      STRATEGY_CATALOG_VERSION: ${STRATEGY_CATALOG_VERSION:-v1}
       KIS_APP_KEY: ${KIS_APP_KEY:-}
       KIS_APP_SECRET: ${KIS_APP_SECRET:-}
       KIS_BASE_URL: ${KIS_BASE_URL:-https://openapi.koreainvestment.com:9443}
+      KIS_WEBSOCKET_URL: ${KIS_WEBSOCKET_URL:-ws://ops.koreainvestment.com:21000}
       KIS_TIMEOUT_SECONDS: ${KIS_TIMEOUT_SECONDS:-3}
       PRICE_CACHE_TTL_SECONDS: ${PRICE_CACHE_TTL_SECONDS:-5}
+      MINUTE_CANDLE_CACHE_TTL_SECONDS: ${MINUTE_CANDLE_CACHE_TTL_SECONDS:-15}
+      REALTIME_PRICE_CACHE_TTL_SECONDS: ${REALTIME_PRICE_CACHE_TTL_SECONDS:-30}
+      REALTIME_PRICE_STALE_SECONDS: ${REALTIME_PRICE_STALE_SECONDS:-10}
+      KIS_REALTIME_RECONNECT_MAX_SECONDS: ${KIS_REALTIME_RECONNECT_MAX_SECONDS:-30}
+      KIS_REALTIME_CLIENT_QUEUE_SIZE: ${KIS_REALTIME_CLIENT_QUEUE_SIZE:-100}
+      KIS_REALTIME_MAX_SYMBOLS_PER_CLIENT: ${KIS_REALTIME_MAX_SYMBOLS_PER_CLIENT:-20}
       NAVER_API_HUB_CLIENT_ID: ${NAVER_API_HUB_CLIENT_ID:-}
       NAVER_API_HUB_CLIENT_SECRET: ${NAVER_API_HUB_CLIENT_SECRET:-}
       NAVER_NEWS_BASE_URL: ${NAVER_NEWS_BASE_URL:-https://naverapihub.apigw.ntruss.com}
@@ -51,8 +70,6 @@ services:
     volumes:
       - ./backend:/app
     depends_on:
-      db-init:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
@@ -73,16 +90,18 @@ services:
     build:
       context: ./data
       dockerfile: Dockerfile.db-init
+    profiles:
+      - migration
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       SIGNUP_TERMS_VERSION: ${SIGNUP_TERMS_VERSION:-dev-20260823}
       SIGNUP_TERMS_EFFECTIVE_AT: ${SIGNUP_TERMS_EFFECTIVE_AT:-2026-08-23T00:00:00+09:00}
       SIGNUP_TERMS_CONTENT_BASE_URL: ${SIGNUP_TERMS_CONTENT_BASE_URL:-}
+      DB_INIT_MAX_ATTEMPTS: ${DB_INIT_MAX_ATTEMPTS:-30}
+      DB_INIT_RETRY_SECONDS: ${DB_INIT_RETRY_SECONDS:-2}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
     volumes:
       - ./data:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
     command: ["python", "-m", "scripts.init_local_db"]
     restart: "no"
 
@@ -92,10 +111,15 @@ services:
     profiles:
       - data
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PYTHONPATH: /app
       DATA_GO_KR_API_KEY: ${DATA_GO_KR_API_KEY:-}
+      OPENDART_API_KEY: ${OPENDART_API_KEY:-}
+      OPENDART_TIMEOUT_SECONDS: ${OPENDART_TIMEOUT_SECONDS:-10}
+      ECOS_API_KEY: ${ECOS_API_KEY:-}
+      ECOS_TIMEOUT_SECONDS: ${ECOS_TIMEOUT_SECONDS:-10}
       AZURE_CONFIG_DIR: /root/.azure
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_RAW: ${AZURE_STORAGE_CONTAINER_RAW:-raw}
@@ -106,8 +130,6 @@ services:
       - ./data:/app
       - azure_cli_data:/root/.azure
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     command: ["sleep", "infinity"]
@@ -118,34 +140,15 @@ services:
     profiles:
       - ai
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     volumes:
       - ./ai:/app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     command: ["sleep", "infinity"]
-
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-app}
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-    restart: unless-stopped
 
   redis:
     image: redis:8-alpine
@@ -164,6 +167,5 @@ services:
 
 volumes:
   frontend_node_modules:
-  postgres_data:
   redis_data:
   azure_cli_data:

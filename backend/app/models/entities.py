@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -121,3 +121,150 @@ class CashLedger(Base):
     reference_type: Mapped[str] = mapped_column(String(30))
     reference_id: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class InvestorProfileAssessment(Base):
+    __tablename__ = "investor_profile_assessments"
+    __table_args__ = (
+        CheckConstraint(
+            "profile_type IN ('안정추구형', '안정투자형', '중립투자형', '성장추구형', '공격투자형')",
+            name="ck_investor_profile_assessments_profile_type_values",
+        ),
+        CheckConstraint("stability BETWEEN 1 AND 5", name="ck_investor_profile_assessments_stability_range"),
+        CheckConstraint("return_seeking BETWEEN 1 AND 5", name="ck_investor_profile_assessments_return_seeking_range"),
+        CheckConstraint("horizon BETWEEN 1 AND 5", name="ck_investor_profile_assessments_horizon_range"),
+        Index("ix_investor_profile_assessments_user_created", "user_id", "created_at"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"))
+    questionnaire_version: Mapped[str] = mapped_column(String(20))
+    analysis_version: Mapped[str] = mapped_column(String(20))
+    profile_type: Mapped[str] = mapped_column(String(20))
+    stability: Mapped[int] = mapped_column(SmallInteger)
+    return_seeking: Mapped[int] = mapped_column(SmallInteger)
+    horizon: Mapped[int] = mapped_column(SmallInteger)
+    tendency_line: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text)
+    analysis_summary: Mapped[list[str]] = mapped_column(JSONB)
+    model_version: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StrategyRecommendation(Base):
+    __tablename__ = "strategy_recommendations"
+    __table_args__ = (
+        UniqueConstraint(
+            "assessment_id",
+            "model_version",
+            "prompt_version",
+            "strategy_catalog_version",
+            "dataset_version",
+            name="uq_strategy_recommendations_reproducible_input",
+        ),
+        Index("ix_strategy_recommendations_assessment_created", "assessment_id", "created_at"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    assessment_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("investor_profile_assessments.id", ondelete="CASCADE"),
+    )
+    model_version: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(String(20))
+    strategy_catalog_version: Mapped[str] = mapped_column(String(50))
+    dataset_version: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StrategyRecommendationItem(Base):
+    __tablename__ = "strategy_recommendation_items"
+    __table_args__ = (
+        UniqueConstraint("recommendation_id", "rank", name="uq_strategy_recommendation_items_rank"),
+        CheckConstraint("rank BETWEEN 1 AND 3", name="ck_strategy_recommendation_items_rank_range"),
+        CheckConstraint("score >= 0 AND score <= 1", name="ck_strategy_recommendation_items_score_range"),
+        CheckConstraint(
+            "match_level IN ('BEST', 'GOOD', 'CAUTION')",
+            name="ck_strategy_recommendation_items_match_level_values",
+        ),
+    )
+    recommendation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("strategy_recommendations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    strategy_id: Mapped[str] = mapped_column(
+        String(30),
+        ForeignKey("strategies.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    rank: Mapped[int] = mapped_column(SmallInteger)
+    score: Mapped[Decimal] = mapped_column(Numeric(5, 4))
+    match_level: Mapped[str] = mapped_column(String(10))
+    reason: Mapped[str] = mapped_column(Text)
+    caution: Mapped[str] = mapped_column(Text)
+
+
+class Company(Base):
+    __tablename__ = "companies"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    corp_code: Mapped[str] = mapped_column(String(8), unique=True)
+    stock_code: Mapped[str | None] = mapped_column(String(12), index=True)
+    corp_name: Mapped[str] = mapped_column(String(200))
+    corp_name_eng: Mapped[str | None] = mapped_column(String(200))
+    stock_name: Mapped[str | None] = mapped_column(String(200))
+    market: Mapped[str | None] = mapped_column(String(10))
+    ceo_name: Mapped[str | None] = mapped_column(String(200))
+    jurir_no: Mapped[str | None] = mapped_column(String(20))
+    bizr_no: Mapped[str | None] = mapped_column(String(20))
+    address: Mapped[str | None] = mapped_column(Text)
+    homepage_url: Mapped[str | None] = mapped_column(Text)
+    ir_url: Mapped[str | None] = mapped_column(Text)
+    phone_number: Mapped[str | None] = mapped_column(String(100))
+    industry_code: Mapped[str | None] = mapped_column(String(20))
+    established_date: Mapped[date | None]
+    accounting_month: Mapped[str | None] = mapped_column(String(2))
+    dart_modify_date: Mapped[date | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompanyFinancial(Base):
+    __tablename__ = "company_financials"
+    __table_args__ = (UniqueConstraint("corp_code", "business_year", "report_code", "fs_div"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    corp_code: Mapped[str] = mapped_column(String(8), ForeignKey("companies.corp_code"))
+    stock_code: Mapped[str | None] = mapped_column(String(12))
+    business_year: Mapped[str] = mapped_column(String(4))
+    report_code: Mapped[str] = mapped_column(String(5))
+    quarter: Mapped[str] = mapped_column(String(10))
+    fs_div: Mapped[str] = mapped_column(String(10))
+    revenue: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    operating_income: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    net_income: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    total_assets: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    total_liabilities: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    total_equity: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    operating_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    investing_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    financing_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompanyDisclosure(Base):
+    __tablename__ = "company_disclosures"
+    __table_args__ = (
+        Index("ix_company_disclosures_corp_code", "corp_code"),
+        Index("ix_company_disclosures_receipt_date", "receipt_date"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    receipt_no: Mapped[str] = mapped_column(String(20), unique=True)
+    corp_code: Mapped[str] = mapped_column(String(8), ForeignKey("companies.corp_code"))
+    stock_code: Mapped[str | None] = mapped_column(String(12), index=True)
+    corp_name: Mapped[str] = mapped_column(String(200))
+    report_name: Mapped[str] = mapped_column(String(500))
+    filer_name: Mapped[str | None] = mapped_column(String(200))
+    receipt_date: Mapped[date]
+    remarks: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

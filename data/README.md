@@ -87,15 +87,17 @@ raw/
 
 Raw 수집 예시:
 
+로컬 수집은 저장소 루트 `.env`의 `DATA_GO_KR_API_KEY`를 사용한다. 별도 `.env.azure` 파일이나 `--env-file` 옵션은 사용하지 않는다.
+
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --date 2026-08-16 --all-pages --rows 10000
+docker compose --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --date 2026-08-16 --all-pages --rows 10000
 ```
 
 최소 5년 백필과 실제 Raw 월 보유기간 감사:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
+docker compose --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --dataset market_index --history-years 5 --all-pages --rows 10000
+docker compose --profile data run --rm --no-deps data python -m scripts.audit_raw_coverage --minimum-years 5
 ```
 
 매일 자동 증분 수집은 `.github/workflows/raw-daily-collection.yml`에서 15:30 KST에 실행한다.
@@ -130,7 +132,7 @@ run-financial-pipeline.cmd all
 직접 Python CLI:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage all --schema-version 1 --feature-version 1
+docker compose --profile data run --rm --no-deps data python -m scripts.run_financial_pipeline --stage all --schema-version 1 --feature-version 1
 ```
 
 ### Raw Profile
@@ -159,7 +161,7 @@ features/_manifests/model-datasets/version=v1/manifest.json
 
 ## PostgreSQL
 
-현재 구현 기준 Alembic head는 `20260823_0012`이다.
+현재 구현 기준 Alembic head는 `20260824_0013`이다.
 
 현재 membership/registration 관계:
 
@@ -169,21 +171,25 @@ public.terms
 public.user_agreements
 public.registration_sessions
 public.registration_agreements
+public.companies
+public.company_financial_accounts
+public.company_financials
+public.company_disclosures
 public.alembic_version
 ```
 
 과거 금융/API PostgreSQL `raw`, `processed` schema는 retire되었으며 정상 금융 batch 실행에는 필요하지 않다.
 
-Migration 적용:
+Migration 적용(Local/Azure 공통):
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data alembic upgrade head
+docker compose --profile migration run --rm --no-deps db-init
 ```
 
-로컬 기본 DB는 루트의 `docker compose up` 과정에서 `db-init`이 migration과 `dev-` 약관 seed를 자동 적용한다. 수동 재실행과 승인된 version의 명시적 seed는 다음과 같다.
+`db-init`은 Alembic migration과 `dev-` 약관 seed를 PostgreSQL advisory lock 안에서 적용한다. 공용 Azure DB에서 여러 개발자가 동시에 실행해도 초기화는 직렬화되며, 적용된 revision과 같은 code/version 약관은 건너뛴다. 일반 `docker compose up`은 이를 자동 실행하지 않는다. migration 담당자가 임시/CI PostgreSQL 검증과 `develop` 반영을 마친 뒤 공용 Azure DB에 명시적으로 실행한다. 승인된 version의 명시적 seed는 다음과 같다.
 
 ```bash
-docker compose run --rm db-init
+docker compose --profile migration run --rm --no-deps db-init
 docker compose run --rm data python -m scripts.seed_signup_terms --version dev-20260823 --effective-at 2026-08-23T00:00:00+09:00
 ```
 
@@ -192,8 +198,61 @@ docker compose run --rm data python -m scripts.seed_signup_terms --version dev-2
 DB 확인:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.check_db
+docker compose run --rm --no-deps data python -m scripts.check_db
 ```
+
+Azure 연결과 전체 공용 개발 절차는 [`docs/AZURE_POSTGRESQL_DEV.md`](../docs/AZURE_POSTGRESQL_DEV.md)를 따른다.
+
+## OpenDART 수집
+
+`.env`에 실제 key를 넣고 Git에는 커밋하지 않는다.
+
+```env
+OPENDART_API_KEY=
+OPENDART_TIMEOUT_SECONDS=10
+```
+
+Migration 적용 후 corp code를 먼저 동기화한다. 모든 종목코드는 숫자가 아니라 문자열로
+저장되므로 `005930`의 선행 0이 유지된다.
+
+```bash
+docker compose --profile migration run --rm --no-deps db-init
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart corp-codes
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart company --stock-code 005930
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart companies --limit 100
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart financials --stock-code 005930 --year 2025 --report-code 11011
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart disclosures --stock-code 005930 --limit 20
+```
+
+공시 `--limit`이 100을 초과하면 OpenDART `page_no`/`total_page`를 따라 여러 페이지를
+수집하며, 요청한 건수까지만 PostgreSQL에 적재하고 각 HTTP 페이지 원문은 모두 별도 Raw
+Blob으로 저장한다.
+
+로컬 parser/DB 동작만 진단하고 Azure Blob 업로드를 생략할 때는 최상위 option을 subcommand
+앞에 둔다: `python -m scripts.sync_opendart --skip-blob corp-codes`. 운영 수집에서는 이
+option을 사용하지 않는다. 수집 주기는 corp code 하루 1회 이하, 재무는 분기·사업보고서
+제출 후, 공시는 scheduler에서 작은 조회 기간으로 증분 실행하는 것을 권장한다.
+
+Raw 경로와 테이블 명세는 각각 `data/docs/RAW_DATA_CATALOG.md`,
+`docs/DATABASE_SPECIFICATION.md`를 따른다.
+
+## 한국은행 ECOS 거시경제 데이터
+
+`.env`에 `ECOS_API_KEY`를 설정한 뒤 2021년부터 기준금리, 원/달러 환율, CPI,
+국고채 3년·10년을 수집한다. 백필과 증분 실행은 동일 CLI를 사용하며 Raw는 원문을
+content-addressed JSONL.gz로 보존한다.
+
+```bash
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage raw --start-date 2021-01-01 --validate-metadata
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage all --incremental
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage raw --series base_rate --start-date 2026-01-01
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage processed
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage features
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage audit
+```
+
+API key가 없는 환경에서도 parser, 품질 규칙, PIT feature 단위 테스트는 실행되며 실제
+endpoint smoke test만 skip된다. Blob은 Azure CLI/Managed Identity 기반 Entra ID로 인증한다.
 
 회원가입 상세 구현 가이드는 `data/REGISTRATION_DB.md`를 본다.
 
