@@ -27,6 +27,7 @@ services:
       context: ./backend
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
@@ -78,11 +79,11 @@ services:
       SIGNUP_TERMS_VERSION: ${SIGNUP_TERMS_VERSION:-dev-20260823}
       SIGNUP_TERMS_EFFECTIVE_AT: ${SIGNUP_TERMS_EFFECTIVE_AT:-2026-08-23T00:00:00+09:00}
       SIGNUP_TERMS_CONTENT_BASE_URL: ${SIGNUP_TERMS_CONTENT_BASE_URL:-}
+      DB_INIT_MAX_ATTEMPTS: ${DB_INIT_MAX_ATTEMPTS:-30}
+      DB_INIT_RETRY_SECONDS: ${DB_INIT_RETRY_SECONDS:-2}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
     volumes:
       - ./data:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
     command: ["python", "-m", "scripts.init_local_db"]
     restart: "no"
 
@@ -93,6 +94,7 @@ services:
       - data
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PYTHONPATH: /app
       DATA_GO_KR_API_KEY: ${DATA_GO_KR_API_KEY:-}
@@ -106,8 +108,6 @@ services:
       - ./data:/app
       - azure_cli_data:/root/.azure
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     command: ["sleep", "infinity"]
@@ -119,12 +119,11 @@ services:
       - ai
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     volumes:
       - ./ai:/app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     command: ["sleep", "infinity"]

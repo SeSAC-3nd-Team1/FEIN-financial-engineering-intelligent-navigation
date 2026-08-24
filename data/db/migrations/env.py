@@ -4,6 +4,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import Connection
 
 from db.base import Base
 from db.connection.session import get_database_url
@@ -34,24 +35,36 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def do_run_migrations(connection: Connection) -> None:
+    """호출자가 제공하거나 Alembic이 생성한 연결에서 migration을 실행한다."""
+
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_schemas=True,
+        compare_type=True,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
 def run_migrations_online() -> None:
     """실제 PostgreSQL 연결에서 transaction 단위로 migration을 실행한다."""
 
-    # migration 실행은 장시간 유지되는 application pool이 필요하지 않으므로 NullPool을 사용한다.
+    external_connection = config.attributes.get("connection")
+    if external_connection is not None:
+        # 공용 DB 초기화는 advisory lock을 잡은 동일 연결을 전달해 동시 DDL을 막는다.
+        do_run_migrations(external_connection)
+        return
+
+    # 독립 실행 migration은 장시간 유지되는 application pool이 필요하지 않으므로 NullPool을 사용한다.
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            include_schemas=True,
-            compare_type=True,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+        do_run_migrations(connection)
 
 
 if context.is_offline_mode():
