@@ -10,6 +10,7 @@ from collectors.krx_client import KrxApiError, KrxClient
 from collectors.krx_config import OPERATIONS
 from processing.krx import market_index_rows, stock_master_rows, stock_price_rows
 from scripts.sync_krx import _parser, _sync_dates
+from scripts.verify_krx_backfill import Coverage, _is_complete
 
 
 class FakeResponse:
@@ -160,6 +161,28 @@ def test_sync_dates_returns_inclusive_weekday_backfill_range() -> None:
         date(2026, 8, 24),
         date(2026, 8, 25),
     ]
+
+
+def test_backfill_coverage_allows_weekend_boundaries() -> None:
+    coverage = Coverage(
+        first_date=date(2021, 8, 24),
+        last_date=date(2026, 8, 24),
+        trading_days=1_230,
+        rows=3_000_000,
+    )
+
+    assert _is_complete(coverage, date(2021, 8, 21), date(2026, 8, 25))
+
+
+def test_backfill_coverage_rejects_partial_range() -> None:
+    coverage = Coverage(
+        first_date=date(2025, 5, 26),
+        last_date=date(2025, 8, 25),
+        trading_days=63,
+        rows=172_219,
+    )
+
+    assert not _is_complete(coverage, date(2020, 8, 25), date(2025, 8, 25))
 
 
 def test_sync_dates_requires_complete_ordered_range() -> None:
