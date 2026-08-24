@@ -1,6 +1,6 @@
 """거래 도메인의 SQLAlchemy repository."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models import Order, PortfolioSnapshot, Position, Strategy, StrategyTargetWeight, VirtualAccount
+from app.models import Order, PortfolioSnapshot, Position, RebalancingDecision, Strategy, StrategyTargetWeight, VirtualAccount
 
 
 class TradingRepository:
@@ -56,6 +56,31 @@ class TradingRepository:
         if start_date is not None:
             query = query.where(PortfolioSnapshot.snapshot_date >= start_date)
         return list(self.session.scalars(query.order_by(PortfolioSnapshot.snapshot_date)))
+
+    def latest_snapshot(self, account_id: UUID, effective_on: date | None = None) -> PortfolioSnapshot | None:
+        query = select(PortfolioSnapshot).where(PortfolioSnapshot.account_id == account_id)
+        if effective_on is not None:
+            query = query.where(PortfolioSnapshot.snapshot_date <= effective_on)
+        return self.session.scalar(query.order_by(PortfolioSnapshot.snapshot_date.desc()).limit(1))
+
+    def decision_by_idempotency(self, account_id: UUID, key: str) -> RebalancingDecision | None:
+        return self.session.scalar(select(RebalancingDecision).where(
+            RebalancingDecision.account_id == account_id,
+            RebalancingDecision.idempotency_key == key,
+        ))
+
+    def add_decision(self, decision: RebalancingDecision) -> None:
+        self.session.add(decision)
+
+    def decisions_since(self, account_id: UUID, created_after: datetime) -> list[RebalancingDecision]:
+        return list(self.session.scalars(
+            select(RebalancingDecision)
+            .where(
+                RebalancingDecision.account_id == account_id,
+                RebalancingDecision.created_at >= created_after,
+            )
+            .order_by(RebalancingDecision.created_at.desc())
+        ))
 
     def target_weights(self, strategy_id: str, effective_on: date) -> dict[str, Decimal]:
         latest_effective_from = self.session.scalar(

@@ -1,6 +1,6 @@
 # 가상투자 데이터 명세서
 
-Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`. PostgreSQL 17/Azure Database for PostgreSQL 호환.
+Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0018_rebalancing_decisions.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
 
 | Table.Column | PostgreSQL Type | PK/FK/NULL/Default | Constraint/Index | 설명 |
 | --- | --- | --- | --- | --- |
@@ -23,6 +23,11 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`.
 | portfolio_snapshots.total_assets/return_rate | numeric | NOT NULL |  | 현금 포함 총자산과 매입원가 기준 수익률 |
 | strategy_target_weights.strategy_id/stock_code/effective_from | varchar | FK, UNIQUE version |  | 전략이 명시적으로 산출한 목표비중 버전 |
 | strategy_target_weights.target_weight | numeric(9,8) | NOT NULL | 0~1 | 리밸런싱 계산용 비율 |
+| rebalancing_decisions.id/account_id | uuid/uuid | PK/FK | account/created_at index | 실제 제안에 대한 판단 기록 |
+| rebalancing_decisions.stock_code/action/decision | varchar | NOT NULL | BUY/SELL, ACCEPTED/HELD | 서버 제안과 사용자 선택 |
+| rebalancing_decisions.current_weight/target_weight/recommended_amount | numeric | NOT NULL |  | 판단 당시 서버 산출값 snapshot |
+| rebalancing_decisions.baseline_snapshot_date/total_assets | date/numeric | NULL |  | 판단 요청 시 재평가한 가격 기준일·총자산 |
+| rebalancing_decisions.idempotency_key | varchar(100) | NOT NULL | UNIQUE(account,key) | 중복 판단 기록 방지 |
 | orders.id | uuid | PK |  | 주문 ID |
 | orders.account_id | uuid | FK virtual_accounts, NOT NULL | account/requested_at index | 주문 계좌 |
 | orders.stock_code/side/order_type | varchar | NOT NULL | BUY/SELL, MARKET only | 주문 내용 |

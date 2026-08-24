@@ -7,8 +7,9 @@ import { X } from 'lucide-react';
 import Header from '../components/Header';
 import { STRATEGIES } from '../data/strategies';
 import { useTradingData } from '../hooks/useTradingData';
-import { getPortfolioHistoryApi, type PortfolioHistoryResponse } from '../lib/backendApi';
+import { getPortfolioHistoryApi, getStockEvaluationApi, type PortfolioHistoryResponse, type RebalancingDecisionHistoryResponse, type StockEvaluationResponse } from '../lib/backendApi';
 import { buildPortfolioHoldings } from '../lib/portfolioModel';
+import { formatDecisionReturn } from '../lib/portfolioAnalyticsModel';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
 import { useTradingStore } from '../store/tradingStore';
@@ -54,6 +55,7 @@ export default function Portfolio({
   const logout = useAuthStore((state) => state.logout);
   const account = useTradingStore((state) => state.account);
   const portfolio = useTradingStore((state) => state.portfolio);
+  const decisions = useTradingStore((state) => state.decisions);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
 
   // 전략 변경 모달 상태
@@ -89,6 +91,7 @@ export default function Portfolio({
   const [periodIdx, setPeriodIdx] = useState(2); // 기본값 "1년"
   const [selectedHoldingIdx, setSelectedHoldingIdx] = useState(0);
   const [history, setHistory] = useState<PortfolioHistoryResponse | null>(null);
+  const [riskEvaluation, setRiskEvaluation] = useState<StockEvaluationResponse | null>(null);
 
   useEffect(() => {
     if (!token || !account) {
@@ -138,6 +141,20 @@ export default function Portfolio({
   );
   const targetPct = selectedProposal == null ? null : Number(selectedProposal.target_weight);
   const weightDiff = selectedProposal == null ? null : Number(selectedProposal.weight_diff);
+  const latestDecision = decisions?.items[0] ?? null;
+
+  useEffect(() => {
+    if (!token || !account || tab !== 'risk' || !selectedHolding) {
+      setRiskEvaluation(null);
+      return;
+    }
+    let active = true;
+    setRiskEvaluation(null);
+    void getStockEvaluationApi(account.id, selectedHolding.stockCode, token)
+      .then((response) => { if (active) setRiskEvaluation(response); })
+      .catch(() => { if (active) setRiskEvaluation(null); });
+    return () => { active = false; };
+  }, [account, selectedHolding, tab, token]);
 
   if (view === 'review') {
     return (
@@ -145,6 +162,7 @@ export default function Portfolio({
         userName={userName}
         onNavigate={onNavigate}
         onBack={() => setView('main')}
+        decisions={decisions}
       />
     );
   }
@@ -342,9 +360,21 @@ export default function Portfolio({
 
             {tab === 'risk' && (
               <div className="flex flex-col gap-6">
-                <p className="text-[15px] text-subtle">AI 5축 위험 점수는 실제 feature 산식과 기록 데이터가 준비된 뒤 제공됩니다.</p>
-                <div className="flex h-[320px] items-center justify-center rounded-[20px] bg-canvas text-lg text-muted">위험 분석 데이터가 아직 없어요.</div>
-                <Insight>신뢰성 있게 계산할 수 없는 점수는 임의 값으로 표시하지 않아요.</Insight>
+                <p className="text-[15px] text-subtle">{selectedHolding ? `${selectedHolding.name} · stock-feature-v1` : '보유 종목을 선택해주세요.'}</p>
+                <div className="flex min-h-[320px] flex-col justify-center gap-5 rounded-[20px] bg-canvas px-10 py-8">
+                  {(riskEvaluation?.axes ?? []).map((axis) => (
+                    <div key={axis.key} className="grid grid-cols-[110px_1fr_50px] items-center gap-4">
+                      <span className="font-semibold text-[#3F4A43]">{axis.label}</span>
+                      <div className="h-3 overflow-hidden rounded-full bg-[#E0E5DF]">
+                        {axis.score != null && <div className="h-full rounded-full bg-navy" style={{ width: `${axis.score}%` }} />}
+                      </div>
+                      <span className="text-right font-bold">{axis.score ?? '-'}</span>
+                      <span className="col-span-3 text-[13px] leading-5 text-muted">{axis.basis}</span>
+                    </div>
+                  ))}
+                  {!riskEvaluation && <div className="text-center text-lg text-muted">계산 가능한 실제 feature 데이터가 아직 없어요.</div>}
+                </div>
+                <Insight>{riskEvaluation?.role_summary ?? '신뢰성 있게 계산할 수 없는 점수는 임의 값으로 표시하지 않아요.'}</Insight>
               </div>
             )}
           </section>
@@ -389,24 +419,24 @@ export default function Portfolio({
             <div className="flex flex-col gap-3">
               <span className="text-[15px] text-muted">지난 리밸런싱 제안</span>
               <div className="flex items-center gap-3.5 text-[19px] text-[#3F4A43]">
-                <span>AI 제안 <b>-</b></span>
+                <span>AI 제안 <b>{latestDecision ? `${latestDecision.stock_name ?? latestDecision.stock_code} ${latestDecision.action === 'SELL' ? '줄이기' : '늘리기'}` : '-'}</b></span>
                 <span className="text-[#A6AFA7]">·</span>
-                <span>내 선택 <b>-</b></span>
+                <span>내 선택 <b>{latestDecision ? (latestDecision.decision === 'ACCEPTED' ? '수락' : '보류') : '-'}</b></span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                <span className="text-[15px] text-muted">AI 제안을 따랐다면</span>
-                <span className="text-[26px] font-bold tracking-[-0.03em]">-</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
+                  <span className="text-[15px] text-muted">최근 6개월 수락</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{decisions?.accepted ?? 0}건</span>
+                </div>
+                <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
+                  <span className="text-[15px] text-muted">최근 6개월 보류</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{decisions?.held ?? 0}건</span>
+                </div>
               </div>
-              <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                <span className="text-[15px] text-muted">실제 내 선택</span>
-                <span className="text-[26px] font-bold tracking-[-0.03em]">-</span>
-              </div>
-            </div>
-            <p className="text-[17px] leading-7 text-muted">
-              실제 판단 이력이 쌓이면 결과를 비교할 수 있어요.
-            </p>
+              <p className="text-[17px] leading-7 text-muted">
+              판단마다 기준 시점이 다르므로 성과 평균을 직접 비교하지 않아요.
+              </p>
             {/* 트리거: 클릭 시 로컬 view state 를 'review' 로 전환해 PDF Page 5 레이아웃(ReviewView)을 렌더링한다 */}
             <button
               onClick={() => setView('review')}
@@ -466,7 +496,7 @@ export default function Portfolio({
 }
 
 /** PDF Page 5 — "내 투자 판단 돌아보기" 서브뷰. 라우터가 생기면 `/portfolio/review` 로 그대로 옮길 수 있다 */
-function ReviewView({ userName, onNavigate, onBack }: { userName: string; onNavigate: (s: Screen) => void; onBack: () => void }) {
+function ReviewView({ userName, onNavigate, onBack, decisions }: { userName: string; onNavigate: (s: Screen) => void; onBack: () => void; decisions: RebalancingDecisionHistoryResponse | null }) {
   return (
     <div className="min-h-screen bg-canvas">
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
@@ -486,28 +516,35 @@ function ReviewView({ userName, onNavigate, onBack }: { userName: string; onNavi
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
             <div className="flex items-center justify-between">
               <h2 className="text-[22px] font-bold tracking-[-0.025em]">요약 통계</h2>
-              <span className="rounded-full bg-[#F4F6F1] px-4 py-2 text-sm font-semibold text-[#3F4A43]">-</span>
+              <span className="rounded-full bg-[#F4F6F1] px-4 py-2 text-sm font-semibold text-[#3F4A43]">{decisions?.period_label ?? '최근 6개월'}</span>
             </div>
             <div className="grid grid-cols-3 gap-8">
-              <Stat label="AI 제안" value="-" />
-              <Stat label="수락" value="-" />
-              <Stat label="보류" value="-" />
+              <Stat label="AI 제안" value={String(decisions?.proposed ?? 0)} />
+              <Stat label="수락" value={String(decisions?.accepted ?? 0)} />
+              <Stat label="보류" value={String(decisions?.held ?? 0)} />
             </div>
           </section>
 
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
-            <h2 className="text-[22px] font-bold tracking-[-0.025em]">AI 제안을 따랐을 때 vs 내 실제 선택</h2>
-            <div className="flex h-32 items-center justify-center rounded-[20px] bg-canvas text-lg text-muted">비교할 실제 판단 이력이 아직 없어요.</div>
-            <Insight>실제 기록이 없는 결과를 임의 값으로 표시하지 않아요.</Insight>
+            <h2 className="text-[22px] font-bold tracking-[-0.025em]">판단 결과를 해석하는 기준</h2>
+            <Insight>판단 시점 자산과 이후 실제 계좌 스냅샷만 비교해요. 판단별 경과 기간이 달라 수락·보류 평균은 제공하지 않아요.</Insight>
           </section>
 
           <section className="flex flex-col gap-5 rounded-card bg-surface p-12">
             <div className="flex items-baseline justify-between">
               <h2 className="text-[22px] font-bold tracking-[-0.025em]">최근 판단 기록</h2>
-              <span className="text-[15px] text-subtle">최근 0건</span>
+              <span className="text-[15px] text-subtle">최근 {decisions?.items.length ?? 0}건</span>
             </div>
             <div className="flex flex-col">
-              <div className="py-8 text-center text-[17px] text-muted">아직 기록된 리밸런싱 판단이 없어요.</div>
+              {(decisions?.items ?? []).map((item) => (
+                <div key={item.id} className="grid grid-cols-[120px_1fr_90px_150px] items-center gap-4 border-b border-line py-5 last:border-0">
+                  <span className="text-[15px] text-muted">{item.created_at.slice(0, 10)}</span>
+                  <span className="text-[17px] font-semibold">{item.stock_name ?? item.stock_code} {item.action === 'SELL' ? '줄이기' : '늘리기'}</span>
+                  <span className="text-[15px] font-semibold">{item.decision === 'ACCEPTED' ? '수락' : '보류'}</span>
+                  <span className="text-right text-[15px] text-muted">{item.actual_portfolio_return_rate == null ? '결과 집계 전' : `실제 ${formatDecisionReturn(item.actual_portfolio_return_rate)}`}</span>
+                </div>
+              ))}
+              {!decisions?.items.length && <div className="py-8 text-center text-[17px] text-muted">아직 기록된 리밸런싱 판단이 없어요.</div>}
             </div>
           </section>
         </div>

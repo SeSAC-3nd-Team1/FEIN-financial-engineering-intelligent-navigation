@@ -154,6 +154,31 @@ class PortfolioSnapshot(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class RebalancingDecision(Base):
+    __tablename__ = "rebalancing_decisions"
+    __table_args__ = (
+        UniqueConstraint("account_id", "idempotency_key", name="uq_rebalancing_decisions_account_idempotency"),
+        CheckConstraint("action IN ('BUY', 'SELL')", name="ck_rebalancing_decisions_action_values"),
+        CheckConstraint("decision IN ('ACCEPTED', 'HELD')", name="ck_rebalancing_decisions_decision_values"),
+        Index("ix_rebalancing_decisions_account_created", "account_id", "created_at"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"))
+    strategy_id: Mapped[str | None] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="SET NULL"))
+    stock_code: Mapped[str] = mapped_column(String(12))
+    stock_name: Mapped[str | None] = mapped_column(String(200))
+    action: Mapped[str] = mapped_column(String(4))
+    current_weight: Mapped[Decimal] = mapped_column(Numeric(9, 4))
+    target_weight: Mapped[Decimal] = mapped_column(Numeric(9, 4))
+    weight_diff: Mapped[Decimal] = mapped_column(Numeric(9, 4))
+    recommended_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    decision: Mapped[str] = mapped_column(String(10))
+    idempotency_key: Mapped[str] = mapped_column(String(100))
+    baseline_snapshot_date: Mapped[date | None] = mapped_column(Date)
+    baseline_total_assets: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Order(Base):
     __tablename__ = "orders"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

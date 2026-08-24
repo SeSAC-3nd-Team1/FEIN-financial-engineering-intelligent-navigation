@@ -409,6 +409,62 @@ class PortfolioHistoryResponse(BaseModel):
     items: list[PortfolioHistoryPointResponse]
 
 
+class StockEvaluationAxisResponse(BaseModel):
+    key: Literal["stability", "financial_health", "growth", "defense", "diversification"]
+    label: str
+    score: int | None = Field(ge=0, le=100)
+    status: Literal["AVAILABLE", "UNAVAILABLE"]
+    basis: str
+
+
+class StockEvaluationResponse(BaseModel):
+    account_id: UUID
+    stock_code: str
+    stock_name: str | None
+    feature_version: Literal["stock-feature-v1"] = "stock-feature-v1"
+    as_of: date | None
+    target_weight: Decimal | None
+    role_summary: str | None
+    axes: list[StockEvaluationAxisResponse]
+    sources: list[Literal["KRX", "OpenDART", "Portfolio"]]
+
+
+class RebalancingDecisionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID
+    stock_code: str = Field(pattern=r"^[0-9A-Z]{6,12}$")
+    decision: Literal["ACCEPTED", "HELD"]
+    idempotency_key: str = Field(min_length=1, max_length=100)
+
+
+class RebalancingDecisionResponse(BaseModel):
+    id: UUID
+    account_id: UUID
+    strategy_id: str | None
+    stock_code: str
+    stock_name: str | None
+    action: Literal["BUY", "SELL"]
+    current_weight: Decimal
+    target_weight: Decimal
+    weight_diff: Decimal
+    recommended_amount: Decimal
+    decision: Literal["ACCEPTED", "HELD"]
+    baseline_snapshot_date: date | None
+    actual_portfolio_return_rate: Decimal | None
+    outcome_as_of: date | None
+    created_at: datetime
+
+
+class RebalancingDecisionHistoryResponse(BaseModel):
+    account_id: UUID
+    period_label: Literal["최근 6개월"] = "최근 6개월"
+    proposed: int
+    accepted: int
+    held: int
+    items: list[RebalancingDecisionResponse]
+
+
 class ErrorResponse(BaseModel):
     code: str
     message: str

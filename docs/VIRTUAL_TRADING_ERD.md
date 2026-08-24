@@ -6,7 +6,9 @@ erDiagram
   strategies ||--o{ virtual_accounts : selected_by
   virtual_accounts ||--o{ positions : holds
   virtual_accounts ||--o{ portfolio_snapshots : records
+  virtual_accounts ||--o{ rebalancing_decisions : decides
   strategies ||--o{ strategy_target_weights : defines
+  strategies ||--o{ rebalancing_decisions : proposed_under
   virtual_accounts ||--o{ orders : requests
   orders ||--o| executions : fills
   virtual_accounts ||--o{ executions : records
@@ -16,6 +18,7 @@ erDiagram
   strategies { varchar id PK jsonb rule_config }
   virtual_accounts { uuid id PK bigint user_id FK numeric cash_balance varchar selected_strategy_id FK }
   positions { bigint id PK uuid account_id FK varchar stock_code bigint quantity numeric average_price }
+  rebalancing_decisions { uuid id PK uuid account_id FK varchar stock_code varchar decision numeric recommended_amount }
   orders { uuid id PK uuid account_id FK varchar side bigint quantity varchar status varchar idempotency_key }
   executions { bigint id PK uuid order_id FK uuid account_id FK numeric execution_price }
   cash_ledger { bigint id PK uuid account_id FK numeric amount numeric balance_after varchar reference_id }

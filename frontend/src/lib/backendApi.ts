@@ -163,6 +163,60 @@ export interface PortfolioHistoryResponse {
   }>;
 }
 
+export interface StockEvaluationAxisResponse {
+  key: 'stability' | 'financial_health' | 'growth' | 'defense' | 'diversification';
+  label: string;
+  score: number | null;
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  basis: string;
+}
+
+export interface StockEvaluationResponse {
+  account_id: string;
+  stock_code: string;
+  stock_name: string | null;
+  feature_version: 'stock-feature-v1';
+  as_of: string | null;
+  target_weight: DecimalString | null;
+  role_summary: string | null;
+  axes: StockEvaluationAxisResponse[];
+  sources: Array<'KRX' | 'OpenDART' | 'Portfolio'>;
+}
+
+export interface RebalancingDecisionResponse {
+  id: string;
+  account_id: string;
+  strategy_id: string | null;
+  stock_code: string;
+  stock_name: string | null;
+  action: 'BUY' | 'SELL';
+  current_weight: DecimalString;
+  target_weight: DecimalString;
+  weight_diff: DecimalString;
+  recommended_amount: DecimalString;
+  decision: 'ACCEPTED' | 'HELD';
+  baseline_snapshot_date: string | null;
+  actual_portfolio_return_rate: DecimalString | null;
+  outcome_as_of: string | null;
+  created_at: string;
+}
+
+export interface RebalancingDecisionHistoryResponse {
+  account_id: string;
+  period_label: '최근 6개월';
+  proposed: number;
+  accepted: number;
+  held: number;
+  items: RebalancingDecisionResponse[];
+}
+
+export interface RebalancingDecisionCreateRequest {
+  account_id: string;
+  stock_code: string;
+  decision: 'ACCEPTED' | 'HELD';
+  idempotency_key: string;
+}
+
 export interface OrderCreateRequest {
   account_id: string;
   stock_code: string;
@@ -305,6 +359,40 @@ export function getPortfolioHistoryApi(
   return request<PortfolioHistoryResponse>(
     `/portfolio/history?account_id=${encodeURIComponent(accountId)}&period=${period}`,
     {},
+    token,
+  );
+}
+
+export function getStockEvaluationApi(
+  accountId: string,
+  stockCode: string,
+  token: string,
+): Promise<StockEvaluationResponse> {
+  return request<StockEvaluationResponse>(
+    `/portfolio/stock-evaluation?account_id=${encodeURIComponent(accountId)}&stock_code=${encodeURIComponent(stockCode)}`,
+    {},
+    token,
+  );
+}
+
+export function getRebalancingDecisionsApi(
+  accountId: string,
+  token: string,
+): Promise<RebalancingDecisionHistoryResponse> {
+  return request<RebalancingDecisionHistoryResponse>(
+    `/portfolio/decisions?account_id=${encodeURIComponent(accountId)}`,
+    {},
+    token,
+  );
+}
+
+export function createRebalancingDecisionApi(
+  payload: RebalancingDecisionCreateRequest,
+  token: string,
+): Promise<RebalancingDecisionResponse> {
+  return request<RebalancingDecisionResponse>(
+    '/portfolio/decisions',
+    { method: 'POST', body: JSON.stringify(payload) },
     token,
   );
 }

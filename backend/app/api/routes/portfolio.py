@@ -7,10 +7,22 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user
 from app.db.session import get_session
 from app.models import User
-from app.schemas.api import PortfolioHistoryResponse, PortfolioResponse
+from app.schemas.api import (
+    PortfolioHistoryResponse,
+    PortfolioResponse,
+    RebalancingDecisionCreateRequest,
+    RebalancingDecisionHistoryResponse,
+    RebalancingDecisionResponse,
+    StockEvaluationResponse,
+)
+from app.services.portfolio_analytics import PortfolioAnalyticsService
 from app.services.portfolio import PortfolioService
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+
+
+def get_portfolio_analytics_service(session: Session = Depends(get_session)) -> PortfolioAnalyticsService:
+    return PortfolioAnalyticsService(session)
 
 
 @router.get("", response_model=PortfolioResponse)
@@ -26,3 +38,31 @@ def portfolio_history(
     session: Session = Depends(get_session),
 ) -> PortfolioHistoryResponse:
     return PortfolioService(session).history(user.id, account_id, period)
+
+
+@router.get("/stock-evaluation", response_model=StockEvaluationResponse)
+def stock_evaluation(
+    account_id: UUID = Query(),
+    stock_code: str = Query(pattern=r"^[0-9A-Z]{6,12}$"),
+    user: User = Depends(current_user),
+    service: PortfolioAnalyticsService = Depends(get_portfolio_analytics_service),
+) -> StockEvaluationResponse:
+    return service.stock_evaluation(user.id, account_id, stock_code)
+
+
+@router.get("/decisions", response_model=RebalancingDecisionHistoryResponse)
+def rebalancing_decisions(
+    account_id: UUID = Query(),
+    user: User = Depends(current_user),
+    service: PortfolioAnalyticsService = Depends(get_portfolio_analytics_service),
+) -> RebalancingDecisionHistoryResponse:
+    return service.decision_history(user.id, account_id)
+
+
+@router.post("/decisions", response_model=RebalancingDecisionResponse, status_code=201)
+def create_rebalancing_decision(
+    request: RebalancingDecisionCreateRequest,
+    user: User = Depends(current_user),
+    service: PortfolioAnalyticsService = Depends(get_portfolio_analytics_service),
+) -> RebalancingDecisionResponse:
+    return service.record_decision(user.id, request)
