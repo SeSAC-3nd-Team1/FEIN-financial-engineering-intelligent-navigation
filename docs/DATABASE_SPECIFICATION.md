@@ -76,13 +76,13 @@ erDiagram
 적용:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data alembic upgrade head
+docker compose --profile data run --rm --no-deps data alembic upgrade head
 ```
 
 확인:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data alembic current
+docker compose --profile data run --rm --no-deps data alembic current
 ```
 
 ## OpenDART PostgreSQL 명세

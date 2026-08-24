@@ -26,7 +26,7 @@ services:
     build:
       context: ./backend
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
@@ -70,8 +70,6 @@ services:
     volumes:
       - ./backend:/app
     depends_on:
-      db-init:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
@@ -92,8 +90,10 @@ services:
     build:
       context: ./data
       dockerfile: Dockerfile.db-init
+    profiles:
+      - migration
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       SIGNUP_TERMS_VERSION: ${SIGNUP_TERMS_VERSION:-dev-20260823}
       SIGNUP_TERMS_EFFECTIVE_AT: ${SIGNUP_TERMS_EFFECTIVE_AT:-2026-08-23T00:00:00+09:00}
       SIGNUP_TERMS_CONTENT_BASE_URL: ${SIGNUP_TERMS_CONTENT_BASE_URL:-}
@@ -111,7 +111,7 @@ services:
     profiles:
       - data
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PYTHONPATH: /app
@@ -140,7 +140,7 @@ services:
     profiles:
       - ai
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     volumes:
@@ -149,24 +149,6 @@ services:
       redis:
         condition: service_healthy
     command: ["sleep", "infinity"]
-
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-app}
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-    restart: unless-stopped
 
   redis:
     image: redis:8-alpine
@@ -185,6 +167,5 @@ services:
 
 volumes:
   frontend_node_modules:
-  postgres_data:
   redis_data:
   azure_cli_data:

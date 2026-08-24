@@ -3,6 +3,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from threading import Event
 
 import pytest
 from fastapi import FastAPI
@@ -35,6 +36,7 @@ class FakeHub:
     def __init__(self) -> None:
         self.added: list[set[str]] = []
         self.removed = 0
+        self.removed_event = Event()
 
     async def add_subscriber(self, stock_codes: set[str]) -> asyncio.Queue[RealtimeQuote]:
         self.added.append(stock_codes)
@@ -47,6 +49,7 @@ class FakeHub:
 
     async def remove_subscriber(self, _queue) -> None:
         self.removed += 1
+        self.removed_event.set()
 
 
 def create_app() -> FastAPI:
@@ -114,6 +117,7 @@ def test_authenticated_subscription_receives_normalized_price(monkeypatch) -> No
         }
 
     assert fake_hub.added == [{"005930"}]
+    assert fake_hub.removed_event.wait(timeout=1)
     assert fake_hub.removed == 1
 
 

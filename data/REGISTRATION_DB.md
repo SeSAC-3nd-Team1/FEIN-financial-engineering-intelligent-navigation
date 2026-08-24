@@ -46,13 +46,13 @@ migration은 기존 데이터를 임의로 보정하거나 삭제하지 않는�
 저장소 루트에서 실행한다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data alembic upgrade head
+docker compose --profile data run --rm --no-deps data alembic upgrade head
 ```
 
 적용 revision 확인:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data alembic current
+docker compose --profile data run --rm --no-deps data alembic current
 ```
 
 정상 상태는 다음과 같다.
@@ -66,7 +66,7 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data alem
 `terms` 구조는 유지되므로 기존 seed script를 그대로 사용한다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.seed_signup_terms --version 1 --effective-at 2026-08-14T00:00:00+09:00
+docker compose --profile data run --rm --no-deps data python -m scripts.seed_signup_terms --version 1 --effective-at 2026-08-14T00:00:00+09:00
 ```
 
 운영 약관 version/effective_at은 실제 승인값으로 교체한다.
@@ -89,19 +89,19 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data pyth
 실행:
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.verify_signup_schema --term-version 1
+docker compose --profile data run --rm --no-deps data python -m scripts.verify_signup_schema --term-version 1
 ```
 
 실제 약관 seed가 없는 개발 DB에서만 임시 약관을 rollback transaction 안에 생성할 수 있다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m scripts.verify_signup_schema --term-version dev-test --create-temporary-terms
+docker compose --profile data run --rm --no-deps data python -m scripts.verify_signup_schema --term-version dev-test --create-temporary-terms
 ```
 
 ## 단위 테스트
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data python -m pytest tests -q
+docker compose --profile data run --rm --no-deps data python -m pytest tests -q
 ```
 
 ## 다음 단계

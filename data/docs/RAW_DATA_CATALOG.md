@@ -80,7 +80,7 @@ raw/data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/{sha256}.jsonl
 ### 모델 핵심 데이터 5년 백필
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.collect_public_data \
   --dataset stock_price \
   --dataset market_index \
@@ -100,7 +100,7 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
 기준 일 10,000회이므로, 필요하면 dataset 단위로 나누어 재실행한다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.collect_public_data \
   --all-datasets \
   --all-operations \
@@ -112,7 +112,7 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
 장기간 범위 요청이 시간 초과되는 operation은 날짜 분할 백필을 사용한다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.backfill_public_data_by_date \
   --dataset stock_issuance \
   --operation getStocIssuStat_V3 \
@@ -127,7 +127,7 @@ docker compose --env-file .env.azure --profile data run --rm --no-deps data \
 ### 증분 수집
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.collect_public_data \
   --all-datasets \
   --all-operations \
@@ -159,7 +159,7 @@ payload를 전수 다운로드하지 않고 canonical 경로의 월 partition을
 `stock_price/getstockpriceinfo`와 `market_index/getstockmarketindex`다.
 
 ```bash
-docker compose --env-file .env.azure --profile data run --rm --no-deps data \
+docker compose --profile data run --rm --no-deps data \
   python -m scripts.audit_raw_coverage --minimum-years 5
 ```
 
