@@ -222,6 +222,10 @@ docker compose --profile data run --rm --no-deps data python -m scripts.sync_ope
 docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart disclosures --stock-code 005930 --limit 20
 ```
 
+공시 `--limit`이 100을 초과하면 OpenDART `page_no`/`total_page`를 따라 여러 페이지를
+수집하며, 요청한 건수까지만 PostgreSQL에 적재하고 각 HTTP 페이지 원문은 모두 별도 Raw
+Blob으로 저장한다.
+
 로컬 parser/DB 동작만 진단하고 Azure Blob 업로드를 생략할 때는 최상위 option을 subcommand
 앞에 둔다: `python -m scripts.sync_opendart --skip-blob corp-codes`. 운영 수집에서는 이
 option을 사용하지 않는다. 수집 주기는 corp code 하루 1회 이하, 재무는 분기·사업보고서

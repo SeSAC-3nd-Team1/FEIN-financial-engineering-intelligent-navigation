@@ -43,6 +43,14 @@ class CorpCodeRecord:
     modify_date: str | None
 
 
+@dataclass(frozen=True)
+class OpenDartJsonResponse:
+    """HTTP 원문 bytes와 검증을 마친 JSON payload를 함께 보존한다."""
+
+    content: bytes
+    payload: dict[str, Any]
+
+
 def parse_corp_code_zip(content: bytes) -> list[CorpCodeRecord]:
     """OpenDART ZIP에서 CORPCODE.xml을 찾아 안전하게 기업 목록을 parsing한다."""
 
@@ -77,7 +85,8 @@ def parse_corp_code_zip(content: bytes) -> list[CorpCodeRecord]:
 class OpenDartClient:
     """제한된 재시도와 호출 간격을 적용하는 OpenDART 동기 client다."""
 
-    RETRYABLE_STATUSES = {"020", "800", "900", "901"}
+    # 020(요청 제한)과 901(계정/키 상태)은 같은 실행 안의 backoff로 해소되지 않는다.
+    RETRYABLE_STATUSES = {"800", "900"}
 
     def __init__(
         self,
@@ -129,7 +138,7 @@ class OpenDartClient:
                         str(payload.get("message", "invalid response")),
                         retryable=status in self.RETRYABLE_STATUSES,
                     )
-                return payload
+                return OpenDartJsonResponse(content=response.content, payload=payload)
             except OpenDartApiError as exc:
                 if not exc.retryable or attempt == self.max_attempts:
                     raise
@@ -147,13 +156,13 @@ class OpenDartClient:
 
         return self._request("corpCode.xml", {}, expect_json=False)
 
-    def company(self, corp_code: str) -> dict[str, Any]:
-        """기업개황 응답을 반환한다."""
+    def company(self, corp_code: str) -> OpenDartJsonResponse:
+        """기업개황의 HTTP 원문과 검증된 payload를 반환한다."""
 
         return self._request("company.json", {"corp_code": corp_code})
 
-    def financials(self, corp_code: str, business_year: str, report_code: str, fs_div: str = "CFS") -> dict[str, Any]:
-        """단일회사 전체 재무제표 응답을 반환한다."""
+    def financials(self, corp_code: str, business_year: str, report_code: str, fs_div: str = "CFS") -> OpenDartJsonResponse:
+        """단일회사 전체 재무제표의 HTTP 원문과 payload를 반환한다."""
 
         return self._request("fnlttSinglAcntAll.json", {
             "corp_code": corp_code, "bsns_year": business_year, "reprt_code": report_code, "fs_div": fs_div,
@@ -166,15 +175,39 @@ class OpenDartClient:
         start_date: str | None = None,
         end_date: str | None = None,
         disclosure_type: str | None = None,
-        page_count: int = 100,
-    ) -> dict[str, Any]:
-        """기업별 공시검색 첫 페이지를 반환한다."""
+        limit: int = 100,
+    ) -> list[OpenDartJsonResponse]:
+        """기업별 공시를 요청한 건수 또는 provider 마지막 페이지까지 수집한다.
 
-        params: dict[str, Any] = {"corp_code": corp_code, "page_count": min(max(page_count, 1), 100)}
+        각 페이지의 HTTP 원문을 별도 객체로 반환해 Raw Blob lineage와 pagination 경계를
+        잃지 않는다. 마지막 페이지가 limit을 초과해도 원문은 자르지 않고, DB 적재 단계가
+        최종 건수만 제한한다.
+        """
+
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        params: dict[str, Any] = {"corp_code": corp_code, "page_count": min(limit, 100)}
         if start_date:
             params["bgn_de"] = start_date
         if end_date:
             params["end_de"] = end_date
         if disclosure_type:
             params["pblntf_ty"] = disclosure_type
-        return self._request("list.json", params)
+        pages: list[OpenDartJsonResponse] = []
+        received = 0
+        page_no = 1
+        while True:
+            response = self._request("list.json", {**params, "page_no": page_no})
+            items = response.payload.get("list", [])
+            if not isinstance(items, list):
+                raise OpenDartError("OpenDART disclosure list must be an array")
+            pages.append(response)
+            received += len(items)
+            try:
+                total_page = max(1, int(response.payload.get("total_page", 1)))
+            except (TypeError, ValueError) as exc:
+                raise OpenDartError("invalid OpenDART disclosure total_page") from exc
+            if received >= limit or page_no >= total_page or not items:
+                break
+            page_no += 1
+        return pages

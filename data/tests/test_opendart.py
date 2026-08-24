@@ -44,10 +44,10 @@ def test_missing_api_key_fails_without_http_request() -> None:
 
 class _Response:
     status_code = 200
-    content = b"content"
 
-    def __init__(self, payload: dict) -> None:
+    def __init__(self, payload: dict, content: bytes = b"original-json-bytes") -> None:
         self.payload = payload
+        self.content = content
 
     def raise_for_status(self) -> None:
         return None
@@ -60,18 +60,74 @@ class _Session:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
         self.params = None
+        self.calls = []
 
     def get(self, _url, *, params, timeout):
         self.params = params
+        self.calls.append(params)
         return _Response(self.payload)
 
 
 def test_client_includes_key_and_returns_validated_response() -> None:
-    session = _Session({"status": "000", "list": [{"corp_code": "00126380"}]})
+    session = _Session({"status": "000", "total_page": 1, "list": [{"corp_code": "00126380"}]})
     client = OpenDartClient("secret", session=session, min_interval_seconds=0)
-    payload = client.disclosures("00126380")
-    assert payload["list"][0]["corp_code"] == "00126380"
+    responses = client.disclosures("00126380")
+    assert responses[0].payload["list"][0]["corp_code"] == "00126380"
+    assert responses[0].content == b"original-json-bytes"
     assert session.params["crtfc_key"] == "secret"
+
+
+def test_disclosures_follow_page_no_until_total_page() -> None:
+    class SequenceSession:
+        def __init__(self) -> None:
+            self.page_numbers = []
+
+        def get(self, _url, *, params, timeout):
+            page_no = params["page_no"]
+            self.page_numbers.append(page_no)
+            return _Response({
+                "status": "000",
+                "total_page": 3,
+                "list": [{"rcept_no": f"page-{page_no}"}],
+            }, content=f"raw-page-{page_no}".encode())
+
+    session = SequenceSession()
+    client = OpenDartClient("secret", session=session, min_interval_seconds=0)
+    responses = client.disclosures("00126380", limit=100)
+    assert session.page_numbers == [1, 2, 3]
+    assert [response.content for response in responses] == [b"raw-page-1", b"raw-page-2", b"raw-page-3"]
+    assert [response.payload["list"][0]["rcept_no"] for response in responses] == ["page-1", "page-2", "page-3"]
+
+
+def test_disclosures_stop_after_requested_limit() -> None:
+    class SequenceSession:
+        def __init__(self) -> None:
+            self.page_numbers = []
+
+        def get(self, _url, *, params, timeout):
+            page_no = params["page_no"]
+            self.page_numbers.append(page_no)
+            return _Response({
+                "status": "000",
+                "total_page": 10,
+                "list": [{"rcept_no": f"{page_no}-1"}, {"rcept_no": f"{page_no}-2"}],
+            })
+
+    session = SequenceSession()
+    client = OpenDartClient("secret", session=session, min_interval_seconds=0)
+    responses = client.disclosures("00126380", limit=3)
+    assert session.page_numbers == [1, 2]
+    assert len(responses) == 2
+
+
+@pytest.mark.parametrize("status", ["020", "901"])
+def test_non_retryable_limit_and_account_status_fail_once(status: str) -> None:
+    session = _Session({"status": status, "message": "not retryable"})
+    client = OpenDartClient("secret", session=session, min_interval_seconds=0, max_attempts=3)
+    with pytest.raises(OpenDartApiError) as error:
+        client.company("00126380")
+    assert error.value.retryable is False
+    assert len(session.calls) == 1
 
 
 def test_client_raises_for_opendart_status_error() -> None:

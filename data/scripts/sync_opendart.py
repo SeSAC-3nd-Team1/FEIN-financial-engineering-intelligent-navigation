@@ -92,11 +92,14 @@ def main(argv: list[str] | None = None) -> int:
         failures = 0
         for corp_code, stock_code in targets:
             try:
-                payload = client.company(corp_code)
+                response = client.company(corp_code)
                 if raw:
-                    raw.upload_json(dataset="company", payload=payload, partition_date=today, stock_code=stock_code)
+                    raw.upload_bytes(
+                        dataset="company", content=response.content, partition_date=today,
+                        stock_code=stock_code, extension="json", content_type="application/json",
+                    )
                 with session_scope() as session:
-                    affected += OpenDartRepository(session).upsert_companies([company_row(payload)])
+                    affected += OpenDartRepository(session).upsert_companies([company_row(response.payload)])
             except Exception as exc:
                 # 한 기업의 provider/DB/Blob 실패가 나머지 상장사 수집을 막지 않게 격리한다.
                 failures += 1
@@ -110,16 +113,22 @@ def main(argv: list[str] | None = None) -> int:
         corp_code = company.corp_code
 
     if args.command == "company":
-        payload = client.company(corp_code)
+        response = client.company(corp_code)
         if raw:
-            raw.upload_json(dataset="company", payload=payload, partition_date=today, stock_code=stock_code)
+            raw.upload_bytes(
+                dataset="company", content=response.content, partition_date=today,
+                stock_code=stock_code, extension="json", content_type="application/json",
+            )
         with session_scope() as session:
-            affected = OpenDartRepository(session).upsert_companies([company_row(payload)])
+            affected = OpenDartRepository(session).upsert_companies([company_row(response.payload)])
     elif args.command == "financials":
-        payload = client.financials(corp_code, args.year, args.report_code, args.fs_div)
+        response = client.financials(corp_code, args.year, args.report_code, args.fs_div)
         if raw:
-            raw.upload_json(dataset="financial", payload=payload, partition_date=today, stock_code=stock_code)
-        rows = financial_account_rows(payload, stock_code=stock_code)
+            raw.upload_bytes(
+                dataset="financial", content=response.content, partition_date=today,
+                stock_code=stock_code, extension="json", content_type="application/json",
+            )
+        rows = financial_account_rows(response.payload, stock_code=stock_code)
         summary = financial_summary_row(rows)
         with session_scope() as session:
             repository = OpenDartRepository(session)
@@ -127,16 +136,21 @@ def main(argv: list[str] | None = None) -> int:
             if summary:
                 repository.upsert_financials([summary])
     else:
-        payload = client.disclosures(
+        responses = client.disclosures(
             corp_code,
             start_date=args.start_date,
             end_date=args.end_date,
             disclosure_type=args.type,
-            page_count=args.limit,
+            limit=args.limit,
         )
         if raw:
-            raw.upload_json(dataset="disclosure", payload=payload, partition_date=today, stock_code=stock_code)
-        rows = disclosure_rows(payload, stock_code=stock_code)
+            for response in responses:
+                raw.upload_bytes(
+                    dataset="disclosure", content=response.content, partition_date=today,
+                    stock_code=stock_code, extension="json", content_type="application/json",
+                )
+        items = [item for response in responses for item in response.payload.get("list", [])][:args.limit]
+        rows = disclosure_rows({"list": items}, stock_code=stock_code)
         with session_scope() as session:
             affected = OpenDartRepository(session).upsert_disclosures(rows)
     print(f"{args.command} complete: stock_code={stock_code} upserted={affected}")

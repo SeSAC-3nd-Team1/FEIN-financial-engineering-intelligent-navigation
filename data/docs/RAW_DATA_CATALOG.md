@@ -203,6 +203,8 @@ Blob을 재사용한다.
 | `financial` | `fnlttSinglAcntAll.json` | JSON | `opendart/financial/{stock_code}/YYYY/MM/DD/{sha256}.json` | 연도·보고서·계정 ID |
 | `disclosure` | `list.json` | JSON | `opendart/disclosure/{stock_code}/YYYY/MM/DD/{sha256}.json` | `rcept_no` |
 
-Raw는 API 응답의 status/message/list를 유지한다. 분석용 숫자 변환, 계정 alias, 날짜 변환은
-PostgreSQL 정제 적재 단계에서만 수행한다. 인증은 `DefaultAzureCredential`을 사용하며 실제
+JSON Raw는 `response.json()`을 다시 직렬화하지 않고 HTTP `response.content` bytes를 그대로
+hash·업로드한다. 공시 pagination의 각 페이지도 별도 Raw object로 보존한다. 분석용 숫자
+변환, 계정 alias, 날짜 변환은 PostgreSQL 정제 적재 단계에서만 수행한다. 인증은
+`DefaultAzureCredential`을 사용하며 실제
 Azure Shared Key를 코드나 문서에 넣지 않는다.
