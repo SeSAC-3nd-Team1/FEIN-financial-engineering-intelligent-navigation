@@ -13,7 +13,7 @@ from sqlalchemy import delete, select
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import CashLedger, Execution, Order, Position, Term, User, UserAgreement, VirtualAccount
+from app.models import CashLedger, Execution, InvestmentOnboarding, Order, Position, Term, User, UserAgreement, VirtualAccount
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_INTEGRATION") != "1", reason="RUN_INTEGRATION=1 required")
 
@@ -23,6 +23,7 @@ def _cleanup_test_user(user_id: str, cache: redis.Redis, stock_code: str) -> Non
     with SessionLocal() as session:
         user = session.scalar(select(User).where(User.user_id == user_id))
         if user:
+            session.execute(delete(InvestmentOnboarding).where(InvestmentOnboarding.user_id == user.id))
             account_ids = list(session.scalars(select(VirtualAccount.id).where(VirtualAccount.user_id == user.id)))
             if account_ids:
                 session.execute(delete(Execution).where(Execution.account_id.in_(account_ids)))
@@ -141,15 +142,65 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             assert me.status_code == 200, me.text
             assert me.json()["user_id"] == user_id
 
-            created = client.post("/api/v1/accounts", headers=headers, json={"account_name": "통합테스트 계좌"})
-            assert created.status_code == 201, created.text
-            account_id = created.json()["id"]
-            strategy = client.put(
-                f"/api/v1/accounts/{account_id}/strategy",
+            onboarding = client.post(
+                "/api/v1/investment/onboardings",
                 headers=headers,
-                json={"strategy_id": "low"},
+                json={
+                    "strategy_id": "low",
+                    "investment_amount": 1_000_000,
+                    "operation_mode": "AUTO",
+                },
             )
-            assert strategy.status_code == 200
+            assert onboarding.status_code == 200, onboarding.text
+            onboarding_id = onboarding.json()["id"]
+            investment_terms = client.get(
+                "/api/v1/investment/terms?strategy_id=low",
+                headers=headers,
+            )
+            assert investment_terms.status_code == 200, investment_terms.text
+            investment_agreements = [
+                {
+                    "term_code": term["term_code"],
+                    "version": term["version"],
+                    "agreed": True,
+                }
+                for term in investment_terms.json()
+            ]
+            agreed = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/agreements",
+                headers=headers,
+                json={"agreements": investment_agreements},
+            )
+            assert agreed.status_code == 200, agreed.text
+            assert agreed.json()["next_step"] == "ACCOUNT"
+            prepared = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/account",
+                headers=headers,
+                json={"account_name": "통합테스트 계좌"},
+            )
+            assert prepared.status_code == 200, prepared.text
+            assert prepared.json()["created"] is True
+            account_id = prepared.json()["account"]["id"]
+            completed = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/complete",
+                headers=headers,
+            )
+            assert completed.status_code == 200, completed.text
+            assert completed.json()["next_step"] == "PORTFOLIO"
+            repeated_prepare = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/account",
+                headers=headers,
+                json={"account_name": "무시되는 계좌명"},
+            )
+            assert repeated_prepare.status_code == 200, repeated_prepare.text
+            assert repeated_prepare.json()["created"] is False
+            assert repeated_prepare.json()["onboarding"]["next_step"] == "PORTFOLIO"
+            repeated_complete = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/complete",
+                headers=headers,
+            )
+            assert repeated_complete.status_code == 200, repeated_complete.text
+            assert repeated_complete.json()["completed_at"] == completed.json()["completed_at"]
 
             buy_payload = {
                 "account_id": account_id,
