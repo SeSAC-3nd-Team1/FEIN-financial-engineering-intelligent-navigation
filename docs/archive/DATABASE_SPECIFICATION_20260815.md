@@ -495,11 +495,12 @@ Legacy table과 Blob raw record에 존재할 수 있는 현재 52개 operation�
 
 ## 11. 재현 가능한 확인 명령
 
+이 문서 작성 당시에는 `.env.azure`를 사용했지만 현재는 폐기되었다. 실제 Secret은 루트 `.env` 하나로 관리하며 Docker Compose가 자동으로 읽는다.
+
 ```bash
-docker compose --env-file .env.azure run --rm --no-deps data alembic current
-docker compose --env-file .env.azure run --rm --no-deps data alembic check
-docker compose --env-file .env.azure run --rm --no-deps data \
-  python scripts/db_inventory.py --exact
+docker compose --profile data run --rm --no-deps data alembic current
+docker compose --profile data run --rm --no-deps data alembic check
+docker compose --profile data run --rm --no-deps data python scripts/db_inventory.py --exact
 ```
 
 정확한 대형 table 행 수 집계는 full scan이 발생할 수 있으므로 운영 중 반복 실행하지 않는다.

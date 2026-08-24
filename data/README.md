@@ -87,6 +87,8 @@ raw/
 
 Raw 수집 예시:
 
+로컬 수집은 저장소 루트 `.env`의 `DATA_GO_KR_API_KEY`를 사용한다. 별도 `.env.azure` 파일이나 `--env-file` 옵션은 사용하지 않는다.
+
 ```bash
 docker compose --profile data run --rm --no-deps data python -m scripts.collect_public_data --dataset stock_price --date 2026-08-16 --all-pages --rows 10000
 ```

@@ -10,6 +10,7 @@ Azure Blob Storage의 Raw / Processed / Features 데이터와 Redis는 별도 �
 - `DATABASE_URL`은 필수다. 없거나 빈 값이면 Docker Compose가 즉시 실패한다.
 - 로컬 PostgreSQL fallback은 제공하지 않는다.
 - 실제 Azure Connection String은 `.env` 또는 배포 Secret에만 둔다.
+- 로컬 환경 변수는 저장소 루트 `.env` 하나로 관리하며 `.env.azure`은 사용하지 않는다.
 - 비밀번호의 `@`, `:`, `/`, `%`, `#`, `?` 같은 문자는 percent-encoding해야 한다.
 - URL 자체를 채팅, Issue, PR, 로그에 붙이지 않는다.
 - 일반 개발과 발표/시연은 같은 프로젝트 DB를 사용한다.
@@ -32,7 +33,7 @@ cp .env.example .env
 DATABASE_URL=postgresql://<USER>:<PASSWORD>@<HOST>:5432/<DATABASE>?sslmode=require
 ```
 
-실제 값은 Git에 커밋하지 않는다. `DATABASE_URL`이 비어 있으면 `docker compose`는 실행되지 않는다.
+실제 값은 Git에 커밋하지 않는다. `DATABASE_URL`이 비어 있으면 `docker compose`는 실행되지 않는다. 기존 `.env.azure`에 값이 남아 있다면 `.env`로 옮긴 뒤 중복 파일을 삭제한다. Docker Compose는 별도 `--env-file` 옵션 없이 루트 `.env`를 자동으로 읽는다.
 
 ## 기본 실행
 
