@@ -5,6 +5,12 @@ on:
   schedule:
     # 매일 10:00 KST에 실제 Blob/PostgreSQL 상태를 점검한다.
     - cron: "0 1 * * *"
+  push:
+    branches:
+      - develop
+    paths:
+      - data/scripts/audit_live_stores.py
+      - .github/workflows/azure-live-storage-audit.yml
 
 permissions:
   id-token: write
