@@ -2,19 +2,16 @@ name: Azure Live Storage Audit
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feat/azure-storage-live-audit
-    paths:
-      - data/scripts/audit_live_stores.py
-      - .github/workflows/azure-live-storage-audit.yml
+  schedule:
+    # 매일 10:00 KST에 실제 Blob/PostgreSQL 상태를 점검한다.
+    - cron: "0 1 * * *"
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: azure-live-storage-audit-${{ github.ref }}
+  group: azure-live-storage-audit
   cancel-in-progress: true
 
 jobs:
