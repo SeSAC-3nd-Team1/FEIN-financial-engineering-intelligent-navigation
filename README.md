@@ -90,7 +90,13 @@ docker compose --profile migration run --rm --no-deps db-init
 docker compose exec -T backend env RUN_INTEGRATION=1 pytest -q tests/test_integration_flow.py
 ```
 
-E2E는 `GET /auth/terms`부터 회원가입 동의 저장, AUTO/SEMI_AUTO별 계좌, 부족분 가상 입금과 멱등 재시도, 전략·매수·포트폴리오·매도·원장 정합성까지 확인합니다. 생성한 사용자와 가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 공용 개발 데이터 전체를 삭제하지 않습니다. 전체 schema drop/recreate, 전체 truncate, migration rollback 같은 파괴적 테스트는 별도 임시 PostgreSQL에서만 수행합니다.
+E2E는 `GET /auth/terms`부터 회원가입 동의 저장, AUTO/SEMI_AUTO별 계좌, 부족분 가상 입금과
+멱등 재시도, 전략·매수·매도·원장 정합성까지 확인합니다. 체결 이후에는 포트폴리오 홈의
+평가·자산 배분·기간별 snapshot 추이, 거래내역 cursor 페이지 이동과 잘못된 cursor, 다른
+사용자의 계좌 접근 차단도 실제 PostgreSQL/Redis 데이터로 검증합니다. 생성한 사용자와
+가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 공용 개발 데이터
+전체를 삭제하지 않습니다. 전체 schema drop/recreate, 전체 truncate, migration rollback 같은
+파괴적 테스트는 별도 임시 PostgreSQL에서만 수행합니다.
 
 기존 Frontend Mock의 20개 종목·비중을 특정 개발용 가상계좌에 PostgreSQL 최신 KRX 종가
 기준의 실제 가상 주문으로 한 번만
