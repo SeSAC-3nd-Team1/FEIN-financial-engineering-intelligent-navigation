@@ -12,6 +12,13 @@ export interface Strategy {
   why: string;
 }
 
+/** Strategy List 카드용 최소 요약 — 백테스트/위험도 등 상세 지표는 의도적으로 제외한다(모델 확정 전) */
+export interface StrategySummary {
+  id: Strategy['id'];
+  name: string;
+  shortDescription: string;
+}
+
 export const STRATEGIES: Strategy[] = [
   {
     id: 'low', name: '저변동성 전략', tagline: '큰 손실은 줄이고, 꾸준히 투자하고 싶다면',
@@ -32,3 +39,8 @@ export const STRATEGIES: Strategy[] = [
     why: '최근 오르고 있는 종목을 따라 담아요. 수익 기회가 크지만 방향이 바뀔 때 손실도 함께 커져요.',
   },
 ];
+
+/** Strategy List 페이지용 — STRATEGIES에서 카드에 필요한 필드만 뽑아 쓴다(단일 소스 유지) */
+export const STRATEGY_SUMMARIES: StrategySummary[] = STRATEGIES.map(({ id, name, tagline }) => ({
+  id, name, shortDescription: tagline,
+}));

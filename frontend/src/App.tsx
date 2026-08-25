@@ -18,6 +18,7 @@ import SignupStep3 from './pages/SignupStep3';
 import StartInvesting from './pages/StartInvesting';
 import StockDetail from './pages/StockDetail';
 import StrategyDetail from './pages/StrategyDetail';
+import StrategyList from './pages/StrategyList';
 import { STRATEGIES } from './data/strategies';
 import type { OperationMode } from './data/fees';
 import { signupTermsApi } from './lib/backendApi';
@@ -319,6 +320,13 @@ export default function App() {
         />
       )}
 
+      {screen === 'strategy-list' && (
+        <StrategyList
+          userName={userName}
+          onNavigate={navigate}
+          onSelectStrategy={(id) => { setStrategyId(id); setScreen('strategy'); }}
+        />
+      )}
       {screen === 'strategy' && (
         <StrategyDetail
           strategyId={strategyId}
