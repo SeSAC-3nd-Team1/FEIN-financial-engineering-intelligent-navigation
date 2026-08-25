@@ -46,6 +46,11 @@ def upgrade() -> None:
                    onboarding.updated_at,
                    onboarding.created_at
             FROM investment_onboardings AS onboarding
+            JOIN virtual_accounts AS account
+              ON account.id = onboarding.account_id
+             AND account.user_id = onboarding.user_id
+             AND account.operation_mode = onboarding.operation_mode
+             AND account.status = 'ACTIVE'
             WHERE onboarding.status = 'COMPLETED'
             ORDER BY onboarding.user_id,
                      onboarding.completed_at DESC NULLS LAST,

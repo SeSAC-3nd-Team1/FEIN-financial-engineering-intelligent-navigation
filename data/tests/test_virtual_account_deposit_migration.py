@@ -1,8 +1,9 @@
-"""운용방식별 가상계좌 migration의 PostgreSQL downgrade 경계를 검증한다."""
+"""운용방식별 가상계좌 migration의 PostgreSQL 경계를 검증한다."""
 
 import os
 import re
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -21,7 +22,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 DATA_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "20260825_0020"
+HEAD_REVISION = "20260825_0021"
+ACTIVE_OPERATION_MODE_PREVIOUS_REVISION = "20260825_0020"
 PREVIOUS_REVISION = "20260825_0019"
 
 
@@ -82,6 +84,7 @@ def _insert_account(
     operation_mode: str,
     *,
     initial_cash: int = 100,
+    status: str = "ACTIVE",
 ) -> UUID:
     account_id = uuid4()
     with engine.begin() as connection:
@@ -94,7 +97,7 @@ def _insert_account(
                 )
                 VALUES (
                     :id, :user_id, :operation_mode, :account_name,
-                    :initial_cash, :initial_cash, 'ACTIVE'
+                    :initial_cash, :initial_cash, :status
                 )
                 """
             ),
@@ -104,6 +107,7 @@ def _insert_account(
                 "operation_mode": operation_mode,
                 "account_name": f"{operation_mode} 테스트 계좌",
                 "initial_cash": initial_cash,
+                "status": status,
             },
         )
     return account_id
@@ -115,6 +119,8 @@ def _insert_onboarding(
     operation_mode: str,
     *,
     account_id: UUID | None = None,
+    status: str | None = None,
+    completed_at: datetime | None = None,
 ) -> UUID:
     onboarding_id = uuid4()
     with engine.begin() as connection:
@@ -123,11 +129,11 @@ def _insert_onboarding(
                 """
                 INSERT INTO investment_onboardings (
                     id, user_id, strategy_id, investment_amount,
-                    operation_mode, status, account_id
+                    operation_mode, status, account_id, completed_at
                 )
                 VALUES (
                     :id, :user_id, 'low', 100, :operation_mode,
-                    :status, :account_id
+                    :status, :account_id, :completed_at
                 )
                 """
             ),
@@ -135,8 +141,9 @@ def _insert_onboarding(
                 "id": onboarding_id,
                 "user_id": user_id,
                 "operation_mode": operation_mode,
-                "status": "READY" if account_id else "ACCOUNT_PENDING",
+                "status": status or ("READY" if account_id else "ACCOUNT_PENDING"),
                 "account_id": account_id,
+                "completed_at": completed_at,
             },
         )
     return onboarding_id
@@ -265,6 +272,43 @@ def test_empty_feature_state_can_downgrade_and_upgrade(
         command.upgrade(config, HEAD_REVISION)
 
     assert _current_revision(engine) == HEAD_REVISION
+
+
+def test_active_mode_backfill_ignores_completed_onboarding_for_suspended_account(
+    migration_database: tuple[Config, Engine],
+) -> None:
+    config, engine = migration_database
+    command.downgrade(config, ACTIVE_OPERATION_MODE_PREVIOUS_REVISION)
+    user_id, login_id = _insert_user(engine)
+    _insert_account(engine, user_id, "AUTO")
+    suspended_account_id = _insert_account(
+        engine,
+        user_id,
+        "SEMI_AUTO",
+        status="SUSPENDED",
+    )
+    _insert_onboarding(
+        engine,
+        user_id,
+        "SEMI_AUTO",
+        account_id=suspended_account_id,
+        status="COMPLETED",
+        completed_at=datetime(2026, 8, 25, tzinfo=UTC),
+    )
+
+    try:
+        command.upgrade(config, HEAD_REVISION)
+        with engine.connect() as connection:
+            active_operation_mode = connection.scalar(
+                text("SELECT active_operation_mode FROM users WHERE id = :user_id"),
+                {"user_id": user_id},
+            )
+
+        # SUSPENDED 계좌의 완료 이력은 제외되고, 유일한 ACTIVE 계좌로 복원되어야 한다.
+        assert active_operation_mode == "AUTO"
+    finally:
+        command.upgrade(config, HEAD_REVISION)
+        _delete_test_user(engine, login_id)
 
 
 @pytest.mark.parametrize(
