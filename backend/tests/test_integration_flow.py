@@ -433,6 +433,11 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
                 "0.00",
                 "2.00",
             ]
+            # CI에는 아직 리밸런싱 모델 deployment를 연결하지 않는다. 홈의 나머지 데이터는
+            # 정상 제공하고 AI 영역만 명시적인 부분 실패로 내려가야 한다.
+            assert home_payload["rebalancing_insight"]["status"] == "UNAVAILABLE"
+            assert home_payload["rebalancing_insight"]["model_version"] is None
+            assert home_payload["rebalancing_proposals"] == []
 
             first_transactions = client.get(
                 "/api/v1/portfolio/transactions",
