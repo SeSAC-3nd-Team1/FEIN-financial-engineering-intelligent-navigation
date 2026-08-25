@@ -438,6 +438,17 @@ class RebalancingProposalResponse(BaseModel):
     weight_diff: Decimal
     action: Literal["BUY", "SELL"]
     recommended_amount: Decimal
+    priority: int | None = Field(default=None, ge=1, le=5)
+    reason: str | None = Field(default=None, max_length=500)
+    why_now: str | None = Field(default=None, max_length=500)
+    source: Literal["RULE", "AI"] = "RULE"
+
+
+class RebalancingInsightResponse(BaseModel):
+    status: Literal["AVAILABLE", "NOT_NEEDED", "UNAVAILABLE"]
+    summary: str | None
+    model_version: str | None
+    generated_at: datetime | None
 
 
 class PortfolioResponse(BaseModel):
@@ -507,6 +518,7 @@ class PortfolioHomeResponse(BaseModel):
     positions: list[PositionResponse]
     contributions: list[PortfolioContributionResponse]
     strategy_targets_available: bool
+    rebalancing_insight: RebalancingInsightResponse
     rebalancing_proposals: list[RebalancingProposalResponse]
     valuation_as_of: datetime | None
     price_sources: list[str]
