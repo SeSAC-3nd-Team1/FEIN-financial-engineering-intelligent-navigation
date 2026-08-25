@@ -42,7 +42,12 @@ interface PersistedOnboarding {
   /** 상품설명서·필수 약관 동의를 완료한 전략 id 목록 — 전략마다 상품설명서가 달라 전략 단위로 저장 */
   termsAcceptedStrategyIds: string[];
   accountsByMode: AccountsByMode;
-  /** "나중에 입금할게요"로 대기 중인 투자 — null이면 대기 중인 입금 없음 */
+  /**
+   * DEPOSIT_PENDING(계좌 준비는 끝났지만 아직 투자가 시작되지 않은) 상태의 투자 — null이면 해당 없음.
+   * "나중에 입금할게요" 버튼뿐 아니라, 계좌 준비가 끝나 invest-deposit/invest-confirm 단계에 들어서는
+   * 순간부터 자동으로 세팅된다(App.tsx의 enterInvestmentStep 참고). 실제 투자가 시작(최종 확인 성공)
+   * 되기 전까지는 입금 여부와 무관하게 유지되고, clearPendingInvestment는 그 성공 시점에만 호출한다.
+   */
   pendingInvestment: PendingInvestment | null;
   inFlight: InFlightInvestment | null;
   /**
@@ -106,7 +111,10 @@ interface InvestmentOnboardingState extends PersistedOnboarding {
   connectSesacAccount: (mode: OperationMode, account: SesacAccount) => void;
   /** 특정 운용방식 계좌에 입금 — 잔액에 반영하고, 대기 중이던 투자가 있었다면 해소 */
   deposit: (mode: OperationMode, amount: number) => void;
-  /** "나중에 입금할게요" — 재로그인 시 입금 요청 화면으로 복귀시키기 위해 저장 */
+  /**
+   * DEPOSIT_PENDING 상태를 기록 — 재로그인/Portfolio 진입 시 입금 요청 화면으로 복귀시키기 위해 저장.
+   * "나중에 입금할게요" 버튼 클릭 시뿐 아니라 계좌 준비 완료 시점에도 App.tsx에서 호출된다.
+   */
   deferDeposit: (investment: PendingInvestment) => void;
   clearPendingInvestment: () => void;
   /** invest-terms~invest-confirm 중 한 화면에 진입/이동할 때마다 호출 — 새로고침 복원용 */
@@ -157,12 +165,13 @@ export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) =
     },
 
     deposit: (mode, amount) => {
+      // 입금은 DEPOSIT_PENDING을 해소하지 않는다 — 최종 확인(투자 시작)까지 남아있어야 이 사이에
+      // 이탈해도 입금 단계부터 이어갈 수 있다. clearPendingInvestment는 투자 시작 성공 시에만 호출한다.
       set((s) => {
         const account = s.accountsByMode[mode];
         if (!account) return s;
         return { accountsByMode: { ...s.accountsByMode, [mode]: { ...account, balance: account.balance + amount } } };
       });
-      set({ pendingInvestment: null });
       persistCurrent();
     },
 

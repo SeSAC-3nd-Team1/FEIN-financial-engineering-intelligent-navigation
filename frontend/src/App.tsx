@@ -88,6 +88,7 @@ export default function App() {
   const connectSesacAccount = useInvestmentStore((s) => s.connectSesacAccount);
   const deposit = useInvestmentStore((s) => s.deposit);
   const deferDeposit = useInvestmentStore((s) => s.deferDeposit);
+  const clearPendingInvestment = useInvestmentStore((s) => s.clearPendingInvestment);
   const hydrateForUser = useInvestmentStore((s) => s.hydrateForUser);
   const setInFlightStep = useInvestmentStore((s) => s.setInFlightStep);
   const clearInFlight = useInvestmentStore((s) => s.clearInFlight);
@@ -97,12 +98,21 @@ export default function App() {
    * invest-terms~invest-confirm 중 한 화면으로 이동할 때 항상 이 함수를 거친다.
    * strategyId/금액/운용방식을 항상 함께 동기화해서 화면에 보이는 값과 새로고침 복원용
    * inFlight 기록이 어긋나지 않게 한다(호출부마다 따로 setStrategyId 등을 챙길 필요 없음).
+   *
+   * step이 invest-deposit/invest-confirm이면 — 즉 계좌 준비가 끝나 남은 건 입금·최종 확인뿐이면 —
+   * pendingInvestment를 함께 기록한다. "나중에 입금할게요" 버튼을 눌렀는지와 무관하게, 계좌 준비가
+   * 끝난 시점부터 DEPOSIT_PENDING으로 간주해야 Home/다른 메뉴로 이탈하거나 로그아웃해도 다시
+   * 돌아왔을 때 입금 단계부터 이어갈 수 있다. 실제 투자 시작(InvestConfirm 성공) 시에만 clear한다.
    */
   const enterInvestmentStep = (step: InvestmentEntryStep, ctxStrategyId: string, ctxAmount: number, ctxMode: OperationMode) => {
     setStrategyId(ctxStrategyId);
     setInvestmentAmount(ctxAmount);
     setInvestmentMode(ctxMode);
     setInFlightStep({ step, strategyId: ctxStrategyId, amount: ctxAmount, mode: ctxMode });
+    if (step === 'invest-deposit' || step === 'invest-confirm') {
+      const ctxStrategyName = STRATEGIES.find((s) => s.id === ctxStrategyId)?.name ?? ctxStrategyId;
+      deferDeposit({ strategyId: ctxStrategyId, strategyName: ctxStrategyName, amount: ctxAmount, mode: ctxMode });
+    }
     setScreen(step);
   };
 
@@ -134,9 +144,10 @@ export default function App() {
 
   /**
    * Header "나의 포트폴리오"/로그인 성공 등 Portfolio로 향하는 모든 경로가 거치는 관문.
-   * DEPOSIT_PENDING(계좌는 연결됐지만 입금이 남은) 상태라면 Portfolio 대신 입금 요청 화면으로 보낸다.
-   * 투자 Flow 화면에서 그 밖의 목적지(정보/전략 둘러보기 등)로 명시적으로 이동할 때는
-   * inFlight(새로고침 복원용 진행 상태)를 정리한다 — "나중에 입금할게요"의 pendingInvestment는 별개로 유지된다.
+   * DEPOSIT_PENDING(계좌는 연결됐지만 아직 투자가 시작되지 않은) 상태라면 Portfolio 대신 입금 요청
+   * 화면으로 보낸다. 투자 Flow 화면에서 그 밖의 목적지(인사이트/투자전략 등)로 명시적으로 이동할 때는
+   * inFlight(새로고침 복원용 진행 상태)만 정리한다 — pendingInvestment는 실제 투자가 시작되기 전까지
+   * 별도로 유지된다(enterInvestmentStep 참고).
    *
    * 로그인 직후에는 Login.tsx가 login() 완료와 동시에 이 함수를 동기적으로 호출하는데, 이 시점엔
    * "사용자별 hydrate" useEffect가 아직 커밋되지 않았을 수 있다(리액트 이펙트는 렌더 이후 실행).
@@ -420,6 +431,8 @@ export default function App() {
             }
             await ensureAccount(accessToken, strategyId);
             setActiveMode(investmentMode);
+            // 실제 투자가 시작된 시점 — 여기서만 DEPOSIT_PENDING을 해소한다
+            clearPendingInvestment();
             clearInFlight();
             setScreen('portfolio');
           }}
