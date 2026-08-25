@@ -48,6 +48,10 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 
 공통 시간은 `timestamptz`, DB server `now()`를 사용한다. `users`, `terms`, `user_agreements`, 가입 임시 관계는 기존 `20260816_0011`을 보존한다.
 
+`20260825_0020`의 운용방식별 복수 계좌, 0원 준비 계좌 또는 입금 이력이 생성된 뒤에는
+`20260825_0019`가 해당 상태를 표현할 수 없으므로 자동 downgrade를 차단한다. 운영 rollback이
+필요하면 백업 후 보존 계좌와 원장 변환 규칙을 명시한 별도 데이터 migration을 먼저 적용한다.
+
 ## Transaction 경계
 
 시장가 체결 시 `virtual_accounts` 행을 `SELECT ... FOR UPDATE`로 잠그고 한 transaction에서 `orders → executions → positions → virtual_accounts.cash_balance → cash_ledger`를 처리한다. 원화 반올림 주문금액이 1원 미만이면 어떤 거래 행도 만들지 않고 거부하며, 하나라도 실패하면 rollback한다. `cash_balance`는 조회 snapshot, `cash_ledger`는 append-only 감사 이력이다.
