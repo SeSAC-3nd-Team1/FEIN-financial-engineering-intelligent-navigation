@@ -39,6 +39,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 시장가 주문 | POST | `/orders` | 필요/소유권 | 201, 404, 409, 503 | 전략 기반 자동 운용 계층/Model signal 전용 |
 | 주문 목록 | GET | `/orders?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
+| 포트폴리오 거래내역 | GET | `/portfolio/transactions?account_id=&limit=&cursor=` | 필요/소유권 | 200, 404, 422 | 종목명·거래금액 포함 최신순 cursor pagination |
 | 포트폴리오 홈 통합 조회 | GET | `/portfolio/home?account_id=&period=&sort=&order=` | 필요/소유권 | 200, 404, 422, 503 | 계좌·평가·추이·배분·정렬된 보유종목 통합 |
 | 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | 실제 metadata·당일 기여·목표비중 제안 포함 |
 | 포트폴리오 이력 | GET | `/portfolio/history?account_id=&period=` | 필요/소유권 | 200, 404 | 실제 snapshot 수익률과 KOSPI 비교 |
@@ -192,6 +193,39 @@ snapshot 이력을 조합하는 읽기 전용 API이며 거래나 snapshot을 �
 }
 ```
 
+### GET `/portfolio/transactions?account_id=...&limit=20&cursor=...`
+
+실제 체결된 거래를 `executed_at DESC, id DESC` 순서로 반환한다. `limit` 기본값은 20이고
+1~100을 허용한다. 홈의 최근 거래 2~3건은 같은 API에 `limit=3`을 사용한다. 다음 페이지가
+있으면 마지막 반환 항목의 체결시각과 실행 ID를 담은 opaque `next_cursor`를 반환하며, 클라이언트는
+값을 해석하거나 변경하지 않고 다음 요청의 `cursor`로 전달한다.
+
+종목명은 KRX `market_stocks`를 LEFT JOIN하므로 metadata가 없으면 `null`이다. 거래금액은 실제
+체결 수량과 체결가의 곱을 원 단위 소수점 둘째 자리로 반올림한 값이다. 소유하지 않은 계좌는
+`404 ACCOUNT_NOT_FOUND`, 손상되거나 지원하지 않는 cursor는
+`422 INVALID_TRANSACTION_CURSOR`를 반환한다.
+
+```json
+{
+  "account_id": "92be9e3e-4364-4428-86c4-b730cc841847",
+  "items": [
+    {
+      "id": 42,
+      "order_id": "82b2e790-79ee-4d7f-b94f-f37a7a99a7e6",
+      "stock_code": "005930",
+      "stock_name": "삼성전자",
+      "side": "BUY",
+      "quantity": "1.25000000",
+      "execution_price": "70000.0000",
+      "transaction_amount": "87500.00",
+      "executed_at": "2026-08-25T10:30:00+09:00"
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false
+}
+```
+
 ### GET `/portfolio?account_id=...`
 
 ```json
@@ -333,7 +367,7 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 
 ## 주요 error code
 
-`COMPANY_NOT_FOUND`, `CHART_DATA_UNAVAILABLE`, `AI_PERSONALIZATION_CONSENT_REQUIRED`, `AI_NOT_CONFIGURED`, `AI_ANALYSIS_UNAVAILABLE`, `AI_ANALYSIS_TIMEOUT`, `AI_INVALID_RESPONSE`, `AI_RECOMMENDATION_NOT_CONFIGURED`, `AI_RECOMMENDATION_UNAVAILABLE`, `AI_RECOMMENDATION_TIMEOUT`, `AI_INVALID_RECOMMENDATION`, `INVESTOR_PROFILE_NOT_FOUND`, `STRATEGY_RECOMMENDATION_NOT_FOUND`, `STRATEGY_CATALOG_UNAVAILABLE`, `INVALID_QUESTIONNAIRE_VERSION`, `INVALID_INVESTOR_ANSWERS`, `NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `ORDER_AMOUNT_TOO_SMALL`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
+`COMPANY_NOT_FOUND`, `CHART_DATA_UNAVAILABLE`, `AI_PERSONALIZATION_CONSENT_REQUIRED`, `AI_NOT_CONFIGURED`, `AI_ANALYSIS_UNAVAILABLE`, `AI_ANALYSIS_TIMEOUT`, `AI_INVALID_RESPONSE`, `AI_RECOMMENDATION_NOT_CONFIGURED`, `AI_RECOMMENDATION_UNAVAILABLE`, `AI_RECOMMENDATION_TIMEOUT`, `AI_INVALID_RECOMMENDATION`, `INVESTOR_PROFILE_NOT_FOUND`, `STRATEGY_RECOMMENDATION_NOT_FOUND`, `STRATEGY_CATALOG_UNAVAILABLE`, `INVALID_QUESTIONNAIRE_VERSION`, `INVALID_INVESTOR_ANSWERS`, `NAVER_NEWS_NOT_CONFIGURED`, `NAVER_NEWS_UNAVAILABLE`, `NAVER_NEWS_RATE_LIMIT`, `TERMS_CATALOG_UNAVAILABLE`, `REQUIRED_TERMS_NOT_AGREED`, `INVALID_TERM_VERSION`, `VERIFICATION_REQUIRED`, `DUPLICATE_ACCOUNT`, `AUTHENTICATION_REQUIRED`, `INVALID_TOKEN`, `INVALID_CREDENTIALS`, `ACCOUNT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_ALREADY_EXISTS`, `STRATEGY_NOT_FOUND`, `STOCK_NOT_FOUND`, `ORDER_AMOUNT_TOO_SMALL`, `INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`, `IDEMPOTENCY_CONFLICT`, `INVALID_TRANSACTION_CURSOR`, `KIS_NOT_CONFIGURED`, `KIS_RATE_LIMIT`, `KIS_UNAVAILABLE`, `DEPENDENCY_UNAVAILABLE`.
 
 ## KIS 현재가와 가상거래 경계
 

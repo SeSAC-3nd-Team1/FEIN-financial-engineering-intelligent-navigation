@@ -266,6 +266,25 @@ class ExecutionResponse(BaseModel):
     executed_at: datetime
 
 
+class PortfolioTransactionResponse(BaseModel):
+    id: int
+    order_id: UUID
+    stock_code: str
+    stock_name: str | None
+    side: Literal["BUY", "SELL"]
+    quantity: Decimal
+    execution_price: Decimal
+    transaction_amount: Decimal
+    executed_at: datetime
+
+
+class PortfolioTransactionListResponse(BaseModel):
+    account_id: UUID
+    items: list[PortfolioTransactionResponse]
+    next_cursor: str | None
+    has_more: bool
+
+
 class PriceResponse(BaseModel):
     stock_code: str
     price: Decimal
