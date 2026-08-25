@@ -50,8 +50,8 @@ def upgrade() -> None:
               ON account.id = onboarding.account_id
              AND account.user_id = onboarding.user_id
              AND account.operation_mode = onboarding.operation_mode
-             AND account.status = 'ACTIVE'
             WHERE onboarding.status = 'COMPLETED'
+              AND account.status = 'ACTIVE'
             ORDER BY onboarding.user_id,
                      onboarding.completed_at DESC NULLS LAST,
                      onboarding.updated_at DESC,
