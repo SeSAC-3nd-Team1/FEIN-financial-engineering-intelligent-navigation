@@ -260,6 +260,9 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             )
             assert repeated_complete.status_code == 200, repeated_complete.text
             assert repeated_complete.json()["completed_at"] == completed.json()["completed_at"]
+            active_after_auto = client.get("/api/v1/auth/me", headers=headers)
+            assert active_after_auto.status_code == 200, active_after_auto.text
+            assert active_after_auto.json()["active_operation_mode"] == "AUTO"
 
             semi_onboarding = client.post(
                 "/api/v1/investment/onboardings",
@@ -281,6 +284,56 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             assert semi_prepared.status_code == 200, semi_prepared.text
             assert semi_prepared.json()["account"]["operation_mode"] == "SEMI_AUTO"
             assert semi_prepared.json()["account"]["id"] != account_id
+            semi_account_id = semi_prepared.json()["account"]["id"]
+            semi_deposited = client.post(
+                f"/api/v1/investment/onboardings/{semi_onboarding_id}/deposit",
+                headers=headers,
+                json={
+                    "amount": 500_000,
+                    "idempotency_key": f"semi-deposit-{suffix}",
+                },
+            )
+            assert semi_deposited.status_code == 200, semi_deposited.text
+            semi_completed = client.post(
+                f"/api/v1/investment/onboardings/{semi_onboarding_id}/complete",
+                headers=headers,
+            )
+            assert semi_completed.status_code == 200, semi_completed.text
+            assert semi_completed.json()["next_step"] == "PORTFOLIO"
+
+            switched_auto = client.put(
+                "/api/v1/accounts/me/active-operation-mode",
+                headers=headers,
+                json={"operation_mode": "AUTO"},
+            )
+            assert switched_auto.status_code == 200, switched_auto.text
+            assert switched_auto.json()["previous_operation_mode"] == "SEMI_AUTO"
+            assert switched_auto.json()["operation_mode"] == "AUTO"
+            assert switched_auto.json()["changed"] is True
+            assert switched_auto.json()["account"]["id"] == account_id
+            assert switched_auto.json()["notice"]["code"] == "OPERATION_MODE_CHANGED"
+
+            switch_retry = client.put(
+                "/api/v1/accounts/me/active-operation-mode",
+                headers=headers,
+                json={"operation_mode": "AUTO"},
+            )
+            assert switch_retry.status_code == 200, switch_retry.text
+            assert switch_retry.json()["changed"] is False
+            assert switch_retry.json()["notice"]["code"] == "OPERATION_MODE_UNCHANGED"
+
+            switched_semi = client.put(
+                "/api/v1/accounts/me/active-operation-mode",
+                headers=headers,
+                json={"operation_mode": "SEMI_AUTO"},
+            )
+            assert switched_semi.status_code == 200, switched_semi.text
+            assert switched_semi.json()["previous_operation_mode"] == "AUTO"
+            assert switched_semi.json()["operation_mode"] == "SEMI_AUTO"
+            assert switched_semi.json()["account"]["id"] == semi_account_id
+            assert "자산과 거래내역은 이동하지 않고 그대로 유지" in (
+                switched_semi.json()["notice"]["message"]
+            )
             all_accounts = client.get("/api/v1/accounts/me/all", headers=headers)
             assert all_accounts.status_code == 200, all_accounts.text
             assert {account["operation_mode"] for account in all_accounts.json()} == {
