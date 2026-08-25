@@ -222,6 +222,8 @@ class CoverageManifest:
             )
             if entry.get("completed_partitions") and not exists:
                 entry["completed_partitions"] = []
+            if entry.get("partial_pages") and not exists:
+                entry["partial_pages"] = {}
 
     @staticmethod
     def key(source: str, dataset: str, operation: str) -> str:
@@ -269,9 +271,83 @@ class CoverageManifest:
                 entry["record_count"] = int(entry.get("record_count", 0)) + rows
                 entry["blob_count"] = int(entry.get("blob_count", 0)) + blob_count
             entry["completed_partitions"] = sorted(completed)
+            partial_pages = entry.get("partial_pages", {})
+            if isinstance(partial_pages, dict):
+                partial_pages.pop(partition, None)
+                entry["partial_pages"] = partial_pages
             entry["min_date"] = min(completed) if completed else None
             entry["max_date"] = max(completed) if completed else None
             entry["last_success_at"] = datetime.now(timezone.utc).isoformat()
+
+    def partial_page(
+        self, source: str, dataset: str, operation: str, partition: str
+    ) -> int:
+        """중단된 pagination partition에서 마지막으로 원격 저장된 page를 반환한다."""
+
+        return self.partial_progress(source, dataset, operation, partition)[0]
+
+    def partial_progress(
+        self, source: str, dataset: str, operation: str, partition: str
+    ) -> tuple[int, int, int]:
+        """마지막 저장 page와 해당 시점의 누적 row·Blob 수를 반환한다."""
+
+        entry = self.data.get("entries", {}).get(self.key(source, dataset, operation), {})
+        partial_pages = entry.get("partial_pages", {})
+        if not isinstance(partial_pages, dict):
+            return 0, 0, 0
+        progress = partial_pages.get(partition, 0)
+        if isinstance(progress, dict):
+            try:
+                return (
+                    max(0, int(progress.get("page_no", 0))),
+                    max(0, int(progress.get("record_count", 0))),
+                    max(0, int(progress.get("blob_count", 0))),
+                )
+            except (TypeError, ValueError):
+                return 0, 0, 0
+        try:
+            # 최초 streaming 구현의 page 번호 정수 형식도 안전하게 읽는다.
+            return max(0, int(progress)), 0, 0
+        except (TypeError, ValueError):
+            return 0, 0, 0
+
+    def mark_partial_page(
+        self,
+        *,
+        source: str,
+        dataset: str,
+        operation: str,
+        partition: str,
+        page_no: int,
+        rows: int,
+        blob_count: int,
+    ) -> None:
+        """Blob 업로드가 끝난 page와 누적 집계를 resume checkpoint로 기록한다."""
+
+        with self._lock:
+            entries = self.data.setdefault("entries", {})
+            key = self.key(source, dataset, operation)
+            entry = entries.setdefault(
+                key,
+                {
+                    "source": source,
+                    "dataset": dataset,
+                    "operation": operation,
+                    "completed_partitions": [],
+                    "record_count": 0,
+                    "blob_count": 0,
+                },
+            )
+            partial_pages = entry.setdefault("partial_pages", {})
+            current_page = self.partial_progress(
+                source, dataset, operation, partition
+            )[0]
+            if page_no >= current_page:
+                partial_pages[partition] = {
+                    "page_no": page_no,
+                    "record_count": rows,
+                    "blob_count": blob_count,
+                }
 
     def save(self) -> None:
         """작은 manifest 하나만 overwrite해 중단 후 재개 지점을 원격에 보존한다."""
@@ -279,17 +355,19 @@ class CoverageManifest:
         with self._lock:
             self.data["updated_at"] = datetime.now(timezone.utc).isoformat()
             payload = json.dumps(self.data, ensure_ascii=False, indent=2).encode()
-        self.storage.upload_bytes(
-            self.container,
-            MANIFEST_PATH,
-            payload,
-            content_type="application/json",
-            overwrite=True,
-            metadata={
-                "dataset": "model_raw_coverage",
-                "schema_version": str(MANIFEST_SCHEMA_VERSION),
-            },
-        )
+            # 여러 OpenDART worker가 checkpoint를 저장해도 오래된 payload가 나중에
+            # overwrite하지 않도록 원격 업로드까지 같은 lock에서 직렬화한다.
+            self.storage.upload_bytes(
+                self.container,
+                MANIFEST_PATH,
+                payload,
+                content_type="application/json",
+                overwrite=True,
+                metadata={
+                    "dataset": "model_raw_coverage",
+                    "schema_version": str(MANIFEST_SCHEMA_VERSION),
+                },
+            )
 
     def bootstrap_historical_months(
         self,
@@ -840,45 +918,81 @@ class ModelRawCollector:
         )
 
     def _dart_disclosure(self, month: date, corp_cls: str) -> tuple[int, int, int]:
+        """공시 page를 한 장씩 검증·업로드하고 진행률과 resume page를 기록한다."""
+
         start, end = _month_range(month, self.start_date, self.end_date)
-        started = time.monotonic()
-        responses = self._dart_client().disclosures_market(
+        partition = f"{_range_partition(month, self.start_date, self.end_date)}-{corp_cls}"
+        resume_page, total_rows, new_blobs = self.manifest.partial_progress(
+            "opendart", "disclosure_market", "disclosure_market", partition
+        )
+        responses = iter(self._dart_client().iter_disclosures_market(
             start_date=start.strftime("%Y%m%d"),
             end_date=end.strftime("%Y%m%d"),
             corp_cls=corp_cls,
-        )
-        self.metrics["opendart"].add(
-            api_calls=len(responses), download_seconds=time.monotonic() - started
-        )
-        total_rows = new_blobs = 0
-        for response in responses:
+            start_page=resume_page + 1,
+        ))
+        writer = OpenDartRawWriter(self.storage, container=self.container)
+        page_count = fetched_rows = 0
+        while True:
+            started = time.monotonic()
+            try:
+                response = next(responses)
+            except StopIteration:
+                break
+            page_count += 1
+            page_no = resume_page + page_count
+            self.metrics["opendart"].add(
+                api_calls=1, download_seconds=time.monotonic() - started
+            )
             rows = response.payload.get("list", [])
             if not isinstance(rows, list):
                 raise RuntimeError("OpenDART disclosure list must be an array")
             _validate_disclosures(rows)
             total_rows += len(rows)
-            if not rows:
-                continue
-            partition_date = date.fromisoformat(
-                f"{str(rows[0]['rcept_dt'])[:4]}-{str(rows[0]['rcept_dt'])[4:6]}-{str(rows[0]['rcept_dt'])[6:]}"
-            )
-            upload_started = time.monotonic()
-            blob = OpenDartRawWriter(self.storage, container=self.container).upload_bytes(
+            fetched_rows += len(rows)
+            if rows:
+                partition_date = date.fromisoformat(
+                    f"{str(rows[0]['rcept_dt'])[:4]}-{str(rows[0]['rcept_dt'])[4:6]}-{str(rows[0]['rcept_dt'])[6:]}"
+                )
+                upload_started = time.monotonic()
+                blob = writer.upload_bytes(
+                    dataset="disclosure_market",
+                    content=response.content,
+                    partition_date=partition_date,
+                    extension="json",
+                    content_type="application/json",
+                )
+                new_blobs += int(blob.created)
+                self.metrics["opendart"].add(
+                    upload_seconds=time.monotonic() - upload_started,
+                    uploaded_bytes=blob.size if blob.created else 0,
+                    new_blobs=int(blob.created),
+                    reused_blobs=int(not blob.created),
+                )
+            self.manifest.mark_partial_page(
+                source="opendart",
                 dataset="disclosure_market",
-                content=response.content,
-                partition_date=partition_date,
-                extension="json",
-                content_type="application/json",
+                operation="disclosure_market",
+                partition=partition,
+                page_no=page_no,
+                rows=total_rows,
+                blob_count=new_blobs,
             )
-            new_blobs += int(blob.created)
-            self.metrics["opendart"].add(
-                upload_seconds=time.monotonic() - upload_started,
-                uploaded_bytes=blob.size if blob.created else 0,
-                new_blobs=int(blob.created),
-                reused_blobs=int(not blob.created),
-            )
-        self.metrics["opendart"].add(rows=total_rows)
-        return total_rows, new_blobs, len(responses)
+            if page_no % self.checkpoint_every == 0:
+                self.manifest.save()
+            try:
+                total_page = max(1, int(response.payload.get("total_page", page_no)))
+            except (TypeError, ValueError):
+                total_page = page_no
+            if page_count == 1 or page_no % 10 == 0 or page_no >= total_page:
+                print(
+                    "[OPENDART] disclosure page "
+                    f"window={start.isoformat()}..{end.isoformat()} market={corp_cls} "
+                    f"page={page_no}/{total_page} rows={total_rows:,} "
+                    f"new_blobs={new_blobs:,}"
+                )
+        self.metrics["opendart"].add(rows=fetched_rows)
+        return total_rows, new_blobs, page_count
 
     def collect_opendart(self) -> None:
         """회사 100개 batch와 월별 공시 window를 제한된 worker로 수집한다."""
