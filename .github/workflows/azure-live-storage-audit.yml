@@ -33,6 +33,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Azure login with OIDC
+        continue-on-error: true
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -62,15 +63,20 @@ jobs:
         run: python -m scripts.audit_live_stores
 
       - name: Publish audit to job summary
+        if: always()
         shell: bash
-        run: cat data/reports/AZURE_LIVE_AUDIT.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          if [[ -f data/reports/AZURE_LIVE_AUDIT.md ]]; then
+            cat data/reports/AZURE_LIVE_AUDIT.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload audit reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: azure-live-storage-audit
           path: |
             data/reports/AZURE_LIVE_AUDIT.md
             data/reports/azure_live_audit.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
