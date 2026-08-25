@@ -9,7 +9,7 @@
 | RiskProfile/Result | 설문 입력과 추천 결과 표시 | `POST /api/v1/investor-profile/analyze`, `GET /api/v1/investor-profile/me/latest`, `POST /api/v1/strategy-recommendations`, `GET /api/v1/strategy-recommendations/me/latest` | `investor_profile_assessments`, `strategy_recommendations`, `strategy_recommendation_items` |
 | StrategyDetail | 실제 KRX 시세 백테스트와 KOSPI 비교, DB 가용 기간 기반 기간 선택, 데이터 부족 오류 상태 | `GET /api/v1/strategies`, `GET /api/v1/backtest/available-range`, `POST /api/v1/backtest/run` | `strategies.rule_config`, `market_stock_prices`, `market_indices`; 가치 전략은 PIT 재무 가능일 부재로 unavailable |
 | StartInvesting | 전략 배분은 명시적 mock, 시작 시 투자 온보딩·약관 동의·가상계좌 준비·전략 저장 | `/investment/terms`, `/investment/onboardings*` | `investment_onboardings`, `terms`, `user_agreements`, `virtual_accounts`, `cash_ledger`, `strategies`; 신규 계좌 초기금은 선택 투자 금액 |
-| Portfolio/Dashboard | 실제 계좌 평가·당일 기여·자산 이력·5축 feature·리밸런싱 판단 이력 | `GET /api/v1/accounts/me`, `GET /portfolio`, `GET /portfolio/history`, `GET/POST /portfolio/decisions`, `GET /portfolio/stock-evaluation` | `virtual_accounts`, `positions`, `portfolio_snapshots`, `strategy_target_weights`, `rebalancing_decisions`, KRX/OpenDART + Redis/KIS 현재가 |
+| Portfolio/Dashboard | 홈 통합 조회, 실제 계좌 평가·당일 기여·자산 이력·5축 feature·리밸런싱 판단 이력 | `GET /api/v1/accounts/me`, `GET /portfolio/home`, `GET /portfolio`, `GET /portfolio/history`, `GET/POST /portfolio/decisions`, `GET /portfolio/stock-evaluation` | `virtual_accounts`, `positions`, `portfolio_snapshots`, `strategy_target_weights`, `rebalancing_decisions`, KRX/OpenDART + Redis/KIS 현재가 |
 | StockDetail | 실제 현재가·차트·종목/재무 요약과 계좌별 5축 feature 평가 | `GET /api/v1/market/stocks/{code}/price`, `GET /market/stocks/{code}/summary`, `GET /market/stocks/{code}/chart`, `GET /portfolio/stock-evaluation` | KRX `market_*`, OpenDART `company_*`, `positions`, `strategy_target_weights`; 1D 분봉/현재가는 KIS |
 | InformationExam | 한국 뉴스는 실제 Backend, 금융 상식은 기존 mock | `GET /api/v1/information/news/kr?page=1&size=20` | NAVER API HUB → Redis `information:news:kr:{query}:{page}:{size}`; PostgreSQL/Blob 저장 없음 |
 | 자동 운용 주문 처리 | 사용자가 직접 매수·매도하지 않으며, 전략 기반 자동 운용 계층이 MARKET BUY/SELL과 UUID idempotency key를 사용한 뒤 portfolio를 갱신 | `POST/GET /api/v1/orders`, `GET /executions`, `GET /portfolio` | `orders`, `executions`, `positions`, `cash_ledger`; KIS 주문 API 사용 안 함 |
@@ -25,9 +25,14 @@
 ```text
 React → FastAPI /market → MarketService → Redis price cache → (miss) KIS 현재가
 React → FastAPI /orders → TradingService → MarketService + PostgreSQL transaction
+React → FastAPI /portfolio/home → account + portfolio evaluation + snapshot history
 React → FastAPI /portfolio → PostgreSQL positions/account + MarketService
 React → FastAPI /backtest/available-range → PostgreSQL 주가/KOSPI 공통 가용 기간
 React → FastAPI /backtest/run → PostgreSQL KRX stock/index history → 실제 전략/KOSPI 지표
 ```
 
-React는 KIS URL이나 credential을 알지 못한다. 화면 전환 시 `GET /portfolio` 한 번으로 모든 보유종목의 `current_price`와 평가값을 받고, 종목 상세 또는 사용자가 명시적으로 현재가 확인을 누른 경우에만 개별 Market API를 호출한다. `account_id`는 운용방식을 지정한 `/accounts/me` 응답에서 가져오며 소스에 하드코딩하지 않는다.
+React는 KIS URL이나 credential을 알지 못한다. 포트폴리오 홈 화면은 `GET /portfolio/home` 한 번으로
+계좌·평가·기간 추이·현금 포함 배분·정렬된 보유종목을 받고, 종목 상세 또는 사용자가 명시적으로
+현재가 확인을 누른 경우에만 개별 Market API를 호출한다. 기존 `GET /portfolio`와
+`GET /portfolio/history`는 상세 화면과 하위 호환을 위해 유지한다. `account_id`는 운용방식을 지정한
+`/accounts/me` 응답에서 가져오며 소스에 하드코딩하지 않는다.
