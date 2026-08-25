@@ -10,7 +10,7 @@ import type { Screen } from '../types';
 interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
-  onSelectStock: (index: number) => void;
+  onSelectStock: (stockCode: string) => void;
   onBack: () => void;
 }
 
@@ -62,7 +62,7 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
     if (!sortKey) return ALL_HOLDINGS;
     const dir = sortDir === 'asc' ? 1 : -1;
     return [...ALL_HOLDINGS].sort((a, b) =>
-      sortKey === 'name' ? a.name.localeCompare(b.name) * dir : (a[sortKey] - b[sortKey]) * dir
+      sortKey === 'name' ? a.name.localeCompare(b.name) * dir : ((a[sortKey] ?? 0) - (b[sortKey] ?? 0)) * dir
     );
   }, [ALL_HOLDINGS, sortKey, sortDir]);
 
@@ -108,12 +108,12 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
                 </thead>
                 <tbody>
                   {sortedHoldings.map((h) => {
-                    const detailIndex = MOCK_HOLDINGS.findIndex((holding) => holding.name === h.name);
+                    const stockCode = STOCK_INFO[h.name]?.code;
                     const alert = AI_ALERTS.find((a) => a.stockName === h.name);
                     return (
                       <tr
                         key={h.name}
-                        onClick={() => detailIndex >= 0 && onSelectStock(detailIndex)}
+                        onClick={() => stockCode && onSelectStock(stockCode)}
                         className="cursor-pointer border-b border-line last:border-0 hover:bg-canvas"
                       >
                         <td className="py-4">
@@ -133,11 +133,11 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
                           </div>
                         </td>
                         <td className="py-4 text-right text-[17px] font-bold">{h.pct.toFixed(1)}%</td>
-                        <td className="py-4 text-right text-[16px] text-muted">{won(h.principal)}</td>
+                        <td className="py-4 text-right text-[16px] text-muted">{won(h.principal ?? 0)}</td>
                         <td className={`py-4 text-right text-[16px] font-semibold ${
-                          h.returnRate > 0 ? 'text-up' : h.returnRate < 0 ? 'text-down' : 'text-subtle'
+                          (h.returnRate ?? 0) > 0 ? 'text-up' : (h.returnRate ?? 0) < 0 ? 'text-down' : 'text-subtle'
                         }`}>
-                          {h.returnRate > 0 ? '+' : ''}{h.returnRate.toFixed(1)}%
+                          {(h.returnRate ?? 0) > 0 ? '+' : ''}{(h.returnRate ?? 0).toFixed(1)}%
                         </td>
                       </tr>
                     );

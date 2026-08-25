@@ -11,6 +11,33 @@ STOCK_CODE_PATTERN = re.compile(r"^[0-9A-Z]{6,12}$")
 
 
 @dataclass(frozen=True)
+class CurrentQuote:
+    stock_code: str
+    price: Decimal
+    previous_close: Decimal | None
+    change_amount: Decimal | None
+    change_rate: Decimal | None
+    volume: int | None
+    as_of: datetime
+    source: str = "KIS_REST"
+
+    def __post_init__(self) -> None:
+        if not STOCK_CODE_PATTERN.fullmatch(self.stock_code):
+            raise ValueError("invalid stock code")
+        if not self.price.is_finite() or self.price <= 0:
+            raise ValueError("price must be a positive finite number")
+        for value in (self.previous_close, self.change_amount, self.change_rate):
+            if value is not None and not value.is_finite():
+                raise ValueError("quote values must be finite")
+        if self.previous_close is not None and self.previous_close <= 0:
+            raise ValueError("previous close must be positive")
+        if self.volume is not None and self.volume < 0:
+            raise ValueError("volume must not be negative")
+        if self.as_of.tzinfo is None:
+            raise ValueError("quote timestamp must include timezone information")
+
+
+@dataclass(frozen=True)
 class MinuteCandle:
     stock_code: str
     started_at: datetime

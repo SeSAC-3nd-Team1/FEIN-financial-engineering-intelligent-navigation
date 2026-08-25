@@ -6,15 +6,17 @@ import jwt
 from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import current_user
 from app.core.config import settings
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, get_session
 from app.integrations.kis.hub import realtime_hub
 from app.models import User
-from app.schemas.api import MinuteCandleListResponse, PriceResponse, RealtimeStatusResponse, RealtimeSubscriptionRequest
-from app.services.market import MarketService
+from app.repositories.market_data import MarketDataRepository
+from app.schemas.api import MinuteCandleListResponse, PriceResponse, RealtimeStatusResponse, RealtimeSubscriptionRequest, StockChartResponse, StockSummaryResponse
+from app.services.market import MarketService, StockMarketService
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -32,8 +34,35 @@ def current_price(
     stock_code: str = Path(pattern=r"^[0-9A-Z]{6,12}$"),
     _: User = Depends(current_user),
 ) -> PriceResponse:
-    price, as_of, source = MarketService().get_price(stock_code)
-    return PriceResponse(stock_code=stock_code, price=price, as_of=as_of, source=source)
+    quote = MarketService().get_quote(stock_code)
+    return PriceResponse(
+        stock_code=stock_code, price=quote.price, previous_close=quote.previous_close,
+        change_amount=quote.change_amount, change_rate=quote.change_rate, volume=quote.volume,
+        as_of=quote.as_of, source=quote.source,
+    )
+
+
+def get_stock_market_service(session: Session = Depends(get_session)) -> StockMarketService:
+    return StockMarketService(MarketDataRepository(session))
+
+
+@router.get("/stocks/{stock_code}/summary", response_model=StockSummaryResponse)
+def stock_summary(
+    stock_code: str = Path(pattern=r"^\d{6}$"),
+    _: User = Depends(current_user),
+    service: StockMarketService = Depends(get_stock_market_service),
+) -> StockSummaryResponse:
+    return service.summary(stock_code)
+
+
+@router.get("/stocks/{stock_code}/chart", response_model=StockChartResponse)
+def stock_chart(
+    stock_code: str = Path(pattern=r"^\d{6}$"),
+    period: Literal["1D", "1W", "3M", "6M", "1Y", "5Y"] = Query(default="3M"),
+    _: User = Depends(current_user),
+    service: StockMarketService = Depends(get_stock_market_service),
+) -> StockChartResponse:
+    return service.chart(stock_code, period)
 
 
 @router.get("/stocks/{stock_code}/candles", response_model=MinuteCandleListResponse)
@@ -221,7 +250,7 @@ async def realtime_prices(websocket: WebSocket) -> None:
         for task in tasks:
             if not task.done():
                 task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
         if queue is not None:
             await realtime_hub.remove_subscriber(queue)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)

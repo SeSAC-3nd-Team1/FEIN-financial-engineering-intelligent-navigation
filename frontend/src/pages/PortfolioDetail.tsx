@@ -19,7 +19,7 @@ interface Props {
   strategyId: string;
   onStrategyChange: (id: string) => void;
   onNavigate: (s: Screen) => void;
-  onSelectStock: (index: number) => void;
+  onSelectStock: (stockCode: string) => void;
   onSelectTransaction: (id: string) => void;
   /** 모달의 "다시 진단하기" — 투자성향 진단으로 되돌린다 */
   onRediagnose: () => void;
@@ -106,7 +106,7 @@ export default function PortfolioDetail({
         ...h,
         gain: position
           ? Number(position.unrealized_profit)
-          : (HOLD_TOTAL * h.pct) / 100 * (h.chg / 100),
+          : (HOLD_TOTAL * h.pct) / 100 * ((h.chg ?? 0) / 100),
       };
     }),
     [ALL_HOLDINGS, HOLD_TOTAL, portfolio]
@@ -249,12 +249,12 @@ export default function PortfolioDetail({
             </div>
             <div className="flex flex-col">
               {previewHoldings.map((h) => {
-                const detailIndex = MOCK_HOLDINGS.findIndex((holding) => holding.name === h.name);
+                const stockCode = STOCK_INFO[h.name]?.code;
                 const alert = AI_ALERTS.find((a) => a.stockName === h.name);
                 return (
                   <button
                     key={h.name}
-                    onClick={() => detailIndex >= 0 && onSelectStock(detailIndex)}
+                    onClick={() => stockCode && onSelectStock(stockCode)}
                     className="flex items-center gap-6 border-b border-line py-5 text-left last:border-0 hover:bg-canvas"
                   >
                     <div className="flex flex-1 flex-col gap-1">
@@ -273,9 +273,9 @@ export default function PortfolioDetail({
                     </div>
                     <span className="w-20 shrink-0 text-right text-[17px] font-bold">{h.pct.toFixed(1)}%</span>
                     <span className={`w-28 shrink-0 text-right text-[16px] font-semibold ${
-                      h.returnRate > 0 ? 'text-up' : h.returnRate < 0 ? 'text-down' : 'text-subtle'
+                      (h.returnRate ?? 0) > 0 ? 'text-up' : (h.returnRate ?? 0) < 0 ? 'text-down' : 'text-subtle'
                     }`}>
-                      {h.returnRate > 0 ? '+' : ''}{h.returnRate.toFixed(1)}%
+                      {(h.returnRate ?? 0) > 0 ? '+' : ''}{(h.returnRate ?? 0).toFixed(1)}%
                     </span>
                   </button>
                 );

@@ -45,18 +45,12 @@ export interface Holding {
   sector: string;
   pct: number;        // 현재 비중 (05)
   target?: number;    // 전략 목표 비중 (04 신규 매수). 없으면 pct 와 동일
-  chg: number;        // 오늘 등락률 %
-  principal: number;  // 투자 원금(KRW) — 실 계좌가 있으면 PositionResponse.purchase_amount 로 대체된다
-  returnRate: number; // 원금 대비 누적 수익률(%) — 실 계좌가 있으면 PositionResponse.return_rate 로 대체된다
+  chg: number | null; // 오늘 등락률 %. 제공되지 않으면 null
+  // 투자 원금/누적 수익률 — buildPortfolioHoldings() 로 만든 실 계좌 보유 종목엔 없고(PositionResponse 에서 직접 읽는다),
+  // PortfolioDetail/AllHoldings/RebalanceAlerts 처럼 종목별로 원금·수익률을 표로 보여주는 화면의 로컬 홀딩 모델만 채운다.
+  principal?: number;  // 투자 원금(KRW) — 실 계좌가 있으면 PositionResponse.purchase_amount 로 대체된다
+  returnRate?: number; // 원금 대비 누적 수익률(%) — 실 계좌가 있으면 PositionResponse.return_rate 로 대체된다
   why: string;        // AI 편입 사유
-}
-
-/** 재무제표 핵심 지표 — StockDetail "재무제표 핵심 지표" 섹션. 백엔드에 아직 없는 항목이라 목업만 존재한다. */
-export interface FinanceRatios {
-  debtRatio: number;        // 부채비율 (%)
-  currentRatio: number;     // 유동비율 (%)
-  quickRatio: number;       // 당좌비율 (%)
-  interestCoverage: number; // 이자보상배율 (배)
 }
 
 export interface StockInfo {
@@ -67,9 +61,7 @@ export interface StockInfo {
   pbr: string;
   per: string;
   roe: string;
-  ai: number[];        // AI_AXES 순서의 5축 점수 — Portfolio "위험 분석" 탭 전용
-  aiEval: number[];    // AI_EVAL_AXES 순서의 6축 점수 — StockDetail "AI 평가" 레이더 전용
-  finance: FinanceRatios;
+  ai: number[];
   desc: string;
 }
 
@@ -122,7 +114,7 @@ export interface ListResponse<T> { items: T[]; totalCount: number; updatedAt: st
 export type InfoTab = 'news' | 'knowledge';
 
 /* ----- Backtest 외부 API 응답 계약 ----- */
-/** "추천 기간" 프리셋 — 실제 시작·종료일은 데이터팀 확정 전까지 backtestPeriods.ts 에서 mock 으로 관리 */
+/** Backend 실제 KRX 백테스트에 전달하는 조회 기간. */
 export interface BacktestPeriod {
   id: string;
   label: string;

@@ -1,237 +1,91 @@
 import type {
   BacktestAiContext,
   BacktestAiExplanation,
-  BacktestMetrics,
   BacktestPeriod,
   BacktestResult,
-  BacktestSeriesPoint,
 } from '../types';
 
-/* ============================================================
- * Backtest 외부 API 계약 (실 연동 전까지 USE_MOCK=true)
- *
- *  POST {API_BASE}/run    { strategyId, periodId, startDate, endDate } → BacktestResult
- *  POST {API_BASE}/explain BacktestAiContext                          → BacktestAiExplanation
- * ============================================================ */
-export const API_BASE = import.meta.env.VITE_API_BASE ?? 'https://api.example.com/v1/backtest';
+export const API_BASE = '/api/v1/backtest';
 
-/** true 인 동안 목 데이터를 쓴다. 실 연동 시 false */
-export const USE_MOCK = true;
+export interface BacktestAvailableRange {
+  minDate: string;
+  maxDate: string;
+}
+
+async function get<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, { headers: { Accept: 'application/json' } });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { message?: string } | null;
+    throw new Error(payload?.message ?? `서버가 ${response.status} 응답을 보냈어요. 잠시 후 다시 시도해주세요.`);
+  }
+  return await response.json() as T;
+}
 
 async function request<T>(path: string, body: unknown): Promise<T> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8000);
+  const timer = setTimeout(() => ctrl.abort(), 15_000);
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const response = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });
-    if (!res.ok) throw new Error(`서버가 ${res.status} 응답을 보냈어요. 잠시 후 다시 시도해주세요.`);
-    return (await res.json()) as T;
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { message?: string } | null;
+      throw new Error(payload?.message ?? `서버가 ${response.status} 응답을 보냈어요. 잠시 후 다시 시도해주세요.`);
+    }
+    return await response.json() as T;
   } finally {
     clearTimeout(timer);
   }
 }
 
-const delay = <T,>(v: T, ms = 700) => new Promise<T>((r) => setTimeout(() => r(v), ms));
-
-/* ----- MOCK 백테스트 엔진 -----
- * 실제 시세 데이터가 아니라, 전략·기간을 시드로 쓰는 결정적 합성 곡선이다
- * (StockDetail.tsx 의 priceSeries 와 동일한 LCG 기법). 지표는 손으로 지어낸
- * 값이 아니라 이 합성 곡선에서 매번 계산해서 얻는다 — 실 엔진 연동 시
- * runBacktest 내부만 실제 fetch 로 바꾸면 나머지 로직은 그대로 쓸 수 있다.
- */
-
-// vol 은 연환산 시 STRATEGIES(data/strategies.ts)의 low/value/momentum 변동성(12.4%/15.8%/21.3%)과
-// 비슷한 자릿수가 나오도록 맞춘 계수 — 실제 시세가 아니므로 정확히 일치할 필요는 없다.
-const STRATEGY_RISK: Record<string, { vol: number }> = {
-  low: { vol: 2.2 },
-  value: { vol: 2.8 },
-  momentum: { vol: 3.8 },
-};
-const DEFAULT_RISK = { vol: 2.5 };
-// KOSPI(벤치마크)는 전략을 비교하기 위한 고정 기준선이라, 선택한 전략과 무관하게
-// 같은 기간이면 항상 같은 곡선이어야 한다 — 전략별 risk.vol을 곱하지 않고 고정값을 쓴다.
-const BENCHMARK_VOL = 3.0;
-
-// MOCK — 기간별 대략적인 방향성만 반영한 placeholder drift (실제 시장 수치 아님)
-const PERIOD_BIAS: Record<string, { strategyDrift: number; benchmarkDrift: number }> = {
-  'corona-crash': { strategyDrift: -0.35, benchmarkDrift: -0.65 },
-  'downturn-2022': { strategyDrift: -0.12, benchmarkDrift: -0.28 },
-  'recent-5y': { strategyDrift: 0.18, benchmarkDrift: 0.1 },
-};
-const DEFAULT_BIAS = { strategyDrift: 0.05, benchmarkDrift: 0.02 };
-
-function hashString(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 1_000_000_007;
-  return h;
-}
-
-function lcgWalk(seed: number, n: number, vol: number, driftPerStep: number): number[] {
-  let x = seed % 233280;
-  let acc = 0;
-  const out: number[] = [0];
-  for (let i = 1; i < n; i++) {
-    x = (x * 9301 + 49297) % 233280;
-    const noise = (x / 233280 - 0.5) * vol * 2;
-    acc += noise + driftPerStep;
-    out.push(Math.round(acc * 100) / 100);
-  }
-  return out;
-}
-
-function dateLabels(startDate: string, endDate: string, n: number): string[] {
-  const start = new Date(startDate).getTime();
-  const end = new Date(endDate).getTime();
-  const step = (end - start) / Math.max(1, n - 1);
-  return Array.from({ length: n }, (_, i) => new Date(start + step * i).toISOString().slice(0, 10));
-}
-
-function maxDrawdown(series: number[]): number {
-  let peak = series[0];
-  let mdd = 0;
-  for (const v of series) {
-    peak = Math.max(peak, v);
-    mdd = Math.min(mdd, v - peak);
-  }
-  return Math.round(mdd * 10) / 10;
-}
-
-function annualizedVolatility(series: number[], years: number): number {
-  const steps = series.slice(1).map((v, i) => v - series[i]);
-  if (steps.length === 0 || years <= 0) return 0;
-  const mean = steps.reduce((a, b) => a + b, 0) / steps.length;
-  const variance = steps.reduce((a, b) => a + (b - mean) ** 2, 0) / steps.length;
-  const stdev = Math.sqrt(variance);
-  const periodsPerYear = steps.length / years;
-  return Math.round(stdev * Math.sqrt(periodsPerYear) * 10) / 10;
-}
-
-function cagrFrom(cumulativeReturn: number, years: number): number {
-  const y = Math.max(years, 0.1);
-  const cagr = ((1 + cumulativeReturn / 100) ** (1 / y) - 1) * 100;
-  return Math.round(cagr * 10) / 10;
-}
-
-function computeMetrics(series: number[], years: number): BacktestMetrics {
-  const cumulativeReturn = Math.round(series[series.length - 1] * 10) / 10;
-  const cagr = cagrFrom(cumulativeReturn, years);
-  const mdd = maxDrawdown(series);
-  const volatility = annualizedVolatility(series, years);
-  const sharpe = volatility >= 0.5 ? Math.round((cagr / volatility) * 100) / 100 : null;
-  return { cumulativeReturn, cagr, mdd, volatility, sharpe };
-}
-
-function buildMockResult(strategyId: string, strategyName: string, period: BacktestPeriod): BacktestResult {
-  const days = Math.max(
-    1,
-    (new Date(period.endDate).getTime() - new Date(period.startDate).getTime()) / 86_400_000,
-  );
-  const years = days / 365.25;
-  const n = Math.min(120, Math.max(16, Math.round(days / 7)));
-
-  const risk = STRATEGY_RISK[strategyId] ?? DEFAULT_RISK;
-  const bias = PERIOD_BIAS[period.id] ?? DEFAULT_BIAS;
-  // 전략 시드에는 strategyId를 포함해 전략마다 다른 곡선이 나오게 하고,
-  // 벤치마크 시드는 기간(실제 날짜)에만 의존시켜 어떤 전략을 보든 같은 기간이면 같은 KOSPI 곡선이 나오게 한다.
-  const strategySeed = hashString(`${strategyId}_${period.startDate}_${period.endDate}`);
-  const benchmarkSeed = hashString(`benchmark_${period.startDate}_${period.endDate}`);
-
-  const strategySeries = lcgWalk(strategySeed, n, risk.vol, bias.strategyDrift);
-  const benchmarkSeries = lcgWalk(benchmarkSeed, n, BENCHMARK_VOL, bias.benchmarkDrift);
-
-  const labels = dateLabels(period.startDate, period.endDate, n);
-  const series: BacktestSeriesPoint[] = labels.map((t, i) => ({
-    t,
-    strategy: strategySeries[i],
-    benchmark: benchmarkSeries[i],
-  }));
-
-  const metrics = computeMetrics(strategySeries, years);
-  const benchmarkMetricsFull = computeMetrics(benchmarkSeries, years);
-
-  return {
+export function runBacktest(
+  strategyId: string,
+  _strategyName: string,
+  period: BacktestPeriod,
+): Promise<BacktestResult> {
+  return request<BacktestResult>('/run', {
     strategyId,
-    strategyName,
-    period,
-    series,
-    metrics,
-    benchmarkName: 'KOSPI',
-    benchmarkMetrics: { cumulativeReturn: benchmarkMetricsFull.cumulativeReturn, mdd: benchmarkMetricsFull.mdd },
-  };
+    periodId: period.id,
+    periodLabel: period.label,
+    periodDescription: period.description,
+    startDate: period.startDate,
+    endDate: period.endDate,
+  });
 }
 
-export function runBacktest(strategyId: string, strategyName: string, period: BacktestPeriod): Promise<BacktestResult> {
-  return USE_MOCK
-    ? delay(buildMockResult(strategyId, strategyName, period))
-    : request<BacktestResult>('/run', { strategyId, periodId: period.id, startDate: period.startDate, endDate: period.endDate });
+export function getBacktestAvailableRange(): Promise<BacktestAvailableRange> {
+  return get<BacktestAvailableRange>('/available-range');
 }
-
-/* ----- MOCK AI 설명 -----
- * ctx 로 전달된 숫자만 참조해서 문장을 조립한다. 예측·추천성 표현이 들어갈
- * 자리를 애초에 만들지 않아서, 과거 데이터 한정 표현만 나오도록 강제한다.
- * 직접 설정한 기간은 "코로나 폭락"/"하락장" 같은 시장 이벤트로 임의 추론하지 않고
- * 실제 선택한 시작~종료 연월만 근거로 한다.
- */
-const PERIOD_OPENING: Record<string, string> = {
-  'corona-crash': '코로나 폭락처럼 시장이 급격하게 떨어졌던 시기에는',
-  'downturn-2022': '2022년처럼 시장 약세가 길게 이어졌던 기간에는',
-  'recent-5y': '최근 5년처럼 상승과 하락을 모두 포함한 기간에는',
-};
 
 const fmtShort = (iso: string) => `${iso.slice(0, 4)}.${iso.slice(5, 7)}`;
 
 function periodOpening(ctx: BacktestAiContext): string {
-  if (ctx.periodType === 'custom') return `선택한 ${fmtShort(ctx.startDate)}~${fmtShort(ctx.endDate)} 기간에는`;
-  return PERIOD_OPENING[ctx.periodId] ?? '선택한 기간에는';
-}
-
-/** 차트 바로 아래에 쓰는 한 줄 해석 — 벤치마크 대비 결과 한 문장만 */
-function buildMockHeadline(ctx: BacktestAiContext): string {
-  const diff = Math.round((ctx.cumulativeReturn - ctx.benchmarkReturn) * 10) / 10;
-  if (diff > 0 && ctx.cumulativeReturn < 0) return `하락장에서도 ${ctx.benchmarkName}보다 ${Math.abs(diff)}%p 덜 떨어졌어요`;
-  if (diff > 0) return `${ctx.benchmarkName}보다 ${Math.abs(diff)}%p 더 벌었어요`;
-  if (diff < 0) return `이 기간에는 ${ctx.benchmarkName}보다 ${Math.abs(diff)}%p 낮은 성과였어요`;
-  return `${ctx.benchmarkName}과 비슷한 성과를 보였어요`;
-}
-
-/**
- * "한눈에 보면" — 결과 + 벤치마크 비교, 한 문장.
- * diff(=전략-벤치마크) 부호만으로 "하락폭이 작았다"고 쓰면, 둘 다 플러스인 기간(예: 최근 5년)에도
- * 하락 표현이 붙는 오류가 생긴다 — 실제로 하락 중일 때(cumulativeReturn < 0)만 "하락폭" 표현을 쓴다.
- */
-function buildMockOverview(ctx: BacktestAiContext): string {
-  const opening = periodOpening(ctx);
-  const diff = Math.round((ctx.cumulativeReturn - ctx.benchmarkReturn) * 10) / 10;
-  let compare: string;
-  if (diff > 0 && ctx.cumulativeReturn < 0) {
-    compare = `같은 기간 ${ctx.benchmarkName}(${ctx.benchmarkReturn}%)과 비교하면 하락폭이 ${Math.abs(diff)}%p 작았어요.`;
-  } else if (diff > 0) {
-    compare = `같은 기간 ${ctx.benchmarkName}(${ctx.benchmarkReturn}%)보다 ${Math.abs(diff)}%p 높은 성과였어요.`;
-  } else if (diff < 0) {
-    compare = `같은 기간 ${ctx.benchmarkName}(${ctx.benchmarkReturn}%)과 비교하면 ${Math.abs(diff)}%p 낮은 성과였어요.`;
-  } else {
-    compare = `같은 기간 ${ctx.benchmarkName}과 비슷한 수준(${ctx.benchmarkReturn}%)이었어요.`;
+  if (ctx.periodType === 'custom') {
+    return `선택한 ${fmtShort(ctx.startDate)}~${fmtShort(ctx.endDate)} 기간에는`;
   }
-  return `${opening} ${ctx.strategyName}은 과거 해당 구간에서 누적 ${ctx.cumulativeReturn}%를 기록했어요. ${compare}`;
+  return `${ctx.periodLabel} 기간에는`;
 }
 
-/** "주의해서 볼 점" — MDD/변동성 등 위험 관련, 한 문장 */
-function buildMockCaution(ctx: BacktestAiContext): string {
-  const sharpeSentence = ctx.sharpe != null ? ` 샤프 지수는 ${ctx.sharpe}였어요.` : '';
-  return `이 기간 최대 낙폭은 ${ctx.mdd}%, 변동성은 ${ctx.volatility}%였어요.${sharpeSentence}`;
-}
-
+/** 실제 백테스트 숫자만 문장으로 옮기는 로컬 설명이며 별도 AI 점수를 생성하지 않는다. */
 export function fetchAiExplanation(ctx: BacktestAiContext): Promise<BacktestAiExplanation> {
-  return USE_MOCK
-    ? delay({
-        headline: buildMockHeadline(ctx),
-        overview: buildMockOverview(ctx),
-        caution: buildMockCaution(ctx),
-        generatedAt: new Date().toISOString(),
-      })
-    : request<BacktestAiExplanation>('/explain', ctx);
+  const opening = periodOpening(ctx);
+  const difference = Math.round((ctx.cumulativeReturn - ctx.benchmarkReturn) * 10) / 10;
+  const headline = difference > 0
+    ? `${ctx.benchmarkName}보다 ${Math.abs(difference)}%p 높은 성과였어요`
+    : difference < 0
+      ? `${ctx.benchmarkName}보다 ${Math.abs(difference)}%p 낮은 성과였어요`
+      : `${ctx.benchmarkName}과 같은 누적 수익률이었어요`;
+  const comparison = difference >= 0
+    ? `${ctx.benchmarkName}보다 ${Math.abs(difference)}%p 높았어요.`
+    : `${ctx.benchmarkName}보다 ${Math.abs(difference)}%p 낮았어요.`;
+  const sharpe = ctx.sharpe == null ? '' : ` 샤프 지수는 ${ctx.sharpe}였어요.`;
+  return Promise.resolve({
+    headline,
+    overview: `${opening} ${ctx.strategyName}은 실제 KRX 시세 기준 누적 ${ctx.cumulativeReturn}%를 기록했고, ${comparison}`,
+    caution: `이 기간 최대 낙폭은 ${ctx.mdd}%, 연환산 변동성은 ${ctx.volatility}%였어요.${sharpe}`,
+    generatedAt: new Date().toISOString(),
+  });
 }

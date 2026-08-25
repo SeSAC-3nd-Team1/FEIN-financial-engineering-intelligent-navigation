@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.routes import accounts, auth, companies, information, investor_profile, market, orders, portfolio, strategies, strategy_recommendations
+from app.api.routes import accounts, auth, backtest, companies, information, investment, investor_profile, market, orders, portfolio, strategies, strategy_recommendations
 from app.core.errors import ServiceError
 from app.db.session import engine
 from app.integrations.kis.hub import realtime_hub
@@ -63,12 +63,14 @@ def dependency_health():
 
 for router in (
     auth.router,
+    backtest.router,
     accounts.router,
     strategies.router,
     market.router,
     orders.router,
     portfolio.router,
     information.router,
+    investment.router,
     investor_profile.router,
     strategy_recommendations.router,
     companies.router,

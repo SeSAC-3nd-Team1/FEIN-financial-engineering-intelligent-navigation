@@ -36,7 +36,7 @@ Copy-Item .env.example .env
 
 PostgreSQL은 `.env`의 `DATABASE_URL`에 팀 공용 Azure Database for PostgreSQL URL을 반드시 설정합니다. 공공데이터 수집 시 사용하는 `DATA_GO_KR_API_KEY`를 포함한 외부 API 키도 같은 `.env`에 설정합니다. `DATABASE_URL`에는 `?sslmode=require`를 포함하며 실제 Azure 사용자명·비밀번호·호스트는 GitHub에 올리지 않습니다. `DATABASE_URL`이 없거나 빈 값이면 Docker Compose는 실행을 중단합니다. 전체 준비 절차와 Portal/CLI 작업은 [Azure PostgreSQL 단일 프로젝트 DB 가이드](docs/AZURE_POSTGRESQL_DEV.md)를 따릅니다.
 
-공용 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 설정하고 팀 Backend가 동일한 값을 사용합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 가상계좌 초기금은 `VIRTUAL_ACCOUNT_INITIAL_CASH` 정책 값으로 설정합니다.
+공용 환경에서는 `JWT_SECRET`을 긴 무작위 값으로 설정하고 팀 Backend가 동일한 값을 사용합니다. KIS는 `KIS_APP_KEY`/`KIS_APP_SECRET`으로 **현재가만 조회**하며 KIS 주문 API는 사용하지 않습니다. OAuth token은 Redis에서 만료시간과 함께 공유해 요청별 재발급을 방지합니다. 신규 가상계좌는 운용방식별 0원 계좌로 생성되고 투자 온보딩 입금 API에서 현재 부족분만 정확히 한 번 충전합니다.
 
 한국 금융 뉴스는 NAVER Cloud Platform의 NAVER API HUB Search News API를 Backend에서만 호출합니다. 로컬 `.env`에 `NAVER_API_HUB_CLIENT_ID`와 `NAVER_API_HUB_CLIENT_SECRET`을 설정하고 실제 값은 커밋하거나 로그에 출력하지 않습니다. 기본 검색어는 `NEWS_SEARCH_QUERY=증시`, Redis cache TTL은 `NEWS_CACHE_TTL_SECONDS=300`입니다.
 
@@ -90,7 +90,20 @@ docker compose --profile migration run --rm --no-deps db-init
 docker compose exec -T backend env RUN_INTEGRATION=1 pytest -q tests/test_integration_flow.py
 ```
 
-E2E는 `GET /auth/terms`부터 회원가입 동의 저장, 계좌·전략·매수·멱등 재시도·포트폴리오·매도·원장 정합성까지 확인합니다. 생성한 사용자와 가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 공용 개발 데이터 전체를 삭제하지 않습니다. 전체 schema drop/recreate, 전체 truncate, migration rollback 같은 파괴적 테스트는 별도 임시 PostgreSQL에서만 수행합니다.
+E2E는 `GET /auth/terms`부터 회원가입 동의 저장, AUTO/SEMI_AUTO별 계좌, 부족분 가상 입금과 멱등 재시도, 전략·매수·포트폴리오·매도·원장 정합성까지 확인합니다. 생성한 사용자와 가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 공용 개발 데이터 전체를 삭제하지 않습니다. 전체 schema drop/recreate, 전체 truncate, migration rollback 같은 파괴적 테스트는 별도 임시 PostgreSQL에서만 수행합니다.
+
+기존 Frontend Mock의 20개 종목·비중을 특정 개발용 가상계좌에 PostgreSQL 최신 KRX 종가
+기준의 실제 가상 주문으로 한 번만
+적용하려면 다음 명령을 사용합니다. 소수점 8자리 수량으로 각 Mock 목표 비중을 맞추고,
+전체 비용이 계좌 현금 이내인지 주문 전에 검증합니다.
+먼저 `--dry-run`으로 수량을 확인할 수 있으며, 종목별 고정
+idempotency key를 사용하므로 중간 실패 후 같은 명령을 다시 실행해도 완료된 주문은 중복되지
+않습니다. 비밀번호나 이메일 대신 로그인 아이디만 인자로 전달합니다.
+
+```bash
+docker compose run --rm backend python -m scripts.seed_demo_portfolio --user-id <개발용-로그인-id> --dry-run
+docker compose run --rm backend python -m scripts.seed_demo_portfolio --user-id <개발용-로그인-id>
+```
 
 실제 KIS 시세→Redis 통합 테스트는 유효한 KIS 환경 변수가 있는 경우에만 명시적으로 실행합니다. 이 테스트는 현재가 조회만 수행하고 KIS 주문 API나 실제·모의 계좌 주문을 호출하지 않습니다.
 
@@ -114,7 +127,7 @@ Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다.
 
 투자성향 분석은 인증된 `POST /api/v1/investor-profile/analyze` 요청으로 처리한다. Backend는 `v1` 설문의 8개 문항 ID와 선택지 ID를 검증한 뒤 Azure OpenAI에 전달하고, 모델 분석이 끝나면 같은 HTTP 요청에서 5단계 투자유형과 설명을 구조화된 JSON으로 반환한다. 답변과 분석 결과는 DB에 저장하지 않는다. 로컬 실행 전 `.env`에 `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`를 설정한다.
 
-Frontend 가상투자 화면은 FastAPI만 호출한다. `/accounts/me`로 동적 계좌 ID를 얻고 `/portfolio` 한 번으로 현금·보유종목·현재 평가를 조회한다. 시장가 BUY/SELL은 UUID idempotency key와 함께 `/orders`로 보내며 성공 후 portfolio/orders/executions를 다시 조회한다. KIS는 Backend `MarketService`의 가격 공급자로만 사용하고, 가상계좌·주문·체결·포지션·현금원장은 Azure PostgreSQL에서 관리한다. 브라우저 bundle에는 KIS key/secret이나 KIS 직접 호출 URL이 포함되지 않는다.
+Frontend 가상투자 화면은 FastAPI만 호출한다. `/accounts/me?operation_mode=`로 AUTO/SEMI_AUTO별 동적 계좌 ID를 얻고 `/portfolio` 한 번으로 현금·보유종목·현재 평가를 조회한다. 시장가 BUY/SELL은 UUID idempotency key와 함께 `/orders`로 보내며 성공 후 portfolio/orders/executions를 다시 조회한다. KIS는 Backend `MarketService`의 가격 공급자로만 사용하고, 가상계좌·가상 입금·주문·체결·포지션·현금원장은 Azure PostgreSQL에서 관리한다. 브라우저 bundle에는 KIS key/secret이나 KIS 직접 호출 URL이 포함되지 않는다.
 
 | 서비스 | 접속/확인 위치 |
 | --- | --- |

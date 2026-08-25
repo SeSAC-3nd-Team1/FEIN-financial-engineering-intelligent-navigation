@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import Header from '../components/Header';
-import { ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL } from '../data/holdings';
 import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
 import type { OperationMode } from '../data/fees';
+import { STOCK_CONTRIBUTION } from '../data/holdings';
+import { STRATEGIES } from '../data/strategies';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
 
@@ -21,22 +22,59 @@ interface Props {
 /** 05 포트폴리오 대시보드 — 스토리 → 리밸런싱 제안(운용방식별 분기) → 판단 성적표 → 전략 */
 export default function Dashboard({ userName, strategyName, mode, onNavigate, onOpenHoldings, onChangeStrategy }: Props) {
   const isAuto = mode === 'auto';
-  useTradingData();
+  const token = useTradingData();
   const account = useTradingStore((state) => state.account);
   const portfolio = useTradingStore((state) => state.portfolio);
+  const decisions = useTradingStore((state) => state.decisions);
+  const recordDecision = useTradingStore((state) => state.recordDecision);
+  const isDecisionSubmitting = useTradingStore((state) => state.isDecisionSubmitting);
   const [sheetOpen, setSheetOpen] = useState(false); // 리밸런싱 상세 시트
+  const decisionRetry = useRef<{
+    decision: 'ACCEPTED' | 'HELD';
+    accountId: string;
+    stockCode: string;
+    key: string;
+  } | null>(null);
 
-  /** 오늘 손익 = 평가금액 × 등락률. 스토리와 요약이 같은 계산을 공유한다 */
-  const { todayTotal, top } = useMemo(() => {
-    const gains = MOCK_HOLDINGS.map((h) => ({ name: h.name, gain: (MOCK_HOLD_TOTAL * h.pct) / 100 * (h.chg / 100) }));
-    const total = gains.reduce((a, g) => a + g.gain, 0);
-    return { todayTotal: total, top: [...gains].sort((a, b) => b.gain - a.gain)[0] };
-  }, []);
-
-  const holdTotal = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
+  const top = portfolio?.top_contributor ?? null;
+  const fallbackTop = top ? null : STOCK_CONTRIBUTION[0] ?? null;
+  const topName = top?.stock_name ?? top?.stock_code ?? fallbackTop?.name ?? null;
+  const topAmount = top ? Number(top.amount) : fallbackTop?.amount ?? null;
+  const selectedStrategy = STRATEGIES.find((item) => item.name === strategyName);
+  const proposal = portfolio?.rebalancing_proposals[0] ?? null;
+  const holdTotal = portfolio ? Number(portfolio.total_assets) : null;
   const initialCash = account ? Number(account.initial_cash) : 0;
-  const profit = portfolio && initialCash > 0 ? Number(portfolio.total_assets) - initialCash : 83_400;
-  const profitRate = initialCash > 0 ? (profit / initialCash) * 100 : 8.34;
+  const profit = portfolio && initialCash > 0 ? Number(portfolio.total_assets) - initialCash : null;
+  const profitRate = profit != null && initialCash > 0 ? (profit / initialCash) * 100 : null;
+  const latestDecision = decisions?.items[0] ?? null;
+  const actualOutcome = latestDecision?.actual_portfolio_return_rate == null
+    ? null : Number(latestDecision.actual_portfolio_return_rate);
+  const submitDecision = async (decision: 'ACCEPTED' | 'HELD') => {
+    if (!token || !account || !proposal) return;
+    const retry = decisionRetry.current?.decision === decision
+      && decisionRetry.current.accountId === account.id
+      && decisionRetry.current.stockCode === proposal.stock_code
+      ? decisionRetry.current
+      : {
+        decision,
+        accountId: account.id,
+        stockCode: proposal.stock_code,
+        key: crypto.randomUUID(),
+      };
+    decisionRetry.current = retry;
+    try {
+      await recordDecision(token, {
+        account_id: account.id,
+        stock_code: proposal.stock_code,
+        decision,
+        idempotency_key: retry.key,
+      });
+      decisionRetry.current = null;
+      setSheetOpen(false);
+    } catch {
+      // Store에 실제 API 오류가 보존되므로 시트를 유지해 사용자가 다시 시도할 수 있게 한다.
+    }
+  };
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -50,14 +88,18 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
               {userName}님의 투자는<br />오늘도 전략대로 움직이고 있어요.
             </h1>
             <div className="flex items-baseline gap-4">
-              <span className="text-[32px] font-bold tracking-[-0.03em]">{won(holdTotal)}</span>
-              <span className="text-[19px] font-semibold text-up">{profit >= 0 ? '+' : ''}{Math.round(profit).toLocaleString('ko-KR')}원 ({profitRate >= 0 ? '+' : ''}{profitRate.toFixed(2)}%)</span>
+              <span className="text-[32px] font-bold tracking-[-0.03em]">{holdTotal == null ? '-' : won(holdTotal)}</span>
+              <span className="text-[19px] font-semibold text-up">
+                {profit == null || profitRate == null ? '-' : `${profit >= 0 ? '+' : ''}${Math.round(profit).toLocaleString('ko-KR')}원 (${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%)`}
+              </span>
             </div>
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-2 rounded-full bg-[#EAF7EF] px-3.5 py-2 text-[15px] font-semibold text-[#2E9B65]">
                 ● 전략 정상
               </span>
-              <span className="text-[17px] text-muted">현재 포트폴리오는 {strategyName}의 목표 범위 안에 있어요.</span>
+              <span className="text-[17px] text-muted">
+                {portfolio?.strategy_targets_available ? `현재 포트폴리오를 ${strategyName} 목표 비중과 비교했어요.` : '전략 목표 비중 데이터가 아직 없어요.'}
+              </span>
             </div>
           </section>
 
@@ -65,23 +107,23 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
           <section className="flex flex-col gap-6">
             <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">오늘 내 투자에는 무슨 일이 있었나요?</h2>
             <div className="flex flex-col gap-4">
-              <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
+              <Story title={topName ? `${topName}가 오늘 수익을 가장 많이 만들었어요` : '오늘 종목별 기여 데이터가 아직 없어요'}>
                 <div className="flex items-baseline gap-4">
-                  <span className="text-2xl font-bold text-up">+{Math.round(top.gain).toLocaleString('ko-KR')}원</span>
-                  <span className="text-[17px] text-muted">오늘 전체 수익의 {Math.round((top.gain / todayTotal) * 100)}%</span>
+                  <span className="text-2xl font-bold text-up">{topAmount == null ? '-' : `${topAmount >= 0 ? '+' : ''}${Math.round(topAmount).toLocaleString('ko-KR')}원`}</span>
+                  <span className="text-[17px] text-muted">{top?.share_rate == null ? '-' : `오늘 전체 수익의 ${Math.round(Number(top.share_rate))}%`}</span>
                 </div>
-                <span className="pt-1 text-base font-semibold text-navy">왜 올랐나요? →</span>
+                {fallbackTop && <span className="text-sm text-subtle">실제 당일 기여도가 없어 기존 데모 값을 표시합니다.</span>}
               </Story>
 
-              <Story title="많이 오른 만큼 비중도 목표보다 커졌어요">
+              <Story title={proposal ? `${proposal.stock_name ?? proposal.stock_code} 비중을 조정할 필요가 있어요` : '현재 확인할 리밸런싱 제안이 없어요'}>
                 <div className="flex items-center gap-3.5 text-[19px] text-[#3F4A43]">
-                  <span>목표 14%</span><span className="text-[#A6AFA7]">→</span><span className="font-bold">현재 16.2%</span>
+                  <span>목표 {proposal ? `${Number(proposal.target_weight).toFixed(1)}%` : '-'}</span><span className="text-[#A6AFA7]">→</span><span className="font-bold">현재 {proposal ? `${Number(proposal.current_weight).toFixed(1)}%` : '-'}</span>
                 </div>
                 <span className="text-[17px] leading-7 text-muted">어떻게 하면 좋을지 아래에서 AI 제안을 확인해보세요.</span>
               </Story>
 
-              <Story title="KT&G는 포트폴리오의 흔들림을 줄여줬어요">
-                <span className="text-[17px] leading-7 text-muted">오늘 시장보다 변동성이 낮았어요.</span>
+              <Story title="실제 계좌와 시장 데이터를 우선 사용해요">
+                <span className="text-[17px] leading-7 text-muted">아직 연동되지 않은 설명·재무·분석 항목만 기존 데모 값으로 보완해요.</span>
               </Story>
             </div>
           </section>
@@ -96,21 +138,21 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
                 </span>
                 <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">
                   {isAuto
-                    ? 'SK하이닉스 비중이 전략 목표보다 높아져서 물방개가 비중을 자동으로 조정했어요.'
-                    : 'SK하이닉스 비중이 전략 목표보다 높아졌어요.'}
+                    ? (proposal ? `${proposal.stock_name ?? proposal.stock_code} 비중 조정안을 확인했어요.` : '현재 실행할 수 있는 실제 비중 조정안이 없어요.')
+                    : (proposal ? `${proposal.stock_name ?? proposal.stock_code} 비중이 전략 목표와 달라졌어요.` : '현재 확인할 수 있는 실제 비중 조정안이 없어요.')}
                 </p>
                 <div className="flex gap-10 rounded-[18px] bg-canvas px-8 py-6">
-                  <Fact label="목표" value="14%" />
-                  <Fact label={isAuto ? '조정 전' : '현재'} value="18.7%" warn />
-                  {isAuto ? <Fact label="조정 후" value="14.2%" /> : <Fact label="추천" value="약 47,000원 줄이기" />}
+                  <Fact label="목표" value={proposal ? `${Number(proposal.target_weight).toFixed(1)}%` : '-'} />
+                  <Fact label={isAuto ? '조정 전' : '현재'} value={proposal ? `${Number(proposal.current_weight).toFixed(1)}%` : '-'} warn />
+                  {isAuto ? <Fact label="조정 후" value={proposal ? `${Number(proposal.target_weight).toFixed(1)}%` : '-'} /> : <Fact label="추천" value={proposal ? `${won(Number(proposal.recommended_amount))} ${proposal.action === 'SELL' ? '줄이기' : '늘리기'}` : '-'} />}
                 </div>
                 <div className="flex items-center gap-3 pt-1">
                   {isAuto ? (
-                    <button onClick={() => setSheetOpen(true)} className="text-base font-semibold text-navy underline">
+                    <button disabled={!proposal} onClick={() => setSheetOpen(true)} className="text-base font-semibold text-navy underline disabled:text-muted">
                       자세히 보기 →
                     </button>
                   ) : (
-                    <button onClick={() => setSheetOpen(true)} className="rounded-field bg-lime px-8 py-4 text-[17px] font-bold text-navy">
+                    <button disabled={!proposal} onClick={() => setSheetOpen(true)} className="rounded-field bg-lime px-8 py-4 text-[17px] font-bold text-navy disabled:opacity-50">
                       제안 확인하기
                     </button>
                   )}
@@ -123,10 +165,10 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
           <section className="flex items-center justify-between gap-8 rounded-card bg-surface px-12 py-11">
             <div className="flex flex-col gap-2.5">
               <span className="text-2xl font-bold tracking-[-0.025em]">내 돈은 지금 이렇게 나뉘어 있어요</span>
-              <span className="text-[17px] leading-7 text-muted">20개 종목의 현재 비중과 오늘 등락을 한 번에 볼 수 있어요.</span>
+              <span className="text-[17px] leading-7 text-muted">{portfolio ? `${portfolio.positions.length}개 종목의 현재 비중과 오늘 등락을 한 번에 볼 수 있어요.` : '보유 종목 데이터를 불러오고 있어요.'}</span>
             </div>
             <button onClick={onOpenHoldings} className="shrink-0 rounded-field bg-[#F4F6F1] px-7 py-4 text-[17px] font-semibold text-[#3F4A43]">
-              전체 20개 종목 보기 →
+              전체 보유 종목 보기 →
             </button>
           </section>
 
@@ -142,24 +184,24 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
               <div className="flex flex-col gap-3">
                 <span className="text-[15px] text-muted">지난 리밸런싱</span>
                 <div className="flex items-center gap-3.5 text-[19px] text-[#3F4A43]">
-                  <span>AI 제안 <b>삼성전자 비중 3% 줄이기</b></span>
+                  <span>AI 제안 <b>{latestDecision ? `${latestDecision.stock_name ?? latestDecision.stock_code} ${latestDecision.action === 'SELL' ? '줄이기' : '늘리기'}` : '-'}</b></span>
                   <span className="text-[#A6AFA7]">·</span>
-                  <span>내 선택 <b>하지 않음</b></span>
+                  <span>내 선택 <b>{latestDecision ? (latestDecision.decision === 'ACCEPTED' ? '수락' : '보류') : '-'}</b></span>
                 </div>
-                <span className="text-[17px] text-muted">그 이후 삼성전자 -6.4%</span>
+                <span className="text-[17px] text-muted">{latestDecision ? (actualOutcome == null ? '다음 일별 스냅샷부터 실제 결과를 비교할 수 있어요.' : `${latestDecision.outcome_as_of} 기준 포트폴리오 ${actualOutcome >= 0 ? '+' : ''}${actualOutcome.toFixed(2)}%`) : '아직 기록된 리밸런싱 판단이 없어요.'}</span>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                  <span className="text-[15px] text-muted">AI 제안을 따랐다면</span>
-                  <span className="text-[26px] font-bold tracking-[-0.03em] text-up">현재 자산 +12,400원</span>
+                  <span className="text-[15px] text-muted">최근 6개월 수락</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{decisions?.accepted ?? 0}건</span>
                 </div>
                 <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                  <span className="text-[15px] text-muted">실제 내 선택</span>
-                  <span className="text-[26px] font-bold tracking-[-0.03em] text-down">현재 자산 -3,800원</span>
+                  <span className="text-[15px] text-muted">최근 6개월 보류</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{decisions?.held ?? 0}건</span>
                 </div>
               </div>
               <p className="text-[17px] leading-7 text-muted">
-                이번에는 AI 제안을 따랐을 때 변동성이 조금 더 낮았어요.
+                각 판단 결과는 판단 시점 자산과 이후 실제 계좌 스냅샷을 기준으로 개별 확인해요.
               </p>
               <span className="text-base font-semibold text-navy">지난 판단 돌아보기 →</span>
             </div>
@@ -170,7 +212,7 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
             <div className="flex flex-col gap-2.5">
               <span className="text-[15px] text-muted">현재 전략</span>
               <span className="text-2xl font-bold tracking-[-0.025em]">{strategyName}</span>
-              <span className="text-base text-muted">나와 92% 잘 맞아요</span>
+              <span className="text-base text-muted">전략 적합도 {selectedStrategy ? `${selectedStrategy.match}%` : '-'}</span>
             </div>
             <button onClick={onChangeStrategy} className="shrink-0 rounded-field bg-[#F4F6F1] px-7 py-4 text-[17px] font-semibold text-[#3F4A43]">
               전략 변경하기
@@ -180,7 +222,7 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
       </main>
 
       {/* 05_Rebalancing_Detail — Before → After */}
-      {sheetOpen && (
+      {sheetOpen && proposal && (
         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8" onClick={() => setSheetOpen(false)}>
           <div className="flex w-[720px] flex-col gap-7 rounded-card bg-surface p-12" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-6">
@@ -192,19 +234,19 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
               </button>
             </div>
             <p className="text-lg leading-[30px] text-[#3F4A43]">
-              SK하이닉스가 최근 상승하면서 처음 정했던 14%보다 비중이 커졌어요.
+              {proposal.stock_name ?? proposal.stock_code}의 현재 비중과 전략 목표 비중을 실제 평가금액 기준으로 비교했어요.
             </p>
             <div className="flex items-center gap-6 rounded-[18px] bg-canvas px-8 py-7">
               <div className="flex flex-1 flex-col gap-2">
                 <span className="text-[15px] text-muted">현재</span>
-                <span className="text-[28px] font-bold tracking-[-0.03em] text-warn">18.7%</span>
-                <div className="h-2.5 rounded-full bg-[#E5E9E3]"><div className="h-2.5 rounded-full bg-warn" style={{ width: '18.7%' }} /></div>
+                <span className="text-[28px] font-bold tracking-[-0.03em] text-warn">{Number(proposal.current_weight).toFixed(1)}%</span>
+                <div className="h-2.5 rounded-full bg-[#E5E9E3]"><div className="h-2.5 rounded-full bg-warn" style={{ width: `${Math.min(Number(proposal.current_weight), 100)}%` }} /></div>
               </div>
               <span className="text-2xl text-[#A6AFA7]">→</span>
               <div className="flex flex-1 flex-col gap-2">
                 <span className="text-[15px] text-muted">조정 후</span>
-                <span className="text-[28px] font-bold tracking-[-0.03em]">14.2%</span>
-                <div className="h-2.5 rounded-full bg-[#E5E9E3]"><div className="h-2.5 rounded-full bg-navy" style={{ width: '14.2%' }} /></div>
+                <span className="text-[28px] font-bold tracking-[-0.03em]">{Number(proposal.target_weight).toFixed(1)}%</span>
+                <div className="h-2.5 rounded-full bg-[#E5E9E3]"><div className="h-2.5 rounded-full bg-navy" style={{ width: `${Math.min(Number(proposal.target_weight), 100)}%` }} /></div>
               </div>
             </div>
             <div className="flex flex-col gap-2.5 rounded-[18px] bg-[#F8FCEE] px-8 py-7">
@@ -219,10 +261,10 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
               </button>
             ) : (
               <div className="flex gap-3">
-                <button onClick={() => setSheetOpen(false)} className="flex-1 rounded-field bg-lime py-5 text-lg font-bold text-navy">
-                  47,000원 조정하기
+                <button disabled={isDecisionSubmitting} onClick={() => void submitDecision('ACCEPTED')} className="flex-1 rounded-field bg-lime py-5 text-lg font-bold text-navy disabled:opacity-50">
+                  제안 수락 기록하기
                 </button>
-                <button onClick={() => setSheetOpen(false)} className="rounded-field bg-[#F4F6F1] px-8 py-5 text-[17px] font-semibold text-[#3F4A43]">
+                <button disabled={isDecisionSubmitting} onClick={() => void submitDecision('HELD')} className="rounded-field bg-[#F4F6F1] px-8 py-5 text-[17px] font-semibold text-[#3F4A43] disabled:opacity-50">
                   이번에는 하지 않을게요
                 </button>
               </div>

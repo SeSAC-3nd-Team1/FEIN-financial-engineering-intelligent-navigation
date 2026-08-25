@@ -36,24 +36,23 @@ Raw에 저장하는 데까지만 포함한다. 정규화, 결측 처리, Parquet
 - [금융위원회 주식시세정보](https://www.data.go.kr/data/15094808/openapi.do): 주식과 관련 증권의 시가·종가·고가·저가·거래량을 제공하며, 공식 안내상 영업일 다음 날 갱신된다.
 - 나머지 금융위 operation의 실제 endpoint 목록은 `collectors/public_data_config.py`가 단일 코드 계약이다.
 
-### P1: 별도 수집기로 후속 추가
+### 추가 Source 현황
 
 | 데이터 | 공식 출처 | 최소 범위 | 필요한 이유 | 현재 상태 |
 |---|---|---:|---|---|
-| KOSPI/KOSDAQ 일별 매매·valuation | [KRX OPEN API](https://openapi.krx.co.kr/contents/OPP/USES/service/OPPUSES002_S2.cmd?BO_ID=JvJFzlAENzZlPBDNGAWC) | 5년 | PER/PBR/배당수익률, 거래소 원천 대조 | `KRX_AUTH_KEY` 발급 후 별도 Issue |
+| KOSPI/KOSDAQ 일별 매매·종목기본·시장지수 | [KRX OPEN API](https://openapi.krx.co.kr/contents/OPP/USES/service/OPPUSES002_S2.cmd?BO_ID=JvJFzlAENzZlPBDNGAWC) | 실행일부터 축적 | 화면 일별시세·시가총액·종목정보, 거래소 원천 대조 | 7개 승인 endpoint collector·Raw·PostgreSQL serving 구현; 5년 backfill은 후속 운영 작업 |
 | 과거 KOSPI 200 구성종목 | KRX Data Marketplace | 5년+ | survivorship bias 없는 과거 universe | 제공 방식·라이선스 확인 후 별도 Issue |
 | 공시 접수시각·원문 | [OpenDART 공시검색](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001) | 실행일부터 축적 | 재무정보의 실제 공개 가능시각과 point-in-time 결합 | Issue #65 collector/Raw/PostgreSQL 구현; 과거 5년 backfill은 후속 운영 작업 |
 | 기준금리·환율·CPI·국고채 | [한국은행 ECOS Open API](https://ecos.bok.or.kr/api/) | 2021년~ | 시장 국면과 거시 설명 | 수집·Processed·PIT feature 구현 |
 | 실시간 시세·모의투자 | KIS Developers | 축적 시작일 이후 | 화면 현재가와 모의 주문 | 학습용 5년 Raw와 분리 |
 
 OpenDART·KRX·ECOS는 인증·호출 계약·Raw 경로가 서로 다르므로 금융위 수집기에 섞지
-않는다. OpenDART는 별도 collector로 구현했고, 나머지 source도 각각 별도 collector와
-`raw/{source}/{dataset}/...` lineage를 갖도록 후속 작업으로 분리한다.
+않는다. 각 source는 별도 collector와 `raw/{source}/{dataset}/...` lineage를 사용한다.
 
 ## Raw 저장 계약
 
 ```text
-raw/data-go-kr/{dataset}/operation={operation}/year=YYYY/month=MM/{sha256}.jsonl.gz
+raw/{source}/{dataset}/operation={operation}/year=YYYY/month=MM/{sha256}.jsonl.gz
 ```
 
 한 줄은 API payload와 lineage envelope로 구성한다.
@@ -149,9 +148,13 @@ content-addressed 경로가 같아 기존 Blob을 재사용한다.
 - OIDC Secret `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
 - OIDC principal에 Storage Blob Data Contributor 권한
 
-스케줄 workflow는 GitHub 기본 브랜치의 파일을 기준으로 실행되므로 이 변경이 `main`에
+스케줄 workflow는 GitHub 기본 브랜치의 파일을 기준으로 실행되므로 이 변경이 `develop`에
 반영된 뒤 자동 실행이 시작된다. 수동 실행에서는 `lookback_days`를 1~31 사이로 지정할 수
 있다.
+
+KRX 7개 endpoint의 일별 동기화는 별도 `.github/workflows/krx-daily-sync.yml`에서 평일
+18:30 KST에 수행한다. `KRX_AUTH_KEY`, `DATABASE_URL` Secret과 Azure OIDC 권한이 필요하며,
+KRX 원문은 `raw/krx/...`에 저장하고 화면 조회용 정제 행은 PostgreSQL에 UPSERT한다.
 
 ### 실제 Raw 보유기간 감사
 

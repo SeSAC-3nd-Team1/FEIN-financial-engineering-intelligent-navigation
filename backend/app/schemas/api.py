@@ -6,9 +6,11 @@ import re
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.core.config import settings
+
+OperationMode = Literal["AUTO", "SEMI_AUTO"]
 
 
 class AgreementRequest(BaseModel):
@@ -69,19 +71,82 @@ class TermResponse(BaseModel):
     is_required: bool
 
 
+class InvestmentTermResponse(TermResponse):
+    content_reference: str | None = None
+
+
+class InvestmentOnboardingCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    strategy_id: str = Field(min_length=1, max_length=30)
+    investment_amount: Decimal = Field(gt=0, le=100_000_000)
+    operation_mode: OperationMode
+
+
+class InvestmentAgreementSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agreements: list[AgreementRequest] = Field(min_length=1, max_length=10)
+
+
+class InvestmentAccountPrepareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_name: str = Field(default="나의 가상 투자계좌", min_length=1, max_length=100)
+
+
+class InvestmentDepositRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0, le=100_000_000)
+    idempotency_key: str = Field(min_length=8, max_length=100)
+
+
+class InvestmentOnboardingResponse(BaseModel):
+    id: UUID
+    strategy_id: str
+    investment_amount: Decimal
+    operation_mode: OperationMode
+    status: Literal["TERMS_PENDING", "ACCOUNT_PENDING", "DEPOSIT_PENDING", "READY", "COMPLETED"]
+    account_id: UUID | None
+    terms_completed: bool
+    account_exists: bool
+    next_step: Literal["TERMS", "ACCOUNT", "DEPOSIT", "CONFIRM", "PORTFOLIO"]
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class AccountCreateRequest(BaseModel):
     account_name: str = Field(default="나의 가상 투자계좌", min_length=1, max_length=100)
+    operation_mode: OperationMode = "SEMI_AUTO"
 
 
 class AccountResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     account_name: str
+    operation_mode: OperationMode
     initial_cash: Decimal
     cash_balance: Decimal
     status: str
     selected_strategy_id: str | None
     created_at: datetime
+
+
+class InvestmentAccountPrepareResponse(BaseModel):
+    account: AccountResponse
+    created: bool
+    required_deposit_amount: Decimal
+    onboarding: InvestmentOnboardingResponse
+
+
+class InvestmentDepositResponse(BaseModel):
+    deposit_id: UUID
+    amount: Decimal
+    balance_after: Decimal
+    required_deposit_amount: Decimal
+    onboarding: InvestmentOnboardingResponse
 
 
 class StrategyResponse(BaseModel):
@@ -93,6 +158,77 @@ class StrategyResponse(BaseModel):
     rebalance_cycle: str
 
 
+class BacktestRunRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    strategy_id: str = Field(alias="strategyId", min_length=1, max_length=30)
+    period_id: str = Field(alias="periodId", min_length=1, max_length=50)
+    period_label: str = Field(alias="periodLabel", min_length=1, max_length=100)
+    period_description: str = Field(alias="periodDescription", max_length=500)
+    start_date: date = Field(alias="startDate")
+    end_date: date = Field(alias="endDate")
+
+    @model_validator(mode="after")
+    def validate_period(self) -> "BacktestRunRequest":
+        if self.start_date >= self.end_date:
+            raise ValueError("startDate must be before endDate")
+        if (self.end_date - self.start_date).days > 3660:
+            raise ValueError("backtest period must not exceed 10 years")
+        return self
+
+
+class BacktestPeriodResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    label: str
+    start_date: date = Field(alias="startDate")
+    end_date: date = Field(alias="endDate")
+    description: str
+
+
+class BacktestAvailableRangeResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    min_date: date = Field(alias="minDate")
+    max_date: date = Field(alias="maxDate")
+
+
+class BacktestSeriesPointResponse(BaseModel):
+    t: date
+    strategy: float
+    benchmark: float
+
+
+class BacktestMetricsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cumulative_return: float = Field(alias="cumulativeReturn")
+    cagr: float
+    mdd: float
+    volatility: float
+    sharpe: float | None
+
+
+class BacktestBenchmarkMetricsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cumulative_return: float = Field(alias="cumulativeReturn")
+    mdd: float
+
+
+class BacktestRunResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    strategy_id: str = Field(alias="strategyId")
+    strategy_name: str = Field(alias="strategyName")
+    period: BacktestPeriodResponse
+    series: list[BacktestSeriesPointResponse]
+    metrics: BacktestMetricsResponse
+    benchmark_name: str = Field(alias="benchmarkName")
+    benchmark_metrics: BacktestBenchmarkMetricsResponse = Field(alias="benchmarkMetrics")
+
+
 class StrategySelectRequest(BaseModel):
     strategy_id: str
 
@@ -102,7 +238,7 @@ class OrderCreateRequest(BaseModel):
     stock_code: str = Field(pattern=r"^[0-9A-Z]{6,12}$")
     side: Literal["BUY", "SELL"]
     order_type: Literal["MARKET"] = "MARKET"
-    quantity: int = Field(gt=0, le=1_000_000)
+    quantity: Decimal = Field(gt=0, le=1_000_000, decimal_places=8)
     idempotency_key: str = Field(min_length=8, max_length=100)
 
 
@@ -113,7 +249,7 @@ class OrderResponse(BaseModel):
     stock_code: str
     side: str
     order_type: str
-    quantity: int
+    quantity: Decimal
     status: str
     requested_price: Decimal | None
     requested_at: datetime
@@ -125,16 +261,80 @@ class ExecutionResponse(BaseModel):
     order_id: UUID
     stock_code: str
     side: str
-    quantity: int
+    quantity: Decimal
     execution_price: Decimal
     executed_at: datetime
+
+
+class PortfolioTransactionResponse(BaseModel):
+    id: int
+    order_id: UUID
+    stock_code: str
+    stock_name: str | None
+    side: Literal["BUY", "SELL"]
+    quantity: Decimal
+    execution_price: Decimal
+    transaction_amount: Decimal
+    executed_at: datetime
+
+
+class PortfolioTransactionListResponse(BaseModel):
+    account_id: UUID
+    items: list[PortfolioTransactionResponse]
+    next_cursor: str | None
+    has_more: bool
 
 
 class PriceResponse(BaseModel):
     stock_code: str
     price: Decimal
+    previous_close: Decimal | None = None
+    change_amount: Decimal | None = None
+    change_rate: Decimal | None = None
+    volume: int | None = None
     source: str
     as_of: datetime
+
+
+class StockSummaryResponse(BaseModel):
+    stock_code: str
+    stock_name: str
+    market: str
+    sector: str | None
+    listing_date: date | None
+    listed_shares: int | None
+    security_type: str | None
+    description: str | None
+    price: Decimal | None
+    previous_close: Decimal | None
+    change_amount: Decimal | None
+    change_rate: Decimal | None
+    volume: int | None
+    market_cap: Decimal | None
+    per: Decimal | None
+    pbr: Decimal | None
+    roe: Decimal | None
+    dividend_yield: Decimal | None
+    financial_year: str | None
+    as_of: datetime | None
+    sources: dict[str, str | None]
+
+
+class StockChartItemResponse(BaseModel):
+    date: str
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int
+
+
+class StockChartResponse(BaseModel):
+    stock_code: str
+    period: Literal["1D", "1W", "3M", "6M", "1Y", "5Y"]
+    source: str
+    as_of: datetime
+    items: list[StockChartItemResponse]
 
 
 class MinuteCandleResponse(BaseModel):
@@ -182,14 +382,39 @@ class RealtimeStatusResponse(BaseModel):
 
 class PositionResponse(BaseModel):
     stock_code: str
-    quantity: int
+    stock_name: str | None
+    sector: str | None
+    quantity: Decimal
     average_price: Decimal
     current_price: Decimal
+    previous_close: Decimal | None
+    change_rate: Decimal | None
     purchase_amount: Decimal
     evaluation_amount: Decimal
     unrealized_profit: Decimal
     return_rate: Decimal
     realized_profit: Decimal
+    weight: Decimal
+    today_profit: Decimal | None
+    price_source: str
+    price_as_of: datetime
+
+
+class PortfolioContributionResponse(BaseModel):
+    stock_code: str
+    stock_name: str | None
+    amount: Decimal
+    share_rate: Decimal | None
+
+
+class RebalancingProposalResponse(BaseModel):
+    stock_code: str
+    stock_name: str | None
+    current_weight: Decimal
+    target_weight: Decimal
+    weight_diff: Decimal
+    action: Literal["BUY", "SELL"]
+    recommended_amount: Decimal
 
 
 class PortfolioResponse(BaseModel):
@@ -201,7 +426,123 @@ class PortfolioResponse(BaseModel):
     unrealized_profit: Decimal
     realized_profit: Decimal
     return_rate: Decimal
+    today_profit: Decimal | None
+    top_contributor: PortfolioContributionResponse | None
+    contributions: list[PortfolioContributionResponse]
+    strategy_targets_available: bool
+    rebalancing_proposals: list[RebalancingProposalResponse]
     positions: list[PositionResponse]
+
+
+class PortfolioHistoryPointResponse(BaseModel):
+    date: date
+    total_assets: Decimal
+    portfolio_return_rate: Decimal
+    benchmark_return_rate: Decimal | None
+
+
+class PortfolioHistoryResponse(BaseModel):
+    account_id: UUID
+    period: Literal["1M", "3M", "1Y", "ALL"]
+    benchmark_name: str
+    items: list[PortfolioHistoryPointResponse]
+
+
+class PortfolioHomeAccountResponse(BaseModel):
+    id: UUID
+    account_name: str
+    operation_mode: OperationMode
+    status: str
+    selected_strategy_id: str | None
+
+
+class PortfolioHomeSummaryResponse(BaseModel):
+    cash_balance: Decimal
+    total_purchase_amount: Decimal
+    total_evaluation_amount: Decimal
+    total_assets: Decimal
+    unrealized_profit: Decimal
+    realized_profit: Decimal
+    return_rate: Decimal
+    today_profit: Decimal | None
+    top_contributor: PortfolioContributionResponse | None
+
+
+class PortfolioAllocationResponse(BaseModel):
+    type: Literal["STOCK", "CASH"]
+    stock_code: str | None
+    name: str
+    amount: Decimal
+    weight: Decimal
+
+
+class PortfolioHomeResponse(BaseModel):
+    account: PortfolioHomeAccountResponse
+    summary: PortfolioHomeSummaryResponse
+    trend: PortfolioHistoryResponse
+    allocations: list[PortfolioAllocationResponse]
+    positions: list[PositionResponse]
+    contributions: list[PortfolioContributionResponse]
+    strategy_targets_available: bool
+    rebalancing_proposals: list[RebalancingProposalResponse]
+    valuation_as_of: datetime | None
+    price_sources: list[str]
+
+
+class StockEvaluationAxisResponse(BaseModel):
+    key: Literal["stability", "financial_health", "growth", "defense", "diversification"]
+    label: str
+    score: int | None = Field(ge=0, le=100)
+    status: Literal["AVAILABLE", "UNAVAILABLE"]
+    basis: str
+
+
+class StockEvaluationResponse(BaseModel):
+    account_id: UUID
+    stock_code: str
+    stock_name: str | None
+    feature_version: Literal["stock-feature-v1"] = "stock-feature-v1"
+    as_of: date | None
+    target_weight: Decimal | None
+    role_summary: str | None
+    axes: list[StockEvaluationAxisResponse]
+    sources: list[Literal["KRX", "OpenDART", "Portfolio"]]
+
+
+class RebalancingDecisionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID
+    stock_code: str = Field(pattern=r"^[0-9A-Z]{6,12}$")
+    decision: Literal["ACCEPTED", "HELD"]
+    idempotency_key: str = Field(min_length=1, max_length=100)
+
+
+class RebalancingDecisionResponse(BaseModel):
+    id: UUID
+    account_id: UUID
+    strategy_id: str | None
+    stock_code: str
+    stock_name: str | None
+    action: Literal["BUY", "SELL"]
+    current_weight: Decimal
+    target_weight: Decimal
+    weight_diff: Decimal
+    recommended_amount: Decimal
+    decision: Literal["ACCEPTED", "HELD"]
+    baseline_snapshot_date: date | None
+    actual_portfolio_return_rate: Decimal | None
+    outcome_as_of: date | None
+    created_at: datetime
+
+
+class RebalancingDecisionHistoryResponse(BaseModel):
+    account_id: UUID
+    period_label: Literal["최근 6개월"] = "최근 6개월"
+    proposed: int
+    accepted: int
+    held: int
+    items: list[RebalancingDecisionResponse]
 
 
 class ErrorResponse(BaseModel):

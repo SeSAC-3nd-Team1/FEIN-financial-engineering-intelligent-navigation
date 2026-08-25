@@ -13,10 +13,12 @@ import redis
 
 from app.core.config import settings
 from app.core.errors import ServiceError
-from app.integrations.kis.models import MinuteCandle
+from app.integrations.kis.models import CurrentQuote, MinuteCandle
 
 logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
+KIS_RATE_LIMIT_MESSAGE_CODE = "EGW00201"
+KIS_RATE_LIMIT_ATTEMPTS = 3
 
 
 class KisClient:
@@ -66,7 +68,7 @@ class KisClient:
                 logger.warning("Redis KIS token cache write failed")
         return self._token
 
-    def get_current_price(self, stock_code: str) -> tuple[Decimal, datetime]:
+    def get_current_quote(self, stock_code: str) -> CurrentQuote:
         headers = {
             "authorization": f"Bearer {self._access_token()}",
             "appkey": settings.kis_app_key,
@@ -89,16 +91,53 @@ class KisClient:
                 payload = response.json()
                 if payload.get("rt_cd") != "0":
                     raise ServiceError("STOCK_NOT_FOUND", "조회할 수 없는 종목입니다.", 404)
-                price = Decimal(payload["output"]["stck_prpr"])
+                output = payload["output"]
+                price = Decimal(output["stck_prpr"])
                 if not price.is_finite() or price <= 0:
                     raise ValueError("invalid current price")
-                return price, datetime.now(UTC)
+                change_amount = self._optional_decimal(output.get("prdy_vrss"))
+                previous_close = self._optional_decimal(output.get("stck_sdpr"))
+                if previous_close is None and change_amount is not None and price - change_amount > 0:
+                    previous_close = price - change_amount
+                return CurrentQuote(
+                    stock_code=stock_code,
+                    price=price,
+                    previous_close=previous_close,
+                    change_amount=change_amount,
+                    change_rate=self._optional_decimal(output.get("prdy_ctrt")),
+                    volume=self._optional_int(output.get("acml_vol")),
+                    as_of=datetime.now(UTC),
+                )
             except ServiceError:
                 raise
             except (httpx.HTTPError, InvalidOperation, ValueError, KeyError, TypeError) as exc:
                 last_error = exc
                 logger.warning("KIS price request attempt=%s failed stock_code=%s error=%s", attempt + 1, stock_code, type(exc).__name__)
         raise ServiceError("KIS_UNAVAILABLE", "현재 시장가격을 조회하지 못했습니다.", 503) from last_error
+
+    def get_current_price(self, stock_code: str) -> tuple[Decimal, datetime]:
+        """주문/평가 기존 계약을 유지하는 현재가 호환 wrapper다."""
+
+        quote = self.get_current_quote(stock_code)
+        return quote.price, quote.as_of
+
+    @staticmethod
+    def _optional_decimal(value: object) -> Decimal | None:
+        if value in (None, ""):
+            return None
+        result = Decimal(str(value))
+        if not result.is_finite():
+            raise ValueError("invalid quote number")
+        return result
+
+    @staticmethod
+    def _optional_int(value: object) -> int | None:
+        if value in (None, ""):
+            return None
+        result = int(value)
+        if result < 0:
+            raise ValueError("invalid quote volume")
+        return result
 
     def get_minute_candles(
         self,
@@ -108,8 +147,8 @@ class KisClient:
         end_at: datetime | None = None,
     ) -> tuple[list[MinuteCandle], datetime]:
         """KIS 당일 분봉 API를 페이지당 최대 30건씩 조회한다."""
-        if not 1 <= limit <= 120:
-            raise ValueError("limit must be between 1 and 120")
+        if not 1 <= limit <= 390:
+            raise ValueError("limit must be between 1 and 390")
 
         requested_at = (end_at or datetime.now(KST)).astimezone(KST)
         cursor = requested_at
@@ -122,7 +161,10 @@ class KisClient:
             "custtype": "P",
         }
 
-        for _ in range((limit + 29) // 30):
+        for page_index in range((limit + 29) // 30):
+            if page_index:
+                # 모의투자 API의 낮은 초당 호출 제한에서도 390분봉 pagination이 burst가 되지 않게 한다.
+                time.sleep(max(0, settings.kis_rest_page_interval_seconds))
             rows = self._get_minute_candle_page(stock_code, cursor, headers)
             before_count = len(candles)
             parsed_count = 0
@@ -155,7 +197,7 @@ class KisClient:
         headers: dict[str, str],
     ) -> list[dict[str, object]]:
         last_error: Exception | None = None
-        for attempt in range(2):
+        for attempt in range(KIS_RATE_LIMIT_ATTEMPTS):
             try:
                 response = httpx.get(
                     f"{settings.kis_base_url}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
@@ -170,11 +212,19 @@ class KisClient:
                     timeout=settings.request_timeout_seconds,
                 )
                 if response.status_code == 429:
-                    raise ServiceError("KIS_RATE_LIMIT", "시장가격 조회 한도를 초과했습니다.", 503)
+                    if attempt + 1 == KIS_RATE_LIMIT_ATTEMPTS:
+                        raise ServiceError("KIS_RATE_LIMIT", "시장가격 조회 한도를 초과했습니다.", 503)
+                    self._wait_for_rate_limit(attempt, stock_code)
+                    continue
                 response.raise_for_status()
                 payload = response.json()
                 if not isinstance(payload, dict):
                     raise ValueError("invalid minute candle response")
+                if payload.get("msg_cd") == KIS_RATE_LIMIT_MESSAGE_CODE:
+                    if attempt + 1 == KIS_RATE_LIMIT_ATTEMPTS:
+                        raise ServiceError("KIS_RATE_LIMIT", "시장가격 조회 한도를 초과했습니다.", 503)
+                    self._wait_for_rate_limit(attempt, stock_code)
+                    continue
                 if payload.get("rt_cd") != "0":
                     raise ServiceError("STOCK_NOT_FOUND", "조회할 수 없는 종목입니다.", 404)
                 rows = payload.get("output2")
@@ -192,6 +242,19 @@ class KisClient:
                     type(exc).__name__,
                 )
         raise ServiceError("KIS_UNAVAILABLE", "분봉 데이터를 조회하지 못했습니다.", 503) from last_error
+
+    @staticmethod
+    def _wait_for_rate_limit(attempt: int, stock_code: str) -> None:
+        """KIS의 HTTP/업무 응답 rate limit을 동일한 지수 backoff로 재시도한다."""
+
+        delay = max(0, settings.kis_rest_page_interval_seconds) * (2 ** attempt)
+        logger.warning(
+            "KIS minute candle rate limited stock_code=%s retry_after_seconds=%.3f",
+            stock_code,
+            delay,
+        )
+        if delay:
+            time.sleep(delay)
 
     @staticmethod
     def _parse_minute_candle(

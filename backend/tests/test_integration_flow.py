@@ -1,6 +1,7 @@
 """seeded PostgreSQL/Redis를 사용하는 회원→가상거래 E2E."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 import json
 import os
 from uuid import uuid4
@@ -13,7 +14,7 @@ from sqlalchemy import delete, select
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import CashLedger, Execution, Order, Position, Term, User, UserAgreement, VirtualAccount
+from app.models import AccountDeposit, CashLedger, Execution, InvestmentOnboarding, Order, Position, Term, User, UserAgreement, VirtualAccount
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_INTEGRATION") != "1", reason="RUN_INTEGRATION=1 required")
 
@@ -25,10 +26,13 @@ def _cleanup_test_user(user_id: str, cache: redis.Redis, stock_code: str) -> Non
         if user:
             account_ids = list(session.scalars(select(VirtualAccount.id).where(VirtualAccount.user_id == user.id)))
             if account_ids:
+                session.execute(delete(AccountDeposit).where(AccountDeposit.account_id.in_(account_ids)))
                 session.execute(delete(Execution).where(Execution.account_id.in_(account_ids)))
                 session.execute(delete(CashLedger).where(CashLedger.account_id.in_(account_ids)))
                 session.execute(delete(Order).where(Order.account_id.in_(account_ids)))
                 session.execute(delete(Position).where(Position.account_id.in_(account_ids)))
+            session.execute(delete(InvestmentOnboarding).where(InvestmentOnboarding.user_id == user.id))
+            if account_ids:
                 session.execute(delete(VirtualAccount).where(VirtualAccount.id.in_(account_ids)))
             session.execute(delete(UserAgreement).where(UserAgreement.user_id == user.id))
             session.delete(user)
@@ -141,15 +145,119 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             assert me.status_code == 200, me.text
             assert me.json()["user_id"] == user_id
 
-            created = client.post("/api/v1/accounts", headers=headers, json={"account_name": "통합테스트 계좌"})
-            assert created.status_code == 201, created.text
-            account_id = created.json()["id"]
-            strategy = client.put(
-                f"/api/v1/accounts/{account_id}/strategy",
+            onboarding = client.post(
+                "/api/v1/investment/onboardings",
                 headers=headers,
-                json={"strategy_id": "low"},
+                json={
+                    "strategy_id": "low",
+                    "investment_amount": 1_000_000,
+                    "operation_mode": "AUTO",
+                },
             )
-            assert strategy.status_code == 200
+            assert onboarding.status_code == 200, onboarding.text
+            onboarding_id = onboarding.json()["id"]
+            investment_terms = client.get(
+                "/api/v1/investment/terms?strategy_id=low",
+                headers=headers,
+            )
+            assert investment_terms.status_code == 200, investment_terms.text
+            investment_agreements = [
+                {
+                    "term_code": term["term_code"],
+                    "version": term["version"],
+                    "agreed": True,
+                }
+                for term in investment_terms.json()
+            ]
+            agreed = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/agreements",
+                headers=headers,
+                json={"agreements": investment_agreements},
+            )
+            assert agreed.status_code == 200, agreed.text
+            assert agreed.json()["next_step"] == "ACCOUNT"
+            prepared = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/account",
+                headers=headers,
+                json={"account_name": "통합테스트 계좌"},
+            )
+            assert prepared.status_code == 200, prepared.text
+            assert prepared.json()["created"] is True
+            assert prepared.json()["account"]["operation_mode"] == "AUTO"
+            assert prepared.json()["account"]["initial_cash"] == "0.00"
+            assert prepared.json()["account"]["cash_balance"] == "0.00"
+            assert prepared.json()["required_deposit_amount"] == "1000000.00"
+            assert prepared.json()["onboarding"]["next_step"] == "DEPOSIT"
+            account_id = prepared.json()["account"]["id"]
+            deposited = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/deposit",
+                headers=headers,
+                json={
+                    "amount": 1_000_000,
+                    "idempotency_key": f"deposit-{suffix}",
+                },
+            )
+            assert deposited.status_code == 200, deposited.text
+            assert deposited.json()["balance_after"] == "1000000.00"
+            assert deposited.json()["required_deposit_amount"] == "0.00"
+            assert deposited.json()["onboarding"]["next_step"] == "CONFIRM"
+            deposit_retry = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/deposit",
+                headers=headers,
+                json={
+                    "amount": 1_000_000,
+                    "idempotency_key": f"deposit-{suffix}",
+                },
+            )
+            assert deposit_retry.status_code == 200
+            assert deposit_retry.json()["deposit_id"] == deposited.json()["deposit_id"]
+            completed = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/complete",
+                headers=headers,
+            )
+            assert completed.status_code == 200, completed.text
+            assert completed.json()["next_step"] == "PORTFOLIO"
+            repeated_prepare = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/account",
+                headers=headers,
+                json={"account_name": "무시되는 계좌명"},
+            )
+            assert repeated_prepare.status_code == 200, repeated_prepare.text
+            assert repeated_prepare.json()["created"] is False
+            assert repeated_prepare.json()["onboarding"]["next_step"] == "PORTFOLIO"
+            repeated_complete = client.post(
+                f"/api/v1/investment/onboardings/{onboarding_id}/complete",
+                headers=headers,
+            )
+            assert repeated_complete.status_code == 200, repeated_complete.text
+            assert repeated_complete.json()["completed_at"] == completed.json()["completed_at"]
+
+            semi_onboarding = client.post(
+                "/api/v1/investment/onboardings",
+                headers=headers,
+                json={
+                    "strategy_id": "low",
+                    "investment_amount": 500_000,
+                    "operation_mode": "SEMI_AUTO",
+                },
+            )
+            assert semi_onboarding.status_code == 200, semi_onboarding.text
+            semi_onboarding_id = semi_onboarding.json()["id"]
+            assert semi_onboarding.json()["next_step"] == "ACCOUNT"
+            semi_prepared = client.post(
+                f"/api/v1/investment/onboardings/{semi_onboarding_id}/account",
+                headers=headers,
+                json={"account_name": "반자동 통합테스트 계좌"},
+            )
+            assert semi_prepared.status_code == 200, semi_prepared.text
+            assert semi_prepared.json()["account"]["operation_mode"] == "SEMI_AUTO"
+            assert semi_prepared.json()["account"]["id"] != account_id
+            all_accounts = client.get("/api/v1/accounts/me/all", headers=headers)
+            assert all_accounts.status_code == 200, all_accounts.text
+            assert {account["operation_mode"] for account in all_accounts.json()} == {
+                "AUTO",
+                "SEMI_AUTO",
+            }
 
             buy_payload = {
                 "account_id": account_id,
@@ -168,8 +276,8 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
 
             portfolio = client.get(f"/api/v1/portfolio?account_id={account_id}", headers=headers)
             assert portfolio.status_code == 200, portfolio.text
-            assert portfolio.json()["positions"][0]["quantity"] == 10
-            assert portfolio.json()["total_assets"] == "10000000.00"
+            assert Decimal(portfolio.json()["positions"][0]["quantity"]) == Decimal("10")
+            assert portfolio.json()["total_assets"] == "1000000.00"
 
             sell = client.post("/api/v1/orders", headers=headers, json={
                 "account_id": account_id,
@@ -181,8 +289,8 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             })
             assert sell.status_code == 201, sell.text
             after = client.get(f"/api/v1/portfolio?account_id={account_id}", headers=headers).json()
-            assert after["positions"][0]["quantity"] == 6
-            assert after["cash_balance"] == "9580000.00"
+            assert Decimal(after["positions"][0]["quantity"]) == Decimal("6")
+            assert after["cash_balance"] == "580000.00"
 
             with SessionLocal() as session:
                 account = session.get(VirtualAccount, account_id)
@@ -195,6 +303,7 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
                 orders = list(session.scalars(select(Order).where(Order.account_id == account_id)))
                 executions = list(session.scalars(select(Execution).where(Execution.account_id == account_id)))
                 assert account is not None and latest_ledger is not None
+                assert account.initial_cash == Decimal("1000000.00")
                 assert account.cash_balance == latest_ledger.balance_after
                 assert len(orders) == len(executions) == 2
                 assert {execution.order_id for execution in executions} == {order.id for order in orders}

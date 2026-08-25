@@ -36,7 +36,7 @@ import type { Screen, SignupPersonal } from './types';
  *  회원가입 입력값처럼 민감하거나 오래 들고 있을 필요 없는 값은 여기 포함하지 않는다. */
 const SESSION_KEY = 'fein.session-nav';
 interface PersistedNav {
-  screen: Screen; strategyId: string; stockIndex: number; stockBackTarget: Screen;
+  screen: Screen; strategyId: string; stockCode: string; stockBackTarget: Screen;
   selectedTransactionId: string; transactionBackTarget: Screen;
 }
 function loadPersistedNav(): Partial<PersistedNav> {
@@ -76,7 +76,7 @@ const INVEST_FLOW_SCREENS: Screen[] = ['invest-terms', 'invest-account', 'invest
  * 챗봇 FAB 는 라우팅 밖에 있어 모든 화면에 상주한다.
  */
 export default function App() {
-  // screen/strategyId/stockIndex/stockBackTarget 은 새로고침 직후 첫 렌더에서 sessionStorage 값으로
+  // screen/strategyId/stockCode/stockBackTarget 은 새로고침 직후 첫 렌더에서 sessionStorage 값으로
   // 곧바로 초기화한다(useState lazy initializer) — 그래야 'home' 으로 한 번 그렸다가 다시 튀는 깜빡임이 없다.
   const [persistedNav] = useState(loadPersistedNav);
   const [screen, setScreen] = useState<Screen>(persistedNav.screen ?? 'home');
@@ -89,7 +89,7 @@ export default function App() {
   //  StartInvesting/Portfolio 가 갱신되지 않는 불일치가 있었다.)
   const [strategyId, setStrategyId] = useState<string>(persistedNav.strategyId ?? 'low');
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
-  const [stockIndex, setStockIndex] = useState(persistedNav.stockIndex ?? 0);
+  const [stockCode, setStockCode] = useState(persistedNav.stockCode ?? '005930');
   // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio-detail로)
   const [stockBackTarget, setStockBackTarget] = useState<Screen>(persistedNav.stockBackTarget ?? 'portfolio-detail');
   // 거래 상세 진입 지점(포트폴리오 상세의 "최근 거래" 3건 vs 전체 거래 내역)에 따라 뒤로가기 목적지가 달라진다.
@@ -227,10 +227,10 @@ export default function App() {
   // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
   useEffect(() => {
     const nav: PersistedNav = {
-      screen, strategyId, stockIndex, stockBackTarget, selectedTransactionId, transactionBackTarget,
+      screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget,
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(nav));
-  }, [screen, strategyId, stockIndex, stockBackTarget, selectedTransactionId, transactionBackTarget]);
+  }, [screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget]);
 
   // 로그인이 필요한 화면을 새로고침으로 복원했는데, 토큰 검증(initialize)이 끝난 뒤
   // 실제로는 로그인 상태가 아닌 것으로 확인되면(토큰 만료 등) 로그인 화면으로 돌려보낸다.
@@ -391,7 +391,7 @@ export default function App() {
           strategyName={strategy.name}
           onNavigate={navigate}
           onStart={enterInvestmentFlow}
-          onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('start'); setScreen('stock'); }}
+          onSelectStock={(code) => { setStockCode(code); setStockBackTarget('start'); setScreen('stock'); }}
         />
       )}
       {screen === 'invest-terms' && (
@@ -512,7 +512,7 @@ export default function App() {
           strategyId={strategyId}
           onStrategyChange={setStrategyId}
           onNavigate={navigate}
-          onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('portfolio-detail'); setScreen('stock'); }}
+          onSelectStock={(code) => { setStockCode(code); setStockBackTarget('portfolio-detail'); setScreen('stock'); }}
           onSelectTransaction={(id) => {
             setSelectedTransactionId(id);
             setTransactionBackTarget('portfolio-detail');
@@ -536,7 +536,7 @@ export default function App() {
         <AllHoldings
           userName={userName}
           onNavigate={navigate}
-          onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('all-holdings'); setScreen('stock'); }}
+          onSelectStock={(code) => { setStockCode(code); setStockBackTarget('all-holdings'); setScreen('stock'); }}
           onBack={() => setScreen('portfolio-detail')}
         />
       )}
@@ -565,7 +565,7 @@ export default function App() {
 
       {screen === 'stock' && (
         <StockDetail
-          index={stockIndex}
+          stockCode={stockCode}
           userName={userName}
           onNavigate={navigate}
           onBack={() => setScreen(stockBackTarget)}

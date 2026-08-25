@@ -82,7 +82,7 @@ const TX_BADGE: Record<TransactionRecord['type'], string> = {
 };
 
 /** 실 계좌가 없을 때 "내 투자 총금액"에 쓰는 목업 투자 원금 합계 */
-const MOCK_PRINCIPAL_TOTAL = MOCK_HOLDINGS.reduce((sum, h) => sum + h.principal, 0);
+const MOCK_PRINCIPAL_TOTAL = MOCK_HOLDINGS.reduce((sum, h) => sum + (h.principal ?? 0), 0);
 
 /** `/portfolio` — 스크롤 없이 한 화면에 담기는 요약 뷰. 보유종목·AI제안·거래내역·전략변경 등
  *  나머지 포트폴리오 관리 기능은 전부 "자세히" → PortfolioDetail.tsx(`/portfolio/detail`)로 분리했다.
@@ -229,18 +229,20 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
             );
           }
           const centerHolding = ALL_HOLDINGS[centerIdx];
+          // chg 는 실 계좌 등락률이 아직 없으면 null 일 수 있다 — 표시상 0(보합)으로 취급한다.
+          const chg = centerHolding.chg ?? 0;
           return (
             <>
               <span className="text-sm font-semibold text-ink">{centerHolding.name}</span>
               {/* 비중(n%) 색상을 해당 종목의 수익률 부호로 표현한다 — 이 앱의 다른 화면과 동일하게
                   수익(상승)은 text-up, 손해(하락)는 text-down 을 쓴다. */}
-              <span className={`text-2xl font-bold tracking-[-0.03em] ${centerHolding.chg >= 0 ? 'text-up' : 'text-down'}`}>
+              <span className={`text-2xl font-bold tracking-[-0.03em] ${chg >= 0 ? 'text-up' : 'text-down'}`}>
                 {centerHolding.pct.toFixed(1)}%
               </span>
               {/* 수익률에는 +/- 부호를 그대로 노출한다(양수는 +, 음수는 - 가 toFixed 에 이미 포함됨) */}
-              <span className={`text-xs font-bold ${centerHolding.chg >= 0 ? 'text-up' : 'text-down'}`}>
-                {centerHolding.chg >= 0 ? '+' : ''}
-                {centerHolding.chg.toFixed(1)}%
+              <span className={`text-xs font-bold ${chg >= 0 ? 'text-up' : 'text-down'}`}>
+                {chg >= 0 ? '+' : ''}
+                {chg.toFixed(1)}%
               </span>
             </>
           );

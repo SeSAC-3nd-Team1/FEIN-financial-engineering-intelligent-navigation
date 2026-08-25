@@ -11,6 +11,17 @@ from app.models import Term, User, UserAgreement
 from app.schemas.api import LoginRequest, SignupRequest
 
 
+SIGNUP_TERM_CODES = (
+    "A1_THIRD_PARTY",
+    "A2_UNIQUE_ID",
+    "A3_CARRIER",
+    "A4_KCB",
+    "B_PRIVACY",
+    "C_ASSOCIATE_TERMS",
+    "AI_PERSONALIZATION",
+)
+
+
 class AuthService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -65,7 +76,7 @@ class AuthService:
         now = datetime.now(UTC)
         terms = self.session.scalars(
             select(Term)
-            .where(Term.effective_at <= now)
+            .where(Term.term_code.in_(SIGNUP_TERM_CODES), Term.effective_at <= now)
             .order_by(Term.term_code, Term.effective_at.desc(), Term.id.desc())
         )
         latest: dict[str, Term] = {}

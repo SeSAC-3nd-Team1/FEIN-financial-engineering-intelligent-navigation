@@ -8,7 +8,8 @@ function toDisplayTransaction(execution: ExecutionResponse): TransactionRecord {
   const holding = ALL_HOLDINGS.find((h) => STOCK_INFO[h.name]?.code === execution.stock_code);
   const stockName = holding?.name ?? execution.stock_code;
   const price = Number(execution.execution_price);
-  const amount = execution.side === 'BUY' ? price * execution.quantity : -(price * execution.quantity);
+  const quantity = Number(execution.quantity);
+  const amount = execution.side === 'BUY' ? price * quantity : -(price * quantity);
 
   return {
     id: String(execution.id),
@@ -16,8 +17,8 @@ function toDisplayTransaction(execution: ExecutionResponse): TransactionRecord {
     type: execution.side === 'BUY' ? '매수' : '매도',
     stockName,
     amount,
-    note: `${execution.quantity}주 체결`,
-    quantity: execution.quantity,
+    note: `${quantity}주 체결`,
+    quantity,
     price,
     fee: 0,
     status: '체결완료',

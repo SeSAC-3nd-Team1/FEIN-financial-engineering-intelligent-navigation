@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { ChevronDown, ChevronRight, ChevronUp, Info } from 'lucide-react';
 import Header from '../components/Header';
-import { ALL_HOLDINGS } from '../data/holdings';
+import { ALL_HOLDINGS, STOCK_INFO } from '../data/holdings';
 import { estimateAnnualFee, type OperationMode } from '../data/fees';
 import { OPERATING_MODE_ORDER, OPERATING_MODES } from '../data/operatingModes';
 import { won } from '../lib/validation';
@@ -16,7 +16,7 @@ interface Props {
   onNavigate: (s: Screen) => void;
   /** "이대로 시작하기" — 선택한 금액/운용방식을 넘기면 App.tsx가 사용자 준비 상태에 맞는 다음 단계로 라우팅한다 */
   onStart: (amount: number, mode: OperationMode) => void;
-  onSelectStock: (index: number) => void;
+  onSelectStock: (stockCode: string) => void;
 }
 
 const PRESETS = [100_000, 500_000, 1_000_000, 5_000_000];
@@ -169,7 +169,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                     dotColor={i === donutActiveIndex ? '#C6F04D' : SHADES[i]}
                     selected={selection.kind === 'holding' && selection.index === i}
                     onSelect={() => setSelection({ kind: 'holding', index: i })}
-                    onOpenDetail={() => onSelectStock(i)}
+                    onOpenDetail={() => onSelectStock(STOCK_INFO[h.name].code)}
                   />
                 ))}
 
@@ -203,7 +203,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                           dotColor={selection.kind === 'holding' && selection.index === index ? '#C6F04D' : SHADES[4]}
                           selected={selection.kind === 'holding' && selection.index === index}
                           onSelect={() => setSelection({ kind: 'holding', index })}
-                          onOpenDetail={() => onSelectStock(index)}
+                          onOpenDetail={() => onSelectStock(STOCK_INFO[h.name].code)}
                         />
                       );
                     })}

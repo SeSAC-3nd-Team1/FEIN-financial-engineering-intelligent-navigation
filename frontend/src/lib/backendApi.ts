@@ -44,20 +44,92 @@ export interface AccountResponse {
 export interface PriceResponse {
   stock_code: string;
   price: DecimalString;
+  previous_close: DecimalString | null;
+  change_amount: DecimalString | null;
+  change_rate: DecimalString | null;
+  volume: number | null;
   source: 'KIS' | 'REDIS' | string;
   as_of: string;
 }
 
+export type StockChartPeriod = '1D' | '1W' | '3M' | '6M' | '1Y' | '5Y';
+
+export interface StockSummaryResponse {
+  stock_code: string;
+  stock_name: string;
+  market: string;
+  sector: string | null;
+  listing_date: string | null;
+  listed_shares: number | null;
+  security_type: string | null;
+  description: string | null;
+  price: DecimalString | null;
+  previous_close: DecimalString | null;
+  change_amount: DecimalString | null;
+  change_rate: DecimalString | null;
+  volume: number | null;
+  market_cap: DecimalString | null;
+  per: DecimalString | null;
+  pbr: DecimalString | null;
+  roe: DecimalString | null;
+  dividend_yield: DecimalString | null;
+  financial_year: string | null;
+  as_of: string | null;
+  sources: Record<string, string | null>;
+}
+
+export interface StockChartItemResponse {
+  date: string;
+  open: DecimalString;
+  high: DecimalString;
+  low: DecimalString;
+  close: DecimalString;
+  volume: number;
+}
+
+export interface StockChartResponse {
+  stock_code: string;
+  period: StockChartPeriod;
+  source: string;
+  as_of: string;
+  items: StockChartItemResponse[];
+}
+
 export interface PositionResponse {
   stock_code: string;
-  quantity: number;
+  stock_name: string | null;
+  sector: string | null;
+  quantity: DecimalString;
   average_price: DecimalString;
   current_price: DecimalString;
+  previous_close: DecimalString | null;
+  change_rate: DecimalString | null;
   purchase_amount: DecimalString;
   evaluation_amount: DecimalString;
   unrealized_profit: DecimalString;
   return_rate: DecimalString;
   realized_profit: DecimalString;
+  weight: DecimalString;
+  today_profit: DecimalString | null;
+  price_source: string;
+  price_as_of: string;
+}
+
+export interface PortfolioContributionResponse {
+  stock_code: string;
+  stock_name: string | null;
+  amount: DecimalString;
+  share_rate: DecimalString | null;
+}
+
+export interface RebalancingProposalResponse {
+  stock_code: string;
+  stock_name: string | null;
+  current_weight: DecimalString;
+  target_weight: DecimalString;
+  weight_diff: DecimalString;
+  action: 'BUY' | 'SELL';
+  recommended_amount: DecimalString;
 }
 
 export interface PortfolioResponse {
@@ -69,7 +141,80 @@ export interface PortfolioResponse {
   unrealized_profit: DecimalString;
   realized_profit: DecimalString;
   return_rate: DecimalString;
+  today_profit: DecimalString | null;
+  top_contributor: PortfolioContributionResponse | null;
+  contributions: PortfolioContributionResponse[];
+  strategy_targets_available: boolean;
+  rebalancing_proposals: RebalancingProposalResponse[];
   positions: PositionResponse[];
+}
+
+export type PortfolioHistoryPeriod = '1M' | '3M' | '1Y' | 'ALL';
+
+export interface PortfolioHistoryResponse {
+  account_id: string;
+  period: PortfolioHistoryPeriod;
+  benchmark_name: string;
+  items: Array<{
+    date: string;
+    total_assets: DecimalString;
+    portfolio_return_rate: DecimalString;
+    benchmark_return_rate: DecimalString | null;
+  }>;
+}
+
+export interface StockEvaluationAxisResponse {
+  key: 'stability' | 'financial_health' | 'growth' | 'defense' | 'diversification';
+  label: string;
+  score: number | null;
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  basis: string;
+}
+
+export interface StockEvaluationResponse {
+  account_id: string;
+  stock_code: string;
+  stock_name: string | null;
+  feature_version: 'stock-feature-v1';
+  as_of: string | null;
+  target_weight: DecimalString | null;
+  role_summary: string | null;
+  axes: StockEvaluationAxisResponse[];
+  sources: Array<'KRX' | 'OpenDART' | 'Portfolio'>;
+}
+
+export interface RebalancingDecisionResponse {
+  id: string;
+  account_id: string;
+  strategy_id: string | null;
+  stock_code: string;
+  stock_name: string | null;
+  action: 'BUY' | 'SELL';
+  current_weight: DecimalString;
+  target_weight: DecimalString;
+  weight_diff: DecimalString;
+  recommended_amount: DecimalString;
+  decision: 'ACCEPTED' | 'HELD';
+  baseline_snapshot_date: string | null;
+  actual_portfolio_return_rate: DecimalString | null;
+  outcome_as_of: string | null;
+  created_at: string;
+}
+
+export interface RebalancingDecisionHistoryResponse {
+  account_id: string;
+  period_label: '최근 6개월';
+  proposed: number;
+  accepted: number;
+  held: number;
+  items: RebalancingDecisionResponse[];
+}
+
+export interface RebalancingDecisionCreateRequest {
+  account_id: string;
+  stock_code: string;
+  decision: 'ACCEPTED' | 'HELD';
+  idempotency_key: string;
 }
 
 export interface OrderCreateRequest {
@@ -87,7 +232,7 @@ export interface OrderResponse {
   stock_code: string;
   side: 'BUY' | 'SELL';
   order_type: string;
-  quantity: number;
+  quantity: DecimalString;
   status: string;
   requested_price: DecimalString | null;
   requested_at: string;
@@ -98,7 +243,7 @@ export interface ExecutionResponse {
   order_id: string;
   stock_code: string;
   side: 'BUY' | 'SELL';
-  quantity: number;
+  quantity: DecimalString;
   execution_price: DecimalString;
   executed_at: string;
 }
@@ -190,8 +335,66 @@ export function getStockPriceApi(stockCode: string, token: string): Promise<Pric
   return next;
 }
 
+export function getStockSummaryApi(stockCode: string, token: string): Promise<StockSummaryResponse> {
+  return request<StockSummaryResponse>(`/market/stocks/${encodeURIComponent(stockCode)}/summary`, {}, token);
+}
+
+export function getStockChartApi(stockCode: string, period: StockChartPeriod, token: string): Promise<StockChartResponse> {
+  return request<StockChartResponse>(
+    `/market/stocks/${encodeURIComponent(stockCode)}/chart?period=${encodeURIComponent(period)}`,
+    {},
+    token,
+  );
+}
+
 export function getPortfolioApi(accountId: string, token: string): Promise<PortfolioResponse> {
   return request<PortfolioResponse>(`/portfolio?account_id=${encodeURIComponent(accountId)}`, {}, token);
+}
+
+export function getPortfolioHistoryApi(
+  accountId: string,
+  period: PortfolioHistoryPeriod,
+  token: string,
+): Promise<PortfolioHistoryResponse> {
+  return request<PortfolioHistoryResponse>(
+    `/portfolio/history?account_id=${encodeURIComponent(accountId)}&period=${period}`,
+    {},
+    token,
+  );
+}
+
+export function getStockEvaluationApi(
+  accountId: string,
+  stockCode: string,
+  token: string,
+): Promise<StockEvaluationResponse> {
+  return request<StockEvaluationResponse>(
+    `/portfolio/stock-evaluation?account_id=${encodeURIComponent(accountId)}&stock_code=${encodeURIComponent(stockCode)}`,
+    {},
+    token,
+  );
+}
+
+export function getRebalancingDecisionsApi(
+  accountId: string,
+  token: string,
+): Promise<RebalancingDecisionHistoryResponse> {
+  return request<RebalancingDecisionHistoryResponse>(
+    `/portfolio/decisions?account_id=${encodeURIComponent(accountId)}`,
+    {},
+    token,
+  );
+}
+
+export function createRebalancingDecisionApi(
+  payload: RebalancingDecisionCreateRequest,
+  token: string,
+): Promise<RebalancingDecisionResponse> {
+  return request<RebalancingDecisionResponse>(
+    '/portfolio/decisions',
+    { method: 'POST', body: JSON.stringify(payload) },
+    token,
+  );
 }
 
 export function createOrderApi(payload: OrderCreateRequest, token: string): Promise<OrderResponse> {

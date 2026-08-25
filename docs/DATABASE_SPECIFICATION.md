@@ -4,9 +4,9 @@
 
 이 문서는 현재 `develop`의 SQLAlchemy 모델과 Alembic migration history를 기준으로 PostgreSQL의 역할을 요약한다.
 
-- 현재 Alembic 구현 기준: `20260824_0013`
+- 현재 Alembic 구현 기준: `20260825_0020`
 - 금융/API 대용량 Raw source of truth: Azure Blob Storage
-- PostgreSQL 역할: 회원가입/약관/가입 진행 상태 등 관계형 서비스 데이터
+- PostgreSQL 역할: 관계형 서비스 데이터와 Frontend 조회용 KRX/OpenDART 정제 결과
 - 과거 금융/API PostgreSQL `raw`, `processed` schema: retire 완료
 
 과거 16GB 금융 Raw landing DB의 상세 snapshot은 [`archive/DATABASE_SPECIFICATION_20260815.md`](archive/DATABASE_SPECIFICATION_20260815.md)에 보존한다. 해당 문서는 현재 운영 명세가 아니다.
@@ -24,7 +24,8 @@ Azure Blob features (Parquet)
 
 PostgreSQL
   ├─ membership / registration / virtual trading relational data
-  └─ OpenDART serving tables (원문은 Blob)
+  ├─ OpenDART serving tables (원문은 Blob)
+  └─ KRX market serving tables (원문은 Blob)
 
 Redis
   └─ OTP / token / session / rate limit 등 단기 상태
@@ -41,10 +42,19 @@ Redis
 | `user_agreements` | 회원별 약관 동의 감사 이력 |
 | `registration_sessions` | 가입 완료 전 임시 개인정보/검증 상태 |
 | `registration_agreements` | 가입 진행 중 약관 선택 상태 |
+| `investment_onboardings` | 전략·투자 예정 금액·운용방식과 가상계좌 준비 상태 |
+| `virtual_accounts` | 사용자·운용방식별 내부 가상투자 계좌 |
+| `account_deposits` | 투자 예정 금액 부족분의 멱등한 1회 가상 입금 이력 |
 | `companies` | DART 기업 마스터와 종목코드 매핑 |
 | `company_financial_accounts` | 공시 재무제표의 계정별 정제 행 |
 | `company_financials` | FastAPI용 핵심 재무지표 집계 |
 | `company_disclosures` | 접수번호 기준 기업 공시 목록 |
+| `market_stocks` | KRX 종목기본정보 최신 상태 |
+| `market_stock_prices` | 종목·거래일별 KRX OHLCV·시가총액 |
+| `market_indices` | 지수·거래일별 KRX OHLCV |
+| `portfolio_snapshots` | 계좌·일자별 실제 평가 자산과 손익 snapshot |
+| `strategy_target_weights` | 전략·종목·유효일별 명시적 목표 비중 |
+| `rebalancing_decisions` | 서버 리밸런싱 제안과 사용자 수락·보류 판단 이력 |
 | `alembic_version` | migration head 관리 |
 
 세부 컬럼/제약은 `data/db/models/membership.py`, `docs/REGISTRATION_DATA_SPECIFICATION.md`, `docs/REGISTRATION_DATA_ERD.md`를 함께 본다.
@@ -69,9 +79,24 @@ erDiagram
 
 ## Migration history
 
-`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을 추가한다.
+`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을, `20260824_0014`는 투자성향·전략 추천 이력을, `20260824_0015`는 가상투자 시작 상태를, `20260824_0016`은 KRX 화면 조회용 serving table을 추가한다. `20260825_0019`는 주문·체결·보유수량을 `numeric(20,8)`로 확장해 가상 소수점 매매를 허용하고, `20260825_0020`은 운용방식별 가상계좌와 부족분 1회 입금 이력을 추가한다.
 
 과거 migration 파일은 오래된 runtime 설계를 의미하는 것이 아니라 새 DB를 head까지 재현하기 위한 역사이므로 삭제하지 않는다.
+
+### `20260825_0020` downgrade 정책
+
+`20260825_0019`는 사용자당 하나의 가상계좌와 온보딩만 표현하며, 0원 준비 계좌와
+`DEPOSIT` 원장을 지원하지 않는다. 따라서 `20260825_0020` 적용 후 아래 데이터가
+생성됐다면 자동 downgrade는 실행 전에 중단된다.
+
+- 사용자 한 명에게 운용방식별 계좌 또는 온보딩이 둘 이상 존재하는 경우
+- `initial_cash <= 0`인 준비 계좌가 존재하는 경우
+- `account_deposits` 또는 `cash_ledger.transaction_type='DEPOSIT'` 이력이 존재하는 경우
+
+이 상태를 과거 스키마로 되돌리려면 먼저 DB를 백업하고, 보존할 계좌·온보딩과 입금
+원장 변환 정책을 확정한 별도 데이터 migration을 작성해야 한다. migration 자체는
+계좌나 거래 이력을 임의 삭제·병합하지 않는다. 기능 데이터가 생성되지 않은 배포 직후에는
+`20260825_0019`로 정상 downgrade할 수 있다.
 
 적용:
 
@@ -159,7 +184,7 @@ Unique는 `(corp_code,business_year,report_code,fs_div)`다.
 
 ## 금융 데이터와 PostgreSQL
 
-현재 금융 batch 파이프라인은 PostgreSQL을 거치지 않는다.
+분석용 금융 batch 파이프라인은 PostgreSQL을 거치지 않는다.
 
 ```text
 Azure Blob raw
@@ -169,4 +194,16 @@ Azure Blob raw
 → Azure Blob features
 ```
 
-향후 백엔드에서 빠른 관계형 조회가 필요한 금융 결과가 생기면, 대용량 Raw landing을 복원하는 대신 필요한 serving table을 별도 이슈에서 목적에 맞게 설계한다.
+대용량 Raw landing을 복원하지 않고 StockDetail이 필요한 KRX 정제 결과만 다음 serving table에 저장한다. 원문 source of truth는 계속 Azure Blob이다.
+
+### KRX serving table
+
+| Table | Key | 주요 값 | 갱신 방식 |
+| --- | --- | --- | --- |
+| `market_stocks` | `stock_code` | ISIN, 명칭, 시장, 상장일, 상장주식수, 증권·섹터 구분 | KRX 종목기본정보 기준 최신 상태 UPSERT |
+| `market_stock_prices` | `(stock_code, trade_date)` unique | 일별 OHLCV, 전일대비, 등락률, 거래대금, 시가총액 | KRX 일별매매정보 멱등 UPSERT |
+| `market_indices` | `(index_code, trade_date)` unique | 지수 일별 OHLCV, 전일대비, 등락률, 거래대금, 시가총액 | KRX 지수정보 멱등 UPSERT |
+
+`market_stock_prices.stock_code`는 `market_stocks.stock_code`를 참조하므로 동기화는 종목 마스터를 먼저 적재한다. 종목코드는 `VARCHAR(6)`으로 선행 0을 보존하며, 원천 결측값은 임의의 0으로 채우지 않는다. `source='KRX'`, `as_of`에는 동기화 기준일을 기록한다.
+
+Strategy Backtest는 별도 결과 테이블이나 합성 시세를 만들지 않고 이 serving table을 읽기 전용으로 사용한다. 시작일 직전 시총으로 universe를 고정하고 factor 계산에는 해당 리밸런싱일 이하의 가격만 사용하며, 신규 편입은 리밸런싱일 종가가 있는 종목으로 제한한다. `close_price`는 원천 비수정 종가이므로 `listed_shares` 변동일을 corporate action 경계로 보고 당일 수익률을 연결하지 않으며, 해당 경계가 팩터 lookback 안에 있는 종목은 후보에서 제외한다. 거래정지로 관측이 비는 기존 보유종목은 재개 종가를 마지막 관측 종가와 비교한다. 가치 factor에 필요한 재무 공시 가능일이 현재 `company_financials`에 없으므로 최신 재무를 과거에 소급 적용하지 않는다.
