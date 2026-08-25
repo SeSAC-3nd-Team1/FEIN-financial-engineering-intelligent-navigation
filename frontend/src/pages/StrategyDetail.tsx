@@ -3,7 +3,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import type { TooltipProps } from 'recharts';
 import Header from '../components/Header';
 import TermTooltip from '../components/TermTooltip';
-import { fetchAiExplanation, getBacktestAvailableRange, runBacktest } from '../data/backtestApi';
+import { fetchAiExplanation, getBacktestAvailableRange, runBacktest, USE_MOCK_BACKTEST } from '../data/backtestApi';
 import type { BacktestAvailableRange } from '../data/backtestApi';
 import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
 import { STRATEGIES } from '../data/strategies';
@@ -423,6 +423,11 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
             </button>
           </section>
 
+          {USE_MOCK_BACKTEST && (
+            <p className="text-sm leading-[22px] text-subtle">
+              ※ 현재 백테스트 결과는 화면 구현을 위한 예시 데이터이며 실제 투자 성과를 나타내지 않습니다.
+            </p>
+          )}
           <p className="text-sm leading-[22px] text-subtle">
             ※ 백테스트 결과는 과거 데이터 기반 예시이며 미래 수익을 보장하지 않습니다.
           </p>

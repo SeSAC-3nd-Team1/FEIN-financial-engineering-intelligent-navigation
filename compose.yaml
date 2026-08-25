@@ -6,6 +6,7 @@ services:
       context: ./frontend
     environment:
       VITE_API_PROXY_TARGET: http://backend:8000
+      VITE_USE_MOCK_BACKTEST: ${VITE_USE_MOCK_BACKTEST:-false}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     volumes:
