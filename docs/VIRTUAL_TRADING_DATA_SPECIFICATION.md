@@ -1,6 +1,6 @@
 # 가상투자 데이터 명세서
 
-Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0019_fractional_quantities.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
+Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0020_virtual_account_deposits.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
 
 | Table.Column | PostgreSQL Type | PK/FK/NULL/Default | Constraint/Index | 설명 |
 | --- | --- | --- | --- | --- |

@@ -1,8 +1,8 @@
 """운용방식별 가상계좌와 부족분 1회 입금 이력을 추가한다.
 
-Revision ID: 20260824_0016
-Revises: 20260824_0015
-Create Date: 2026-08-24
+Revision ID: 20260825_0020
+Revises: 20260825_0019
+Create Date: 2026-08-25
 """
 
 from collections.abc import Sequence
@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20260824_0016"
-down_revision: str | None = "20260824_0015"
+revision: str = "20260825_0020"
+down_revision: str | None = "20260825_0019"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
