@@ -1,7 +1,8 @@
-"""Audit the live Azure Blob account and PostgreSQL database without reading user payloads.
+"""Audit live Azure Blob metadata and PostgreSQL aggregates safely.
 
-The report contains storage metadata, aggregate row counts, and safe date ranges only.
-It intentionally never prints connection strings, credentials, or application row values.
+Each store is audited independently. If Blob authentication is unavailable, the
+PostgreSQL audit still completes and the report records only the error type.
+No application row values, credentials, connection strings, hosts, or users are printed.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import os
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import psycopg
 from azure.identity import DefaultAzureCredential
@@ -45,15 +46,25 @@ def _human_bytes(value: int) -> str:
 
 
 def _prefix(blob_name: str) -> str:
-    """Return a useful first-level logical prefix for a blob path."""
     parts = [part for part in blob_name.split("/") if part]
     if not parts:
         return "(root)"
-    # Support both dataset/foo and dataset=foo partition conventions.
     first = parts[0]
     if first in {"raw", "processed", "features"} and len(parts) > 1:
         return parts[1]
     return first
+
+
+def _safe(name: str, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    try:
+        payload = fn()
+        return {"status": "ok", **payload}
+    except Exception as exc:  # noqa: BLE001 - audit must continue for the other store
+        return {
+            "status": "error",
+            "store": name,
+            "error_type": type(exc).__name__,
+        }
 
 
 def audit_blob() -> dict[str, Any]:
@@ -83,7 +94,7 @@ def audit_blob() -> dict[str, Any]:
             prefix = _prefix(blob.name)
             prefixes[prefix] += 1
             prefix_bytes[prefix] += size
-            if len(samples[prefix]) < 3:
+            if len(samples[prefix]) < 1:
                 samples[prefix].append(blob.name)
 
         containers.append(
@@ -106,10 +117,10 @@ def audit_blob() -> dict[str, Any]:
 
     return {
         "account_name": account_name,
-        "containers": containers,
         "container_count": len(containers),
         "blob_count": sum(item["blob_count"] for item in containers),
         "bytes": sum(item["bytes"] for item in containers),
+        "containers": containers,
     }
 
 
@@ -134,8 +145,8 @@ def audit_postgres() -> dict[str, Any]:
 
     with psycopg.connect(database_url, connect_timeout=15) as connection:
         with connection.cursor() as cur:
-            cur.execute("SELECT current_database(), current_user")
-            database_name, database_user = cur.fetchone()
+            cur.execute("SELECT current_database()")
+            database_name = cur.fetchone()[0]
             cur.execute(
                 """
                 SELECT table_schema, table_name
@@ -148,21 +159,23 @@ def audit_postgres() -> dict[str, Any]:
             table_names = cur.fetchall()
 
             for schema, table in table_names:
-                count_query = sql.SQL("SELECT count(*) FROM {}.{}").format(
-                    sql.Identifier(schema), sql.Identifier(table)
+                cur.execute(
+                    sql.SQL("SELECT count(*) FROM {}.{}").format(
+                        sql.Identifier(schema), sql.Identifier(table)
+                    )
                 )
-                cur.execute(count_query)
                 row_count = int(cur.fetchone()[0])
 
                 date_column = _candidate_date_column(cur, schema, table)
                 min_value = max_value = None
                 if date_column:
-                    range_query = sql.SQL("SELECT min({c}), max({c}) FROM {s}.{t}").format(
-                        c=sql.Identifier(date_column),
-                        s=sql.Identifier(schema),
-                        t=sql.Identifier(table),
+                    cur.execute(
+                        sql.SQL("SELECT min({c}), max({c}) FROM {s}.{t}").format(
+                            c=sql.Identifier(date_column),
+                            s=sql.Identifier(schema),
+                            t=sql.Identifier(table),
+                        )
                     )
-                    cur.execute(range_query)
                     min_value, max_value = cur.fetchone()
 
                 tables.append(
@@ -178,72 +191,92 @@ def audit_postgres() -> dict[str, Any]:
 
     return {
         "database": database_name,
-        # User is intentionally omitted from the report output.
         "table_count": len(tables),
         "tables": tables,
     }
 
 
 def render_markdown(result: dict[str, Any]) -> str:
-    generated_at = result["generated_at"]
     blob = result["blob"]
     postgres = result["postgres"]
-
     lines = [
         "# Azure Live Storage Audit",
         "",
-        f"> Generated at `{generated_at}` from live Azure Blob metadata and live PostgreSQL aggregate queries.",
-        "> No application row values, secrets, connection strings, or credentials are included.",
+        f"> Generated at `{result['generated_at']}` from live aggregate/metadata queries.",
+        "> No application row values, secrets, connection strings, hosts, or credentials are included.",
         "",
         "## Azure Blob Storage",
         "",
-        f"- Account: `{blob['account_name']}`",
-        f"- Containers: **{blob['container_count']:,}**",
-        f"- Blobs: **{blob['blob_count']:,}**",
-        f"- Total size: **{_human_bytes(blob['bytes'])}**",
-        "",
-        "| Container | Blobs | Size | Latest modified |",
-        "|---|---:|---:|---|",
     ]
-    for container in blob["containers"]:
-        lines.append(
-            f"| `{container['name']}` | {container['blob_count']:,} | "
-            f"{_human_bytes(container['bytes'])} | {container['latest_modified'] or '-'} |"
-        )
-        if container["prefixes"]:
-            lines.extend(
-                [
-                    "",
-                    f"### `{container['name']}` logical prefixes",
-                    "",
-                    "| Prefix | Blobs | Size | Example path |",
-                    "|---|---:|---:|---|",
-                ]
-            )
-            for prefix in container["prefixes"]:
-                example = prefix["samples"][0] if prefix["samples"] else "-"
-                lines.append(
-                    f"| `{prefix['name']}` | {prefix['blob_count']:,} | "
-                    f"{_human_bytes(prefix['bytes'])} | `{example}` |"
-                )
 
-    lines.extend(
-        [
-            "",
-            "## PostgreSQL",
-            "",
-            f"- Database: `{postgres['database']}`",
-            f"- Base tables: **{postgres['table_count']:,}**",
-            "- Counts below are live `COUNT(*)` results, not schema definitions or estimates.",
-            "",
-            "| Schema | Table | Rows | Date column | Min | Max |",
-            "|---|---|---:|---|---|---|",
-        ]
-    )
-    for table in postgres["tables"]:
-        lines.append(
-            f"| `{table['schema']}` | `{table['table']}` | {table['row_count']:,} | "
-            f"`{table['date_column'] or '-'}` | {table['min_date'] or '-'} | {table['max_date'] or '-'} |"
+    if blob["status"] == "ok":
+        lines.extend(
+            [
+                "- Status: **OK**",
+                f"- Account: `{blob['account_name']}`",
+                f"- Containers: **{blob['container_count']:,}**",
+                f"- Blobs: **{blob['blob_count']:,}**",
+                f"- Total size: **{_human_bytes(blob['bytes'])}**",
+                "",
+                "| Container | Blobs | Size | Latest modified |",
+                "|---|---:|---:|---|",
+            ]
+        )
+        for container in blob["containers"]:
+            lines.append(
+                f"| `{container['name']}` | {container['blob_count']:,} | "
+                f"{_human_bytes(container['bytes'])} | {container['latest_modified'] or '-'} |"
+            )
+            if container["prefixes"]:
+                lines.extend(
+                    [
+                        "",
+                        f"### `{container['name']}` logical prefixes",
+                        "",
+                        "| Prefix | Blobs | Size | Example path |",
+                        "|---|---:|---:|---|",
+                    ]
+                )
+                for prefix in container["prefixes"]:
+                    example = prefix["samples"][0] if prefix["samples"] else "-"
+                    lines.append(
+                        f"| `{prefix['name']}` | {prefix['blob_count']:,} | "
+                        f"{_human_bytes(prefix['bytes'])} | `{example}` |"
+                    )
+    else:
+        lines.extend(
+            [
+                "- Status: **UNAVAILABLE**",
+                f"- Error type: `{blob['error_type']}`",
+                "- Blob metadata could not be queried with the current GitHub Actions Azure identity.",
+            ]
+        )
+
+    lines.extend(["", "## PostgreSQL", ""])
+    if postgres["status"] == "ok":
+        lines.extend(
+            [
+                "- Status: **OK**",
+                f"- Database: `{postgres['database']}`",
+                f"- Base tables: **{postgres['table_count']:,}**",
+                "- Counts below are live `COUNT(*)` results.",
+                "",
+                "| Schema | Table | Rows | Date column | Min | Max |",
+                "|---|---|---:|---|---|---|",
+            ]
+        )
+        for table in postgres["tables"]:
+            lines.append(
+                f"| `{table['schema']}` | `{table['table']}` | {table['row_count']:,} | "
+                f"`{table['date_column'] or '-'}` | {table['min_date'] or '-'} | {table['max_date'] or '-'} |"
+            )
+    else:
+        lines.extend(
+            [
+                "- Status: **UNAVAILABLE**",
+                f"- Error type: `{postgres['error_type']}`",
+                "- PostgreSQL aggregate metadata could not be queried.",
+            ]
         )
 
     lines.extend(
@@ -251,9 +284,9 @@ def render_markdown(result: dict[str, Any]) -> str:
             "",
             "## Interpretation rule",
             "",
-            "- Blob entries describe the live object store used by data/model pipelines.",
-            "- PostgreSQL entries describe the live relational store used by the service and any explicitly synchronized service-facing market tables.",
-            "- Presence in PostgreSQL does not make that table the canonical model-training source.",
+            "- Blob is the canonical object store for data/model pipelines.",
+            "- PostgreSQL is the relational service store, including explicitly synchronized service-facing market tables.",
+            "- Presence in PostgreSQL does not make a table the canonical model-training source.",
             "",
         ]
     )
@@ -263,13 +296,16 @@ def render_markdown(result: dict[str, Any]) -> str:
 def main() -> None:
     result = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "blob": audit_blob(),
-        "postgres": audit_postgres(),
+        "blob": _safe("blob", audit_blob),
+        "postgres": _safe("postgres", audit_postgres),
     }
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     JSON_PATH.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     MARKDOWN_PATH.write_text(render_markdown(result), encoding="utf-8")
     print(MARKDOWN_PATH.read_text(encoding="utf-8"))
+
+    if result["blob"]["status"] != "ok" and result["postgres"]["status"] != "ok":
+        raise SystemExit("Both live store audits failed")
 
 
 if __name__ == "__main__":
