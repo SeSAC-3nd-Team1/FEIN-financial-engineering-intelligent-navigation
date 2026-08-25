@@ -8,6 +8,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
+import gzip
 import hashlib
 import json
 import os
@@ -32,6 +33,7 @@ DATA_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = DATA_ROOT.parent
 DEFAULT_START_DATE = date(2018, 1, 1)
 MANIFEST_PATH = "_manifests/model_raw_coverage.json"
+MANIFEST_SCHEMA_VERSION = 2
 SUMMARY_JSON_PATH = DATA_ROOT / "reports" / "MODEL_RAW_COLLECTION_SUMMARY.json"
 SUMMARY_MARKDOWN_PATH = DATA_ROOT / "reports" / "MODEL_RAW_COLLECTION_SUMMARY.md"
 INVENTORY_PATH = DATA_ROOT / "docs" / "DOYOUNG_MODEL_DATA_INVENTORY.md"
@@ -43,6 +45,7 @@ REPORT_PERIOD_END = {
     "11014": (9, 30),
     "11011": (12, 31),
 }
+OPENDART_FINANCIAL_LOOKBACK_DAYS = 120
 
 
 def _bounded_env(name: str, default: int, maximum: int) -> int:
@@ -151,11 +154,12 @@ class CoverageManifest:
         self._lock = threading.Lock()
         if storage.exists(container, MANIFEST_PATH):
             value = json.loads(storage.download_bytes(container, MANIFEST_PATH))
-            if not isinstance(value, dict) or value.get("schema_version") != 1:
+            if not isinstance(value, dict) or value.get("schema_version") not in {1, 2}:
                 raise RuntimeError("invalid model Raw coverage manifest")
             self.data = value
         else:
-            self.data = {"schema_version": 1, "entries": {}}
+            self.data = {"schema_version": MANIFEST_SCHEMA_VERSION, "entries": {}}
+        previous_schema = int(self.data.get("schema_version", 1))
         # 과거 버전이 부분 실행을 YYYY-MM 전체 완료로 기록했을 수 있다. 진행 중인 달의
         # coarse key만 제거하고 날짜 범위 key는 유지해 최신일까지 다시 확인한다.
         active_month = date.today().strftime("%Y-%m")
@@ -164,7 +168,38 @@ class CoverageManifest:
             entry["completed_partitions"] = [
                 value for value in completed if value != active_month
             ]
+            if entry.get("source") == "krx":
+                entry["completed_partitions"] = [
+                    value
+                    for value in entry["completed_partitions"]
+                    if not re.fullmatch(r"\d{4}-\d{2}", str(value))
+                ]
+        if previous_schema == 1:
+            self._remove_recent_legacy_financial_checkpoints()
+            self.data["schema_version"] = MANIFEST_SCHEMA_VERSION
         self._cross_validate_entries()
+
+    def _remove_recent_legacy_financial_checkpoints(self) -> None:
+        """v1이 013을 완료로 기록했을 수 있는 최근 재무 partition을 재검증 대상으로 돌린다."""
+
+        cutoff = date.today() - timedelta(days=OPENDART_FINANCIAL_LOOKBACK_DAYS)
+        for entry in self.data.get("entries", {}).values():
+            if entry.get("source") != "opendart" or entry.get("dataset") != "financial_multi":
+                continue
+            retained: list[str] = []
+            for partition in entry.get("completed_partitions", []):
+                parts = str(partition).split("-", 2)
+                try:
+                    year = int(parts[0])
+                    report_code = parts[1]
+                    month, day = REPORT_PERIOD_END[report_code]
+                    period_end = date(year, month, day)
+                except (IndexError, KeyError, ValueError):
+                    retained.append(partition)
+                    continue
+                if period_end < cutoff:
+                    retained.append(partition)
+            entry["completed_partitions"] = retained
 
     def _cross_validate_entries(self) -> None:
         """manifest가 가리키는 dataset prefix 자체가 사라졌으면 완료 상태를 폐기한다."""
@@ -250,7 +285,10 @@ class CoverageManifest:
             payload,
             content_type="application/json",
             overwrite=True,
-            metadata={"dataset": "model_raw_coverage", "schema_version": "1"},
+            metadata={
+                "dataset": "model_raw_coverage",
+                "schema_version": str(MANIFEST_SCHEMA_VERSION),
+            },
         )
 
     def bootstrap_historical_months(
@@ -280,6 +318,28 @@ class CoverageManifest:
                 blob_count=0,
             )
         return historical
+
+
+def _raw_krx_date(content: bytes) -> date | None:
+    """날짜가 있는 KRX anchor Raw 한 객체에서 거래일을 복원한다."""
+
+    for raw_line in gzip.decompress(content).splitlines():
+        payload = json.loads(raw_line).get("payload", {})
+        value = str(payload.get("BAS_DD", ""))
+        if len(value) == 8 and value.isdigit():
+            return date(int(value[:4]), int(value[4:6]), int(value[6:]))
+    return None
+
+
+def _financial_checkpoint_allowed(
+    status: str, period_end: date, *, today: date | None = None
+) -> bool:
+    """최근 보고기간의 013은 늦은 공시가 도착할 수 있으므로 완료로 확정하지 않는다."""
+
+    reference = today or date.today()
+    return status != "013" or period_end < (
+        reference - timedelta(days=OPENDART_FINANCIAL_LOOKBACK_DAYS)
+    )
 
 
 def _validate_krx(operation: KrxOperation, rows: list[dict[str, Any]], expected: date) -> None:
@@ -460,36 +520,111 @@ class ModelRawCollector:
             self.metrics["krx"].add(rows=len(rows))
         return result
 
+    def _bootstrap_krx_dates(self) -> None:
+        """legacy Raw에서 실제 확인된 거래일만 KRX 완료 checkpoint로 복원한다.
+
+        KOSPI 지수는 일별 객체가 작고 BAS_DD가 있어 anchor로 사용한다. 날짜형 operation의
+        월별 객체 수가 anchor와 모두 같고 두 Master snapshot도 존재할 때만 그 월의 anchor
+        날짜를 전체 operation 완료로 승격한다. 일부 날짜 Blob만 있는 월은 존재한 날짜만
+        복원되므로 나머지 평일은 provider 수집 대상으로 남는다.
+        """
+
+        requested_months = {
+            value.strftime("%Y-%m")
+            for value in _month_starts(self.start_date, self.end_date)
+        }
+        months_by_operation: dict[str, dict[str, list[str]]] = {}
+        for operation in OPERATIONS:
+            prefix = f"krx/{operation.dataset}/operation={operation.name}/"
+            paths = [
+                path for path in self.storage.list_paths(self.container, prefix=prefix)
+                if path.endswith(".jsonl.gz")
+            ]
+            grouped: dict[str, list[str]] = defaultdict(list)
+            for path in paths:
+                if match := MONTH_PATTERN.search(path):
+                    month = f"{match.group(1)}-{match.group(2)}"
+                    if month in requested_months:
+                        grouped[month].append(path)
+            months_by_operation[operation.name] = grouped
+
+        anchor_name = "kospi_dd_trd"
+        dated_operations = [
+            operation for operation in OPERATIONS if operation.dataset != "stock_master"
+        ]
+        master_operations = [
+            operation for operation in OPERATIONS if operation.dataset == "stock_master"
+        ]
+        for month, anchor_paths in months_by_operation[anchor_name].items():
+            existing_dates = set.intersection(
+                *(
+                    {
+                        value
+                        for value in self.manifest.completed(
+                            "krx", operation.dataset, operation.name
+                        )
+                        if value.startswith(month + "-")
+                    }
+                    for operation in OPERATIONS
+                )
+            )
+            expected_object_count = len(anchor_paths)
+            date_counts_match = all(
+                len(months_by_operation[operation.name].get(month, []))
+                == expected_object_count
+                for operation in dated_operations
+            )
+            masters_exist = all(
+                bool(months_by_operation[operation.name].get(month, []))
+                for operation in master_operations
+            )
+            if (
+                existing_dates
+                and len(existing_dates) == expected_object_count
+                and date_counts_match
+                and masters_exist
+            ):
+                continue
+            anchor_dates = {
+                value
+                for path in anchor_paths
+                if (value := _raw_krx_date(
+                    self.storage.download_bytes(self.container, path)
+                )) is not None
+            }
+            if not anchor_dates:
+                continue
+            expected_count = len(anchor_dates)
+            dates_match = all(
+                len(months_by_operation[operation.name].get(month, [])) == expected_count
+                for operation in dated_operations
+            )
+            if not dates_match or not masters_exist:
+                continue
+            for value in anchor_dates:
+                for operation in OPERATIONS:
+                    self.manifest.mark(
+                        source="krx",
+                        dataset=operation.dataset,
+                        operation=operation.name,
+                        partition=value.isoformat(),
+                        rows=0,
+                        blob_count=0,
+                    )
+
     def collect_krx(self) -> None:
         """과거 완료 월을 Blob 경로로 복원하고 누락 평일만 날짜 병렬 수집한다."""
 
         source = "krx"
         self.metrics[source].reset_clock()
-        current_month = self.end_date.strftime("%Y-%m")
-        historical_by_operation: list[set[str]] = []
-        for operation in OPERATIONS:
-            prefix = f"krx/{operation.dataset}/operation={operation.name}/"
-            historical_by_operation.append(
-                self.manifest.bootstrap_historical_months(
-                    source=source,
-                    dataset=operation.dataset,
-                    operation=operation.name,
-                    prefix=prefix,
-                    current_month=current_month,
-                )
-            )
-        complete_historical_months = set.intersection(*historical_by_operation)
+        self._bootstrap_krx_dates()
+        self.manifest.save()
         months = _month_starts(self.start_date, self.end_date)
         processed_months = 0
         for month in months:
             month_key = month.strftime("%Y-%m")
             start, end = _month_range(month, self.start_date, self.end_date)
             dates = _weekdays(start, end)
-            if month_key in complete_historical_months:
-                self.metrics[source].add(skipped_partitions=len(dates))
-                processed_months += 1
-                self._progress(source, processed_months, len(months), month_key)
-                continue
             missing = [
                 value for value in dates
                 if not all(
@@ -659,7 +794,9 @@ class ModelRawCollector:
         for start in range(0, len(values), size):
             yield values[start : start + size]
 
-    def _dart_financial(self, codes: list[str], year: int, report_code: str) -> tuple[int, int]:
+    def _dart_financial(
+        self, codes: list[str], year: int, report_code: str
+    ) -> tuple[int, int, bool]:
         started = time.monotonic()
         response = self._dart_client().financials_multi(codes, str(year), report_code)
         self.metrics["opendart"].add(api_calls=1, download_seconds=time.monotonic() - started)
@@ -675,13 +812,14 @@ class ModelRawCollector:
             if str(row.get("reprt_code", report_code)) != report_code:
                 raise RuntimeError("OpenDART financial report code mismatch")
         period_month, period_day = REPORT_PERIOD_END[report_code]
+        period_end = date(year, period_month, period_day)
         created = 0
         if rows:
             upload_started = time.monotonic()
             blob = OpenDartRawWriter(self.storage, container=self.container).upload_bytes(
                 dataset="financial_multi",
                 content=response.content,
-                partition_date=date(year, period_month, period_day),
+                partition_date=period_end,
                 extension="json",
                 content_type="application/json",
             )
@@ -693,7 +831,13 @@ class ModelRawCollector:
                 reused_blobs=int(not blob.created),
             )
         self.metrics["opendart"].add(rows=len(rows))
-        return len(rows), created
+        return (
+            len(rows),
+            created,
+            _financial_checkpoint_allowed(
+                str(response.payload.get("status", "")), period_end
+            ),
+        )
 
     def _dart_disclosure(self, month: date, corp_cls: str) -> tuple[int, int, int]:
         start, end = _month_range(month, self.start_date, self.end_date)
@@ -742,7 +886,7 @@ class ModelRawCollector:
         source = "opendart"
         self.metrics[source].reset_clock()
         codes = self._corp_codes()
-        tasks: list[tuple[str, str, Callable[[], tuple[int, int]]]] = []
+        tasks: list[tuple[str, str, Callable[[], tuple[int, int, bool]]]] = []
         for year in range(self.start_date.year, self.end_date.year + 1):
             for report_code in REPORT_CODES:
                 month, day = REPORT_PERIOD_END[report_code]
@@ -782,7 +926,7 @@ class ModelRawCollector:
                         partition,
                         lambda month=month, corp_cls=corp_cls: self._dart_disclosure(
                             month, corp_cls
-                        )[:2],
+                        )[:2] + (True,),
                     )
                 )
         if not tasks:
@@ -797,16 +941,19 @@ class ModelRawCollector:
             }
             for index, future in enumerate(as_completed(future_map), start=1):
                 dataset, partition = future_map[future]
-                rows, blobs = future.result()
-                self.manifest.mark(
-                    source=source,
-                    dataset=dataset,
-                    operation=dataset,
-                    partition=partition,
-                    rows=rows,
-                    blob_count=blobs,
-                )
-                self.metrics[source].add(completed_partitions=1)
+                rows, blobs, checkpoint_allowed = future.result()
+                if checkpoint_allowed:
+                    self.manifest.mark(
+                        source=source,
+                        dataset=dataset,
+                        operation=dataset,
+                        partition=partition,
+                        rows=rows,
+                        blob_count=blobs,
+                    )
+                    self.metrics[source].add(completed_partitions=1)
+                else:
+                    print(f"[OPENDART] pending late filing partition={partition} status=013")
                 if index % self.checkpoint_every == 0:
                     self.manifest.save()
                 self._progress(source, index, len(tasks), partition)

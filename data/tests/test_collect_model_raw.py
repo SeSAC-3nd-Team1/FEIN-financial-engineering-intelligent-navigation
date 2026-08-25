@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
+import gzip
 import json
 
 import pytest
 
 from collectors.krx_config import OPERATIONS
+from collectors.opendart_client import OpenDartJsonResponse
 from scripts.collect_model_raw import (
     CoverageManifest,
     ModelRawCollector,
     _month_starts,
+    _financial_checkpoint_allowed,
     _range_partition,
     _validate_disclosures,
     _validate_krx,
@@ -76,12 +79,13 @@ def test_manifest_round_trip_marks_only_successful_partition() -> None:
     assert loaded.is_completed("krx", "stock_price", "stk_bydd_trd", "2026-08-24")
     payload = json.loads(storage.objects["_manifests/model_raw_coverage.json"])
     entry = payload["entries"]["krx|stock_price|stk_bydd_trd"]
+    assert payload["schema_version"] == 2
     assert entry["record_count"] == 3
     assert entry["completed_partitions"] == ["2026-08-24"]
 
 
 def test_blob_bootstrap_skips_historical_month_but_not_current_month() -> None:
-    prefix = "krx/stock_price/operation=stk_bydd_trd/"
+    prefix = "ecos-bok/ecos/operation=usd_krw/"
     storage = FakeStorage([
         prefix + "year=2025/month=12/a.jsonl.gz",
         prefix + "year=2026/month=08/b.jsonl.gz",
@@ -89,13 +93,49 @@ def test_blob_bootstrap_skips_historical_month_but_not_current_month() -> None:
     manifest = CoverageManifest(storage, "raw")
 
     months = manifest.bootstrap_historical_months(
-        source="krx", dataset="stock_price", operation="stk_bydd_trd",
+        source="ecos-bok", dataset="ecos", operation="usd_krw",
         prefix=prefix, current_month="2026-08",
     )
 
     assert months == {"2025-12"}
-    assert manifest.is_completed("krx", "stock_price", "stk_bydd_trd", "2025-12-15")
-    assert not manifest.is_completed("krx", "stock_price", "stk_bydd_trd", "2026-08-24")
+    assert manifest.is_completed("ecos-bok", "ecos", "usd_krw", "2025-12-15")
+    assert not manifest.is_completed("ecos-bok", "ecos", "usd_krw", "2026-08-24")
+
+
+def test_krx_bootstrap_keeps_dates_missing_when_month_is_only_partially_loaded() -> None:
+    """월 prefix가 있어도 실제 anchor에 없는 거래일을 전체 완료로 승격하지 않는다."""
+
+    storage = FakeStorage()
+    for operation in OPERATIONS:
+        path = (
+            f"krx/{operation.dataset}/operation={operation.name}/"
+            "year=2025/month=12/a.jsonl.gz"
+        )
+        storage.paths.append(path)
+        payload = {
+            "payload": (
+                {"BAS_DD": "20251201"}
+                if operation.name == "kospi_dd_trd"
+                else {}
+            )
+        }
+        storage.objects[path] = gzip.compress(json.dumps(payload).encode())
+    manifest = CoverageManifest(storage, "raw")
+    collector = ModelRawCollector(
+        storage, container="raw", manifest=manifest,
+        start_date=date(2025, 12, 1), end_date=date(2025, 12, 2),
+    )
+
+    collector._bootstrap_krx_dates()
+
+    assert all(
+        manifest.is_completed("krx", operation.dataset, operation.name, "2025-12-01")
+        for operation in OPERATIONS
+    )
+    assert all(
+        not manifest.is_completed("krx", operation.dataset, operation.name, "2025-12-02")
+        for operation in OPERATIONS
+    )
 
 
 def test_krx_validation_preserves_leading_zero_and_requires_ohlcv() -> None:
@@ -125,6 +165,87 @@ def test_opendart_disclosure_validation_requires_pit_identity() -> None:
         _validate_disclosures([
             {"rcept_no": "202608240001", "corp_code": "00126380", "rcept_dt": ""}
         ])
+
+
+def test_recent_opendart_013_is_retried_until_rows_are_available() -> None:
+    """최근 013은 미완료이고 이후 000 응답은 완료 checkpoint를 허용한다."""
+
+    period_end = date(2026, 6, 30)
+    today = date(2026, 8, 25)
+
+    assert not _financial_checkpoint_allowed("013", period_end, today=today)
+    assert _financial_checkpoint_allowed("000", period_end, today=today)
+    assert _financial_checkpoint_allowed("013", date(2025, 12, 31), today=today)
+
+
+def test_dart_financial_013_then_000_rows_changes_checkpoint_result(monkeypatch) -> None:
+    """실제 수집 함수도 013은 보류하고 이후 행이 생긴 000만 완료로 반환한다."""
+
+    class Client:
+        def __init__(self) -> None:
+            self.responses = [
+                OpenDartJsonResponse(b'{"status":"013"}', {"status": "013"}),
+                OpenDartJsonResponse(
+                    b'{"status":"000","list":[{}]}',
+                    {
+                        "status": "000",
+                        "list": [{
+                            "corp_code": "00126380", "stock_code": "005930",
+                            "bsns_year": "2026", "reprt_code": "11012",
+                        }],
+                    },
+                ),
+            ]
+
+        def financials_multi(self, _codes, _year, _report_code):
+            return self.responses.pop(0)
+
+    storage = FakeStorage()
+    collector = ModelRawCollector(
+        storage, container="raw", manifest=CoverageManifest(storage, "raw"),
+        start_date=date(2026, 6, 1), end_date=date(2026, 8, 25),
+    )
+    client = Client()
+    monkeypatch.setattr(collector, "_dart_client", lambda: client)
+
+    assert collector._dart_financial(["00126380"], 2026, "11012") == (0, 0, False)
+    assert collector._dart_financial(["00126380"], 2026, "11012") == (1, 1, True)
+
+
+def test_v1_manifest_drops_only_recent_legacy_financial_checkpoint() -> None:
+    """v1의 최근 013 오완료 가능성은 제거하고 충분히 오래된 partition은 유지한다."""
+
+    today = date.today()
+    report_periods = [
+        (date(year, month, day), code)
+        for year in (today.year - 1, today.year)
+        for code, (month, day) in {
+            "11013": (3, 31), "11012": (6, 30),
+            "11014": (9, 30), "11011": (12, 31),
+        }.items()
+        if date(year, month, day) <= today
+    ]
+    recent_end, recent_code = max(report_periods)
+    assert today - recent_end <= timedelta(days=120)
+    recent = f"{recent_end.year}-{recent_code}-recent"
+    old = f"{today.year - 2}-11011-old"
+    storage = FakeStorage(["opendart/financial_multi/old.json"])
+    storage.objects["_manifests/model_raw_coverage.json"] = json.dumps({
+        "schema_version": 1,
+        "entries": {
+            "opendart|financial_multi|financial_multi": {
+                "source": "opendart", "dataset": "financial_multi",
+                "operation": "financial_multi", "completed_partitions": [recent, old],
+            }
+        },
+    }).encode()
+
+    manifest = CoverageManifest(storage, "raw")
+    completed = manifest.completed("opendart", "financial_multi", "financial_multi")
+
+    assert recent not in completed
+    assert old in completed
+    assert manifest.data["schema_version"] == 2
 
 
 def test_concurrency_is_bounded_even_when_environment_is_excessive(monkeypatch) -> None:
