@@ -11,6 +11,7 @@ import InvestorProfileCheck from './pages/InvestorProfileCheck';
 import InvestTerms from './pages/InvestTerms';
 import Login from './pages/Login';
 import Portfolio from './pages/Portfolio';
+import PortfolioAuto from './pages/PortfolioAuto';
 import PortfolioDetail from './pages/PortfolioDetail';
 import RebalanceAlerts from './pages/RebalanceAlerts';
 import RiskProfile from './pages/RiskProfile';
@@ -24,7 +25,7 @@ import StrategyDetail from './pages/StrategyDetail';
 import TransactionDetail from './pages/TransactionDetail';
 import TransactionHistory from './pages/TransactionHistory';
 import { STRATEGIES } from './data/strategies';
-import type { OperationMode } from './data/fees';
+import { toAccountOperationMode, type OperationMode } from './data/fees';
 import { signupTermsApi } from './lib/backendApi';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
@@ -33,7 +34,9 @@ import { useTradingStore } from './store/tradingStore';
 import type { Screen, SignupPersonal } from './types';
 
 /** 새로고침해도 유지할 최소한의 내비게이션 상태 — sessionStorage 에 저장한다(탭을 닫으면 사라짐).
- *  회원가입 입력값처럼 민감하거나 오래 들고 있을 필요 없는 값은 여기 포함하지 않는다. */
+ *  회원가입 입력값처럼 민감하거나 오래 들고 있을 필요 없는 값은 여기 포함하지 않는다.
+ *  사용자별로 분리된 키가 아니라, 로그아웃 시 authStore.logout()/initialize() 이 이 키를 함께 지운다
+ *  (같은 브라우저에서 다른 사용자가 로그인해도 이전 사용자의 화면 상태를 이어받지 않도록). */
 const SESSION_KEY = 'fein.session-nav';
 interface PersistedNav {
   screen: Screen; strategyId: string; stockCode: string; stockBackTarget: Screen;
@@ -197,6 +200,10 @@ export default function App() {
   const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
 
   const hasRestoredInvestFlowRef = useRef(false);
+  // 직전 렌더의 로그인 사용자 id — 로그아웃(비로그인으로 전환)을 감지해 화면 상태를 초기화하는 데만 쓴다.
+  // 최초 마운트 시(아직 initialize() 가 안 끝나 null → null 로 시작하는 순간)에는 건드리지 않아야
+  // 새로고침 복원(sessionStorage 에서 그대로 이어받기)이 깨지지 않는다.
+  const prevUserIdRef = useRef<string | null>(null);
 
   // 앱 최초 로드(새로고침 포함) — 토큰이 있으면 로그인 사용자를 복원하고, 그 사용자의 투자 Flow가
   // invest-terms~invest-confirm 중간에 있었다면 화면/선택값(strategyId·금액·운용방식)까지 그대로 복원한다.
@@ -221,7 +228,21 @@ export default function App() {
   // 세션 중 로그인/로그아웃으로 사용자가 바뀔 때마다 해당 사용자의 저장된 상태로 다시 hydrate한다.
   // (화면 복원은 위 최초 로드 시점에만 하고, 로그인 직후 명시적 이동(navigate('portfolio') 등)과는 겹치지 않게 한다)
   useEffect(() => {
-    hydrateForUser(authenticatedUser?.user_id ?? null);
+    const currentUserId = authenticatedUser?.user_id ?? null;
+    hydrateForUser(currentUserId);
+    // sessionStorage 의 nav 키는 사용자별로 분리돼 있지 않다(authStore.logout 이 로그아웃 시 통째로 지운다).
+    // 그래도 React state 는 메모리에 남아있어서, 로그인 상태였다가(prevUserIdRef 가 non-null) 로그아웃으로
+    // 전환된 순간(currentUserId 가 null)에는 다음 로그인 사용자가 이전 사용자의 전략/종목 선택을
+    // 이어받지 않도록 화면 상태를 기본값으로 되돌린다. 최초 마운트(null → null/user 로 시작)에는 건드리지 않는다.
+    if (prevUserIdRef.current && !currentUserId) {
+      setScreen('home');
+      setStrategyId('low');
+      setStockCode('005930');
+      setStockBackTarget('portfolio-detail');
+      setSelectedTransactionId('');
+      setTransactionBackTarget('portfolio-detail');
+    }
+    prevUserIdRef.current = currentUserId;
   }, [authenticatedUser?.user_id, hydrateForUser]);
 
   // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
@@ -477,7 +498,7 @@ export default function App() {
               setScreen('login');
               throw new Error('로그인이 필요합니다.');
             }
-            await ensureAccount(accessToken, strategyId);
+            await ensureAccount(accessToken, strategyId, toAccountOperationMode(investmentMode));
             setActiveMode(investmentMode);
             clearInFlight();
             setScreen('portfolio');
@@ -498,12 +519,23 @@ export default function App() {
         />
       )}
 
+      {/* 운용방식(activeMode)에 따라 요약 화면을 다르게 보여준다 — 반자동은 AI 제안을 사용자가 승인해야 하는
+          Portfolio.tsx, 자동매매는 AI가 이미 실행을 마친 PortfolioAuto.tsx. 계좌를 아직 안 만든 경우(null)는
+          기존 기본값인 반자동으로 보여준다. */}
       {screen === 'portfolio' && (
-        <Portfolio
-          userName={userName}
-          onNavigate={setScreen}
-          onOpenDetail={() => setScreen('portfolio-detail')}
-        />
+        activeMode === 'auto' ? (
+          <PortfolioAuto
+            userName={userName}
+            onNavigate={setScreen}
+            onOpenDetail={() => setScreen('portfolio-detail')}
+          />
+        ) : (
+          <Portfolio
+            userName={userName}
+            onNavigate={setScreen}
+            onOpenDetail={() => setScreen('portfolio-detail')}
+          />
+        )
       )}
 
       {screen === 'portfolio-detail' && (
@@ -557,6 +589,7 @@ export default function App() {
       {screen === 'transaction-detail' && (
         <TransactionDetail
           transactionId={selectedTransactionId}
+          backTarget={transactionBackTarget}
           userName={userName}
           onNavigate={setScreen}
           onBack={() => setScreen(transactionBackTarget)}

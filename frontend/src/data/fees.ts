@@ -8,6 +8,12 @@ export const USE_MOCK_FEES = true;
 
 export type OperationMode = 'manual' | 'auto';
 
+/** 프론트 표기(auto/manual) → 계좌 API 표기(AUTO/SEMI_AUTO) 변환. activeMode 가 아직 없는 경우
+ *  (계좌를 만들기 전)의 기본값은 반자동(SEMI_AUTO)이다 — 계좌 API 자체 기본값과도 맞춰뒀다. */
+export function toAccountOperationMode(mode: OperationMode | null): 'AUTO' | 'SEMI_AUTO' {
+  return mode === 'auto' ? 'AUTO' : 'SEMI_AUTO';
+}
+
 export const INVESTMENT_FEES: Record<OperationMode, number> = {
   manual: 0.008, // 확인하고 실행 — 연 0.8%
   auto: 0.012,   // 자동으로 운용 — 연 1.2%

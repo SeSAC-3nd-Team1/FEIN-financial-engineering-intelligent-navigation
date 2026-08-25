@@ -23,6 +23,11 @@ interface AuthState {
 
 const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
 
+/** App.tsx 가 화면 상태(screen/strategyId/stockCode 등)를 저장하는 sessionStorage 키 — 사용자별로
+ *  나뉘어 있지 않은 공용 키라, 로그아웃(명시적 버튼 또는 401 자동 로그아웃)하거나 만료된 토큰으로
+ *  새로고침될 때 함께 지워야 다음에 로그인하는(같은 브라우저의 다른) 사용자가 이전 화면 상태를 이어받지 않는다. */
+const APP_SESSION_NAV_KEY = 'fein.session-nav';
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   isLoggedIn: false,
   isHydrating: Boolean(savedToken),
@@ -41,6 +46,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isLoggedIn: true, isHydrating: false });
     } catch {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
+      sessionStorage.removeItem(APP_SESSION_NAV_KEY);
       set({ user: null, accessToken: null, isLoggedIn: false, isHydrating: false });
     }
   },
@@ -55,6 +61,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async () => {
     const token = get().accessToken;
     localStorage.removeItem(TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(APP_SESSION_NAV_KEY);
     set({ accessToken: null, user: null, isLoggedIn: false });
     if (token) await logoutApi(token).catch(() => undefined);
   },

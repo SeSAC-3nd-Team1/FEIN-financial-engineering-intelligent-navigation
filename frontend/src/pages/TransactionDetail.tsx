@@ -7,6 +7,10 @@ import type { Screen, TransactionRecord } from '../types';
 
 interface Props {
   transactionId: string;
+  /** 이 화면에 진입한 경로 — PortfolioDetail "최근 거래" 3건에서 왔으면 'portfolio-detail',
+   *  전체 거래 내역에서 왔으면 'transactions'. onBack 이 실제로 돌아가는 목적지와
+   *  버튼 문구가 항상 일치하도록 이 값으로 라벨을 고른다. */
+  backTarget: Screen;
   userName: string;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
@@ -19,12 +23,18 @@ const TX_BADGE: Record<TransactionRecord['type'], string> = {
   '배당': 'bg-[#F8FCEE] text-[#3F5222]',
 };
 
+const BACK_LABEL: Partial<Record<Screen, string>> = {
+  'transactions': '거래 내역으로 돌아가기',
+  'portfolio-detail': '포트폴리오 상세로 돌아가기',
+};
+
 /** `/transactions/:id` — 거래 1건 상세. 실 체결(executions)이 있으면 그걸, 없으면 목업으로 대체한다. */
-export default function TransactionDetail({ transactionId, userName, onNavigate, onBack }: Props) {
+export default function TransactionDetail({ transactionId, backTarget, userName, onNavigate, onBack }: Props) {
   useTradingData();
   const executions = useTradingStore((state) => state.executions);
   const transactions = useMemo(() => getDisplayTransactions(executions), [executions]);
   const t = transactions.find((item) => item.id === transactionId);
+  const backLabel = BACK_LABEL[backTarget] ?? '이전으로 돌아가기';
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -32,7 +42,7 @@ export default function TransactionDetail({ transactionId, userName, onNavigate,
 
       <main className="flex flex-col items-center px-16 pb-24 pt-6">
         <div className="flex w-[640px] flex-col gap-10">
-          <button onClick={onBack} className="self-start text-[15px] text-muted">← 거래 내역으로 돌아가기</button>
+          <button onClick={onBack} className="self-start text-[15px] text-muted">← {backLabel}</button>
 
           {!t ? (
             <p className="py-16 text-center text-[17px] text-subtle">거래 내역을 찾을 수 없어요.</p>

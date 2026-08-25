@@ -58,13 +58,16 @@ export default function Home({ onNavigate }: Props) {
             </p>
             <div className="flex gap-3 pt-3">
               <button onClick={getStarted} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
-                무료로 시작하기
+                {isLoggedIn ? '내 포트폴리오 보기 →' : '무료로 시작하기'}
               </button>
-              <button onClick={() => onNavigate('login')} className="rounded-field bg-[#F4F6F1] px-8 py-5 text-[19px] font-semibold text-[#3F4A43]">
-                이미 계정이 있어요
-              </button>
+              {/* 이미 로그인한 상태에서 "로그인" 도착지 버튼은 의미가 없어 비로그인일 때만 보여준다 */}
+              {!isLoggedIn && (
+                <button onClick={() => onNavigate('login')} className="rounded-field bg-[#F4F6F1] px-8 py-5 text-[19px] font-semibold text-[#3F4A43]">
+                  이미 계정이 있어요
+                </button>
+              )}
             </div>
-            <p className="text-base text-subtle">전략 체험과 포트폴리오는 로그인 후 이용할 수 있어요</p>
+            {!isLoggedIn && <p className="text-base text-subtle">전략 체험과 포트폴리오는 로그인 후 이용할 수 있어요</p>}
           </div>
 
           <div className="flex flex-col gap-4 pl-6">
@@ -116,7 +119,7 @@ export default function Home({ onNavigate }: Props) {
           </h2>
           <p className="text-center text-lg text-[#B9C2BA]">진단은 무료이고, 결과는 전략 추천에만 쓰여요.</p>
           <button onClick={getStarted} className="rounded-field bg-lime px-10 py-5 text-[19px] font-bold text-navy">
-            무료로 시작하기
+            {isLoggedIn ? '내 포트폴리오 보기 →' : '무료로 시작하기'}
           </button>
         </section>
       </main>

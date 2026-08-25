@@ -5,26 +5,26 @@ export const HOLD_TOTAL = 1_083_400;
 export const AI_AXES = ['안정성', '재무 건전성', '성장성', '방어력', '분산 기여'] as const;
 
 export const ALL_HOLDINGS: Holding[] = [
-  { name: '삼성전자', sector: '반도체', pct: 18.0, chg: 1.2, principal: 179_899, returnRate: 8.4, why: '변동성이 낮고 재무가 안정적이라 포트폴리오의 중심을 잡아줘요.' },
+  { name: '삼성전자', sector: '반도체', pct: 18.0, target: 17.0, chg: 1.2, principal: 179_899, returnRate: 8.4, why: '변동성이 낮고 재무가 안정적이라 포트폴리오의 중심을 잡아줘요.' },
   { name: 'SK하이닉스', sector: '반도체', pct: 16.2, target: 14, chg: 2.4, principal: 143_157, returnRate: 22.6, why: '최근 많이 올라 목표 14%보다 비중이 커졌어요. 리밸런싱 후보예요.' },
   { name: 'KT&G', sector: '필수소비재', pct: 11.0, chg: -0.4, principal: 113_280, returnRate: 5.2, why: '경기와 무관하게 수요가 꾸준해 하락장에서 방어 역할을 해요.' },
-  { name: 'NAVER', sector: '인터넷', pct: 9.0, chg: 0.8, principal: 100_626, returnRate: -3.1, why: '제조업과 다른 시점에 움직여 분산 효과를 만들어요.' },
-  { name: '현대차', sector: '자동차', pct: 6.4, chg: 1.6, principal: 62_244, returnRate: 11.4, why: '배당이 꾸준하고 밸류에이션 부담이 낮은 편이에요.' },
+  { name: 'NAVER', sector: '인터넷', pct: 9.0, target: 8.5, chg: 0.8, principal: 100_626, returnRate: -3.1, why: '제조업과 다른 시점에 움직여 분산 효과를 만들어요.' },
+  { name: '현대차', sector: '자동차', pct: 6.4, target: 5.8, chg: 1.6, principal: 62_244, returnRate: 11.4, why: '배당이 꾸준하고 밸류에이션 부담이 낮은 편이에요.' },
   { name: '셀트리온', sector: '바이오', pct: 4.8, chg: -1.1, principal: 55_798, returnRate: -6.8, why: '의약품 수요는 경기와 무관해 다른 업종과 함께 담기 좋아요.' },
-  { name: '기아', sector: '자동차', pct: 4.2, chg: 1.4, principal: 39_846, returnRate: 14.2, why: '현대차와 판매 지역이 달라 같은 업종 안에서도 분산이 돼요.' },
+  { name: '기아', sector: '자동차', pct: 4.2, target: 3.8, chg: 1.4, principal: 39_846, returnRate: 14.2, why: '현대차와 판매 지역이 달라 같은 업종 안에서도 분산이 돼요.' },
   { name: 'LG생활건강', sector: '필수소비재', pct: 3.6, chg: -0.6, principal: 43_057, returnRate: -9.4, why: '생필품 수요가 안정적이라 변동성을 낮춰줘요.' },
-  { name: 'POSCO홀딩스', sector: '철강', pct: 3.2, chg: 0.5, principal: 33_791, returnRate: 2.6, why: '소비재와 다른 시점에 좋아져 경기 사이클을 나눠 담아요.' },
+  { name: 'POSCO홀딩스', sector: '철강', pct: 3.2, target: 2.8, chg: 0.5, principal: 33_791, returnRate: 2.6, why: '소비재와 다른 시점에 좋아져 경기 사이클을 나눠 담아요.' },
   { name: '삼성바이오로직스', sector: '바이오', pct: 2.9, chg: -0.3, principal: 32_900, returnRate: -4.5, why: '장기 계약 기반이라 매출 예측이 비교적 쉬운 편이에요.' },
-  { name: 'KB금융', sector: '금융', pct: 2.6, chg: 0.9, principal: 23_690, returnRate: 18.9, why: '배당이 높아 전체 수익의 바닥을 받쳐줘요.' },
-  { name: '신한지주', sector: '금융', pct: 2.4, chg: 0.7, principal: 22_357, returnRate: 16.3, why: 'KB금융과 대출 구성이 달라 금융 업종 안에서 나눠 담았어요.' },
-  { name: '하나금융지주', sector: '금융', pct: 2.1, chg: 0.6, principal: 18_991, returnRate: 19.8, why: '외환·기업금융 비중이 높아 금리 국면에서 다르게 움직여요.' },
-  { name: '삼성화재', sector: '금융', pct: 1.9, chg: 0.4, principal: 18_265, returnRate: 12.7, why: '보험 특유의 현금 흐름 덕에 하락장에서 잘 견뎌요.' },
-  { name: 'LG전자', sector: '전자', pct: 1.8, chg: 1.0, principal: 18_381, returnRate: 6.1, why: '가전 수요가 꾸준해 반도체 중심 종목과 균형을 맞춰줘요.' },
+  { name: 'KB금융', sector: '금융', pct: 2.6, target: 2.2, chg: 0.9, principal: 23_690, returnRate: 18.9, why: '배당이 높아 전체 수익의 바닥을 받쳐줘요.' },
+  { name: '신한지주', sector: '금융', pct: 2.4, target: 2.0, chg: 0.7, principal: 22_357, returnRate: 16.3, why: 'KB금융과 대출 구성이 달라 금융 업종 안에서 나눠 담았어요.' },
+  { name: '하나금융지주', sector: '금융', pct: 2.1, target: 1.8, chg: 0.6, principal: 18_991, returnRate: 19.8, why: '외환·기업금융 비중이 높아 금리 국면에서 다르게 움직여요.' },
+  { name: '삼성화재', sector: '금융', pct: 1.9, target: 1.6, chg: 0.4, principal: 18_265, returnRate: 12.7, why: '보험 특유의 현금 흐름 덕에 하락장에서 잘 견뎌요.' },
+  { name: 'LG전자', sector: '전자', pct: 1.8, target: 1.5, chg: 1.0, principal: 18_381, returnRate: 6.1, why: '가전 수요가 꾸준해 반도체 중심 종목과 균형을 맞춰줘요.' },
   { name: '카카오', sector: '인터넷', pct: 1.6, chg: -2.1, principal: 24_209, returnRate: -28.4, why: '변동성이 커서 비중을 작게 유지했어요.' },
   { name: '한국전력', sector: '유틸리티', pct: 1.5, chg: -0.2, principal: 15_656, returnRate: 3.8, why: '전기 수요는 경기와 무관해 방어 역할을 해요.' },
-  { name: 'SK텔레콤', sector: '통신', pct: 1.4, chg: 0.3, principal: 13_839, returnRate: 9.6, why: '매달 들어오는 요금 매출과 높은 배당이 안정성을 더해요.' },
+  { name: 'SK텔레콤', sector: '통신', pct: 1.4, target: 1.2, chg: 0.3, principal: 13_839, returnRate: 9.6, why: '매달 들어오는 요금 매출과 높은 배당이 안정성을 더해요.' },
   { name: '유한양행', sector: '제약', pct: 1.3, chg: -0.5, principal: 15_177, returnRate: -7.2, why: '기본 사업이 꾸준해 바이오 변동성을 완화해줘요.' },
-  { name: '오리온', sector: '필수소비재', pct: 1.1, chg: 0.2, principal: 10_784, returnRate: 10.5, why: '해외 매출 비중이 커서 국내 소비 종목과 다르게 움직여요.' },
+  { name: '오리온', sector: '필수소비재', pct: 1.1, target: 0.9, chg: 0.2, principal: 10_784, returnRate: 10.5, why: '해외 매출 비중이 커서 국내 소비 종목과 다르게 움직여요.' },
 ];
 
 export const STOCK_INFO: Record<string, StockInfo> = {

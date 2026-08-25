@@ -3,7 +3,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Sector, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { Maximize2, X } from 'lucide-react';
+import { Check, Maximize2, X } from 'lucide-react';
 import Header from '../components/Header';
 import {
   AI_ALERTS, ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL,
@@ -18,7 +18,7 @@ import type { Screen, TransactionRecord } from '../types';
 interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
-  /** "자세히" — 보유종목/AI 제안/거래내역 등 전체 관리 화면(PortfolioDetail)으로 이동한다 */
+  /** "자세히" — 보유종목/AI제안/거래내역 등 전체 관리 화면(PortfolioDetail)으로 이동한다 */
   onOpenDetail: () => void;
 }
 
@@ -84,11 +84,11 @@ const TX_BADGE: Record<TransactionRecord['type'], string> = {
 /** 실 계좌가 없을 때 "내 투자 총금액"에 쓰는 목업 투자 원금 합계 */
 const MOCK_PRINCIPAL_TOTAL = MOCK_HOLDINGS.reduce((sum, h) => sum + (h.principal ?? 0), 0);
 
-/** `/portfolio` — 스크롤 없이 한 화면에 담기는 요약 뷰. 보유종목·AI제안·거래내역·전략변경 등
- *  나머지 포트폴리오 관리 기능은 전부 "자세히" → PortfolioDetail.tsx(`/portfolio/detail`)로 분리했다.
- *  보유 비중 탭은 실 계좌(useTradingStore.portfolio)가 있으면 그 데이터를, 없으면
- *  MOCK_HOLDINGS 로 대체해 보여준다 — 이 대체 규칙은 PortfolioDetail.tsx 와 동일하게 맞춰뒀다. */
-export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props) {
+/** `/portfolio` (운용방식 = 자동매매 유저용) — Portfolio.tsx(반자동)와 도넛/차트/투자정보 레이아웃은 동일하고,
+ *  "AI의 리밸런싱 제안" 위젯만 다르다. 반자동은 사용자가 승인해야 하는 "제안"이지만, 자동매매는 AI가
+ *  이미 실행을 마친 뒤라 확인·승인 액션이 필요 없다 — 그래서 카드에 완료 표시를 더하고, 클릭하면 여는
+ *  팝업도 "왜 지금인가요?"(앞으로 할 일) 대신 "왜 실행했나요?"(이미 한 일)로 과거형 문구를 쓴다. */
+export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
@@ -126,7 +126,7 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
   const [hasSelectedHolding, setHasSelectedHolding] = useState(false);
   // 도넛 위에 마우스를 올린 조각 — 호버 중에는 고정된 선택보다 우선해서 도넛 중앙 라벨을 잠깐 바꿔 보여준다
   const [hoverHoldingIdx, setHoverHoldingIdx] = useState<number | null>(null);
-  // 우측 하단 "AI 제안" 위젯에서 카드를 클릭하면 여는 사유 팝업 — id 로 열림 상태를 관리한다
+  // 우측 하단 "AI 실행 내역" 위젯에서 카드를 클릭하면 여는 사유 팝업 — id 로 열림 상태를 관리한다
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
   const alertModal = AI_ALERTS.find((a) => a.id === alertModalId) ?? null;
   // 차트 우상단 "크게 보기" 픽토그램 — 세 탭(요약/자산 변화/종목별 기여) 모두에서 쓰며,
@@ -340,7 +340,7 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
   );
 
   return (
-    // AI 제안 사유 팝업을 페이지 루트(h-screen overflow-hidden)의 형제로 두기 위해 Fragment 로 감싼다.
+    // AI 실행 내역 사유 팝업을 페이지 루트(h-screen overflow-hidden)의 형제로 두기 위해 Fragment 로 감싼다.
     <>
     {/* 뷰포트가 넉넉하면 한 화면(h-screen)에 다 담기도록 아래 flex 트리를 가용 높이에 맞춰 나누고,
         화면이 작아 다 안 들어가면 잘라내는 대신(overflow-hidden 대신 overflow-y-auto) 페이지 자체가 스크롤된다. */}
@@ -407,7 +407,7 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
                         "크게 보기" 버튼은 이 컬럼이 아니라 도넛 자체의 우상단에 붙는다(renderDonutChart 내부, onExpand). */}
                     {renderDonutChart('h-full max-h-[420px] w-full max-w-[420px]', () => setIsChartZoomOpen(true))}
                     {/* 선택/호버 시 종목명·비중·수익률은 도넛 중앙 라벨(위)이 이미 보여주므로 여기서는 중복 표시하지 않는다.
-                        비워진 자리는 아래 Insight 와, 컬럼 우하단에 고정된 "자세히" 버튼이 채운다. */}
+                        비워진 자리는 아래 Insight 와, 컬럼 하단 중앙에 고정된 "자세히" 버튼이 채운다. */}
                     <Insight compact>
                       {weightDiff > 0
                         ? `${selectedHolding.name} 비중이 목표보다 높아요.`
@@ -418,7 +418,7 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
                   </div>
                 )}
 
-                {/* "자세히" — 클릭 시 보유종목/AI제안/거래내역 등 전체 관리 화면(portfolio-detail)으로 라우팅한다.
+                {/* "자세히" — 클릭 시 보유종목/AI 실행 내역/거래내역 등 전체 관리 화면(portfolio-detail)으로 라우팅한다.
                     lg 이상(좌우 1:1 그리드)에서는 왼쪽(차트) 컬럼의 하단 중앙에 절대 위치로 고정하고,
                     그 미만(세로로 쌓이는 화면)에서는 컬럼 안 일반 흐름으로 둬서 다른 콘텐츠와 겹치지 않게 한다. */}
                 <button
@@ -448,18 +448,19 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
                   </div>
                 </div>
 
-                {/* 하단 — AI 제안, 최근 거래를 각각 컬럼 전체 폭으로 위아래로 붙여 쌓는다(좌우 2분할이 아니라 세로 스택).
+                {/* 하단 — AI 실행 내역, 최근 거래를 각각 컬럼 전체 폭으로 위아래로 붙여 쌓는다(좌우 2분할이 아니라 세로 스택).
                     폭을 전부 써야 3개 항목을 가로로 나란히(grid-cols-3) 배치했을 때 배지·종목명이 안 잘리고 읽힌다.
                     바깥 컨테이너가 self-start 라 이 블록도 콘텐츠 높이만큼만 차지하고, "나의 투자" 바로 아래부터
                     빈 공간 없이 두 박스가 gap-4 간격으로만 붙는다(shrink-0 이라 서로 눌리지 않는다). */}
                 <div className="flex shrink-0 flex-col gap-4">
-                  {/* AI의 리밸런싱 제안 — 카드를 클릭하면 "왜 지금인가요?" 사유 팝업(alertModal)을 연다.
-                      가로 3칸(grid-cols-3)으로 배치하고, 항상 최신 3건만 보여준다.
+                  {/* AI 실행 내역 — 반자동(Portfolio.tsx)의 "AI의 리밸런싱 제안"과 달리, 자동매매는 AI가 이미
+                      실행을 마친 뒤라 승인 액션이 필요 없다. 그래서 카드에 완료 체크를 붙이고, 카드를 클릭하면
+                      "왜 실행했나요?"(과거형) 사유 팝업을 연다. 가로 3칸(grid-cols-3)으로 배치하고, 항상 최신 3건만 보여준다.
                       "더 알아보기"는 박스 밖이 아니라 박스 안 우하단에 둔다(self-end, 마지막 자식). */}
                   <div className="flex flex-col gap-2 rounded-[16px] bg-surface p-4">
-                    <span className="text-xs font-semibold text-[#3F5222]">✦ AI의 리밸런싱 제안</span>
+                    <span className="text-xs font-semibold text-[#3F5222]">✦ AI가 자동으로 처리했어요</span>
                     {AI_ALERTS.length === 0 ? (
-                      <p className="text-xs text-subtle">지금은 확인할 제안이 없어요.</p>
+                      <p className="text-xs text-subtle">최근 자동 실행 내역이 없어요.</p>
                     ) : (
                       <div className="grid grid-cols-3 gap-2">
                         {AI_ALERTS.slice(0, 3).map((a) => (
@@ -468,15 +469,18 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
                             onClick={() => setAlertModalId(a.id)}
                             className="flex min-w-0 flex-col items-start gap-1.5 rounded-[10px] bg-canvas px-2.5 py-2.5 text-left"
                           >
-                            <span className={`w-fit whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold ${ALERT_BADGE[a.kind]}`}>
-                              {a.badge}
-                            </span>
+                            <div className="flex w-full items-center justify-between gap-1">
+                              <span className={`w-fit whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold ${ALERT_BADGE[a.kind]}`}>
+                                {a.badge}
+                              </span>
+                              <Check size={12} className="shrink-0 text-[#3F5222]" aria-label="완료" />
+                            </div>
                             <span className="w-full truncate text-xs font-semibold text-ink">{a.stockName}</span>
                           </button>
                         ))}
                       </div>
                     )}
-                    {/* AI 제안 전체 목록은 portfolio-detail 에 있어 "자세히"와 동일한 목적지로 보낸다 */}
+                    {/* AI 실행 내역 전체 목록은 portfolio-detail 에 있어 "자세히"와 동일한 목적지로 보낸다 */}
                     <button onClick={onOpenDetail} className="self-end text-xs font-bold text-navy">
                       더 알아보기 →
                     </button>
@@ -516,7 +520,8 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
       </main>
     </div>
 
-    {/* AI 제안 사유 팝업 — 좌하단 위젯의 카드를 클릭하면 왜 지금 손절/리밸런싱을 제안하는지 보여준다.
+    {/* AI 실행 사유 팝업 — 좌하단 위젯의 카드를 클릭하면 AI가 왜 이 손절/리밸런싱을 자동으로 실행했는지 보여준다.
+        반자동(Portfolio.tsx)의 "왜 지금인가요?"와 달리 이미 벌어진 일이라 "왜 실행했나요?"로 과거형을 쓴다.
         h-screen overflow-hidden 인 페이지 루트 바깥(형제)에 둬서, 루트의 overflow-hidden 에 잘리지 않게 한다. */}
     {alertModal && (
       <div
@@ -529,7 +534,7 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
               <span className={`w-fit rounded-full px-3 py-1.5 text-sm font-bold ${ALERT_BADGE[alertModal.kind]}`}>
                 {alertModal.badge}
               </span>
-              <h2 className="text-xl font-bold tracking-[-0.02em]">{alertModal.stockName} · 왜 지금인가요?</h2>
+              <h2 className="text-xl font-bold tracking-[-0.02em]">{alertModal.stockName} · 왜 실행했나요?</h2>
             </div>
             <button aria-label="닫기" onClick={() => setAlertModalId(null)} className="rounded-[9px] bg-canvas p-2 text-muted">
               <X size={16} />
@@ -537,7 +542,7 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
           </div>
           <p className="text-[15px] leading-6 text-[#3F4A43]">{alertModal.reason}</p>
           <div className="flex items-center gap-3 rounded-[14px] bg-[#F8FCEE] px-6 py-5">
-            <span className="shrink-0 text-sm font-semibold text-[#3F5222]">AI 제안</span>
+            <span className="shrink-0 text-sm font-semibold text-[#3F5222]">AI 조치</span>
             <span className="text-sm font-semibold text-ink">{alertModal.action}</span>
           </div>
         </div>
