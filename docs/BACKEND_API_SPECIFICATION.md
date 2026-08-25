@@ -230,11 +230,24 @@ snapshot 이력을 조합하는 읽기 전용 API이며 거래나 snapshot을 �
   "positions": [],
   "contributions": [],
   "strategy_targets_available": false,
+  "rebalancing_insight": {
+    "status": "UNAVAILABLE",
+    "summary": "적용 가능한 전략 목표 비중이 없습니다.",
+    "model_version": null,
+    "generated_at": null
+  },
   "rebalancing_proposals": [],
   "valuation_as_of": "2026-08-25T10:30:00+09:00",
   "price_sources": ["KIS"]
 }
 ```
+
+`rebalancing_proposals`는 Backend가 목표 비중으로 검증한 조정 후보 중 AI 모델이 선택한 항목만
+반환한다. 각 항목에는 기존 비중·금액 필드와 함께 `priority`, `reason`, `why_now`,
+`source="AI"`가 포함된다. 모델이 후보에 없는 종목이나 변경된 금액을 반환하면 그 결과는
+프론트에 전달하지 않는다. 모델 미설정·timeout·provider 오류·schema 오류는 홈 전체를 실패시키지
+않고 `rebalancing_insight.status="UNAVAILABLE"`, 빈 제안 목록으로 격리한다. 상세 계약은
+[AI 리밸런싱 제안 계약](AI_REBALANCING_API_SPECIFICATION.md)을 따른다.
 
 ### GET `/portfolio/transactions?account_id=...&limit=20&cursor=...`
 

@@ -38,7 +38,7 @@ Copy-Item .env.example .env
 | 한국은행 ECOS | `ECOS_API_KEY` | 거시경제 데이터 수집 시 필수 |
 | KIS Open API | `KIS_APP_KEY`, `KIS_APP_SECRET` | 현재가·실시간 시세 조회 시 필수 |
 | NAVER API HUB | `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET` | 한국 금융 뉴스 조회 시 필수 |
-| Azure OpenAI | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, deployment 변수 | 투자성향·전략 추천 기능 사용 시 필수 |
+| Azure OpenAI | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, deployment 변수 | 투자성향·전략 추천·리밸런싱 제안 기능 사용 시 필수 |
 | Azure Blob | `AZURE_STORAGE_ACCOUNT_NAME` | 실제 Azure Blob 파이프라인 실행 시 필수 |
 
 전체 변수와 기본값은 [`.env.example`](../.env.example)을 기준으로 한다. 사용하지 않는 외부 연동의 키는 비워둘 수 있지만 `DATABASE_URL`은 비워둘 수 없다.
