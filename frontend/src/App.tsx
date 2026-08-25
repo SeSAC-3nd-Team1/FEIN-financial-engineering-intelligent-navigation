@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import AllHoldings from './pages/AllHoldings';
 import Chatbot from './components/Chatbot';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
@@ -11,6 +12,7 @@ import InvestTerms from './pages/InvestTerms';
 import Login from './pages/Login';
 import Portfolio from './pages/Portfolio';
 import PortfolioDetail from './pages/PortfolioDetail';
+import RebalanceAlerts from './pages/RebalanceAlerts';
 import RiskProfile from './pages/RiskProfile';
 import RiskResult from './pages/RiskResult';
 import SignupStep1 from './pages/SignupStep1';
@@ -33,7 +35,10 @@ import type { Screen, SignupPersonal } from './types';
 /** 새로고침해도 유지할 최소한의 내비게이션 상태 — sessionStorage 에 저장한다(탭을 닫으면 사라짐).
  *  회원가입 입력값처럼 민감하거나 오래 들고 있을 필요 없는 값은 여기 포함하지 않는다. */
 const SESSION_KEY = 'fein.session-nav';
-interface PersistedNav { screen: Screen; strategyId: string; stockIndex: number; stockBackTarget: Screen }
+interface PersistedNav {
+  screen: Screen; strategyId: string; stockIndex: number; stockBackTarget: Screen;
+  selectedTransactionId: string; transactionBackTarget: Screen;
+}
 function loadPersistedNav(): Partial<PersistedNav> {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
@@ -46,7 +51,7 @@ function loadPersistedNav(): Partial<PersistedNav> {
  *  투자 시작 Flow(invest-*) 화면들도 로그인 이후에만 진입 가능한 흐름이라 함께 포함한다. */
 const PROTECTED_SCREENS: Screen[] = [
   'dashboard', 'portfolio', 'portfolio-detail', 'stock', 'strategy', 'start', 'transactions', 'transaction-detail',
-  'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm',
+  'rebalance-alerts', 'all-holdings', 'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm',
 ];
 
 /** 투자 시작 Flow(약관~최종확인) 화면 목록 — Header 등으로 이 밖으로 나가면 inFlight(새로고침 복원용 진행 상태)를 정리한다 */
@@ -88,9 +93,8 @@ export default function App() {
   // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio-detail로)
   const [stockBackTarget, setStockBackTarget] = useState<Screen>(persistedNav.stockBackTarget ?? 'portfolio-detail');
   // 거래 상세 진입 지점(포트폴리오 상세의 "최근 거래" 3건 vs 전체 거래 내역)에 따라 뒤로가기 목적지가 달라진다.
-  // 새로고침으로 잃어도 무방한 값이라 sessionStorage 에는 담지 않는다.
-  const [selectedTransactionId, setSelectedTransactionId] = useState('');
-  const [transactionBackTarget, setTransactionBackTarget] = useState<Screen>('portfolio-detail');
+  const [selectedTransactionId, setSelectedTransactionId] = useState(persistedNav.selectedTransactionId ?? '');
+  const [transactionBackTarget, setTransactionBackTarget] = useState<Screen>(persistedNav.transactionBackTarget ?? 'portfolio-detail');
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
@@ -222,9 +226,11 @@ export default function App() {
 
   // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
   useEffect(() => {
-    const nav: PersistedNav = { screen, strategyId, stockIndex, stockBackTarget };
+    const nav: PersistedNav = {
+      screen, strategyId, stockIndex, stockBackTarget, selectedTransactionId, transactionBackTarget,
+    };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(nav));
-  }, [screen, strategyId, stockIndex, stockBackTarget]);
+  }, [screen, strategyId, stockIndex, stockBackTarget, selectedTransactionId, transactionBackTarget]);
 
   // 로그인이 필요한 화면을 새로고침으로 복원했는데, 토큰 검증(initialize)이 끝난 뒤
   // 실제로는 로그인 상태가 아닌 것으로 확인되면(토큰 만료 등) 로그인 화면으로 돌려보낸다.
@@ -233,6 +239,14 @@ export default function App() {
       setScreen('login');
     }
   }, [isHydrating, isLoggedIn, screen]);
+
+  // 거래 상세를 새로고침으로 복원했는데 selectedTransactionId 를 복원할 수 없으면(예: 이 필드가 없던
+  // 이전 버전의 sessionStorage) "거래 내역을 찾을 수 없어요" 대신 전체 거래 내역으로 보낸다.
+  useEffect(() => {
+    if (screen === 'transaction-detail' && !selectedTransactionId) {
+      setScreen('transactions');
+    }
+  }, [screen, selectedTransactionId]);
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
@@ -506,6 +520,24 @@ export default function App() {
           }}
           onRediagnose={() => startInvestorProfile('risk-result')}
           onBack={() => setScreen('portfolio')}
+        />
+      )}
+
+      {screen === 'rebalance-alerts' && (
+        <RebalanceAlerts
+          userName={userName}
+          strategyId={strategyId}
+          onNavigate={navigate}
+          onBack={() => setScreen('portfolio-detail')}
+        />
+      )}
+
+      {screen === 'all-holdings' && (
+        <AllHoldings
+          userName={userName}
+          onNavigate={navigate}
+          onSelectStock={(i) => { setStockIndex(i); setStockBackTarget('all-holdings'); setScreen('stock'); }}
+          onBack={() => setScreen('portfolio-detail')}
         />
       )}
 

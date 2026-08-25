@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronsUpDown, ChevronUp, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import Header from '../components/Header';
 import {
   AI_ALERTS, ALL_HOLDINGS as MOCK_HOLDINGS, AUTO_VS_MANUAL, DECISION_SUMMARY,
@@ -41,15 +41,6 @@ const ALERT_BADGE: Record<'손절' | '리밸런싱', string> = {
   '리밸런싱': 'bg-[#FCF3E4] text-warn',
 };
 
-/** 보유 종목 테이블 — 클릭으로 오름/내림차순 토글되는 정렬 열 */
-type SortKey = 'name' | 'pct' | 'principal' | 'returnRate';
-const HOLDINGS_COLUMNS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
-  { key: 'name', label: '종목명', align: 'left' },
-  { key: 'pct', label: '비율', align: 'right' },
-  { key: 'principal', label: '투자 원금', align: 'right' },
-  { key: 'returnRate', label: '원금 대비 수익률', align: 'right' },
-];
-
 /** `/portfolio/detail` — 실 계좌(useTradingStore) 데이터 기준 포트폴리오 관리 화면.
  *  PowerBI 차트(도넛/라인/바/레이더)는 `/portfolio`(Portfolio.tsx)에만 있고, 여기는 그 아래 실무 기능 전부:
  *  오늘의 스토리, 전략 설정, AI 손절·리밸런싱 제안(목업), 보유 종목, 거래 내역(실 체결), 자동매매 비교(목업), 판단 회고(목업).
@@ -85,14 +76,6 @@ export default function PortfolioDetail({
   // "왜 지금인가요?" — AI 손절/리밸런싱 제안 사유 모달. 카드와 보유 종목 배지가 같은 상태를 공유한다.
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
   const alertModal = AI_ALERTS.find((a) => a.id === alertModalId) ?? null;
-
-  // 보유 종목 테이블 정렬 상태 — 헤더 클릭 시 같은 열이면 방향 토글, 다른 열이면 내림차순으로 새로 시작
-  const [sortKey, setSortKey] = useState<SortKey | null>(null);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(key); setSortDir('desc'); }
-  };
 
   // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — Portfolio.tsx(PowerBI)와 동일한 대체 규칙.
   // 실 포지션에는 investor-facing 메타(섹터/AI 편입 사유 등)가 없어 STOCK_INFO 코드로 목업과 매칭해 보완한다.
@@ -142,19 +125,8 @@ export default function PortfolioDetail({
     ? Math.round((HOLD_TOTAL * (rebalanceHolding.pct - rebalanceTargetPct)) / 100)
     : 0;
 
-  // 보유 종목 테이블 — 정렬 열이 선택되면 그 기준으로, 아니면 원래 비중 순서 그대로 보여준다
-  const sortedGains = useMemo(() => {
-    if (!sortKey) return gains;
-    const dir = sortDir === 'asc' ? 1 : -1;
-    return [...gains].sort((a, b) =>
-      sortKey === 'name' ? a.name.localeCompare(b.name) * dir : (a[sortKey] - b[sortKey]) * dir
-    );
-  }, [gains, sortKey, sortDir]);
-
-  // 보유 종목 테이블 "더보기" — 기본값은 접힌 상태(상위 10개만 노출)이고, 정렬 기준이 바뀌어도 펼침 여부는 유지한다.
-  const [isHoldingsExpanded, setIsHoldingsExpanded] = useState(false);
-  const HOLDINGS_PAGE_SIZE = 10;
-  const visibleGains = isHoldingsExpanded ? sortedGains : sortedGains.slice(0, HOLDINGS_PAGE_SIZE);
+  // 보유 종목 미리보기 — 비중이 큰 상위 5개만 보여주고, 전체 목록은 별도 페이지(/all-holdings)로 뺀다.
+  const previewHoldings = useMemo(() => [...gains].sort((a, b) => b.pct - a.pct).slice(0, 5), [gains]);
 
   // 최근 거래 — 실 체결 내역(executions)이 있으면 그걸, 없으면 목업을 쓴다
   const displayTransactions = useMemo(() => getDisplayTransactions(executions), [executions]);
@@ -229,12 +201,15 @@ export default function PortfolioDetail({
               "왜 지금인가요?"를 누르면 사유 모달이 열린다 */}
           {AI_ALERTS.length > 0 && (
             <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
-              <div className="flex flex-col gap-2.5">
-                <span className="text-base font-semibold text-[#3F5222]">✦ AI 제안</span>
-                <h2 className="text-[26px] font-bold tracking-[-0.025em]">지금 확인해야 할 손절·리밸런싱 제안이 있어요</h2>
+              <div className="flex items-baseline justify-between">
+                <div className="flex flex-col gap-2.5">
+                  <span className="text-base font-semibold text-[#3F5222]">✦ AI의 리밸런싱 제안</span>
+                  <h2 className="text-[26px] font-bold tracking-[-0.025em]">지금 확인해야 할 손절·리밸런싱 제안이 있어요</h2>
+                </div>
+                <button onClick={() => onNavigate('rebalance-alerts')} className="text-base font-semibold text-navy">더보기 →</button>
               </div>
               <div className="flex flex-col gap-4">
-                {AI_ALERTS.map((a) => (
+                {AI_ALERTS.slice(0, 3).map((a) => (
                   <div key={a.id} className="flex items-center justify-between gap-6 rounded-[20px] bg-canvas px-9 py-7">
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center gap-2.5">
@@ -265,81 +240,47 @@ export default function PortfolioDetail({
             </section>
           )}
 
-          {/* 보유 종목 테이블 — 헤더를 누르면 오름/내림차순 토글. AI 제안이 걸린 종목엔 이름 옆에 배지가 붙는다.
+          {/* 보유 종목 미리보기 — 비중 상위 5종목만 보여주고 전체 목록은 /all-holdings 로 뺀다.
               투자 원금/수익률은 실 계좌 포지션(purchase_amount/return_rate)이 있으면 그 값을, 없으면 목업 값을 쓴다. */}
           <section className="flex flex-col gap-5 rounded-card bg-surface p-12">
             <div className="flex items-baseline justify-between">
-              <h2 className="text-[26px] font-bold tracking-[-0.025em]">전체 {ALL_HOLDINGS.length}개 종목</h2>
-              <span className="text-[15px] text-subtle">종목을 누르면 상세 정보를 볼 수 있어요</span>
+              <h2 className="text-[26px] font-bold tracking-[-0.025em]">보유 종목</h2>
+              <button onClick={() => onNavigate('all-holdings')} className="text-base font-semibold text-navy">전체 종목 보기 →</button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse">
-                <thead>
-                  <tr className="border-b border-line">
-                    {HOLDINGS_COLUMNS.map((c) => (
-                      <th key={c.key} className={`pb-3 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>
-                        <button
-                          onClick={() => toggleSort(c.key)}
-                          className={`inline-flex items-center gap-1 text-[14px] font-semibold text-muted ${
-                            c.align === 'right' ? 'flex-row-reverse' : ''
-                          }`}
-                        >
-                          {c.label}
-                          {sortKey === c.key
-                            ? (sortDir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />)
-                            : <ChevronsUpDown size={13} className="text-subtle" />}
-                        </button>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleGains.map((h) => {
-                    const detailIndex = MOCK_HOLDINGS.findIndex((holding) => holding.name === h.name);
-                    const alert = AI_ALERTS.find((a) => a.stockName === h.name);
-                    return (
-                      <tr
-                        key={h.name}
-                        onClick={() => detailIndex >= 0 && onSelectStock(detailIndex)}
-                        className="cursor-pointer border-b border-line last:border-0 hover:bg-canvas"
-                      >
-                        <td className="py-4">
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-2.5">
-                              <span className="text-[18px] font-semibold tracking-[-0.02em]">{h.name}</span>
-                              {alert && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setAlertModalId(alert.id); }}
-                                  className={`rounded-full px-2.5 py-1 text-xs font-bold ${ALERT_BADGE[alert.kind]}`}
-                                >
-                                  {alert.badge}
-                                </button>
-                              )}
-                            </div>
-                            <span className="text-[14px] text-subtle">{h.sector}</span>
-                          </div>
-                        </td>
-                        <td className="py-4 text-right text-[17px] font-bold">{h.pct.toFixed(1)}%</td>
-                        <td className="py-4 text-right text-[16px] text-muted">{won(h.principal)}</td>
-                        <td className={`py-4 text-right text-[16px] font-semibold ${
-                          h.returnRate > 0 ? 'text-up' : h.returnRate < 0 ? 'text-down' : 'text-subtle'
-                        }`}>
-                          {h.returnRate > 0 ? '+' : ''}{h.returnRate.toFixed(1)}%
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="flex flex-col">
+              {previewHoldings.map((h) => {
+                const detailIndex = MOCK_HOLDINGS.findIndex((holding) => holding.name === h.name);
+                const alert = AI_ALERTS.find((a) => a.stockName === h.name);
+                return (
+                  <button
+                    key={h.name}
+                    onClick={() => detailIndex >= 0 && onSelectStock(detailIndex)}
+                    className="flex items-center gap-6 border-b border-line py-5 text-left last:border-0 hover:bg-canvas"
+                  >
+                    <div className="flex flex-1 flex-col gap-1">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-[18px] font-semibold tracking-[-0.02em]">{h.name}</span>
+                        {alert && (
+                          <span
+                            onClick={(e) => { e.stopPropagation(); setAlertModalId(alert.id); }}
+                            className={`rounded-full px-2.5 py-1 text-xs font-bold ${ALERT_BADGE[alert.kind]}`}
+                          >
+                            {alert.badge}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[14px] text-subtle">{h.sector}</span>
+                    </div>
+                    <span className="w-20 shrink-0 text-right text-[17px] font-bold">{h.pct.toFixed(1)}%</span>
+                    <span className={`w-28 shrink-0 text-right text-[16px] font-semibold ${
+                      h.returnRate > 0 ? 'text-up' : h.returnRate < 0 ? 'text-down' : 'text-subtle'
+                    }`}>
+                      {h.returnRate > 0 ? '+' : ''}{h.returnRate.toFixed(1)}%
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            {sortedGains.length > HOLDINGS_PAGE_SIZE && (
-              <button
-                onClick={() => setIsHoldingsExpanded((v) => !v)}
-                className="self-center rounded-field bg-[#F4F6F1] px-8 py-3.5 text-[15px] font-semibold text-[#3F4A43]"
-              >
-                {isHoldingsExpanded ? '접기' : `더보기 (${sortedGains.length - HOLDINGS_PAGE_SIZE}개 더보기)`}
-              </button>
-            )}
           </section>
 
           {/* 최근 거래 — 실 체결 내역이 있으면 최신 3건, 없으면 목업 3건. 전체 내역은 별도 페이지로 라우팅한다 */}

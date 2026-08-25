@@ -6,7 +6,8 @@ export type Screen =
   | 'strategy' | 'start'
   // 투자 시작 Flow — "이 전략으로 시작하기" 이후, 사용자 준비 상태에 따라 필요한 화면으로만 분기
   | 'invest-terms' | 'invest-account' | 'invest-deposit' | 'invest-confirm'
-  | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail';
+  | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail'
+  | 'rebalance-alerts' | 'all-holdings';
 
 /** 온보딩 Step 01 폼 값 */
 export interface SignupPersonal {

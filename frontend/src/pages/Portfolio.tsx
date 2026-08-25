@@ -108,11 +108,14 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
     });
   }, [portfolio]);
 
-  // 자산 증감 요약 — 실 계좌가 있으면 총 매입금액 대비 총 자산으로, 없으면 목업 총합으로 계산한다
+  // 자산 증감 요약 — 실 계좌가 있으면 백엔드가 이미 계산해 둔 계좌 손익(unrealized_profit + realized_profit, return_rate)을
+  // 그대로 쓴다. total_assets - total_purchase_amount 로 직접 빼면 total_assets 에 포함된 미투자 현금(cash_balance)이
+  // 수익으로 잡히는 문제가 있어(예: 매수 전 예치금만 있어도 +100% 로 표시됨) 이 방식은 쓰지 않는다.
   const principalTotal = portfolio ? Number(portfolio.total_purchase_amount) : MOCK_PRINCIPAL_TOTAL;
   const holdTotal = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
-  const gainAmount = holdTotal - principalTotal;
-  const gainPct = principalTotal > 0 ? (gainAmount / principalTotal) * 100 : 0;
+  const mockGainAmount = holdTotal - principalTotal;
+  const gainAmount = portfolio ? Number(portfolio.unrealized_profit) + Number(portfolio.realized_profit) : mockGainAmount;
+  const gainPct = portfolio ? Number(portfolio.return_rate) : (principalTotal > 0 ? (mockGainAmount / principalTotal) * 100 : 0);
 
   // ── Power BI 스타일 분석 섹션 상태 ───────────────────────────────
   const [tab, setTab] = useState<AnalyticsTab>('weight');
