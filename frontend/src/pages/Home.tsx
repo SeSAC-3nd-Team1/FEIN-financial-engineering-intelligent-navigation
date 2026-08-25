@@ -6,7 +6,7 @@ interface Props { onNavigate: (s: Screen) => void; }
 /** 00 홈 — 로그인 전 랜딩. 두 CTA 모두 로그인 화면으로 보낸다 */
 export default function Home({ onNavigate }: Props) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
-  // "전략 둘러보기"/"나의 포트폴리오"는 로그인이 필요해 미로그인 시 로그인 화면으로 보낸다
+  // "투자전략"/"나의 포트폴리오"는 로그인이 필요해 미로그인 시 로그인 화면으로 보낸다
   const goStrategy = () => onNavigate(isLoggedIn ? 'strategy' : 'login');
   // "나의 포트폴리오" → Portfolio.tsx (PDF 1~4p 통합 Power BI 대시보드가 기본 화면)
   const goPortfolio = () => onNavigate(isLoggedIn ? 'portfolio' : 'login');
@@ -19,8 +19,9 @@ export default function Home({ onNavigate }: Props) {
             <img src="/main_logo.png" alt="FE!N" className="h-16 w-auto object-contain" />
           </button>
           <nav className="flex gap-7 text-base text-muted">
-            <button onClick={goStrategy}>전략 둘러보기</button>
-            <button onClick={() => onNavigate('information')}>정보</button>
+            <button onClick={() => onNavigate('home')}>홈</button>
+            <button onClick={goStrategy}>투자전략</button>
+            <button onClick={() => onNavigate('information')}>인사이트</button>
             <button onClick={goPortfolio}>나의 포트폴리오</button>
           </nav>
         </div>

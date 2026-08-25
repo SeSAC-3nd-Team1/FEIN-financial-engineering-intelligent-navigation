@@ -2,15 +2,21 @@ import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
 
 interface Props {
-  active?: 'strategy' | 'information' | 'portfolio';
+  active?: 'home' | 'strategy' | 'information' | 'portfolio';
   userName: string;
   onNavigate: (s: Screen) => void;
 }
 
-/** 전 화면 공통 상단 내비게이션 — "전략 둘러보기"/"나의 포트폴리오"는 로그인 필요 */
+/**
+ * 전 화면 공통 상단 내비게이션 — "투자전략"/"나의 포트폴리오"는 로그인 필요.
+ * "인사이트"는 기존 "정보" 화면(route: information)의 라벨만 바꾼 것 — 화면/route/내부 UI는 그대로다.
+ * "투자전략"의 목적지(to: 'strategy')는 아직 전략 상세(StrategyDetail) 화면이다 — 전략 목록 페이지가
+ * 생기면(별도 작업) 그 화면으로 교체해야 한다.
+ */
 const NAV: { key: Props['active']; label: string; to: Screen; guarded: boolean }[] = [
-  { key: 'strategy', label: '전략 둘러보기', to: 'strategy', guarded: true },
-  { key: 'information', label: '정보', to: 'information', guarded: false },
+  { key: 'home', label: '홈', to: 'home', guarded: false },
+  { key: 'strategy', label: '투자전략', to: 'strategy', guarded: true },
+  { key: 'information', label: '인사이트', to: 'information', guarded: false },
   // 헤더 라우팅: 나의 포트폴리오 → Portfolio.tsx (PDF 1~4p 통합 Power BI 대시보드가 기본 화면)
   { key: 'portfolio', label: '나의 포트폴리오', to: 'portfolio', guarded: true },
 ];
