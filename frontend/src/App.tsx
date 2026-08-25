@@ -219,7 +219,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      {screen === 'home' && <Home onNavigate={navigate} />}
+      {screen === 'home' && <Home userName={userName} onNavigate={navigate} />}
 
       {screen === 'login' && (
         <Login

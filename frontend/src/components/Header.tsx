@@ -5,6 +5,8 @@ interface Props {
   active?: 'home' | 'strategy' | 'information' | 'portfolio';
   userName: string;
   onNavigate: (s: Screen) => void;
+  /** 비로그인 상태일 때 "로그인" 옆에 추가로 보여줄 CTA — 현재 비로그인 Home에서만 사용 */
+  guestCta?: { label: string; to: Screen };
 }
 
 /**
@@ -22,7 +24,7 @@ const NAV: { key: Props['active']; label: string; to: Screen; guarded: boolean }
   { key: 'portfolio', label: '나의 포트폴리오', to: 'portfolio', guarded: true },
 ];
 
-export default function Header({ active, userName, onNavigate }: Props) {
+export default function Header({ active, userName, onNavigate, guestCta }: Props) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const logout = useAuthStore((s) => s.logout);
 
@@ -61,9 +63,19 @@ export default function Header({ active, userName, onNavigate }: Props) {
           <button onClick={() => { void logout(); onNavigate('home'); }} className="ml-2 text-sm underline">로그아웃</button>
         </div>
       ) : (
-        <button onClick={() => onNavigate('login')} className="text-[15px] font-semibold text-ink">
-          로그인
-        </button>
+        <div className="flex items-center gap-4">
+          <button onClick={() => onNavigate('login')} className="text-[15px] font-semibold text-ink">
+            로그인
+          </button>
+          {guestCta && (
+            <button
+              onClick={() => onNavigate(guestCta.to)}
+              className="rounded-[10px] bg-lime px-5 py-3 text-base font-bold text-navy"
+            >
+              {guestCta.label}
+            </button>
+          )}
+        </div>
       )}
     </header>
   );
