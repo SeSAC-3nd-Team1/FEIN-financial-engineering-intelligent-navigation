@@ -30,4 +30,4 @@ React → FastAPI /backtest/available-range → PostgreSQL 주가/KOSPI 공통 �
 React → FastAPI /backtest/run → PostgreSQL KRX stock/index history → 실제 전략/KOSPI 지표
 ```
 
-React는 KIS URL이나 credential을 알지 못한다. 화면 전환 시 `GET /portfolio` 한 번으로 모든 보유종목의 `current_price`와 평가값을 받고, 종목 상세 또는 사용자가 명시적으로 현재가 확인을 누른 경우에만 개별 Market API를 호출한다. `account_id`는 `/accounts/me` 응답에서 가져오며 소스에 하드코딩하지 않는다.
+React는 KIS URL이나 credential을 알지 못한다. 화면 전환 시 `GET /portfolio` 한 번으로 모든 보유종목의 `current_price`와 평가값을 받고, 종목 상세 또는 사용자가 명시적으로 현재가 확인을 누른 경우에만 개별 Market API를 호출한다. `account_id`는 운용방식을 지정한 `/accounts/me` 응답에서 가져오며 소스에 하드코딩하지 않는다.

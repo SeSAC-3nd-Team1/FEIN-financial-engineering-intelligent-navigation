@@ -43,7 +43,8 @@ Redis
 | `registration_sessions` | 가입 완료 전 임시 개인정보/검증 상태 |
 | `registration_agreements` | 가입 진행 중 약관 선택 상태 |
 | `investment_onboardings` | 전략·투자 예정 금액·운용방식과 가상계좌 준비 상태 |
-| `virtual_accounts` | 사용자별 단일 내부 가상투자 계좌 |
+| `virtual_accounts` | 사용자·운용방식별 내부 가상투자 계좌 |
+| `account_deposits` | 투자 예정 금액 부족분의 멱등한 1회 가상 입금 이력 |
 | `companies` | DART 기업 마스터와 종목코드 매핑 |
 | `company_financial_accounts` | 공시 재무제표의 계정별 정제 행 |
 | `company_financials` | FastAPI용 핵심 재무지표 집계 |
