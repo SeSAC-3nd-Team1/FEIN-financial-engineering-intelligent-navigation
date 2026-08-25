@@ -429,6 +429,47 @@ class PortfolioHistoryResponse(BaseModel):
     items: list[PortfolioHistoryPointResponse]
 
 
+class PortfolioHomeAccountResponse(BaseModel):
+    id: UUID
+    account_name: str
+    operation_mode: OperationMode
+    status: str
+    selected_strategy_id: str | None
+
+
+class PortfolioHomeSummaryResponse(BaseModel):
+    cash_balance: Decimal
+    total_purchase_amount: Decimal
+    total_evaluation_amount: Decimal
+    total_assets: Decimal
+    unrealized_profit: Decimal
+    realized_profit: Decimal
+    return_rate: Decimal
+    today_profit: Decimal | None
+    top_contributor: PortfolioContributionResponse | None
+
+
+class PortfolioAllocationResponse(BaseModel):
+    type: Literal["STOCK", "CASH"]
+    stock_code: str | None
+    name: str
+    amount: Decimal
+    weight: Decimal
+
+
+class PortfolioHomeResponse(BaseModel):
+    account: PortfolioHomeAccountResponse
+    summary: PortfolioHomeSummaryResponse
+    trend: PortfolioHistoryResponse
+    allocations: list[PortfolioAllocationResponse]
+    positions: list[PositionResponse]
+    contributions: list[PortfolioContributionResponse]
+    strategy_targets_available: bool
+    rebalancing_proposals: list[RebalancingProposalResponse]
+    valuation_as_of: datetime | None
+    price_sources: list[str]
+
+
 class StockEvaluationAxisResponse(BaseModel):
     key: Literal["stability", "financial_health", "growth", "defense", "diversification"]
     label: str

@@ -8,6 +8,7 @@ from app.api.deps import current_user
 from app.db.session import get_session
 from app.models import User
 from app.schemas.api import (
+    PortfolioHomeResponse,
     PortfolioHistoryResponse,
     PortfolioResponse,
     RebalancingDecisionCreateRequest,
@@ -23,6 +24,25 @@ router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 def get_portfolio_analytics_service(session: Session = Depends(get_session)) -> PortfolioAnalyticsService:
     return PortfolioAnalyticsService(session)
+
+
+def get_portfolio_service(session: Session = Depends(get_session)) -> PortfolioService:
+    return PortfolioService(session)
+
+
+@router.get("/home", response_model=PortfolioHomeResponse)
+def portfolio_home(
+    account_id: UUID = Query(),
+    period: Literal["1M", "3M", "1Y", "ALL"] = Query(default="3M"),
+    sort_by: Literal["stock_name", "weight", "purchase_amount", "return_rate"] = Query(
+        default="weight",
+        alias="sort",
+    ),
+    order: Literal["asc", "desc"] = Query(default="desc"),
+    user: User = Depends(current_user),
+    service: PortfolioService = Depends(get_portfolio_service),
+) -> PortfolioHomeResponse:
+    return service.home(user.id, account_id, period, sort_by, order)
 
 
 @router.get("", response_model=PortfolioResponse)

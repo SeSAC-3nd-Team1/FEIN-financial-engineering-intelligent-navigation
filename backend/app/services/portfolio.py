@@ -13,7 +13,11 @@ from app.integrations.kis.models import CurrentQuote
 from app.repositories import TradingRepository
 from app.repositories.market_data import MarketDataRepository
 from app.schemas.api import (
+    PortfolioAllocationResponse,
     PortfolioContributionResponse,
+    PortfolioHomeAccountResponse,
+    PortfolioHomeResponse,
+    PortfolioHomeSummaryResponse,
     PortfolioHistoryPointResponse,
     PortfolioHistoryResponse,
     PortfolioResponse,
@@ -112,6 +116,43 @@ def build_history_points(snapshots: list, indices: list) -> list[PortfolioHistor
     return items
 
 
+def sort_positions(
+    positions: list[PositionResponse],
+    sort_by: str,
+    order: str,
+) -> list[PositionResponse]:
+    """허용된 포트폴리오 컬럼으로 보유종목을 결정적으로 정렬한다."""
+
+    if sort_by == "stock_name":
+        key = lambda item: ((item.stock_name or item.stock_code).casefold(), item.stock_code)
+    else:
+        key = lambda item: (getattr(item, sort_by), item.stock_code)
+    return sorted(positions, key=key, reverse=order == "desc")
+
+
+def build_allocations(portfolio: PortfolioResponse) -> list[PortfolioAllocationResponse]:
+    """도넛 차트 합계가 전체 자산을 나타내도록 보유종목과 현금을 함께 반환한다."""
+
+    allocations = [
+        PortfolioAllocationResponse(
+            type="STOCK",
+            stock_code=position.stock_code,
+            name=position.stock_name or position.stock_code,
+            amount=position.evaluation_amount,
+            weight=position.weight,
+        )
+        for position in portfolio.positions
+    ]
+    allocations.append(PortfolioAllocationResponse(
+        type="CASH",
+        stock_code=None,
+        name="현금",
+        amount=portfolio.cash_balance,
+        weight=calculate_weight(portfolio.cash_balance, portfolio.total_assets),
+    ))
+    return allocations
+
+
 class PortfolioService:
     def __init__(self, session: Session, market: MarketService | None = None) -> None:
         self.session = session
@@ -125,6 +166,56 @@ class PortfolioService:
             raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
 
         return self._evaluate_account(account)
+
+    def home(
+        self,
+        user_id: int,
+        account_id: UUID,
+        period: str,
+        sort_by: str,
+        order: str,
+    ) -> PortfolioHomeResponse:
+        """홈 화면에 필요한 실제 계좌 평가와 기간 이력을 한 번에 조합한다."""
+
+        account = self.repo.owned_account(account_id, user_id)
+        if not account:
+            raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
+
+        portfolio = self._evaluate_account(account)
+        history = self._history_response(account.id, period)
+        positions = sort_positions(portfolio.positions, sort_by, order)
+        valuation_as_of = max(
+            (position.price_as_of for position in portfolio.positions),
+            default=None,
+        )
+        return PortfolioHomeResponse(
+            account=PortfolioHomeAccountResponse(
+                id=account.id,
+                account_name=account.account_name,
+                operation_mode=account.operation_mode,
+                status=account.status,
+                selected_strategy_id=account.selected_strategy_id,
+            ),
+            summary=PortfolioHomeSummaryResponse(
+                cash_balance=portfolio.cash_balance,
+                total_purchase_amount=portfolio.total_purchase_amount,
+                total_evaluation_amount=portfolio.total_evaluation_amount,
+                total_assets=portfolio.total_assets,
+                unrealized_profit=portfolio.unrealized_profit,
+                realized_profit=portfolio.realized_profit,
+                return_rate=portfolio.return_rate,
+                today_profit=portfolio.today_profit,
+                top_contributor=portfolio.top_contributor,
+            ),
+            trend=history,
+            allocations=build_allocations(portfolio),
+            positions=positions,
+            contributions=portfolio.contributions,
+            strategy_targets_available=portfolio.strategy_targets_available,
+            rebalancing_proposals=portfolio.rebalancing_proposals,
+            valuation_as_of=valuation_as_of,
+            price_sources=sorted({position.price_source for position in portfolio.positions}),
+        )
 
     def _evaluate_account(
         self,
@@ -305,6 +396,9 @@ class PortfolioService:
         account = self.repo.owned_account(account_id, user_id)
         if not account:
             raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
+        return self._history_response(account.id, period)
+
+    def _history_response(self, account_id: UUID, period: str) -> PortfolioHistoryResponse:
         start_date = date.today() - timedelta(days=HISTORY_DAYS[period]) if period != "ALL" else None
         snapshots = self.repo.snapshots_since(account_id, start_date)
         indices = self.market_repo.kospi_since(start_date - timedelta(days=7) if start_date else None)

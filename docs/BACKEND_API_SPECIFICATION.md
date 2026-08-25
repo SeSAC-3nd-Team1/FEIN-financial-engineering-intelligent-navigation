@@ -39,6 +39,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 시장가 주문 | POST | `/orders` | 필요/소유권 | 201, 404, 409, 503 | 전략 기반 자동 운용 계층/Model signal 전용 |
 | 주문 목록 | GET | `/orders?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
 | 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
+| 포트폴리오 홈 통합 조회 | GET | `/portfolio/home?account_id=&period=&sort=&order=` | 필요/소유권 | 200, 404, 422, 503 | 계좌·평가·추이·배분·정렬된 보유종목 통합 |
 | 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | 실제 metadata·당일 기여·목표비중 제안 포함 |
 | 포트폴리오 이력 | GET | `/portfolio/history?account_id=&period=` | 필요/소유권 | 200, 404 | 실제 snapshot 수익률과 KOSPI 비교 |
 | 종목 5축 feature | GET | `/portfolio/stock-evaluation?account_id=&stock_code=` | 필요/소유권 | 200, 404 | KRX·OpenDART·보유종목 기반 평가 |
@@ -137,6 +138,57 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
   "id":"82b2e790-79ee-4d7f-b94f-f37a7a99a7e6","account_id":"92be9e3e-4364-4428-86c4-b730cc841847",
   "stock_code":"005930","side":"BUY","order_type":"MARKET","quantity":"10.12500000",
   "status":"FILLED","requested_price":"70000.0000","requested_at":"2026-08-23T12:00:00Z"
+}
+```
+
+### GET `/portfolio/home?account_id=...&period=3M&sort=weight&order=desc`
+
+포트폴리오 홈 첫 화면에 필요한 실제 계좌, 평가 요약, 기간별 자산 이력, 현금을 포함한 자산
+배분, 보유종목, 당일 기여와 리밸런싱 제안을 한 번에 반환한다. `period`는 `1M`, `3M`, `1Y`,
+`ALL`이며 기본값은 `3M`이다. `sort`는 `stock_name`, `weight`, `purchase_amount`,
+`return_rate`, `order`는 `asc`, `desc`를 허용한다. 기본 정렬은 `weight desc`다.
+
+`allocations`는 각 보유종목의 현재 평가금액과 현금 항목을 함께 반환한다. `valuation_as_of`는
+보유종목 가격 기준시각 중 가장 최신 시각이며, 보유종목이 없으면 `null`이다. `price_sources`는
+평가에 실제 사용된 `KIS`, `KRX` 등의 source 목록이다. 이 GET은 기존 포트폴리오 평가와
+snapshot 이력을 조합하는 읽기 전용 API이며 거래나 snapshot을 생성하지 않는다.
+
+```json
+{
+  "account": {
+    "id": "92be9e3e-4364-4428-86c4-b730cc841847",
+    "account_name": "나의 가상 투자계좌",
+    "operation_mode": "SEMI_AUTO",
+    "status": "ACTIVE",
+    "selected_strategy_id": "low"
+  },
+  "summary": {
+    "cash_balance": "300000.00",
+    "total_purchase_amount": "700000.00",
+    "total_evaluation_amount": "710000.00",
+    "total_assets": "1010000.00",
+    "unrealized_profit": "10000.00",
+    "realized_profit": "0.00",
+    "return_rate": "1.43",
+    "today_profit": "5000.00",
+    "top_contributor": null
+  },
+  "trend": {
+    "account_id": "92be9e3e-4364-4428-86c4-b730cc841847",
+    "period": "3M",
+    "benchmark_name": "KOSPI",
+    "items": []
+  },
+  "allocations": [
+    {"type":"STOCK","stock_code":"005930","name":"삼성전자","amount":"710000.00","weight":"70.30"},
+    {"type":"CASH","stock_code":null,"name":"현금","amount":"300000.00","weight":"29.70"}
+  ],
+  "positions": [],
+  "contributions": [],
+  "strategy_targets_available": false,
+  "rebalancing_proposals": [],
+  "valuation_as_of": "2026-08-25T10:30:00+09:00",
+  "price_sources": ["KIS"]
 }
 ```
 
