@@ -21,8 +21,20 @@ class TradingRepository:
             query = query.with_for_update()
         return self.session.scalar(query)
 
-    def account_for_user(self, user_id: int) -> VirtualAccount | None:
-        return self.session.scalar(select(VirtualAccount).where(VirtualAccount.user_id == user_id))
+    def account_for_user(self, user_id: int, operation_mode: str) -> VirtualAccount | None:
+        return self.session.scalar(
+            select(VirtualAccount).where(
+                VirtualAccount.user_id == user_id,
+                VirtualAccount.operation_mode == operation_mode,
+            )
+        )
+
+    def accounts_for_user(self, user_id: int) -> list[VirtualAccount]:
+        return list(self.session.scalars(
+            select(VirtualAccount)
+            .where(VirtualAccount.user_id == user_id)
+            .order_by(VirtualAccount.operation_mode)
+        ))
 
     def position(self, account_id: UUID, stock_code: str, *, lock: bool = False) -> Position | None:
         query = select(Position).where(Position.account_id == account_id, Position.stock_code == stock_code)

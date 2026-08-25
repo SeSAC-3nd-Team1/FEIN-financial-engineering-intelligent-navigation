@@ -1,7 +1,6 @@
 """환경변수 기반 애플리케이션 설정."""
 
 from dataclasses import dataclass
-from decimal import Decimal
 import os
 
 
@@ -22,7 +21,6 @@ class Settings:
     jwt_secret: str = os.getenv("JWT_SECRET", "local-development-only-change-me")
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = int(os.getenv("ACCESS_TOKEN_MINUTES", "60"))
-    initial_cash: Decimal = Decimal(os.getenv("VIRTUAL_ACCOUNT_INITIAL_CASH", "10000000"))
     azure_openai_endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
     azure_openai_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
     azure_openai_deployment: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")

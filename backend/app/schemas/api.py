@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 
 from app.core.config import settings
 
+OperationMode = Literal["AUTO", "SEMI_AUTO"]
+
 
 class AgreementRequest(BaseModel):
     term_code: str = Field(min_length=1, max_length=30)
@@ -78,7 +80,7 @@ class InvestmentOnboardingCreateRequest(BaseModel):
 
     strategy_id: str = Field(min_length=1, max_length=30)
     investment_amount: Decimal = Field(gt=0, le=100_000_000)
-    operation_mode: Literal["AUTO", "SEMI_AUTO"]
+    operation_mode: OperationMode
 
 
 class InvestmentAgreementSubmitRequest(BaseModel):
@@ -93,16 +95,23 @@ class InvestmentAccountPrepareRequest(BaseModel):
     account_name: str = Field(default="나의 가상 투자계좌", min_length=1, max_length=100)
 
 
+class InvestmentDepositRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0, le=100_000_000)
+    idempotency_key: str = Field(min_length=8, max_length=100)
+
+
 class InvestmentOnboardingResponse(BaseModel):
     id: UUID
     strategy_id: str
     investment_amount: Decimal
-    operation_mode: Literal["AUTO", "SEMI_AUTO"]
-    status: Literal["TERMS_PENDING", "ACCOUNT_PENDING", "READY", "COMPLETED"]
+    operation_mode: OperationMode
+    status: Literal["TERMS_PENDING", "ACCOUNT_PENDING", "DEPOSIT_PENDING", "READY", "COMPLETED"]
     account_id: UUID | None
     terms_completed: bool
     account_exists: bool
-    next_step: Literal["TERMS", "ACCOUNT", "CONFIRM", "PORTFOLIO"]
+    next_step: Literal["TERMS", "ACCOUNT", "DEPOSIT", "CONFIRM", "PORTFOLIO"]
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -110,12 +119,14 @@ class InvestmentOnboardingResponse(BaseModel):
 
 class AccountCreateRequest(BaseModel):
     account_name: str = Field(default="나의 가상 투자계좌", min_length=1, max_length=100)
+    operation_mode: OperationMode = "SEMI_AUTO"
 
 
 class AccountResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     account_name: str
+    operation_mode: OperationMode
     initial_cash: Decimal
     cash_balance: Decimal
     status: str
@@ -126,6 +137,15 @@ class AccountResponse(BaseModel):
 class InvestmentAccountPrepareResponse(BaseModel):
     account: AccountResponse
     created: bool
+    required_deposit_amount: Decimal
+    onboarding: InvestmentOnboardingResponse
+
+
+class InvestmentDepositResponse(BaseModel):
+    deposit_id: UUID
+    amount: Decimal
+    balance_after: Decimal
+    required_deposit_amount: Decimal
     onboarding: InvestmentOnboardingResponse
 
 
