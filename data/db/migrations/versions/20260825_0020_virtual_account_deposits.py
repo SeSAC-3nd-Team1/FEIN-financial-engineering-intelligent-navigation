@@ -119,6 +119,60 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # 0019 스키마는 운용방식별 복수 계좌, 0원 준비 계좌, DEPOSIT 원장을 표현할 수 없다.
+    # 거래 이력을 임의 삭제하거나 서로 다른 계좌를 병합하면 원장 정합성이 깨지므로,
+    # 어떤 DDL도 실행하기 전에 비호환 데이터를 검증하고 명시적으로 중단한다.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM account_deposits) THEN
+                RAISE EXCEPTION
+                    '20260825_0020 downgrade blocked: account_deposits contains feature data; back up and migrate it explicitly';
+            END IF;
+
+            IF EXISTS (
+                SELECT 1
+                FROM cash_ledger
+                WHERE transaction_type = 'DEPOSIT'
+            ) THEN
+                RAISE EXCEPTION
+                    '20260825_0020 downgrade blocked: cash_ledger contains DEPOSIT rows; back up and migrate them explicitly';
+            END IF;
+
+            IF EXISTS (
+                SELECT 1
+                FROM virtual_accounts
+                GROUP BY user_id
+                HAVING count(*) > 1
+            ) THEN
+                RAISE EXCEPTION
+                    '20260825_0020 downgrade blocked: a user has multiple operation-mode accounts; choose one account explicitly';
+            END IF;
+
+            IF EXISTS (
+                SELECT 1
+                FROM investment_onboardings
+                GROUP BY user_id
+                HAVING count(*) > 1
+            ) THEN
+                RAISE EXCEPTION
+                    '20260825_0020 downgrade blocked: a user has multiple operation-mode onboardings; choose one onboarding explicitly';
+            END IF;
+
+            IF EXISTS (
+                SELECT 1
+                FROM virtual_accounts
+                WHERE initial_cash <= 0
+            ) THEN
+                RAISE EXCEPTION
+                    '20260825_0020 downgrade blocked: virtual_accounts contains non-positive initial_cash; resolve empty accounts explicitly';
+            END IF;
+        END;
+        $$
+        """
+    )
+
     op.drop_index("ix_account_deposits_account_created", table_name="account_deposits")
     op.drop_table("account_deposits")
 
