@@ -7,6 +7,7 @@ import io
 import logging
 import random
 import time
+from collections.abc import Iterator
 from typing import Any, Callable
 import xml.etree.ElementTree as ET
 import zipfile
@@ -299,11 +300,29 @@ class OpenDartClient:
         end_date: str,
         corp_cls: str,
     ) -> list[OpenDartJsonResponse]:
-        """한 시장의 기간 공시를 마지막 페이지까지 전수 조회한다.
+        """기존 호출부 호환을 위해 streaming 공시 iterator를 list로 반환한다."""
+
+        return list(
+            self.iter_disclosures_market(
+                start_date=start_date,
+                end_date=end_date,
+                corp_cls=corp_cls,
+            )
+        )
+
+    def iter_disclosures_market(
+        self,
+        *,
+        start_date: str,
+        end_date: str,
+        corp_cls: str,
+        start_page: int = 1,
+    ) -> Iterator[OpenDartJsonResponse]:
+        """한 시장의 기간 공시를 페이지마다 즉시 yield한다.
 
         corp_code 없이 공시검색 API를 사용하면 provider가 검색기간을 최대 3개월로 제한하므로
-        호출자는 그보다 짧은 구간을 넘겨야 한다. 이 메서드는 기간을 임의로 잘라 누락시키지
-        않고 pagination만 책임진다.
+        호출자는 그보다 짧은 구간을 넘겨야 한다. 전체 응답을 list에 누적하지 않아 수백 개
+        페이지도 한 페이지 크기의 메모리만 사용하며, 중단 후 저장된 page부터 재개할 수 있다.
         """
 
         if corp_cls not in {"Y", "K"}:
@@ -314,6 +333,8 @@ class OpenDartClient:
             raise ValueError("end_date must be YYYYMMDD")
         if start_date > end_date:
             raise ValueError("start_date must not be after end_date")
+        if start_page < 1:
+            raise ValueError("start_page must be at least 1")
 
         params: dict[str, Any] = {
             "bgn_de": start_date,
@@ -323,19 +344,17 @@ class OpenDartClient:
             "sort": "date",
             "sort_mth": "asc",
         }
-        pages: list[OpenDartJsonResponse] = []
-        page_no = 1
+        page_no = start_page
         while True:
             response = self._request("list.json", {**params, "page_no": page_no})
             items = response.payload.get("list", [])
             if not isinstance(items, list):
                 raise OpenDartError("OpenDART disclosure list must be an array")
-            pages.append(response)
             try:
                 total_page = max(1, int(response.payload.get("total_page", 1)))
             except (TypeError, ValueError) as exc:
                 raise OpenDartError("invalid OpenDART disclosure total_page") from exc
+            yield response
             if page_no >= total_page or not items:
                 break
             page_no += 1
-        return pages

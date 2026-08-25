@@ -212,6 +212,112 @@ def test_dart_financial_013_then_000_rows_changes_checkpoint_result(monkeypatch)
     assert collector._dart_financial(["00126380"], 2026, "11012") == (1, 1, True)
 
 
+def test_dart_disclosure_uploads_each_page_before_requesting_next(monkeypatch) -> None:
+    """대량 공시는 전체 list를 쌓지 않고 page별 업로드 후 다음 page를 요청한다."""
+
+    storage = FakeStorage()
+    observed_object_counts: list[int] = []
+
+    class Client:
+        def iter_disclosures_market(self, **kwargs):
+            assert kwargs["start_page"] == 1
+            for page_no in range(1, 4):
+                observed_object_counts.append(len(storage.objects))
+                row = {
+                    "rcept_no": f"202608{page_no:02d}0001",
+                    "corp_code": "00126380",
+                    "rcept_dt": f"202608{page_no:02d}",
+                }
+                yield OpenDartJsonResponse(
+                    json.dumps({
+                        "status": "000", "total_page": 3, "list": [row],
+                    }).encode(),
+                    {"status": "000", "total_page": 3, "list": [row]},
+                )
+
+    manifest = CoverageManifest(storage, "raw")
+    collector = ModelRawCollector(
+        storage, container="raw", manifest=manifest,
+        start_date=date(2026, 8, 1), end_date=date(2026, 8, 31),
+    )
+    monkeypatch.setattr(collector, "_dart_client", lambda: Client())
+
+    assert collector._dart_disclosure(date(2026, 8, 1), "Y") == (3, 3, 3)
+    assert observed_object_counts == [0, 1, 2]
+    partition = "2026-08-01..2026-08-31-Y"
+    assert manifest.partial_page(
+        "opendart", "disclosure_market", "disclosure_market", partition
+    ) == 3
+    assert manifest.partial_progress(
+        "opendart", "disclosure_market", "disclosure_market", partition
+    ) == (3, 3, 3)
+
+    manifest.mark(
+        source="opendart", dataset="disclosure_market",
+        operation="disclosure_market", partition=partition, rows=3, blob_count=3,
+    )
+    assert manifest.partial_page(
+        "opendart", "disclosure_market", "disclosure_market", partition
+    ) == 0
+
+
+def test_dart_disclosure_resumes_with_checkpoint_totals(monkeypatch) -> None:
+    """재시작은 완료 page를 건너뛰고 이전 누적 집계를 partition 결과에 포함한다."""
+
+    storage = FakeStorage()
+    manifest = CoverageManifest(storage, "raw")
+    partition = "2026-08-01..2026-08-31-Y"
+    manifest.mark_partial_page(
+        source="opendart", dataset="disclosure_market",
+        operation="disclosure_market", partition=partition,
+        page_no=2, rows=200, blob_count=2,
+    )
+
+    class Client:
+        def iter_disclosures_market(self, **kwargs):
+            assert kwargs["start_page"] == 3
+            row = {
+                "rcept_no": "202608030001",
+                "corp_code": "00126380",
+                "rcept_dt": "20260803",
+            }
+            yield OpenDartJsonResponse(
+                json.dumps({"status": "000", "total_page": 3, "list": [row]}).encode(),
+                {"status": "000", "total_page": 3, "list": [row]},
+            )
+
+    collector = ModelRawCollector(
+        storage, container="raw", manifest=manifest,
+        start_date=date(2026, 8, 1), end_date=date(2026, 8, 31),
+    )
+    monkeypatch.setattr(collector, "_dart_client", lambda: Client())
+
+    assert collector._dart_disclosure(date(2026, 8, 1), "Y") == (201, 3, 1)
+    assert manifest.partial_progress(
+        "opendart", "disclosure_market", "disclosure_market", partition
+    ) == (3, 201, 3)
+
+
+def test_manifest_drops_partial_page_when_dataset_blobs_are_missing() -> None:
+    """부분 checkpoint만 남고 실제 dataset Blob이 없으면 앞 page를 건너뛰지 않는다."""
+
+    storage = FakeStorage()
+    manifest = CoverageManifest(storage, "raw")
+    partition = "2026-08-01..2026-08-31-Y"
+    manifest.mark_partial_page(
+        source="opendart", dataset="disclosure_market",
+        operation="disclosure_market", partition=partition,
+        page_no=5, rows=500, blob_count=5,
+    )
+    manifest.save()
+
+    loaded = CoverageManifest(storage, "raw")
+
+    assert loaded.partial_progress(
+        "opendart", "disclosure_market", "disclosure_market", partition
+    ) == (0, 0, 0)
+
+
 def test_v1_manifest_drops_only_recent_legacy_financial_checkpoint() -> None:
     """v1의 최근 013 오완료 가능성은 제거하고 충분히 오래된 partition은 유지한다."""
 
