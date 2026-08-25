@@ -112,7 +112,9 @@ transaction에서 `account_deposits`, `virtual_accounts.cash_balance`, `cash_led
 ### POST `/api/v1/investment/onboardings/{id}/complete`
 
 최신 약관, 계좌 소유권·활성 상태, 가상현금 잔액, 전략 활성 상태를 다시 검증한다. 성공하면 계좌의
-`selected_strategy_id`와 온보딩 `COMPLETED` 상태를 하나의 transaction으로 저장한다.
+`selected_strategy_id`, 온보딩 `COMPLETED` 상태와 사용자의 `active_operation_mode`를 하나의
+transaction으로 저장한다. 새 운용방식의 최초 완료는 해당 계좌를 현재 활성 계좌로 선택하지만,
+이미 완료된 요청의 재전송은 사용자가 이후 명시적으로 바꾼 활성 방식을 되돌리지 않는다.
 
 입금이 완료되지 않아 현재 현금이 투자 예정 금액보다 작으면 `409 INSUFFICIENT_VIRTUAL_CASH`를
-반환한다. 성공 시 같은 운용방식 계좌의 `selected_strategy_id`만 변경한다.
+반환한다. 다른 운용방식 계좌의 잔액·포지션·거래내역은 변경하지 않는다.

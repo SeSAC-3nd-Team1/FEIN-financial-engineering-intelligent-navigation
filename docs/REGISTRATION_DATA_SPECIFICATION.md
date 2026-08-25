@@ -131,6 +131,8 @@ email_verified_at -> email verification 상태
 | `member_type` | `VARCHAR(20)` | N | DEFAULT `ASSOCIATE` | `ASSOCIATE`, `FULL` |
 | `account_status` | `VARCHAR(20)` | N | DEFAULT `ACTIVE` | `ACTIVE`, `DORMANT`, `SUSPENDED`, `WITHDRAWN` |
 | `last_login_at` | `TIMESTAMPTZ` | Y |  | 최근 로그인 시각 |
+| `active_operation_mode` | `VARCHAR(20)` | Y | CHECK | 현재 선택한 `AUTO`/`SEMI_AUTO` 가상계좌 방식 |
+| `operation_mode_changed_at` | `TIMESTAMPTZ` | Y |  | 최초 활성화 또는 마지막 명시적 전환 시각 |
 | `created_at` | `TIMESTAMPTZ` | N | `now()` | 생성 시각 |
 | `updated_at` | `TIMESTAMPTZ` | N | `now()` | 수정 시각 |
 | `deleted_at` | `TIMESTAMPTZ` | Y |  | soft delete 시각 |
@@ -144,6 +146,7 @@ birthdate ~ '^[0-9]{6}$'
 phone_number ~ '^0[0-9]{9,10}$'
 member_type IN ('ASSOCIATE', 'FULL')
 account_status IN ('ACTIVE', 'DORMANT', 'SUSPENDED', 'WITHDRAWN')
+active_operation_mode IN ('AUTO', 'SEMI_AUTO')
 account_status = 'WITHDRAWN' -> deleted_at IS NOT NULL
 ```
 
@@ -356,7 +359,7 @@ API 명세의 target/IP rate limit을 Redis counter + TTL로 구현한다.
 
 ## 10. 현재 구현 상태
 
-Alembic `20260816_0011`에서 회원가입 관계의 3NF 전환이 완료되었다. `users`는 인증 timestamp만 사용하고, `user_agreements`는 `term_id` FK만 보유하며, 회원/약관 감사 FK는 `RESTRICT`다. Backend 회원가입은 현재 유효 catalog의 필수 동의를 검증하고 같은 transaction에서 `users`와 `user_agreements`를 생성한다.
+Alembic `20260816_0011`에서 회원가입 관계의 3NF 전환이 완료되었다. `users`는 인증 timestamp만 사용하고, `user_agreements`는 `term_id` FK만 보유하며, 회원/약관 감사 FK는 `RESTRICT`다. Backend 회원가입은 현재 유효 catalog의 필수 동의를 검증하고 같은 transaction에서 `users`와 `user_agreements`를 생성한다. `20260825_0021`은 금융 계좌 데이터를 옮기지 않고 사용자의 현재 화면 선택만 복원하기 위해 nullable `active_operation_mode`와 변경 시각을 추가한다.
 
 `registration_sessions`와 `registration_agreements` schema는 준비되어 있지만 실제 OTP provider 및 가입 세션 API 연결은 후속 범위다. 현재 Backend request의 `phone_verified`/`email_verified`는 MVP API 계약이며 실제 외부 인증 완료 증명으로 교체해야 한다.
 

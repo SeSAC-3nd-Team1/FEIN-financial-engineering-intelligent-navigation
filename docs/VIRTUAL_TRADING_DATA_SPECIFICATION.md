@@ -1,6 +1,6 @@
 # 가상투자 데이터 명세서
 
-Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0020_virtual_account_deposits.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
+Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0021_active_operation_mode.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
 
 | Table.Column | PostgreSQL Type | PK/FK/NULL/Default | Constraint/Index | 설명 |
 | --- | --- | --- | --- | --- |
@@ -9,6 +9,8 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | strategies.risk_level | varchar(20) | NOT NULL | LOW/MEDIUM/HIGH | 위험도 |
 | strategies.rebalance_cycle | varchar(30) | NOT NULL |  | 리밸런싱 주기 |
 | strategies.rule_config | jsonb | NOT NULL |  | 모델과의 versionable interface |
+| users.active_operation_mode | varchar(20) | NULL | AUTO/SEMI_AUTO | 현재 화면에서 사용하는 운용방식별 계좌 선택 |
+| users.operation_mode_changed_at | timestamptz | NULL |  | 최초 활성화 또는 마지막 명시적 전환 시각 |
 | virtual_accounts.id | uuid | PK |  | 가상계좌 ID |
 | virtual_accounts.user_id/operation_mode | bigint/varchar(20) | FK users.id, NOT NULL | UNIQUE pair, RESTRICT | 사용자·AUTO/SEMI_AUTO별 계좌 |
 | virtual_accounts.initial_cash/cash_balance | numeric(20,2) | NOT NULL | >=0 / >=0 | 최초 입금액/현재 cash snapshot |
@@ -47,6 +49,11 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | account_deposits.idempotency_key | varchar(100) | NOT NULL | UNIQUE(account,key) | 재시도 중복 입금 방지 |
 
 공통 시간은 `timestamptz`, DB server `now()`를 사용한다. `users`, `terms`, `user_agreements`, 가입 임시 관계는 기존 `20260816_0011`을 보존한다.
+
+`active_operation_mode`는 `virtual_accounts.operation_mode`를 덮어쓰는 값이 아니다. 사용자의 현재
+조회 대상만 가리키며, 전환 시 두 계좌의 잔액·포지션·주문·체결·원장을 이동하거나 합치지 않는다.
+`20260825_0021` upgrade는 가장 최근 완료 온보딩을 우선 사용하고, 완료 이력이 없으면 활성 계좌가
+정확히 하나일 때만 backfill한다. 복수 계좌의 우선순위는 추측하지 않아 `NULL`로 남긴다.
 
 `20260825_0020`의 운용방식별 복수 계좌, 0원 준비 계좌 또는 입금 이력이 생성된 뒤에는
 `20260825_0019`가 해당 상태를 표현할 수 없으므로 자동 downgrade를 차단한다. 운영 rollback이
