@@ -98,6 +98,7 @@ export default function App() {
   const setInFlightStep = useInvestmentStore((s) => s.setInFlightStep);
   const clearInFlight = useInvestmentStore((s) => s.clearInFlight);
   const setActiveMode = useInvestmentStore((s) => s.setActiveMode);
+  const setAccountActiveStrategy = useInvestmentStore((s) => s.setAccountActiveStrategy);
 
   /**
    * invest-terms~invest-confirm 중 한 화면으로 이동할 때 항상 이 함수를 거친다.
@@ -469,6 +470,8 @@ export default function App() {
             }
             await ensureAccount(accessToken, strategyId);
             setActiveMode(investmentMode);
+            // "계좌 1개 = 활성 전략 1개" — 실제 투자가 시작된 이 시점에만 계좌의 활성 전략을 기록한다
+            setAccountActiveStrategy(investmentMode, strategyId);
             // 실제 투자가 시작된 시점 — 여기서만 DEPOSIT_PENDING을 해소한다
             clearPendingInvestment();
             clearInFlight();

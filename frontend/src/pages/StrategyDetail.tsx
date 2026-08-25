@@ -9,6 +9,7 @@ import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPer
 import { STRATEGIES } from '../data/strategies';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
+import { useInvestmentStore } from '../store/investmentStore';
 import type { BacktestAiContext, BacktestPeriod, BacktestResult, Screen } from '../types';
 
 interface Props {
@@ -46,6 +47,28 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const showSuitability = isLoggedIn && investorProfileCompleted;
+
+  // "계좌 1개 = 운용방식 1개 = 활성 전략 1개" 정책 — 지금 활성 투자(activeMode)가 있으면 그 계좌의
+  // activeStrategyId와 이 화면의 strategyId를 비교해 CTA를 셋 중 하나로 분기한다. 비회원/미투자
+  // 사용자는 accountsByMode·activeMode가 항상 비어있어 자연히 'start'가 된다.
+  const accountsByMode = useInvestmentStore((s) => s.accountsByMode);
+  const activeMode = useInvestmentStore((s) => s.activeMode);
+  const setAccountActiveStrategy = useInvestmentStore((s) => s.setAccountActiveStrategy);
+  const activeAccount = activeMode ? accountsByMode[activeMode] : null;
+  const activeStrategyId = activeAccount?.activeStrategyId ?? null;
+  const ctaState: 'start' | 'current' | 'change' =
+    !activeStrategyId ? 'start' : activeStrategyId === strategyId ? 'current' : 'change';
+  const activeStrategyName = activeStrategyId
+    ? (STRATEGIES.find((s) => s.id === activeStrategyId)?.name ?? activeStrategyId)
+    : null;
+  const [changeConfirmOpen, setChangeConfirmOpen] = useState(false);
+
+  const confirmStrategyChange = () => {
+    if (!activeMode) return;
+    setAccountActiveStrategy(activeMode, strategyId);
+    setChangeConfirmOpen(false);
+    onNavigate('portfolio');
+  };
   // 백테스트 "결과"는 공개, "다른 기간으로 바꿔보는" interaction만 로그인 필요 — 잠긴 상태에서
   // 다른 기간/직접 설정을 시도하면 즉시 로그인으로 보내지 않고 이 inline 안내를 먼저 보여준다.
   const [showBacktestLoginLock, setShowBacktestLoginLock] = useState(false);
@@ -413,15 +436,46 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
             </>
           )}
 
-          <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
-            <div className="flex flex-col gap-2.5">
-              <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략으로 시작해볼까요?</span>
-              <span className="text-[17px] leading-7 text-[#B9C2BA]">10만원부터 시작할 수 있고, 전략은 언제든 바꿀 수 있어요.</span>
-            </div>
-            <button onClick={onStart} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
-              이 전략으로 시작하기 →
-            </button>
-          </section>
+          {ctaState === 'start' && (
+            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+              <div className="flex flex-col gap-2.5">
+                <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략으로 시작해볼까요?</span>
+                <span className="text-[17px] leading-7 text-[#B9C2BA]">10만원부터 시작할 수 있어요.</span>
+              </div>
+              <button onClick={onStart} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
+                이 전략으로 시작하기 →
+              </button>
+            </section>
+          )}
+
+          {ctaState === 'current' && (
+            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+              <div className="flex flex-col gap-2.5">
+                <span className="text-2xl font-bold tracking-[-0.025em] text-white">현재 이 전략으로 운용하고 있어요</span>
+                <span className="text-[17px] leading-7 text-[#B9C2BA]">투자 현황은 나의 포트폴리오에서 확인할 수 있어요.</span>
+              </div>
+              <span className="shrink-0 rounded-field bg-white/10 px-9 py-5 text-lg font-bold text-white/70">
+                현재 운용 중
+              </span>
+            </section>
+          )}
+
+          {ctaState === 'change' && (
+            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+              <div className="flex flex-col gap-2.5">
+                <span className="text-2xl font-bold tracking-[-0.025em] text-white">다른 전략으로 바꿔볼까요?</span>
+                <span className="text-[17px] leading-7 text-[#B9C2BA]">
+                  지금은 {activeStrategyName}으로 운용 중이에요. 계좌 하나에는 전략을 하나만 운용할 수 있어요.
+                </span>
+              </div>
+              <button
+                onClick={() => setChangeConfirmOpen(true)}
+                className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy"
+              >
+                이 전략으로 변경하기 →
+              </button>
+            </section>
+          )}
 
           {USE_MOCK_BACKTEST && (
             <p className="text-sm leading-[22px] text-subtle">
@@ -433,6 +487,57 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
           </p>
         </div>
       </main>
+
+      {changeConfirmOpen && activeStrategyName && (
+        <StrategyChangeModal
+          currentStrategyName={activeStrategyName}
+          nextStrategyName={strategy.name}
+          onCancel={() => setChangeConfirmOpen(false)}
+          onConfirm={confirmStrategyChange}
+        />
+      )}
+    </div>
+  );
+}
+
+/** "이 전략으로 변경하기" 확인 모달 — 계좌 하나에는 전략을 하나만 운용할 수 있다는 정책을 확인시키고,
+ * 확인 시에만 실제로 activeStrategyId를 교체한다(TermsModal과 동일한 backdrop/카드 스타일 재사용). */
+function StrategyChangeModal({
+  currentStrategyName, nextStrategyName, onCancel, onConfirm,
+}: { currentStrategyName: string; nextStrategyName: string; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8" onClick={onCancel}>
+      <div className="flex w-[560px] flex-col gap-7 rounded-card bg-surface p-12" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-col gap-2">
+          <h2 className="text-[24px] font-bold tracking-[-0.025em]">현재 다른 전략을 운용하고 있어요</h2>
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-[16px] bg-canvas px-7 py-6">
+          <div className="flex items-center justify-between">
+            <span className="text-[15px] text-muted">현재 전략</span>
+            <span className="text-[17px] font-bold text-ink">{currentStrategyName}</span>
+          </div>
+          <div className="h-px bg-line" />
+          <div className="flex items-center justify-between">
+            <span className="text-[15px] text-muted">변경할 전략</span>
+            <span className="text-[17px] font-bold text-ink">{nextStrategyName}</span>
+          </div>
+        </div>
+
+        <p className="text-[15px] leading-[24px] text-muted">
+          한 계좌에서는 하나의 전략만 운용할 수 있어요.<br />
+          이 전략으로 변경하면 현재 전략 대신 새 전략으로 운용됩니다.
+        </p>
+
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 rounded-field bg-[#F4F6F1] py-4 text-base font-semibold text-[#3F4A43]">
+            현재 전략 유지하기
+          </button>
+          <button onClick={onConfirm} className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy">
+            이 전략으로 변경하기
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -25,11 +25,11 @@ interface Props {
 type Phase = 'choice' | 'link-select' | 'link-auth' | 'open-terms' | 'open-auth' | 'done';
 
 /** MOCK — 실제 SeSAC증권 API 연동 전까지, "조회되는 기존 계좌"는 데모용 고정값 하나만 제공한다 */
-const MOCK_EXISTING_ACCOUNT: SesacAccount = { accountNumber: '123-****-5678', balance: 0 };
+const MOCK_EXISTING_ACCOUNT: SesacAccount = { accountNumber: '123-****-5678', balance: 0, activeStrategyId: null };
 /** 운용방식마다 계좌가 분리된다는 정책과 일관되도록, 신규 개설 mock 계좌번호도 운용방식별로 다르게 둔다 */
 const MOCK_NEW_ACCOUNT_BY_MODE: Record<OperationMode, SesacAccount> = {
-  auto: { accountNumber: '045-****-9081', balance: 0 },
-  manual: { accountNumber: '067-****-2245', balance: 0 },
+  auto: { accountNumber: '045-****-9081', balance: 0, activeStrategyId: null },
+  manual: { accountNumber: '067-****-2245', balance: 0, activeStrategyId: null },
 };
 
 const ACCOUNT_OPEN_TERMS_BODY =

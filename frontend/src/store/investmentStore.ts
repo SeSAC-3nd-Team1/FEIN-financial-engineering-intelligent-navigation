@@ -13,6 +13,12 @@ export interface SesacAccount {
   accountNumber: string;
   /** MOCK 예수금 잔액(원) — 입금 필요 여부 판단에 사용 */
   balance: number;
+  /**
+   * 이 계좌가 지금 운용 중인 전략(STRATEGIES의 id) — "계좌 1개 = 활성 전략 1개" 정책의 핵심 필드.
+   * 실제 투자 시작(ensureAccount 성공) 또는 전략 변경(같은 계좌 내에서만 가능) 시점에만 갱신되고,
+   * null이면 계좌는 있지만 아직 투자가 시작되지 않은 상태다.
+   */
+  activeStrategyId: string | null;
 }
 
 /**
@@ -89,6 +95,17 @@ function loadPersisted(userId: string | null): PersistedOnboarding {
       merged.accountsByMode = { [inferredMode]: parsed.sesacAccount };
     }
 
+    // 이 변경(계좌당 activeStrategyId) 이전에 저장된 계좌는 이 필드가 없다 — 없으면 "아직 활성 전략
+    // 없음"으로 간주한다. 실제로 이미 투자 중이던 이전 상태라면 최초 1회 "이 전략으로 시작하기"가
+    // 다시 보일 수 있지만, 이 필드가 추가되기 전에는 어떤 전략이 활성이었는지 저장돼 있지 않아 안전한
+    // 기본값(null)으로만 채운다.
+    merged.accountsByMode = Object.fromEntries(
+      (Object.entries(merged.accountsByMode) as [OperationMode, SesacAccount][]).map(([mode, account]) => [
+        mode,
+        { ...account, activeStrategyId: account.activeStrategyId ?? null },
+      ]),
+    ) as AccountsByMode;
+
     return merged;
   } catch {
     return EMPTY_ONBOARDING;
@@ -123,6 +140,13 @@ interface InvestmentOnboardingState extends PersistedOnboarding {
   clearInFlight: () => void;
   /** 실제 투자 시작(ensureAccount 성공) 시점에 호출 — 현재 활성 운용방식을 기록 */
   setActiveMode: (mode: OperationMode) => void;
+  /**
+   * "계좌 1개 = 활성 전략 1개" 정책의 실제 반영 지점 — 신규 투자 시작(ensureAccount 성공) 시점과,
+   * 같은 계좌 안에서 전략을 변경(StrategyDetail "이 전략으로 변경하기" 확인)할 때 모두 이 액션 하나로
+   * 처리한다. 배열이 아니라 단일 필드를 덮어쓰는 구조라 한 계좌에 두 전략이 동시에 활성화되는 상태
+   * 자체가 나올 수 없다. 해당 mode에 계좌가 없으면(비정상 호출) 아무것도 하지 않는다.
+   */
+  setAccountActiveStrategy: (mode: OperationMode, strategyId: string) => void;
 }
 
 export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) => {
@@ -197,6 +221,18 @@ export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) =
 
     setActiveMode: (mode) => {
       set({ activeMode: mode });
+      persistCurrent();
+    },
+
+    setAccountActiveStrategy: (mode, strategyId) => {
+      set((s) => {
+        const account = s.accountsByMode[mode];
+        if (!account) {
+          console.warn(`[investmentStore] ${mode} 계좌가 없어 activeStrategy를 설정하지 않았습니다.`);
+          return s;
+        }
+        return { accountsByMode: { ...s.accountsByMode, [mode]: { ...account, activeStrategyId: strategyId } } };
+      });
       persistCurrent();
     },
   };
