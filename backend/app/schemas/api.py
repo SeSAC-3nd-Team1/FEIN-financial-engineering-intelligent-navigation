@@ -61,6 +61,8 @@ class UserResponse(BaseModel):
     name: str
     email: str
     account_status: str
+    active_operation_mode: OperationMode | None = None
+    operation_mode_changed_at: datetime | None = None
 
 
 class TermResponse(BaseModel):
@@ -132,6 +134,27 @@ class AccountResponse(BaseModel):
     status: str
     selected_strategy_id: str | None
     created_at: datetime
+
+
+class OperationModeSwitchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_mode: OperationMode
+
+
+class OperationModeChangeNoticeResponse(BaseModel):
+    code: Literal["OPERATION_MODE_CHANGED", "OPERATION_MODE_UNCHANGED"]
+    title: str
+    message: str
+
+
+class OperationModeSwitchResponse(BaseModel):
+    previous_operation_mode: OperationMode | None
+    operation_mode: OperationMode
+    changed: bool
+    changed_at: datetime | None
+    account: AccountResponse
+    notice: OperationModeChangeNoticeResponse
 
 
 class InvestmentAccountPrepareResponse(BaseModel):
