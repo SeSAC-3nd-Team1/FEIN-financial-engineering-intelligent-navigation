@@ -8,6 +8,7 @@ import type { BacktestAvailableRange } from '../data/backtestApi';
 import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
 import { STRATEGIES } from '../data/strategies';
 import { won } from '../lib/validation';
+import { useAuthStore } from '../store/authStore';
 import type { BacktestAiContext, BacktestPeriod, BacktestResult, Screen } from '../types';
 
 interface Props {
@@ -40,6 +41,14 @@ const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 /** 03 전략 상세 — 추천 기간(또는 직접 설정한 기간)으로 전략을 직접 체험한 뒤 바로 투자 시작으로 이어진다 */
 export default function StrategyDetail({ strategyId, userName, onNavigate, onStart, pendingDeposit, onResumeDeposit }: Props) {
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
+  // 비회원 공개 정책: 전략을 읽고 백테스트 기본 결과를 보는 것은 PUBLIC이지만, "나와 몇% 잘
+  // 맞는지" 같은 개인화 적합도는 로그인 + 투자성향 진단 완료 사용자에게만 보여준다.
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
+  const showSuitability = isLoggedIn && investorProfileCompleted;
+  // 백테스트 "결과"는 공개, "다른 기간으로 바꿔보는" interaction만 로그인 필요 — 잠긴 상태에서
+  // 다른 기간/직접 설정을 시도하면 즉시 로그인으로 보내지 않고 이 inline 안내를 먼저 보여준다.
+  const [showBacktestLoginLock, setShowBacktestLoginLock] = useState(false);
   const [availableRange, setAvailableRange] = useState<BacktestAvailableRange | null>(null);
   const [periods, setPeriods] = useState<BacktestPeriod[]>([]);
 
@@ -102,6 +111,7 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
   }, [strategyId, periods]);
 
   const selectPreset = (id: string) => {
+    if (!isLoggedIn && id !== presetPeriodId) { setShowBacktestLoginLock(true); return; }
     setPeriodMode('preset');
     setPresetPeriodId(id);
     setCustomPanelOpen(false);
@@ -184,7 +194,9 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
       <main className="flex flex-col items-center px-16 pb-24 pt-6">
         <div className="flex w-[1040px] flex-col gap-10">
           <section className="flex flex-col gap-4">
-            <span className="text-base font-semibold text-[#3F5222]">✦ 나와 {strategy.match}% 잘 맞는 전략</span>
+            {showSuitability && (
+              <span className="text-base font-semibold text-[#3F5222]">✦ 나와 {strategy.match}% 잘 맞는 전략</span>
+            )}
             <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">{strategy.name}</h1>
             <p className="max-w-[820px] text-[19px] leading-8 text-muted">{strategy.why}</p>
           </section>
@@ -233,8 +245,28 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
               </>}
             </p>
 
+            {showBacktestLoginLock && (
+              <div className="flex items-center justify-between gap-6 rounded-[16px] bg-[#F8FCEE] px-7 py-6">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[15px] font-bold text-[#3F5222]">다른 시장에서도 확인해볼까요?</span>
+                  <p className="text-[15px] leading-6 text-[#3F4A43]">
+                    로그인하면 기간을 바꿔가며 이 전략을 직접 확인할 수 있어요.
+                  </p>
+                </div>
+                <button
+                  onClick={() => onNavigate('login')}
+                  className="shrink-0 rounded-field bg-lime px-6 py-3.5 text-[15px] font-bold text-navy"
+                >
+                  다른 기간도 직접 확인하기 →
+                </button>
+              </div>
+            )}
+
             <button
-              onClick={() => setCustomPanelOpen((o) => !o)}
+              onClick={() => {
+                if (!isLoggedIn) { setShowBacktestLoginLock(true); return; }
+                setCustomPanelOpen((o) => !o);
+              }}
               className="self-start text-[15px] font-semibold text-navy underline"
             >
               원하는 기간이 있나요? 직접 설정 →

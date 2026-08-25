@@ -10,7 +10,10 @@ interface Props {
 }
 
 /**
- * 전 화면 공통 상단 내비게이션 — "투자전략"/"나의 포트폴리오"는 로그인 필요.
+ * 전 화면 공통 상단 내비게이션 — "나의 포트폴리오"만 로그인 필요(개인 투자 데이터 영역).
+ * "홈"/"투자전략"/"인사이트"는 비회원도 공개(PUBLIC) — 전략을 이해·탐색하는 것과, 그 전략으로
+ * 직접 투자를 실행하는 것은 다른 권한이라는 정책에 따른 것 (StrategyDetail의 "이 전략으로
+ * 시작하기"·백테스트 기간 변경 등 "조작" 행동만 그 화면 내부에서 개별적으로 로그인을 요구한다).
  * "인사이트"는 기존 "정보" 화면(route: information)의 라벨만 바꾼 것 — 화면/route/내부 UI는 그대로다.
  * "투자전략"의 목적지는 전략 목록(strategy-list) — key는 상세(strategy) 화면과 동일하게 'strategy'를
  * 써서, Strategy Detail에서도 이 메뉴가 계속 active로 표시되게 한다(StrategyList/StrategyDetail 모두
@@ -18,7 +21,7 @@ interface Props {
  */
 const NAV: { key: Props['active']; label: string; to: Screen; guarded: boolean }[] = [
   { key: 'home', label: '홈', to: 'home', guarded: false },
-  { key: 'strategy', label: '투자전략', to: 'strategy-list', guarded: true },
+  { key: 'strategy', label: '투자전략', to: 'strategy-list', guarded: false },
   { key: 'information', label: '인사이트', to: 'information', guarded: false },
   // 헤더 라우팅: 나의 포트폴리오 → Portfolio.tsx (PDF 1~4p 통합 Power BI 대시보드가 기본 화면)
   { key: 'portfolio', label: '나의 포트폴리오', to: 'portfolio', guarded: true },

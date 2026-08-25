@@ -1,5 +1,4 @@
 import Header from '../components/Header';
-import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
 
 interface Props {
@@ -19,10 +18,6 @@ const HOME_STEPS = [
  * 로그인 Home(Navigation Hub)은 Phase 5에서 별도로 구현한다 — 이 컴포넌트는 비로그인 전용.
  */
 export default function Home({ userName, onNavigate }: Props) {
-  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
-  // "투자전략"은 로그인이 필요해 미로그인 시 로그인 화면으로 보낸다
-  const goStrategy = () => onNavigate(isLoggedIn ? 'strategy-list' : 'login');
-
   return (
     <div className="min-h-screen bg-canvas">
       <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '무료로 시작하기', to: 'login' }} />
@@ -40,7 +35,7 @@ export default function Home({ userName, onNavigate }: Props) {
               <button onClick={() => onNavigate('login')} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
                 내 투자성향 알아보기 →
               </button>
-              <button onClick={goStrategy} className="text-[17px] font-semibold text-muted transition-colors hover:text-navy">
+              <button onClick={() => onNavigate('strategy-list')} className="text-[17px] font-semibold text-muted transition-colors hover:text-navy">
                 투자전략 살펴보기 →
               </button>
             </div>

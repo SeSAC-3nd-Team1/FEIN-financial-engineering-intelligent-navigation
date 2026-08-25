@@ -66,6 +66,9 @@ export default function App() {
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
+  // 비회원이 Strategy Detail "이 전략으로 시작하기"를 눌러 로그인 화면으로 보내진 경우 true —
+  // 로그인 완료 후 Portfolio가 아니라 원래 하려던 투자 시작 절차로 이어간다(아래 Login onLogin 참고).
+  const [pendingStartAfterLogin, setPendingStartAfterLogin] = useState(false);
   // 투자 시작 Flow(약관 → 계좌 준비 → 입금 → 최종 확인) 동안 유지해야 하는 선택 금액/운용방식
   // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
   const [investmentAmount, setInvestmentAmount] = useState(1_000_000);
@@ -73,6 +76,7 @@ export default function App() {
   const register = useAuthStore((s) => s.register);
   const initialize = useAuthStore((s) => s.initialize);
   const authenticatedUser = useAuthStore((s) => s.user);
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -208,13 +212,31 @@ export default function App() {
     setScreen('risk');
   };
 
-  /** StrategyDetail "이 전략으로 시작하기" — 실제 투자 실행 전 투자자 정보 확인 가드 */
-  const handleStartInvesting = () => {
-    if (investorProfileCompleted) {
+  /**
+   * investorProfileCompleted 분기만 담당 — 로그인은 이미 됐다고 가정한다.
+   * getState()로 최신값을 직접 읽는 이유: 로그인 직후 onLogin 콜백에서도 이 로직을 그대로 타는데,
+   * 그 시점엔 아직 리렌더가 안 끝나 이 컴포넌트의 investorProfileCompleted 클로저가 낡은 값일 수 있다.
+   */
+  const proceedToStartInvesting = () => {
+    if (useAuthStore.getState().investorProfileCompleted) {
       setScreen('investor-check');
     } else {
       startInvestorProfile('start', { notice: '투자를 시작하기 전에 투자자 정보를 확인해주세요.' });
     }
+  };
+
+  /**
+   * StrategyDetail "이 전략으로 시작하기" — 실제 투자 실행의 시작점이라 로그인이 먼저 필요하다.
+   * 비회원이면 로그인 화면으로 보내고, 로그인 완료 후 Portfolio가 아니라 여기로 다시 이어가도록
+   * pendingStartAfterLogin을 세워둔다(strategyId는 이미 상태로 유지되고 있어 따로 안 챙겨도 된다).
+   */
+  const handleStartInvesting = () => {
+    if (!isLoggedIn) {
+      setPendingStartAfterLogin(true);
+      setScreen('login');
+      return;
+    }
+    proceedToStartInvesting();
   };
 
   return (
@@ -223,11 +245,19 @@ export default function App() {
 
       {screen === 'login' && (
         <Login
-          // 로그인 성공 → 인증 state를 켜고, 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
-          onLogin={() => navigate('portfolio')}
-          onSignup={() => setScreen('signup-1')}
-          onHome={() => setScreen('home')}
-          onNavigate={navigate}
+          // 로그인 성공 — "이 전략으로 시작하기"를 거쳐 왔으면 그 절차로 이어가고,
+          // 그 외에는 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
+          onLogin={() => {
+            if (pendingStartAfterLogin) {
+              setPendingStartAfterLogin(false);
+              proceedToStartInvesting();
+              return;
+            }
+            navigate('portfolio');
+          }}
+          onSignup={() => { setPendingStartAfterLogin(false); setScreen('signup-1'); }}
+          onHome={() => { setPendingStartAfterLogin(false); setScreen('home'); }}
+          onNavigate={(s) => { setPendingStartAfterLogin(false); navigate(s); }}
         />
       )}
 
