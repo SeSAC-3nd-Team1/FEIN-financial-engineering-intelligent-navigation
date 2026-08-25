@@ -66,7 +66,9 @@ class AccountService:
             user = self.repo.user(user_id, lock=True)
             if user is None:
                 raise NotFoundError("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.")
-            account = self.repo.account_for_user(user_id, operation_mode, lock=True)
+            # 이 요청은 계좌를 수정하지 않는다. User 잠금 뒤 계좌까지 잠그면 온보딩 완료의
+            # InvestmentOnboarding -> VirtualAccount -> User 순서와 교차해 deadlock이 날 수 있다.
+            account = self.repo.account_for_user(user_id, operation_mode)
             if account is None:
                 raise ServiceError(
                     "OPERATION_MODE_ACCOUNT_NOT_READY",

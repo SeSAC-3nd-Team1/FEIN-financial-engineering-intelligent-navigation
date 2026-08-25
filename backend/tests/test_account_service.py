@@ -94,7 +94,8 @@ def test_switch_active_operation_mode_preserves_target_account() -> None:
     assert user.active_operation_mode == "AUTO"
     assert target_account.operation_mode == "AUTO"
     assert target_account.cash_balance == Decimal("750000")
-    assert ("account", 7, "AUTO", True) in service.repo.calls
+    assert ("user", 7, True) in service.repo.calls
+    assert ("account", 7, "AUTO", False) in service.repo.calls
     assert session.commits == 1
     assert session.rollbacks == 0
 
