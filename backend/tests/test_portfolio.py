@@ -9,7 +9,17 @@ import pytest
 
 from app.core.errors import ServiceError
 from app.integrations.kis.models import CurrentQuote
-from app.services.portfolio import PortfolioService, build_history_points, calculate_rebalancing, calculate_return, calculate_weight, validate_target_weights
+from app.schemas.api import PortfolioResponse, PositionResponse
+from app.services.portfolio import (
+    PortfolioService,
+    build_allocations,
+    build_history_points,
+    calculate_rebalancing,
+    calculate_return,
+    calculate_weight,
+    sort_positions,
+    validate_target_weights,
+)
 
 
 def test_return_rate() -> None:
@@ -84,6 +94,141 @@ def test_invalid_target_weight_sum_is_rejected() -> None:
         validate_target_weights({"005930": Decimal("0.5"), "000660": Decimal("0.4")})
 
     assert error.value.code == "INVALID_STRATEGY_TARGET_WEIGHTS"
+
+
+def portfolio_position(
+    stock_code: str,
+    stock_name: str,
+    *,
+    weight: str,
+    purchase_amount: str,
+    return_rate: str,
+) -> PositionResponse:
+    return PositionResponse(
+        stock_code=stock_code,
+        stock_name=stock_name,
+        sector=None,
+        quantity=Decimal("1"),
+        average_price=Decimal(purchase_amount),
+        current_price=Decimal(purchase_amount),
+        previous_close=None,
+        change_rate=None,
+        purchase_amount=Decimal(purchase_amount),
+        evaluation_amount=Decimal(purchase_amount),
+        unrealized_profit=Decimal("0"),
+        return_rate=Decimal(return_rate),
+        realized_profit=Decimal("0"),
+        weight=Decimal(weight),
+        today_profit=None,
+        price_source="KRX",
+        price_as_of=datetime(2026, 8, 25, tzinfo=UTC),
+    )
+
+
+@pytest.mark.parametrize(
+    ("sort_by", "order", "expected"),
+    [
+        ("stock_name", "asc", ["000660", "005930"]),
+        ("weight", "desc", ["005930", "000660"]),
+        ("purchase_amount", "asc", ["000660", "005930"]),
+        ("return_rate", "desc", ["000660", "005930"]),
+    ],
+)
+def test_home_positions_support_allowed_sort_columns(sort_by, order, expected) -> None:
+    positions = [
+        portfolio_position("005930", "삼성전자", weight="60", purchase_amount="70000", return_rate="1"),
+        portfolio_position("000660", "SK하이닉스", weight="30", purchase_amount="50000", return_rate="2"),
+    ]
+
+    result = sort_positions(positions, sort_by, order)
+
+    assert [item.stock_code for item in result] == expected
+
+
+def test_home_allocations_include_cash_as_an_explicit_slice() -> None:
+    position = portfolio_position(
+        "005930", "삼성전자", weight="70", purchase_amount="700000", return_rate="0"
+    )
+    portfolio = PortfolioResponse(
+        account_id=uuid4(),
+        cash_balance=Decimal("300000"),
+        total_purchase_amount=Decimal("700000"),
+        total_evaluation_amount=Decimal("700000"),
+        total_assets=Decimal("1000000"),
+        unrealized_profit=Decimal("0"),
+        realized_profit=Decimal("0"),
+        return_rate=Decimal("0"),
+        today_profit=None,
+        top_contributor=None,
+        contributions=[],
+        strategy_targets_available=False,
+        rebalancing_proposals=[],
+        positions=[position],
+    )
+
+    result = build_allocations(portfolio)
+
+    assert [(item.type, item.stock_code, item.weight) for item in result] == [
+        ("STOCK", "005930", Decimal("70")),
+        ("CASH", None, Decimal("30.00")),
+    ]
+
+
+def test_home_combines_account_evaluation_history_and_sorting_without_second_owner_lookup() -> None:
+    account_id = uuid4()
+    account = SimpleNamespace(
+        id=account_id,
+        account_name="나의 반자동 계좌",
+        operation_mode="SEMI_AUTO",
+        status="ACTIVE",
+        selected_strategy_id="low",
+    )
+    positions = [
+        portfolio_position("005930", "삼성전자", weight="60", purchase_amount="600000", return_rate="1"),
+        portfolio_position("000660", "SK하이닉스", weight="30", purchase_amount="300000", return_rate="2"),
+    ]
+    portfolio = PortfolioResponse(
+        account_id=account_id,
+        cash_balance=Decimal("100000"),
+        total_purchase_amount=Decimal("900000"),
+        total_evaluation_amount=Decimal("900000"),
+        total_assets=Decimal("1000000"),
+        unrealized_profit=Decimal("0"),
+        realized_profit=Decimal("0"),
+        return_rate=Decimal("0"),
+        today_profit=None,
+        top_contributor=None,
+        contributions=[],
+        strategy_targets_available=False,
+        rebalancing_proposals=[],
+        positions=positions,
+    )
+
+    class FakeRepo:
+        def __init__(self):
+            self.owner_lookups = 0
+
+        def owned_account(self, *_args):
+            self.owner_lookups += 1
+            return account
+
+        def snapshots_since(self, *_args):
+            return [SimpleNamespace(snapshot_date=date(2026, 8, 25), total_assets=Decimal("1000000"))]
+
+    service = PortfolioService.__new__(PortfolioService)
+    service.repo = FakeRepo()
+    service.market_repo = SimpleNamespace(kospi_since=lambda *_args: [])
+    service._evaluate_account = lambda _account: portfolio
+
+    result = service.home(7, account_id, "3M", "return_rate", "desc")
+
+    assert service.repo.owner_lookups == 1
+    assert result.account.operation_mode == "SEMI_AUTO"
+    assert result.summary.total_assets == Decimal("1000000")
+    assert result.trend.items[0].total_assets == Decimal("1000000")
+    assert [item.stock_code for item in result.positions] == ["000660", "005930"]
+    assert result.allocations[-1].type == "CASH"
+    assert result.valuation_as_of == datetime(2026, 8, 25, tzinfo=UTC)
 
 
 def test_evaluate_combines_real_metadata_quote_and_daily_contribution() -> None:
