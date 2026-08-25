@@ -33,6 +33,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Azure login with OIDC
+        id: azure_login
         continue-on-error: true
         uses: azure/login@v2
         with:
@@ -50,15 +51,39 @@ jobs:
       - name: Install data dependencies
         run: python -m pip install -r data/requirements.txt
 
-      - name: Validate required connection settings
+      - name: Diagnose Azure CLI and Blob data-plane access
+        if: always()
         shell: bash
         run: |
+          if [[ "${{ steps.azure_login.outcome }}" == "success" ]]; then
+            echo "AZURE_LOGIN_OK=true" >> "${GITHUB_ENV}"
+          else
+            echo "AZURE_LOGIN_OK=false" >> "${GITHUB_ENV}"
+          fi
+
+          if az account get-access-token --resource https://storage.azure.com/ --output none >/dev/null 2>&1; then
+            echo "AZURE_TOKEN_ACQUISITION_OK=true" >> "${GITHUB_ENV}"
+          else
+            echo "AZURE_TOKEN_ACQUISITION_OK=false" >> "${GITHUB_ENV}"
+          fi
+
+          if az storage container list \
+            --account-name "${AZURE_STORAGE_ACCOUNT_NAME}" \
+            --auth-mode login \
+            --num-results 1 \
+            --output none >/dev/null 2>&1; then
+            echo "BLOB_CLI_DATA_PLANE_OK=true" >> "${GITHUB_ENV}"
+          else
+            echo "BLOB_CLI_DATA_PLANE_OK=false" >> "${GITHUB_ENV}"
+          fi
+
           if [[ -z "${DATABASE_URL}" ]]; then
-            echo "DATABASE_URL GitHub Secret is required." >&2
-            exit 1
+            echo "DATABASE_URL is not configured; PostgreSQL diagnostics will report it safely." >&2
           fi
 
       - name: Audit live Blob and PostgreSQL stores
+        id: live_audit
+        continue-on-error: true
         working-directory: data
         run: python -m scripts.audit_live_stores
 
@@ -80,3 +105,12 @@ jobs:
             data/reports/azure_live_audit.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Enforce live audit result
+        if: always()
+        shell: bash
+        run: |
+          if [[ "${{ steps.live_audit.outcome }}" != "success" ]]; then
+            echo "One or more live store audits failed. See Job Summary and artifact." >&2
+            exit 1
+          fi
