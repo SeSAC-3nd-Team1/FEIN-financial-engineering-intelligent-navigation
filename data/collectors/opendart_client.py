@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import io
 import logging
+import random
 import time
-from typing import Any
+from typing import Any, Callable
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -103,6 +104,7 @@ class OpenDartClient:
         max_attempts: int = 3,
         min_interval_seconds: float = 0.2,
         session: requests.Session | None = None,
+        rate_limiter: Callable[[], None] | None = None,
     ) -> None:
         if not api_key.strip():
             raise OpenDartNotConfiguredError("OPENDART_API_KEY is not configured")
@@ -112,9 +114,13 @@ class OpenDartClient:
         self.max_attempts = max(1, max_attempts)
         self.min_interval_seconds = max(0, min_interval_seconds)
         self.session = session or requests.Session()
+        self.rate_limiter = rate_limiter
         self._last_request_at = 0.0
 
     def _wait_for_rate_limit(self) -> None:
+        if self.rate_limiter is not None:
+            self.rate_limiter()
+            return
         remaining = self.min_interval_seconds - (time.monotonic() - self._last_request_at)
         if remaining > 0:
             time.sleep(remaining)
@@ -169,7 +175,17 @@ class OpenDartClient:
                 attempt,
                 type(last_error).__name__,
             )
-            time.sleep(min(2 ** (attempt - 1), 8))
+            response = getattr(last_error, "response", None)
+            retry_after = getattr(response, "headers", {}).get("Retry-After") if response else None
+            try:
+                delay = float(retry_after) if retry_after is not None else None
+            except ValueError:
+                delay = None
+            time.sleep(
+                max(0.0, delay)
+                if delay is not None
+                else min(2 ** (attempt - 1), 8) + random.uniform(0, 0.25)
+            )
         raise OpenDartError(f"OpenDART request failed endpoint={endpoint}") from last_error
 
     def download_corp_codes(self) -> bytes:

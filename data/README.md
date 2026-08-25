@@ -300,6 +300,29 @@ docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos
 API key가 없는 환경에서도 parser, 품질 규칙, PIT feature 단위 테스트는 실행되며 실제
 endpoint smoke test만 skip된다. Blob은 Azure CLI/Managed Identity 기반 Entra ID로 인증한다.
 
+## 모델 Raw 장기 수집
+
+KRX·ECOS·OpenDART 모델 원본은 PostgreSQL을 거치지 않고 아래 한 명령으로 2018-01-01부터
+최신일까지 Azure Blob `raw` 컨테이너에 구축한다.
+
+```bash
+docker compose --profile data run --rm data python -m scripts.collect_model_raw
+```
+
+수집기는 실제 Blob partition과 `_manifests/model_raw_coverage.json`을 교차검증해 누락 구간만
+호출한다. KRX 날짜, ECOS 시계열×월, OpenDART 회사 100개/공시 월 구간을 bounded worker로
+처리하며 성공 partition만 checkpoint한다. 같은 범위를 재실행하면 provider를 다시 호출하지
+않는다. 한 달 성능 측정은 다음처럼 실행한다.
+
+```bash
+docker compose --profile data run --rm data python -m scripts.collect_model_raw \
+  --benchmark --start-date 2026-08-01 --end-date 2026-08-24
+```
+
+결과는 `reports/MODEL_RAW_COLLECTION_SUMMARY.{json,md}`와
+`docs/DOYOUNG_MODEL_DATA_INVENTORY.md`에 기록된다. OpenDART 재무를 가격과 결합할 때는
+결산일이 아니라 실제 공시 `rcept_dt` 이후에만 사용할 수 있다.
+
 회원가입 상세 구현 가이드는 `data/REGISTRATION_DB.md`를 본다.
 
 ## 테스트
