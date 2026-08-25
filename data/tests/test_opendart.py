@@ -77,6 +77,22 @@ def test_client_includes_key_and_returns_validated_response() -> None:
     assert session.params["crtfc_key"] == "secret"
 
 
+def test_client_uses_shared_rate_limiter_when_provided() -> None:
+    """여러 worker가 각자 Session을 써도 요청 시작 간격은 공통 limiter를 거친다."""
+
+    calls: list[str] = []
+    client = OpenDartClient(
+        "secret",
+        session=_Session({"status": "000", "list": []}),
+        min_interval_seconds=0,
+        rate_limiter=lambda: calls.append("wait"),
+    )
+
+    client.company("00126380")
+
+    assert calls == ["wait"]
+
+
 def test_disclosures_follow_page_no_until_total_page() -> None:
     class SequenceSession:
         def __init__(self) -> None:

@@ -42,8 +42,10 @@ class KrxClient:
         retry = Retry(
             total=3,
             backoff_factor=0.5,
+            backoff_jitter=0.25,
             status_forcelist=(429, 500, 502, 503, 504),
             allowed_methods=("GET",),
+            respect_retry_after_header=True,
         )
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
@@ -71,4 +73,3 @@ class KrxClient:
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             raise KrxApiError(f"KRX response rows are invalid operation={operation.name}")
         return rows
-

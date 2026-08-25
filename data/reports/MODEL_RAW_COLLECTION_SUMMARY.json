@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-08-25T03:05:06.342117+00:00",
+  "range": {
+    "start": "2026-08-01",
+    "end": "2026-08-24"
+  },
+  "selected_sources": [
+    "krx",
+    "ecos",
+    "opendart"
+  ],
+  "benchmark": true,
+  "company_limit": 1,
+  "concurrency": {
+    "krx": 4,
+    "ecos-bok": 2,
+    "opendart": 1
+  },
+  "batch": {
+    "krx": "date x 7 full-market endpoints",
+    "ecos": "series x calendar month; page_size=1000",
+    "opendart_financial": "100 companies x report period",
+    "opendart_disclosure": "market x calendar month; page_size=100"
+  },
+  "blob_upload": {
+    "format": "canonical JSONL gzip (KRX/ECOS), provider bytes (OpenDART)",
+    "sdk_max_concurrency": 4,
+    "content_addressed": true
+  },
+  "sources": {
+    "krx": {
+      "source": "krx",
+      "api_calls": 112,
+      "rows": 87616,
+      "new_blobs": 0,
+      "reused_blobs": 107,
+      "skipped_partitions": 0,
+      "completed_partitions": 16,
+      "download_seconds": 69.053,
+      "upload_seconds": 7.906,
+      "elapsed_seconds": 121.011,
+      "active_seconds": 76.959,
+      "rows_per_second": 1268.822,
+      "upload_mb_per_second": 0.0,
+      "uploaded_bytes": 0
+    },
+    "ecos-bok": {
+      "source": "ecos-bok",
+      "api_calls": 5,
+      "rows": 67,
+      "new_blobs": 2,
+      "reused_blobs": 2,
+      "skipped_partitions": 0,
+      "completed_partitions": 5,
+      "download_seconds": 1.132,
+      "upload_seconds": 0.117,
+      "elapsed_seconds": 121.011,
+      "active_seconds": 1.249,
+      "rows_per_second": 59.187,
+      "upload_mb_per_second": 0.017,
+      "uploaded_bytes": 2116
+    },
+    "opendart": {
+      "source": "opendart",
+      "api_calls": 98,
+      "rows": 9699,
+      "new_blobs": 98,
+      "reused_blobs": 0,
+      "skipped_partitions": 1,
+      "completed_partitions": 2,
+      "download_seconds": 85.282,
+      "upload_seconds": 2.236,
+      "elapsed_seconds": 121.011,
+      "active_seconds": 87.518,
+      "rows_per_second": 113.729,
+      "upload_mb_per_second": 0.992,
+      "uploaded_bytes": 2326443
+    }
+  },
+  "total_rows": 97382,
+  "total_elapsed_seconds": 120.997,
+  "average_rows_per_second": 804.829,
+  "bottleneck": "opendart",
+  "additional_optimization": [
+    "OpenDART quota가 상향된 환경에서만 OPENDART_MAX_CONCURRENCY를 2 이상으로 조정",
+    "신규 Raw metadata에 partition_date를 기록해 legacy bootstrap 검증 비용 축소"
+  ]
+}

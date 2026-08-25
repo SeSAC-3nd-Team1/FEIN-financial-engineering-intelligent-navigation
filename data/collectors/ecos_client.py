@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import time
 from datetime import date
 from typing import Any
@@ -92,7 +93,17 @@ class EcosClient:
                     "ECOS request retry endpoint=%s attempt=%s error=%s",
                     endpoint, attempt, type(exc).__name__,
                 )
-                time.sleep(min(2 ** (attempt - 1), 8))
+                response = getattr(exc, "response", None)
+                retry_after = getattr(response, "headers", {}).get("Retry-After") if response else None
+                try:
+                    delay = float(retry_after) if retry_after is not None else None
+                except ValueError:
+                    delay = None
+                time.sleep(
+                    max(0.0, delay)
+                    if delay is not None
+                    else min(2 ** (attempt - 1), 8) + random.uniform(0, 0.25)
+                )
         # requests 예외의 URL에는 path parameter인 key가 포함될 수 있어 exception chain도 숨긴다.
         raise EcosError(f"ECOS request failed endpoint={endpoint}") from None
 
@@ -112,7 +123,14 @@ class EcosClient:
                 f"{series.stat_code}/{series.cycle}/{self._time(start_date, series.cycle)}/"
                 f"{self._time(end_date, series.cycle)}/{series.item_code}"
             )
-            payload = self._request(path, endpoint="StatisticSearch")
+            try:
+                payload = self._request(path, endpoint="StatisticSearch")
+            except EcosApiError as exc:
+                # INFO-200은 휴일·월간 시계열의 비관측 구간에서 오는 정상적인 빈 결과다.
+                # 이미 받은 page가 있다면 그 결과를 유지하고 불필요한 retry를 하지 않는다.
+                if exc.code == "INFO-200":
+                    return rows
+                raise
             result = payload.get("StatisticSearch")
             if not isinstance(result, dict) or not isinstance(result.get("row", []), list):
                 raise EcosError("invalid ECOS StatisticSearch response")

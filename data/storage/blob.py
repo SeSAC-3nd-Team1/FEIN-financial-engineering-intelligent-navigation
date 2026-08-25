@@ -27,8 +27,17 @@ class BlobObject:
 class BlobStorage:
     """Entra ID 인증을 우선하고 로컬 Azurite만 connection string을 허용한다."""
 
-    def __init__(self, service_client: BlobServiceClient) -> None:
+    def __init__(
+        self,
+        service_client: BlobServiceClient,
+        *,
+        upload_max_concurrency: int | None = None,
+    ) -> None:
         self.service_client = service_client
+        configured = upload_max_concurrency or int(
+            os.getenv("BLOB_UPLOAD_MAX_CONCURRENCY", "4")
+        )
+        self.upload_max_concurrency = max(1, min(configured, 16))
 
     @classmethod
     def from_env(cls) -> "BlobStorage":
@@ -92,6 +101,12 @@ class BlobStorage:
         client = self.service_client.get_container_client(container)
         return [blob.name for blob in client.list_blobs(name_starts_with=prefix)]
 
+    def has_paths(self, container: str, *, prefix: str) -> bool:
+        """전체 목록을 materialize하지 않고 prefix 아래 객체 존재 여부만 확인한다."""
+
+        client = self.service_client.get_container_client(container)
+        return next(iter(client.list_blobs(name_starts_with=prefix)), None) is not None
+
     def download_bytes(self, container: str, path: str) -> bytes:
         """Blob 하나를 bytes로 다운로드한다."""
 
@@ -125,7 +140,7 @@ class BlobStorage:
                     content_type=content_type,
                     content_encoding=content_encoding,
                 ),
-                max_concurrency=4,
+                max_concurrency=self.upload_max_concurrency,
             )
         except ResourceExistsError:
             return self.properties(container, path)
@@ -169,7 +184,7 @@ class BlobStorage:
                     overwrite=overwrite,
                     metadata=dict(metadata or {}),
                     content_settings=ContentSettings(content_type=content_type),
-                    max_concurrency=4,
+                    max_concurrency=self.upload_max_concurrency,
                 )
             except ResourceExistsError:
                 return self.properties(container, path)

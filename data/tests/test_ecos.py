@@ -77,6 +77,21 @@ def test_timeout_is_sanitized() -> None:
     assert error.value.__cause__ is None
 
 
+def test_no_data_result_is_an_empty_observation_not_a_retryable_error() -> None:
+    """휴일·월간 비관측 구간의 INFO-200은 정상적인 빈 partition으로 처리한다."""
+
+    session = type("S", (), {
+        "get": lambda self, url, timeout: _Response({
+            "RESULT": {"CODE": "INFO-200", "MESSAGE": "no data"}
+        })
+    })()
+    client = EcosClient("secret", session=session)
+
+    assert client.observations(
+        ECOS_SERIES["cpi"], date(2026, 8, 24), date(2026, 8, 24)
+    ) == []
+
+
 def _record(time: str, value: str) -> dict:
     """정규화 테스트용 canonical Raw envelope을 만든다."""
 
