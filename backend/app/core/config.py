@@ -36,7 +36,6 @@ class Settings:
     azure_openai_rebalancing_deployment: str = os.getenv("AZURE_OPENAI_REBALANCING_DEPLOYMENT", "")
     ai_rebalancing_timeout_seconds: float = float(os.getenv("AI_REBALANCING_TIMEOUT_SECONDS", "15"))
     ai_rebalancing_model_version: str = os.getenv("AI_REBALANCING_MODEL_VERSION", "rebalancing-v1")
-    ai_rebalancing_prompt_version: str = os.getenv("AI_REBALANCING_PROMPT_VERSION", "v1")
     strategy_catalog_version: str = os.getenv("STRATEGY_CATALOG_VERSION", "v1")
     kis_app_key: str = os.getenv("KIS_APP_KEY", "")
     kis_app_secret: str = os.getenv("KIS_APP_SECRET", "")
