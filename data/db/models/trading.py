@@ -42,11 +42,20 @@ class StrategyTargetWeight(Base):
 
 
 class VirtualAccount(TimestampMixin, Base):
-    """KIS 계좌와 무관하게 서비스가 보유하는 사용자별 단일 가상계좌다."""
+    """KIS 계좌와 무관한 사용자·운용방식별 가상계좌다."""
     __tablename__ = "virtual_accounts"
-    __table_args__ = (Index("ix_virtual_accounts_status", "status"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "operation_mode", name="uq_virtual_accounts_user_mode"),
+        CheckConstraint("initial_cash >= 0", name="initial_cash_nonnegative"),
+        CheckConstraint(
+            "operation_mode IN ('AUTO', 'SEMI_AUTO')",
+            name="operation_mode_values",
+        ),
+        Index("ix_virtual_accounts_status", "status"),
+    )
     id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), default=uuid4, primary_key=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    operation_mode: Mapped[str] = mapped_column(String(20), nullable=False)
     account_name: Mapped[str] = mapped_column(String(100), nullable=False)
     initial_cash: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
@@ -59,14 +68,14 @@ class InvestmentOnboarding(TimestampMixin, Base):
 
     __tablename__ = "investment_onboardings"
     __table_args__ = (
-        UniqueConstraint("user_id", name="uq_investment_onboardings_user_id"),
+        UniqueConstraint("user_id", "operation_mode", name="uq_investment_onboardings_user_mode"),
         CheckConstraint("investment_amount > 0", name="investment_amount_positive"),
         CheckConstraint(
             "operation_mode IN ('AUTO', 'SEMI_AUTO')",
             name="operation_mode_values",
         ),
         CheckConstraint(
-            "status IN ('TERMS_PENDING', 'ACCOUNT_PENDING', 'READY', 'COMPLETED')",
+            "status IN ('TERMS_PENDING', 'ACCOUNT_PENDING', 'DEPOSIT_PENDING', 'READY', 'COMPLETED')",
             name="status_values",
         ),
         CheckConstraint(
@@ -197,6 +206,10 @@ class CashLedger(Base):
     """현재 잔액의 모든 증감 사유를 보존하는 append-only 원장이다."""
     __tablename__ = "cash_ledger"
     __table_args__ = (
+        CheckConstraint(
+            "transaction_type IN ('INITIAL_DEPOSIT', 'DEPOSIT', 'BUY', 'SELL', 'ADJUSTMENT')",
+            name="type_values",
+        ),
         Index("ix_cash_ledger_account_created_at", "account_id", "created_at"),
         Index("ix_cash_ledger_reference", "reference_type", "reference_id"),
     )
@@ -208,3 +221,33 @@ class CashLedger(Base):
     reference_type: Mapped[str] = mapped_column(String(30), nullable=False)
     reference_id: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AccountDeposit(Base):
+    """부족분 1회 입금과 멱등성 판정에 사용하는 불변 이력이다."""
+
+    __tablename__ = "account_deposits"
+    __table_args__ = (
+        UniqueConstraint("account_id", "idempotency_key", name="uq_account_deposits_account_idempotency"),
+        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint("balance_after >= 0", name="balance_nonnegative"),
+        CheckConstraint("status = 'COMPLETED'", name="status_values"),
+        Index("ix_account_deposits_account_created", "account_id", "created_at"),
+    )
+    id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), default=uuid4, primary_key=True)
+    account_id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("virtual_accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    onboarding_id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("investment_onboardings.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    balance_after: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

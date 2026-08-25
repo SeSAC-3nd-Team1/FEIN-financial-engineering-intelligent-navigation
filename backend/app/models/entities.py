@@ -79,8 +79,17 @@ class StrategyTargetWeight(Base):
 
 class VirtualAccount(Base):
     __tablename__ = "virtual_accounts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "operation_mode", name="uq_virtual_accounts_user_mode"),
+        CheckConstraint("initial_cash >= 0", name="ck_virtual_accounts_initial_cash_nonnegative"),
+        CheckConstraint(
+            "operation_mode IN ('AUTO', 'SEMI_AUTO')",
+            name="ck_virtual_accounts_operation_mode_values",
+        ),
+    )
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), unique=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"))
+    operation_mode: Mapped[str] = mapped_column(String(20))
     account_name: Mapped[str] = mapped_column(String(100))
     initial_cash: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2))
@@ -93,14 +102,14 @@ class VirtualAccount(Base):
 class InvestmentOnboarding(Base):
     __tablename__ = "investment_onboardings"
     __table_args__ = (
-        UniqueConstraint("user_id", name="uq_investment_onboardings_user_id"),
+        UniqueConstraint("user_id", "operation_mode", name="uq_investment_onboardings_user_mode"),
         CheckConstraint("investment_amount > 0", name="ck_investment_onboardings_investment_amount_positive"),
         CheckConstraint(
             "operation_mode IN ('AUTO', 'SEMI_AUTO')",
             name="ck_investment_onboardings_operation_mode_values",
         ),
         CheckConstraint(
-            "status IN ('TERMS_PENDING', 'ACCOUNT_PENDING', 'READY', 'COMPLETED')",
+            "status IN ('TERMS_PENDING', 'ACCOUNT_PENDING', 'DEPOSIT_PENDING', 'READY', 'COMPLETED')",
             name="ck_investment_onboardings_status_values",
         ),
         CheckConstraint(
@@ -111,7 +120,7 @@ class InvestmentOnboarding(Base):
         Index("ix_investment_onboardings_status", "status"),
     )
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), unique=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"))
     strategy_id: Mapped[str] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="RESTRICT"))
     investment_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     operation_mode: Mapped[str] = mapped_column(String(20))
@@ -208,6 +217,12 @@ class Execution(Base):
 
 class CashLedger(Base):
     __tablename__ = "cash_ledger"
+    __table_args__ = (
+        CheckConstraint(
+            "transaction_type IN ('INITIAL_DEPOSIT', 'DEPOSIT', 'BUY', 'SELL', 'ADJUSTMENT')",
+            name="ck_cash_ledger_type_values",
+        ),
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"))
     transaction_type: Mapped[str] = mapped_column(String(30))
@@ -216,6 +231,34 @@ class CashLedger(Base):
     reference_type: Mapped[str] = mapped_column(String(30))
     reference_id: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AccountDeposit(Base):
+    """가상계좌 부족분을 정확히 한 번 충전한 결과를 보존한다."""
+
+    __tablename__ = "account_deposits"
+    __table_args__ = (
+        UniqueConstraint("account_id", "idempotency_key", name="uq_account_deposits_account_idempotency"),
+        CheckConstraint("amount > 0", name="ck_account_deposits_amount_positive"),
+        CheckConstraint("balance_after >= 0", name="ck_account_deposits_balance_nonnegative"),
+        CheckConstraint("status = 'COMPLETED'", name="ck_account_deposits_status_values"),
+        Index("ix_account_deposits_account_created", "account_id", "created_at"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("virtual_accounts.id", ondelete="RESTRICT"),
+    )
+    onboarding_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("investment_onboardings.id", ondelete="RESTRICT"),
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    balance_after: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    status: Mapped[str] = mapped_column(String(20), default="COMPLETED")
+    idempotency_key: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class InvestorProfileAssessment(Base):

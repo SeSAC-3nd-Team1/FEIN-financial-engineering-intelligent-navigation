@@ -9,8 +9,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.errors import ServiceError
-from app.models import CashLedger, VirtualAccount
-from app.schemas.api import InvestmentOnboardingCreateRequest, InvestmentOnboardingResponse
+from app.models import AccountDeposit, CashLedger, VirtualAccount
+from app.schemas.api import InvestmentDepositRequest, InvestmentOnboardingCreateRequest, InvestmentOnboardingResponse
 from app.services.investment_onboarding import InvestmentOnboardingService, investment_term_codes
 
 
@@ -58,6 +58,23 @@ def ready_response(onboarding, account_id) -> InvestmentOnboardingResponse:
     )
 
 
+def deposit_pending_response(onboarding, account_id) -> InvestmentOnboardingResponse:
+    return InvestmentOnboardingResponse(
+        id=onboarding.id,
+        strategy_id=onboarding.strategy_id,
+        investment_amount=onboarding.investment_amount,
+        operation_mode=onboarding.operation_mode,
+        status="DEPOSIT_PENDING",
+        account_id=account_id,
+        terms_completed=True,
+        account_exists=True,
+        next_step="DEPOSIT",
+        completed_at=None,
+        created_at=onboarding.created_at,
+        updated_at=onboarding.updated_at,
+    )
+
+
 def test_investment_term_codes_include_strategy_product_and_common_terms() -> None:
     assert investment_term_codes("low") == (
         "INVEST_PRODUCT_LOW",
@@ -85,23 +102,24 @@ def test_onboarding_request_rejects_invalid_investment_amount(amount: int) -> No
 
 
 @pytest.mark.parametrize(
-    ("terms_completed", "has_account", "stored_status", "next_step"),
+    ("terms_completed", "cash_balance", "stored_status", "next_step"),
     [
-        (False, False, "TERMS_PENDING", "TERMS"),
-        (True, False, "ACCOUNT_PENDING", "ACCOUNT"),
-        (True, True, "READY", "CONFIRM"),
-        (True, True, "COMPLETED", "PORTFOLIO"),
+        (False, None, "TERMS_PENDING", "TERMS"),
+        (True, None, "ACCOUNT_PENDING", "ACCOUNT"),
+        (True, Decimal("0"), "DEPOSIT_PENDING", "DEPOSIT"),
+        (True, Decimal("1000000"), "READY", "CONFIRM"),
+        (True, Decimal("1000000"), "COMPLETED", "PORTFOLIO"),
     ],
 )
 def test_response_derives_next_step_from_server_state(
     monkeypatch,
     terms_completed: bool,
-    has_account: bool,
+    cash_balance: Decimal | None,
     stored_status: str,
     next_step: str,
 ) -> None:
     now = datetime.now(UTC)
-    account_id = uuid4() if has_account else None
+    account_id = uuid4() if cash_balance is not None else None
     onboarding = SimpleNamespace(
         id=uuid4(),
         user_id=7,
@@ -119,7 +137,11 @@ def test_response_derives_next_step_from_server_state(
     monkeypatch.setattr(
         service,
         "_account_for_user",
-        lambda *_args, **_kwargs: SimpleNamespace(id=account_id) if has_account else None,
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(id=account_id, cash_balance=cash_balance)
+            if cash_balance is not None
+            else None
+        ),
     )
 
     response = service._response(onboarding)
@@ -127,7 +149,7 @@ def test_response_derives_next_step_from_server_state(
     assert response.next_step == next_step
 
 
-def test_new_account_uses_selected_investment_amount_for_cash_and_ledger(monkeypatch) -> None:
+def test_new_account_starts_empty_and_requires_exact_deposit(monkeypatch) -> None:
     now = datetime.now(UTC)
     onboarding = SimpleNamespace(
         id=uuid4(), user_id=7, strategy_id="low",
@@ -141,17 +163,18 @@ def test_new_account_uses_selected_investment_amount_for_cash_and_ledger(monkeyp
     monkeypatch.setattr(service, "_owned_onboarding", lambda *_args, **_kwargs: onboarding)
     monkeypatch.setattr(service, "_require_current_agreements", lambda *_: None)
     monkeypatch.setattr(service, "_account_for_user", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(service, "_response", lambda value: ready_response(value, value.account_id))
+    monkeypatch.setattr(service, "_response", lambda value: deposit_pending_response(value, value.account_id))
 
     result = service.prepare_account(user, onboarding.id, "100만원 가상계좌")
 
     account = next(value for value in session.added if isinstance(value, VirtualAccount))
-    ledger = next(value for value in session.added if isinstance(value, CashLedger))
     assert result.created is True
-    assert account.initial_cash == Decimal("1000000")
-    assert account.cash_balance == Decimal("1000000")
-    assert ledger.amount == Decimal("1000000")
-    assert ledger.balance_after == Decimal("1000000")
+    assert account.operation_mode == "AUTO"
+    assert account.initial_cash == Decimal("0")
+    assert account.cash_balance == Decimal("0")
+    assert result.required_deposit_amount == Decimal("1000000")
+    assert result.onboarding.next_step == "DEPOSIT"
+    assert not any(isinstance(value, CashLedger) for value in session.added)
     assert session.commits == 1
     assert session.rollbacks == 0
 
@@ -167,6 +190,7 @@ def test_existing_account_keeps_balance_without_additional_deposit(monkeypatch) 
     user = SimpleNamespace(id=7, phone_verified_at=now, email_verified_at=now)
     account = VirtualAccount(
         id=uuid4(), user_id=7, account_name="기존 계좌",
+        operation_mode="SEMI_AUTO",
         initial_cash=Decimal("1000000"), cash_balance=Decimal("750000"),
         status="ACTIVE", created_at=now, updated_at=now,
     )
@@ -182,6 +206,121 @@ def test_existing_account_keeps_balance_without_additional_deposit(monkeypatch) 
     assert result.created is False
     assert result.account.initial_cash == Decimal("1000000")
     assert result.account.cash_balance == Decimal("750000")
+    assert result.required_deposit_amount == Decimal("0")
     assert account.account_name == "기존 계좌"
     assert session.added == []
     assert session.commits == 1
+
+
+def test_exact_deposit_updates_account_ledger_and_onboarding_once(monkeypatch) -> None:
+    now = datetime.now(UTC)
+    account = VirtualAccount(
+        id=uuid4(), user_id=7, account_name="자동 계좌", operation_mode="AUTO",
+        initial_cash=Decimal("0"), cash_balance=Decimal("0"),
+        status="ACTIVE", created_at=now, updated_at=now,
+    )
+    onboarding = SimpleNamespace(
+        id=uuid4(), user_id=7, strategy_id="low",
+        investment_amount=Decimal("1000000"), operation_mode="AUTO",
+        status="DEPOSIT_PENDING", account_id=account.id, completed_at=None,
+        created_at=now, updated_at=now,
+    )
+    session = PrepareAccountSession()
+    service = InvestmentOnboardingService(session)
+    monkeypatch.setattr(service, "_owned_onboarding", lambda *_args, **_kwargs: onboarding)
+    monkeypatch.setattr(service, "_require_current_agreements", lambda *_: None)
+    monkeypatch.setattr(service, "_account_for_user", lambda *_args, **_kwargs: account)
+    monkeypatch.setattr(service, "_deposit_for_key", lambda *_: None)
+    monkeypatch.setattr(service, "_response", lambda value: ready_response(value, account.id))
+
+    result = service.deposit(
+        7,
+        onboarding.id,
+        InvestmentDepositRequest(amount=1_000_000, idempotency_key="deposit-once-1"),
+    )
+
+    deposit = next(value for value in session.added if isinstance(value, AccountDeposit))
+    ledger = next(value for value in session.added if isinstance(value, CashLedger))
+    assert account.initial_cash == Decimal("1000000")
+    assert account.cash_balance == Decimal("1000000")
+    assert onboarding.status == "READY"
+    assert deposit.amount == ledger.amount == Decimal("1000000")
+    assert deposit.balance_after == ledger.balance_after == Decimal("1000000")
+    assert ledger.transaction_type == "DEPOSIT"
+    assert ledger.reference_id == str(deposit.id)
+    assert result.required_deposit_amount == Decimal("0")
+    assert str(result.required_deposit_amount) == "0.00"
+    assert result.onboarding.next_step == "CONFIRM"
+    assert session.commits == 1
+
+
+def test_deposit_rejects_amount_other_than_current_shortfall(monkeypatch) -> None:
+    now = datetime.now(UTC)
+    account = VirtualAccount(
+        id=uuid4(), user_id=7, account_name="반자동 계좌", operation_mode="SEMI_AUTO",
+        initial_cash=Decimal("1000000"), cash_balance=Decimal("250000"),
+        status="ACTIVE", created_at=now, updated_at=now,
+    )
+    onboarding = SimpleNamespace(
+        id=uuid4(), user_id=7, strategy_id="value",
+        investment_amount=Decimal("1000000"), operation_mode="SEMI_AUTO",
+        status="DEPOSIT_PENDING", account_id=account.id, completed_at=None,
+        created_at=now, updated_at=now,
+    )
+    session = PrepareAccountSession()
+    service = InvestmentOnboardingService(session)
+    monkeypatch.setattr(service, "_owned_onboarding", lambda *_args, **_kwargs: onboarding)
+    monkeypatch.setattr(service, "_require_current_agreements", lambda *_: None)
+    monkeypatch.setattr(service, "_account_for_user", lambda *_args, **_kwargs: account)
+    monkeypatch.setattr(service, "_deposit_for_key", lambda *_: None)
+
+    with pytest.raises(ServiceError) as error:
+        service.deposit(
+            7,
+            onboarding.id,
+            InvestmentDepositRequest(amount=700_000, idempotency_key="wrong-amount-1"),
+        )
+
+    assert error.value.code == "INVALID_DEPOSIT_AMOUNT"
+    assert account.cash_balance == Decimal("250000")
+    assert session.added == []
+    assert session.commits == 0
+
+
+def test_deposit_retry_with_same_key_returns_existing_result(monkeypatch) -> None:
+    now = datetime.now(UTC)
+    account = VirtualAccount(
+        id=uuid4(), user_id=7, account_name="자동 계좌", operation_mode="AUTO",
+        initial_cash=Decimal("1000000"), cash_balance=Decimal("1000000"),
+        status="ACTIVE", created_at=now, updated_at=now,
+    )
+    onboarding = SimpleNamespace(
+        id=uuid4(), user_id=7, strategy_id="low",
+        investment_amount=Decimal("1000000"), operation_mode="AUTO",
+        status="READY", account_id=account.id, completed_at=None,
+        created_at=now, updated_at=now,
+    )
+    existing = AccountDeposit(
+        id=uuid4(), account_id=account.id, onboarding_id=onboarding.id,
+        amount=Decimal("1000000"), balance_after=Decimal("1000000"),
+        status="COMPLETED", idempotency_key="same-deposit-1",
+        created_at=now, completed_at=now,
+    )
+    session = PrepareAccountSession()
+    service = InvestmentOnboardingService(session)
+    monkeypatch.setattr(service, "_owned_onboarding", lambda *_args, **_kwargs: onboarding)
+    monkeypatch.setattr(service, "_require_current_agreements", lambda *_: None)
+    monkeypatch.setattr(service, "_account_for_user", lambda *_args, **_kwargs: account)
+    monkeypatch.setattr(service, "_deposit_for_key", lambda *_: existing)
+    monkeypatch.setattr(service, "_response", lambda value: ready_response(value, account.id))
+
+    result = service.deposit(
+        7,
+        onboarding.id,
+        InvestmentDepositRequest(amount=1_000_000, idempotency_key="same-deposit-1"),
+    )
+
+    assert result.deposit_id == existing.id
+    assert result.balance_after == Decimal("1000000")
+    assert session.added == []
+    assert session.commits == 0

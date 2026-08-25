@@ -19,12 +19,15 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 내 정보 | GET | `/auth/me` | 필요 | 200, 401 | Header/My page |
 | 투자 약관 | GET | `/investment/terms?strategy_id=` | 필요 | 200, 401, 404, 503 | InvestTerms |
 | 투자 시작 생성/갱신 | POST | `/investment/onboardings` | 필요 | 200, 401, 404, 422 | StartInvesting |
-| 현재 투자 시작 상태 | GET | `/investment/onboardings/me/current` | 필요 | 200, 401, 404, 503 | 투자 시작 Flow |
+| 현재 투자 시작 상태 | GET | `/investment/onboardings/me/current?operation_mode=` | 필요 | 200, 401, 404, 503 | 투자 시작 Flow |
+| 운용방식별 투자 시작 상태 | GET | `/investment/onboardings/me` | 필요 | 200, 401, 503 | 로그인 후 Flow 복원 |
 | 투자 약관 동의 | POST | `/investment/onboardings/{id}/agreements` | 필요/소유권 | 200, 400, 401, 404, 503 | InvestTerms |
 | 가상계좌 준비 | POST | `/investment/onboardings/{id}/account` | 필요/소유권 | 200, 401, 403, 404, 409 | InvestAccount |
+| 부족분 가상 입금 | POST | `/investment/onboardings/{id}/deposit` | 필요/소유권 | 200, 401, 404, 409, 422 | InvestDeposit |
 | 투자 시작 확정 | POST | `/investment/onboardings/{id}/complete` | 필요/소유권 | 200, 401, 404, 409 | InvestConfirm |
 | 가상계좌 생성 | POST | `/accounts` | 필요 | 201, 409 | StartInvesting |
-| 내 계좌 | GET | `/accounts/me` | 필요 | 200, 404 | Portfolio |
+| 내 계좌 | GET | `/accounts/me?operation_mode=` | 필요 | 200, 404 | Portfolio |
+| 내 계좌 전체 | GET | `/accounts/me/all` | 필요 | 200 | Portfolio |
 | 전략 선택 | PUT | `/accounts/{account_id}/strategy` | 필요/소유권 | 200, 404 | StartInvesting |
 | 전략 목록 | GET | `/strategies` | 불필요 | 200 | RiskResult/StrategyDetail |
 | 실제 시세 백테스트 | POST | `/backtest/run` | 불필요 | 200, 404, 422 | StrategyDetail |
@@ -99,20 +102,21 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 ### POST `/accounts`
 
-요청 `{"account_name":"나의 가상 투자계좌"}`
+요청 `{"account_name":"나의 가상 투자계좌","operation_mode":"SEMI_AUTO"}`
 
 응답 `201`:
 
 ```json
 {
   "id":"92be9e3e-4364-4428-86c4-b730cc841847","account_name":"나의 가상 투자계좌",
-  "initial_cash":"10000000.00","cash_balance":"10000000.00","status":"ACTIVE",
+  "operation_mode":"SEMI_AUTO","initial_cash":"0.00","cash_balance":"0.00","status":"ACTIVE",
   "selected_strategy_id":null,"created_at":"2026-08-23T12:00:00Z"
 }
 ```
 
 투자 시작 화면의 신규/기존 계좌 분기는 `/investment/onboardings/{id}/account`를 사용한다. 이 API는
-외부 증권사 계좌를 연동하지 않으며, 가상계좌가 없으면 생성하고 있으면 기존 사용자 계좌를 재사용한다.
+외부 증권사 계좌를 연동하지 않으며, 같은 운용방식의 가상계좌가 없으면 0원 계좌를 생성하고 있으면
+재사용한다. 투자 예정 금액의 부족분은 별도 `/deposit` API로 정확히 한 번 입금한다.
 상세 계약은 [가상투자 시작 Backend API 명세](INVESTMENT_ONBOARDING_API_SPECIFICATION.md)를 따른다.
 
 ### POST `/orders`

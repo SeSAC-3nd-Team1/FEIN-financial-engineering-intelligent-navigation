@@ -13,6 +13,7 @@ from app.main import app
 from app.schemas.api import (
     AccountResponse,
     InvestmentAccountPrepareResponse,
+    InvestmentDepositResponse,
     InvestmentOnboardingResponse,
     InvestmentTermResponse,
 )
@@ -61,9 +62,13 @@ class FakeService:
         self.calls.append(("create", user.id, payload))
         return onboarding_response()
 
-    def current(self, user_id):
-        self.calls.append(("current", user_id))
+    def current(self, user_id, operation_mode):
+        self.calls.append(("current", user_id, operation_mode))
         return onboarding_response()
+
+    def currents(self, user_id):
+        self.calls.append(("currents", user_id))
+        return [onboarding_response()]
 
     def agree(self, user_id, onboarding_id, payload, *, agreed_ip, user_agent):
         self.calls.append(("agree", user_id, onboarding_id, payload, agreed_ip, user_agent))
@@ -74,8 +79,9 @@ class FakeService:
         account = AccountResponse(
             id=ACCOUNT_ID,
             account_name=account_name,
-            initial_cash=Decimal("1000000"),
-            cash_balance=Decimal("1000000"),
+            operation_mode="AUTO",
+            initial_cash=Decimal("0"),
+            cash_balance=Decimal("0"),
             status="ACTIVE",
             selected_strategy_id=None,
             created_at=NOW,
@@ -83,6 +89,23 @@ class FakeService:
         return InvestmentAccountPrepareResponse(
             account=account,
             created=True,
+            required_deposit_amount=Decimal("1000000"),
+            onboarding=onboarding_response(
+                status="DEPOSIT_PENDING",
+                account_id=ACCOUNT_ID,
+                terms_completed=True,
+                account_exists=True,
+                next_step="DEPOSIT",
+            ),
+        )
+
+    def deposit(self, user_id, onboarding_id, payload):
+        self.calls.append(("deposit", user_id, onboarding_id, payload))
+        return InvestmentDepositResponse(
+            deposit_id=uuid4(),
+            amount=payload.amount,
+            balance_after=payload.amount,
+            required_deposit_amount=Decimal("0"),
             onboarding=onboarding_response(
                 status="READY",
                 account_id=ACCOUNT_ID,
@@ -164,6 +187,10 @@ def test_prepare_and_complete_account_flow() -> None:
             f"/api/v1/investment/onboardings/{ONBOARDING_ID}/account",
             json={"account_name": "테스트 가상계좌"},
         )
+        deposited = client.post(
+            f"/api/v1/investment/onboardings/{ONBOARDING_ID}/deposit",
+            json={"amount": 1_000_000, "idempotency_key": "api-deposit-once"},
+        )
         completed = client.post(
             f"/api/v1/investment/onboardings/{ONBOARDING_ID}/complete"
         )
@@ -172,11 +199,31 @@ def test_prepare_and_complete_account_flow() -> None:
 
     assert prepared.status_code == 200
     assert prepared.json()["created"] is True
-    assert prepared.json()["account"]["initial_cash"] == "1000000"
-    assert prepared.json()["account"]["cash_balance"] == "1000000"
-    assert prepared.json()["onboarding"]["next_step"] == "CONFIRM"
+    assert prepared.json()["account"]["operation_mode"] == "AUTO"
+    assert prepared.json()["account"]["initial_cash"] == "0"
+    assert prepared.json()["account"]["cash_balance"] == "0"
+    assert prepared.json()["required_deposit_amount"] == "1000000"
+    assert prepared.json()["onboarding"]["next_step"] == "DEPOSIT"
+    assert deposited.status_code == 200
+    assert deposited.json()["balance_after"] == "1000000"
+    assert deposited.json()["required_deposit_amount"] == "0"
+    assert deposited.json()["onboarding"]["next_step"] == "CONFIRM"
     assert completed.status_code == 200
     assert completed.json()["next_step"] == "PORTFOLIO"
+
+
+def test_current_onboarding_passes_operation_mode() -> None:
+    service = FakeService()
+    install_overrides(service)
+    try:
+        response = TestClient(app).get(
+            "/api/v1/investment/onboardings/me/current?operation_mode=AUTO"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert service.calls == [("current", 7, "AUTO")]
 
 
 def test_investment_onboarding_requires_authentication() -> None:

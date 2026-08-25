@@ -3,7 +3,7 @@
 from ipaddress import ip_address
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
@@ -13,9 +13,12 @@ from app.schemas.api import (
     InvestmentAccountPrepareRequest,
     InvestmentAccountPrepareResponse,
     InvestmentAgreementSubmitRequest,
+    InvestmentDepositRequest,
+    InvestmentDepositResponse,
     InvestmentOnboardingCreateRequest,
     InvestmentOnboardingResponse,
     InvestmentTermResponse,
+    OperationMode,
 )
 from app.services.investment_onboarding import InvestmentOnboardingService
 
@@ -60,10 +63,19 @@ def create_or_update_onboarding(
 
 @router.get("/onboardings/me/current", response_model=InvestmentOnboardingResponse)
 def current_onboarding(
+    operation_mode: OperationMode = Query(default="SEMI_AUTO"),
     user: User = Depends(current_user),
     service: InvestmentOnboardingService = Depends(get_investment_onboarding_service),
 ) -> InvestmentOnboardingResponse:
-    return service.current(user.id)
+    return service.current(user.id, operation_mode)
+
+
+@router.get("/onboardings/me", response_model=list[InvestmentOnboardingResponse])
+def current_onboardings(
+    user: User = Depends(current_user),
+    service: InvestmentOnboardingService = Depends(get_investment_onboarding_service),
+) -> list[InvestmentOnboardingResponse]:
+    return service.currents(user.id)
 
 
 @router.post("/onboardings/{onboarding_id}/agreements", response_model=InvestmentOnboardingResponse)
@@ -91,6 +103,19 @@ def prepare_virtual_account(
     service: InvestmentOnboardingService = Depends(get_investment_onboarding_service),
 ) -> InvestmentAccountPrepareResponse:
     return service.prepare_account(user, onboarding_id, payload.account_name)
+
+
+@router.post(
+    "/onboardings/{onboarding_id}/deposit",
+    response_model=InvestmentDepositResponse,
+)
+def deposit_virtual_cash(
+    onboarding_id: UUID,
+    payload: InvestmentDepositRequest,
+    user: User = Depends(current_user),
+    service: InvestmentOnboardingService = Depends(get_investment_onboarding_service),
+) -> InvestmentDepositResponse:
+    return service.deposit(user.id, onboarding_id, payload)
 
 
 @router.post("/onboardings/{onboarding_id}/complete", response_model=InvestmentOnboardingResponse)

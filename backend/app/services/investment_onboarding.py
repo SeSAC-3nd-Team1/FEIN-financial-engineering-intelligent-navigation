@@ -2,18 +2,21 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ServiceError
-from app.models import CashLedger, InvestmentOnboarding, Strategy, Term, User, UserAgreement, VirtualAccount
+from app.models import AccountDeposit, CashLedger, InvestmentOnboarding, Strategy, Term, User, UserAgreement, VirtualAccount
 from app.schemas.api import (
     InvestmentAccountPrepareResponse,
     InvestmentAgreementSubmitRequest,
+    InvestmentDepositRequest,
+    InvestmentDepositResponse,
     InvestmentOnboardingCreateRequest,
     InvestmentOnboardingResponse,
+    OperationMode,
 )
 
 
@@ -56,7 +59,10 @@ class InvestmentOnboardingService:
         self._active_strategy(request.strategy_id)
         onboarding = self.session.scalar(
             select(InvestmentOnboarding)
-            .where(InvestmentOnboarding.user_id == user.id)
+            .where(
+                InvestmentOnboarding.user_id == user.id,
+                InvestmentOnboarding.operation_mode == request.operation_mode,
+            )
             .with_for_update()
         )
         unchanged_completed = bool(
@@ -79,14 +85,15 @@ class InvestmentOnboardingService:
             if not unchanged_completed:
                 onboarding.strategy_id = request.strategy_id
                 onboarding.investment_amount = request.investment_amount
-                onboarding.operation_mode = request.operation_mode
                 onboarding.completed_at = None
-                account = self._account_for_user(user.id)
+                account = self._account_for_user(user.id, request.operation_mode)
                 onboarding.account_id = account.id if account else None
                 if not self._has_current_agreements(user.id, request.strategy_id):
                     onboarding.status = "TERMS_PENDING"
                 elif account is None:
                     onboarding.status = "ACCOUNT_PENDING"
+                elif self._required_deposit(onboarding.investment_amount, account.cash_balance) > 0:
+                    onboarding.status = "DEPOSIT_PENDING"
                 else:
                     onboarding.status = "READY"
             self.session.flush()
@@ -97,9 +104,17 @@ class InvestmentOnboardingService:
             raise
         return self._response(onboarding)
 
-    def current(self, user_id: int) -> InvestmentOnboardingResponse:
-        onboarding = self._owned_onboarding_for_user(user_id)
+    def current(self, user_id: int, operation_mode: OperationMode) -> InvestmentOnboardingResponse:
+        onboarding = self._owned_onboarding_for_user(user_id, operation_mode)
         return self._response(onboarding)
+
+    def currents(self, user_id: int) -> list[InvestmentOnboardingResponse]:
+        onboardings = self.session.scalars(
+            select(InvestmentOnboarding)
+            .where(InvestmentOnboarding.user_id == user_id)
+            .order_by(InvestmentOnboarding.operation_mode)
+        )
+        return [self._response(onboarding) for onboarding in onboardings]
 
     def agree(
         self,
@@ -157,13 +172,18 @@ class InvestmentOnboardingService:
                 agreement.agreed_at = now if item.agreed else None
                 agreement.agreed_ip = agreed_ip
                 agreement.user_agent = user_agent[:512] if user_agent else None
-            account = self._account_for_user(user_id)
+            account = self._account_for_user(user_id, onboarding.operation_mode)
             keep_completed_state = bool(
                 preserve_completed and account and onboarding.account_id == account.id
             )
             onboarding.account_id = account.id if account else None
             if not keep_completed_state:
-                onboarding.status = "READY" if account else "ACCOUNT_PENDING"
+                if account is None:
+                    onboarding.status = "ACCOUNT_PENDING"
+                elif self._required_deposit(onboarding.investment_amount, account.cash_balance) > 0:
+                    onboarding.status = "DEPOSIT_PENDING"
+                else:
+                    onboarding.status = "READY"
                 onboarding.completed_at = None
             self.session.commit()
             self.session.refresh(onboarding)
@@ -181,30 +201,21 @@ class InvestmentOnboardingService:
         self._ensure_verified_user(user)
         onboarding = self._owned_onboarding(user.id, onboarding_id, lock=True)
         self._require_current_agreements(user.id, onboarding.strategy_id)
-        account = self._account_for_user(user.id, lock=True)
+        account = self._account_for_user(user.id, onboarding.operation_mode, lock=True)
         created = False
         try:
             if account is None:
-                # 신규 계좌의 시작 자금은 사용자가 확인한 투자 금액과 일치해야 한다.
-                # 정책 기본값을 쓰면 선택 금액보다 큰 현금을 주문에 사용할 수 있어 계약이 어긋난다.
-                initial_cash = Decimal(onboarding.investment_amount)
+                # 계좌 준비와 입금을 분리해야 사용자가 화면에서 확정한 부족분만 원장에 남는다.
                 account = VirtualAccount(
                     user_id=user.id,
                     account_name=account_name.strip(),
-                    initial_cash=initial_cash,
-                    cash_balance=initial_cash,
+                    operation_mode=onboarding.operation_mode,
+                    initial_cash=Decimal("0"),
+                    cash_balance=Decimal("0"),
                     status="ACTIVE",
                 )
                 self.session.add(account)
                 self.session.flush()
-                self.session.add(CashLedger(
-                    account_id=account.id,
-                    transaction_type="INITIAL_DEPOSIT",
-                    amount=initial_cash,
-                    balance_after=initial_cash,
-                    reference_type="ACCOUNT",
-                    reference_id=str(account.id),
-                ))
                 created = True
             # 기존 계좌는 포지션과 append-only 원장 정합성을 위해 잔액·계좌명을 유지한다.
             # 선택 금액을 추가 입금하거나 계좌를 초기화하지 않고 완료 단계에서 가용 현금만 검증한다.
@@ -212,7 +223,11 @@ class InvestmentOnboardingService:
                 raise ServiceError("ACCOUNT_NOT_ACTIVE", "사용할 수 없는 가상계좌입니다.", 409)
             onboarding.account_id = account.id
             if onboarding.status != "COMPLETED":
-                onboarding.status = "READY"
+                onboarding.status = (
+                    "DEPOSIT_PENDING"
+                    if self._required_deposit(onboarding.investment_amount, account.cash_balance) > 0
+                    else "READY"
+                )
                 onboarding.completed_at = None
             self.session.commit()
             self.session.refresh(account)
@@ -223,13 +238,90 @@ class InvestmentOnboardingService:
         return InvestmentAccountPrepareResponse(
             account=account,
             created=created,
+            required_deposit_amount=self._required_deposit(
+                onboarding.investment_amount,
+                account.cash_balance,
+            ),
             onboarding=self._response(onboarding),
         )
+
+    def deposit(
+        self,
+        user_id: int,
+        onboarding_id: UUID,
+        request: InvestmentDepositRequest,
+    ) -> InvestmentDepositResponse:
+        """현재 부족분과 정확히 같은 가상 투자금을 계좌에 한 번만 반영한다."""
+
+        onboarding = self._owned_onboarding(user_id, onboarding_id, lock=True)
+        self._require_current_agreements(user_id, onboarding.strategy_id)
+        account = self._account_for_user(user_id, onboarding.operation_mode, lock=True)
+        if account is None or onboarding.account_id != account.id:
+            raise ServiceError("ACCOUNT_NOT_READY", "가상계좌 준비를 먼저 완료해야 합니다.", 409)
+        if account.status != "ACTIVE":
+            raise ServiceError("ACCOUNT_NOT_ACTIVE", "사용할 수 없는 가상계좌입니다.", 409)
+
+        existing = self._deposit_for_key(account.id, request.idempotency_key)
+        if existing is not None:
+            if existing.onboarding_id != onboarding.id or Decimal(existing.amount) != Decimal(request.amount):
+                raise ServiceError(
+                    "DEPOSIT_IDEMPOTENCY_CONFLICT",
+                    "같은 멱등성 키를 다른 입금 요청에 사용할 수 없습니다.",
+                    409,
+                )
+            return self._deposit_response(existing, onboarding)
+
+        required = self._required_deposit(onboarding.investment_amount, account.cash_balance)
+        if required == 0:
+            raise ServiceError("DEPOSIT_NOT_REQUIRED", "추가로 입금할 가상 투자금이 없습니다.", 409)
+        if Decimal(request.amount) != required:
+            raise ServiceError(
+                "INVALID_DEPOSIT_AMOUNT",
+                f"현재 필요한 입금액 {required}원을 정확히 입력해야 합니다.",
+                409,
+            )
+
+        now = datetime.now(UTC)
+        deposit = AccountDeposit(
+            id=uuid4(),
+            account_id=account.id,
+            onboarding_id=onboarding.id,
+            amount=required,
+            balance_after=Decimal(account.cash_balance) + required,
+            status="COMPLETED",
+            idempotency_key=request.idempotency_key,
+            completed_at=now,
+        )
+        try:
+            account.cash_balance = deposit.balance_after
+            # 신규 0원 계좌의 첫 입금만 최초 투자금으로 기록한다. 이후 거래로 현금이 줄어도
+            # initial_cash는 바꾸지 않아 계좌가 시작한 금액을 보존한다.
+            if Decimal(account.initial_cash) == 0:
+                account.initial_cash = required
+            self.session.add(deposit)
+            self.session.add(CashLedger(
+                account_id=account.id,
+                transaction_type="DEPOSIT",
+                amount=required,
+                balance_after=account.cash_balance,
+                reference_type="DEPOSIT",
+                reference_id=str(deposit.id),
+            ))
+            onboarding.status = "READY"
+            onboarding.completed_at = None
+            self.session.commit()
+            self.session.refresh(deposit)
+            self.session.refresh(account)
+            self.session.refresh(onboarding)
+        except Exception:
+            self.session.rollback()
+            raise
+        return self._deposit_response(deposit, onboarding)
 
     def complete(self, user_id: int, onboarding_id: UUID) -> InvestmentOnboardingResponse:
         onboarding = self._owned_onboarding(user_id, onboarding_id, lock=True)
         self._require_current_agreements(user_id, onboarding.strategy_id)
-        account = self._account_for_user(user_id, lock=True)
+        account = self._account_for_user(user_id, onboarding.operation_mode, lock=True)
         if account is None or onboarding.account_id != account.id:
             raise ServiceError("ACCOUNT_NOT_READY", "가상계좌 준비를 먼저 완료해야 합니다.", 409)
         if account.status != "ACTIVE":
@@ -291,19 +383,64 @@ class InvestmentOnboardingService:
         if not self._has_current_agreements(user_id, strategy_id):
             raise ServiceError("INVESTMENT_TERMS_NOT_AGREED", "최신 투자 필수 약관에 모두 동의해야 합니다.", 409)
 
-    def _account_for_user(self, user_id: int, *, lock: bool = False) -> VirtualAccount | None:
-        query = select(VirtualAccount).where(VirtualAccount.user_id == user_id)
+    def _account_for_user(
+        self,
+        user_id: int,
+        operation_mode: OperationMode,
+        *,
+        lock: bool = False,
+    ) -> VirtualAccount | None:
+        query = select(VirtualAccount).where(
+            VirtualAccount.user_id == user_id,
+            VirtualAccount.operation_mode == operation_mode,
+        )
         if lock:
             query = query.with_for_update()
         return self.session.scalar(query)
 
-    def _owned_onboarding_for_user(self, user_id: int) -> InvestmentOnboarding:
+    def _owned_onboarding_for_user(
+        self,
+        user_id: int,
+        operation_mode: OperationMode,
+    ) -> InvestmentOnboarding:
         onboarding = self.session.scalar(
-            select(InvestmentOnboarding).where(InvestmentOnboarding.user_id == user_id)
+            select(InvestmentOnboarding).where(
+                InvestmentOnboarding.user_id == user_id,
+                InvestmentOnboarding.operation_mode == operation_mode,
+            )
         )
         if onboarding is None:
             raise NotFoundError("INVESTMENT_ONBOARDING_NOT_FOUND", "진행 중인 투자 시작 정보를 찾을 수 없습니다.")
         return onboarding
+
+    def _deposit_for_key(self, account_id: UUID, idempotency_key: str) -> AccountDeposit | None:
+        return self.session.scalar(
+            select(AccountDeposit).where(
+                AccountDeposit.account_id == account_id,
+                AccountDeposit.idempotency_key == idempotency_key,
+            )
+        )
+
+    @staticmethod
+    def _required_deposit(investment_amount: Decimal, cash_balance: Decimal) -> Decimal:
+        shortfall = max(Decimal("0.00"), Decimal(investment_amount) - Decimal(cash_balance))
+        return shortfall.quantize(Decimal("0.01"))
+
+    def _deposit_response(
+        self,
+        deposit: AccountDeposit,
+        onboarding: InvestmentOnboarding,
+    ) -> InvestmentDepositResponse:
+        return InvestmentDepositResponse(
+            deposit_id=deposit.id,
+            amount=deposit.amount,
+            balance_after=deposit.balance_after,
+            required_deposit_amount=self._required_deposit(
+                onboarding.investment_amount,
+                deposit.balance_after,
+            ),
+            onboarding=self._response(onboarding),
+        )
 
     def _owned_onboarding(self, user_id: int, onboarding_id: UUID, *, lock: bool = False) -> InvestmentOnboarding:
         query = select(InvestmentOnboarding).where(
@@ -324,13 +461,15 @@ class InvestmentOnboardingService:
 
     def _response(self, onboarding: InvestmentOnboarding) -> InvestmentOnboardingResponse:
         terms_completed = self._has_current_agreements(onboarding.user_id, onboarding.strategy_id)
-        account = self._account_for_user(onboarding.user_id)
+        account = self._account_for_user(onboarding.user_id, onboarding.operation_mode)
         if not terms_completed:
             status, next_step = "TERMS_PENDING", "TERMS"
         elif account is None:
             status, next_step = "ACCOUNT_PENDING", "ACCOUNT"
         elif onboarding.status == "COMPLETED" and onboarding.account_id == account.id:
             status, next_step = "COMPLETED", "PORTFOLIO"
+        elif self._required_deposit(onboarding.investment_amount, account.cash_balance) > 0:
+            status, next_step = "DEPOSIT_PENDING", "DEPOSIT"
         else:
             status, next_step = "READY", "CONFIRM"
         return InvestmentOnboardingResponse(

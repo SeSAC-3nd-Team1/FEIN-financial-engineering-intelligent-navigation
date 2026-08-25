@@ -4,7 +4,7 @@
 
 이 문서는 현재 `develop`의 SQLAlchemy 모델과 Alembic migration history를 기준으로 PostgreSQL의 역할을 요약한다.
 
-- 현재 Alembic 구현 기준: `20260824_0016`
+- 현재 Alembic 구현 기준: `20260825_0020`
 - 금융/API 대용량 Raw source of truth: Azure Blob Storage
 - PostgreSQL 역할: 관계형 서비스 데이터와 Frontend 조회용 KRX/OpenDART 정제 결과
 - 과거 금융/API PostgreSQL `raw`, `processed` schema: retire 완료
@@ -43,7 +43,8 @@ Redis
 | `registration_sessions` | 가입 완료 전 임시 개인정보/검증 상태 |
 | `registration_agreements` | 가입 진행 중 약관 선택 상태 |
 | `investment_onboardings` | 전략·투자 예정 금액·운용방식과 가상계좌 준비 상태 |
-| `virtual_accounts` | 사용자별 단일 내부 가상투자 계좌 |
+| `virtual_accounts` | 사용자·운용방식별 내부 가상투자 계좌 |
+| `account_deposits` | 투자 예정 금액 부족분의 멱등한 1회 가상 입금 이력 |
 | `companies` | DART 기업 마스터와 종목코드 매핑 |
 | `company_financial_accounts` | 공시 재무제표의 계정별 정제 행 |
 | `company_financials` | FastAPI용 핵심 재무지표 집계 |
@@ -78,9 +79,24 @@ erDiagram
 
 ## Migration history
 
-`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을, `20260824_0014`는 투자성향·전략 추천 이력을, `20260824_0015`는 가상투자 시작 상태를, `20260824_0016`은 KRX 화면 조회용 serving table을 추가한다. `20260825_0019`는 주문·체결·보유수량을 `numeric(20,8)`로 확장해 가상 소수점 매매를 허용한다.
+`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을, `20260824_0014`는 투자성향·전략 추천 이력을, `20260824_0015`는 가상투자 시작 상태를, `20260824_0016`은 KRX 화면 조회용 serving table을 추가한다. `20260825_0019`는 주문·체결·보유수량을 `numeric(20,8)`로 확장해 가상 소수점 매매를 허용하고, `20260825_0020`은 운용방식별 가상계좌와 부족분 1회 입금 이력을 추가한다.
 
 과거 migration 파일은 오래된 runtime 설계를 의미하는 것이 아니라 새 DB를 head까지 재현하기 위한 역사이므로 삭제하지 않는다.
+
+### `20260825_0020` downgrade 정책
+
+`20260825_0019`는 사용자당 하나의 가상계좌와 온보딩만 표현하며, 0원 준비 계좌와
+`DEPOSIT` 원장을 지원하지 않는다. 따라서 `20260825_0020` 적용 후 아래 데이터가
+생성됐다면 자동 downgrade는 실행 전에 중단된다.
+
+- 사용자 한 명에게 운용방식별 계좌 또는 온보딩이 둘 이상 존재하는 경우
+- `initial_cash <= 0`인 준비 계좌가 존재하는 경우
+- `account_deposits` 또는 `cash_ledger.transaction_type='DEPOSIT'` 이력이 존재하는 경우
+
+이 상태를 과거 스키마로 되돌리려면 먼저 DB를 백업하고, 보존할 계좌·온보딩과 입금
+원장 변환 정책을 확정한 별도 데이터 migration을 작성해야 한다. migration 자체는
+계좌나 거래 이력을 임의 삭제·병합하지 않는다. 기능 데이터가 생성되지 않은 배포 직후에는
+`20260825_0019`로 정상 downgrade할 수 있다.
 
 적용:
 

@@ -2,7 +2,11 @@
 
 ```mermaid
 erDiagram
-  users ||--o| virtual_accounts : owns
+  users ||--o{ virtual_accounts : owns_by_mode
+  users ||--o{ investment_onboardings : starts_by_mode
+  investment_onboardings ||--o| virtual_accounts : prepares
+  investment_onboardings ||--o{ account_deposits : receives
+  virtual_accounts ||--o{ account_deposits : credits
   strategies ||--o{ virtual_accounts : selected_by
   virtual_accounts ||--o{ positions : holds
   virtual_accounts ||--o{ portfolio_snapshots : records

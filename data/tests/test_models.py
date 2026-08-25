@@ -2,11 +2,15 @@ from db.models import (
     MarketIndex,
     MarketStock,
     MarketStockPrice,
+    AccountDeposit,
+    CashLedger,
+    InvestmentOnboarding,
     RegistrationAgreement,
     RegistrationSession,
     Term,
     User,
     UserAgreement,
+    VirtualAccount,
 )
 
 
@@ -116,3 +120,28 @@ def test_model_registry_contains_only_membership_and_registration_models() -> No
         RegistrationAgreement,
     ):
         assert model.__table__.schema is None
+
+
+def test_virtual_accounts_are_unique_per_user_and_operation_mode() -> None:
+    assert {
+        "uq_virtual_accounts_user_mode",
+        "ck_virtual_accounts_operation_mode_values",
+        "ck_virtual_accounts_initial_cash_nonnegative",
+    } <= _constraint_names(VirtualAccount)
+    assert not VirtualAccount.__table__.columns.operation_mode.nullable
+    assert "uq_investment_onboardings_user_mode" in _constraint_names(InvestmentOnboarding)
+
+
+def test_account_deposit_is_append_only_idempotent_history() -> None:
+    assert {
+        "uq_account_deposits_account_idempotency",
+        "ck_account_deposits_amount_positive",
+        "ck_account_deposits_balance_nonnegative",
+        "ck_account_deposits_status_values",
+    } <= _constraint_names(AccountDeposit)
+    assert ("account_id", "created_at") in _index_columns(AccountDeposit)
+    assert _foreign_key_targets(AccountDeposit) == {
+        ("virtual_accounts.id",),
+        ("investment_onboardings.id",),
+    }
+    assert "ck_cash_ledger_type_values" in _constraint_names(CashLedger)

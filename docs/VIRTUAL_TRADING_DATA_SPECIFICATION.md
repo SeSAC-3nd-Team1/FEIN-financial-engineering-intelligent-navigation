@@ -1,6 +1,6 @@
 # 가상투자 데이터 명세서
 
-Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0019_fractional_quantities.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
+Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0020_virtual_account_deposits.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
 
 | Table.Column | PostgreSQL Type | PK/FK/NULL/Default | Constraint/Index | 설명 |
 | --- | --- | --- | --- | --- |
@@ -10,8 +10,8 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | strategies.rebalance_cycle | varchar(30) | NOT NULL |  | 리밸런싱 주기 |
 | strategies.rule_config | jsonb | NOT NULL |  | 모델과의 versionable interface |
 | virtual_accounts.id | uuid | PK |  | 가상계좌 ID |
-| virtual_accounts.user_id | bigint | FK users.id, NOT NULL | UNIQUE, RESTRICT | 사용자당 MVP 단일 계좌 |
-| virtual_accounts.initial_cash/cash_balance | numeric(20,2) | NOT NULL | >0 / >=0 | 정책 초기금/현재 cash snapshot |
+| virtual_accounts.user_id/operation_mode | bigint/varchar(20) | FK users.id, NOT NULL | UNIQUE pair, RESTRICT | 사용자·AUTO/SEMI_AUTO별 계좌 |
+| virtual_accounts.initial_cash/cash_balance | numeric(20,2) | NOT NULL | >=0 / >=0 | 최초 입금액/현재 cash snapshot |
 | virtual_accounts.status | varchar(20) | DEFAULT ACTIVE | CHECK, index | ACTIVE/SUSPENDED/CLOSED |
 | virtual_accounts.selected_strategy_id | varchar(30) | FK strategies.id, NULL | SET NULL | 선택 전략 |
 | positions.id | bigint identity | PK |  | 포지션 ID |
@@ -39,11 +39,18 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | executions.stock_code/side/quantity/price | varchar/varchar/numeric(20,8)/numeric | NOT NULL | 양수/CHECK | 소수점 수량을 포함한 체결 사실 |
 | cash_ledger.id | bigint identity | PK |  | 원장 ID |
 | cash_ledger.account_id | uuid | FK, NOT NULL | account/created_at index, RESTRICT | 계좌 |
-| cash_ledger.transaction_type | varchar(30) | NOT NULL | INITIAL_DEPOSIT/BUY/SELL/ADJUSTMENT | 증감 이유 |
+| cash_ledger.transaction_type | varchar(30) | NOT NULL | INITIAL_DEPOSIT/DEPOSIT/BUY/SELL/ADJUSTMENT | 증감 이유 |
 | cash_ledger.amount/balance_after | numeric(20,2) | NOT NULL | amount != 0, balance >= 0 | 증감액/결과 잔액 |
 | cash_ledger.reference_type/id | varchar | NOT NULL | composite index | ACCOUNT/ORDER 추적 |
+| account_deposits.id/account_id/onboarding_id | uuid | PK/FK, NOT NULL | RESTRICT | 부족분 입금과 대상 계좌·온보딩 |
+| account_deposits.amount/balance_after | numeric(20,2) | NOT NULL | >0 / >=0 | 정확한 부족분과 처리 후 잔액 |
+| account_deposits.idempotency_key | varchar(100) | NOT NULL | UNIQUE(account,key) | 재시도 중복 입금 방지 |
 
 공통 시간은 `timestamptz`, DB server `now()`를 사용한다. `users`, `terms`, `user_agreements`, 가입 임시 관계는 기존 `20260816_0011`을 보존한다.
+
+`20260825_0020`의 운용방식별 복수 계좌, 0원 준비 계좌 또는 입금 이력이 생성된 뒤에는
+`20260825_0019`가 해당 상태를 표현할 수 없으므로 자동 downgrade를 차단한다. 운영 rollback이
+필요하면 백업 후 보존 계좌와 원장 변환 규칙을 명시한 별도 데이터 migration을 먼저 적용한다.
 
 ## Transaction 경계
 
