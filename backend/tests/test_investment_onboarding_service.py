@@ -41,6 +41,15 @@ class PrepareAccountSession:
         return None
 
 
+class CompleteSession(PrepareAccountSession):
+    def __init__(self, user) -> None:
+        super().__init__()
+        self.user = user
+
+    def get(self, _model, user_id, **_kwargs):
+        return self.user if self.user.id == user_id else None
+
+
 def ready_response(onboarding, account_id) -> InvestmentOnboardingResponse:
     return InvestmentOnboardingResponse(
         id=onboarding.id,
@@ -209,6 +218,74 @@ def test_existing_account_keeps_balance_without_additional_deposit(monkeypatch) 
     assert result.required_deposit_amount == Decimal("0")
     assert account.account_name == "기존 계좌"
     assert session.added == []
+    assert session.commits == 1
+
+
+def test_complete_activates_new_operation_mode(monkeypatch) -> None:
+    now = datetime.now(UTC)
+    user = SimpleNamespace(
+        id=7,
+        active_operation_mode="SEMI_AUTO",
+        operation_mode_changed_at=now,
+    )
+    account = VirtualAccount(
+        id=uuid4(), user_id=7, account_name="자동 계좌", operation_mode="AUTO",
+        initial_cash=Decimal("1000000"), cash_balance=Decimal("1000000"),
+        status="ACTIVE", created_at=now, updated_at=now,
+    )
+    onboarding = SimpleNamespace(
+        id=uuid4(), user_id=7, strategy_id="low",
+        investment_amount=Decimal("1000000"), operation_mode="AUTO",
+        status="READY", account_id=account.id, completed_at=None,
+        created_at=now, updated_at=now,
+    )
+    session = CompleteSession(user)
+    service = InvestmentOnboardingService(session)
+    monkeypatch.setattr(service, "_owned_onboarding", lambda *_args, **_kwargs: onboarding)
+    monkeypatch.setattr(service, "_require_current_agreements", lambda *_: None)
+    monkeypatch.setattr(service, "_account_for_user", lambda *_args, **_kwargs: account)
+    monkeypatch.setattr(service, "_active_strategy", lambda *_: SimpleNamespace())
+    monkeypatch.setattr(service, "_response", lambda value: value)
+
+    service.complete(7, onboarding.id)
+
+    assert onboarding.status == "COMPLETED"
+    assert account.selected_strategy_id == "low"
+    assert user.active_operation_mode == "AUTO"
+    assert user.operation_mode_changed_at >= now
+    assert session.commits == 1
+
+
+def test_complete_retry_does_not_override_later_mode_selection(monkeypatch) -> None:
+    now = datetime.now(UTC)
+    user = SimpleNamespace(
+        id=7,
+        active_operation_mode="SEMI_AUTO",
+        operation_mode_changed_at=now,
+    )
+    account = VirtualAccount(
+        id=uuid4(), user_id=7, account_name="자동 계좌", operation_mode="AUTO",
+        initial_cash=Decimal("1000000"), cash_balance=Decimal("1000000"),
+        status="ACTIVE", selected_strategy_id="low", created_at=now, updated_at=now,
+    )
+    onboarding = SimpleNamespace(
+        id=uuid4(), user_id=7, strategy_id="low",
+        investment_amount=Decimal("1000000"), operation_mode="AUTO",
+        status="COMPLETED", account_id=account.id, completed_at=now,
+        created_at=now, updated_at=now,
+    )
+    session = CompleteSession(user)
+    service = InvestmentOnboardingService(session)
+    monkeypatch.setattr(service, "_owned_onboarding", lambda *_args, **_kwargs: onboarding)
+    monkeypatch.setattr(service, "_require_current_agreements", lambda *_: None)
+    monkeypatch.setattr(service, "_account_for_user", lambda *_args, **_kwargs: account)
+    monkeypatch.setattr(service, "_active_strategy", lambda *_: SimpleNamespace())
+    monkeypatch.setattr(service, "_response", lambda value: value)
+
+    service.complete(7, onboarding.id)
+
+    assert user.active_operation_mode == "SEMI_AUTO"
+    assert user.operation_mode_changed_at == now
     assert session.commits == 1
 
 
