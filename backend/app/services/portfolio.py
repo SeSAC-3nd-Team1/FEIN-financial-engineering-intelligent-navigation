@@ -2,13 +2,18 @@
 
 import logging
 from collections.abc import Callable
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ServiceError
+from app.integrations.ai.rebalancing_client import (
+    AIRebalancingResult,
+    RebalancingAIClient,
+    RebalancingAnalysisContext,
+)
 from app.integrations.kis.models import CurrentQuote
 from app.repositories import TradingRepository
 from app.repositories.market_data import MarketDataRepository
@@ -22,6 +27,7 @@ from app.schemas.api import (
     PortfolioHistoryResponse,
     PortfolioResponse,
     PositionResponse,
+    RebalancingInsightResponse,
     RebalancingProposalResponse,
 )
 from app.services.market import MarketService
@@ -154,11 +160,20 @@ def build_allocations(portfolio: PortfolioResponse) -> list[PortfolioAllocationR
 
 
 class PortfolioService:
-    def __init__(self, session: Session, market: MarketService | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        market: MarketService | None = None,
+        rebalancing_client: RebalancingAIClient | None = None,
+        *,
+        rebalancing_model_version: str = "rebalancing-v1",
+    ) -> None:
         self.session = session
         self.repo = TradingRepository(session)
         self.market_repo = MarketDataRepository(session)
         self.market = market
+        self.rebalancing_client = rebalancing_client
+        self.rebalancing_model_version = rebalancing_model_version
 
     def evaluate(self, user_id: int, account_id: UUID) -> PortfolioResponse:
         account = self.repo.owned_account(account_id, user_id)
@@ -167,7 +182,7 @@ class PortfolioService:
 
         return self._evaluate_account(account)
 
-    def home(
+    async def home(
         self,
         user_id: int,
         account_id: UUID,
@@ -187,6 +202,11 @@ class PortfolioService:
         valuation_as_of = max(
             (position.price_as_of for position in portfolio.positions),
             default=None,
+        )
+        insight, proposals = await self._ai_rebalancing(
+            account,
+            portfolio,
+            valuation_as_of=valuation_as_of,
         )
         return PortfolioHomeResponse(
             account=PortfolioHomeAccountResponse(
@@ -212,9 +232,116 @@ class PortfolioService:
             positions=positions,
             contributions=portfolio.contributions,
             strategy_targets_available=portfolio.strategy_targets_available,
-            rebalancing_proposals=portfolio.rebalancing_proposals,
+            rebalancing_insight=insight,
+            rebalancing_proposals=proposals,
             valuation_as_of=valuation_as_of,
             price_sources=sorted({position.price_source for position in portfolio.positions}),
+        )
+
+    async def _ai_rebalancing(
+        self,
+        account,
+        portfolio: PortfolioResponse,
+        *,
+        valuation_as_of: datetime | None,
+    ) -> tuple[RebalancingInsightResponse, list[RebalancingProposalResponse]]:
+        candidates = portfolio.rebalancing_proposals
+        if not portfolio.strategy_targets_available:
+            return self._rebalancing_unavailable("적용 가능한 전략 목표 비중이 없습니다."), []
+        if not candidates:
+            return (
+                RebalancingInsightResponse(
+                    status="NOT_NEEDED",
+                    summary="현재 비중이 전략 목표 비중과 일치해 리밸런싱 제안이 없습니다.",
+                    model_version=None,
+                    generated_at=None,
+                ),
+                [],
+            )
+        if self.rebalancing_client is None:
+            return self._rebalancing_unavailable("리밸런싱 제안 모델 연결을 준비 중입니다."), []
+
+        context = RebalancingAnalysisContext(
+            operation_mode=account.operation_mode,
+            strategy_id=account.selected_strategy_id,
+            total_assets=portfolio.total_assets,
+            cash_balance=portfolio.cash_balance,
+            valuation_as_of=valuation_as_of,
+            validated_candidates=[{
+                "stock_code": candidate.stock_code,
+                "stock_name": candidate.stock_name,
+                "current_weight": candidate.current_weight,
+                "target_weight": candidate.target_weight,
+                "weight_diff": candidate.weight_diff,
+                "action": candidate.action,
+                "recommended_amount": candidate.recommended_amount,
+            } for candidate in candidates],
+        )
+        try:
+            result = await self.rebalancing_client.analyze(context)
+            proposals = self._validated_ai_proposals(result, candidates)
+        except ServiceError as exc:
+            if not exc.code.startswith("AI_"):
+                raise
+            logger.warning("AI rebalancing unavailable code=%s", exc.code)
+            return self._rebalancing_unavailable("AI 리밸런싱 제안을 현재 불러올 수 없습니다."), []
+
+        return (
+            RebalancingInsightResponse(
+                status="AVAILABLE",
+                summary=result.summary,
+                model_version=self.rebalancing_model_version,
+                generated_at=datetime.now(UTC),
+            ),
+            proposals,
+        )
+
+    @staticmethod
+    def _validated_ai_proposals(
+        result: AIRebalancingResult,
+        candidates: list[RebalancingProposalResponse],
+    ) -> list[RebalancingProposalResponse]:
+        candidate_by_code = {candidate.stock_code: candidate for candidate in candidates}
+        proposals = sorted(result.proposals, key=lambda item: item.priority)
+        codes = [item.stock_code for item in proposals]
+        priorities = [item.priority for item in proposals]
+        if len(set(codes)) != len(codes) or priorities != list(range(1, len(proposals) + 1)):
+            raise ServiceError(
+                "AI_INVALID_REBALANCING_RESPONSE",
+                "AI 리밸런싱 제안 순서가 올바르지 않습니다.",
+                502,
+            )
+
+        validated: list[RebalancingProposalResponse] = []
+        for item in proposals:
+            candidate = candidate_by_code.get(item.stock_code)
+            if candidate is None or any((
+                item.current_weight != candidate.current_weight,
+                item.target_weight != candidate.target_weight,
+                item.weight_diff != candidate.weight_diff,
+                item.action != candidate.action,
+                item.recommended_amount != candidate.recommended_amount,
+            )):
+                raise ServiceError(
+                    "AI_INVALID_REBALANCING_RESPONSE",
+                    "AI 리밸런싱 제안이 검증된 포트폴리오 후보와 일치하지 않습니다.",
+                    502,
+                )
+            validated.append(candidate.model_copy(update={
+                "priority": item.priority,
+                "reason": item.reason,
+                "why_now": item.why_now,
+                "source": "AI",
+            }))
+        return validated
+
+    @staticmethod
+    def _rebalancing_unavailable(message: str) -> RebalancingInsightResponse:
+        return RebalancingInsightResponse(
+            status="UNAVAILABLE",
+            summary=message,
+            model_version=None,
+            generated_at=None,
         )
 
     def _evaluate_account(

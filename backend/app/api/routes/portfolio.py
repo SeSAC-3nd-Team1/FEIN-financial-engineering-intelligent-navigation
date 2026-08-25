@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
+from app.core.config import settings
 from app.db.session import get_session
+from app.integrations.ai import AzureOpenAIRebalancingClient
 from app.models import User
 from app.schemas.api import (
     PortfolioHomeResponse,
@@ -29,7 +31,18 @@ def get_portfolio_analytics_service(session: Session = Depends(get_session)) -> 
 
 
 def get_portfolio_service(session: Session = Depends(get_session)) -> PortfolioService:
-    return PortfolioService(session)
+    client = AzureOpenAIRebalancingClient(
+        endpoint=settings.azure_openai_endpoint,
+        api_key=settings.azure_openai_api_key,
+        deployment=settings.azure_openai_rebalancing_deployment,
+        api_version=settings.azure_openai_api_version,
+        timeout_seconds=settings.ai_rebalancing_timeout_seconds,
+    )
+    return PortfolioService(
+        session,
+        rebalancing_client=client,
+        rebalancing_model_version=settings.ai_rebalancing_model_version,
+    )
 
 
 def get_transaction_history_service(
@@ -50,7 +63,7 @@ def portfolio_transactions(
 
 
 @router.get("/home", response_model=PortfolioHomeResponse)
-def portfolio_home(
+async def portfolio_home(
     account_id: UUID = Query(),
     period: Literal["1M", "3M", "1Y", "ALL"] = Query(default="3M"),
     sort_by: Literal["stock_name", "weight", "purchase_amount", "return_rate"] = Query(
@@ -61,7 +74,7 @@ def portfolio_home(
     user: User = Depends(current_user),
     service: PortfolioService = Depends(get_portfolio_service),
 ) -> PortfolioHomeResponse:
-    return service.home(user.id, account_id, period, sort_by, order)
+    return await service.home(user.id, account_id, period, sort_by, order)
 
 
 @router.get("", response_model=PortfolioResponse)
