@@ -10,6 +10,7 @@ import {
   getPortfolioApi,
   getRebalancingDecisionsApi,
   selectStrategyApi,
+  type AccountOperationMode,
   type AccountResponse,
   type ExecutionResponse,
   type OrderCreateRequest,
@@ -34,8 +35,8 @@ interface TradingState {
   lastUpdatedAt: string | null;
   error: ApiError | null;
   orderMessage: string | null;
-  refresh: (token: string) => Promise<void>;
-  ensureAccount: (token: string, strategyId: string) => Promise<AccountResponse>;
+  refresh: (token: string, mode: AccountOperationMode) => Promise<void>;
+  ensureAccount: (token: string, strategyId: string, mode: AccountOperationMode) => Promise<AccountResponse>;
   placeOrder: (token: string, payload: OrderCreateRequest) => Promise<OrderResponse>;
   recordDecision: (token: string, payload: RebalancingDecisionCreateRequest) => Promise<void>;
   clearError: () => void;
@@ -74,14 +75,17 @@ async function loadAccountData(account: AccountResponse, token: string) {
   return { portfolio, orders, executions, decisions };
 }
 
-let activeRefresh: { token: string; promise: Promise<void> } | null = null;
+let activeRefresh: { key: string; promise: Promise<void> } | null = null;
 let refreshGeneration = 0;
 
 export const useTradingStore = create<TradingState>((set, get) => ({
   ...EMPTY_STATE,
 
-  refresh: async (token) => {
-    if (activeRefresh?.token === token) return activeRefresh.promise;
+  refresh: async (token, mode) => {
+    // 같은 (토큰, 운용방식) 조합으로 이미 진행 중인 refresh 가 있으면 그걸 그대로 기다린다.
+    // 운용방식이 바뀌면(반자동<->자동) 다른 계좌를 조회해야 하므로 새 refresh 를 시작해야 한다.
+    const key = `${token}:${mode}`;
+    if (activeRefresh?.key === key) return activeRefresh.promise;
     const generation = ++refreshGeneration;
     const promise = (async () => {
       set((state) => ({
@@ -90,7 +94,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         error: null,
       }));
       try {
-        const account = await getMyAccountApi(token);
+        const account = await getMyAccountApi(token, mode);
         if (generation !== refreshGeneration) return;
         set({ account, accountMissing: false });
         const data = await loadAccountData(account, token);
@@ -110,7 +114,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         throw apiError;
       }
     })();
-    activeRefresh = { token, promise };
+    activeRefresh = { key, promise };
     try {
       await promise;
     } finally {
@@ -118,16 +122,16 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
   },
 
-  ensureAccount: async (token, strategyId) => {
+  ensureAccount: async (token, strategyId, mode) => {
     set({ isSubmitting: true, error: null, orderMessage: null });
     try {
       let account: AccountResponse;
       try {
-        account = await getMyAccountApi(token);
+        account = await getMyAccountApi(token, mode);
       } catch (error) {
         const apiError = asApiError(error);
         if (apiError.code !== 'ACCOUNT_NOT_FOUND') throw apiError;
-        account = await createAccountApi('나의 가상 투자계좌', token);
+        account = await createAccountApi('나의 가상 투자계좌', mode, token);
       }
       if (account.selected_strategy_id !== strategyId) {
         account = await selectStrategyApi(account.id, strategyId, token);
@@ -149,7 +153,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     set({ isSubmitting: true, error: null, orderMessage: null });
     try {
       const order = await createOrderApi(payload, token);
-      const account = get().account ?? await getMyAccountApi(token);
+      // placeOrder 는 항상 이미 로드된 계좌(get().account)가 있는 상태에서만 호출된다 — 계좌가 없다면
+      // 애초에 주문 화면에 진입할 수 없다. 그래도 방어적으로 폴백할 때는 반자동(기본값)으로 조회한다.
+      const account = get().account ?? await getMyAccountApi(token, 'SEMI_AUTO');
       const data = await loadAccountData(account, token);
       set({
         account, ...data, isSubmitting: false, lastUpdatedAt: new Date().toISOString(),
