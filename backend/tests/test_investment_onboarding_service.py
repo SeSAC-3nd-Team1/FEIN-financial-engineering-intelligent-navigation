@@ -45,9 +45,11 @@ class CompleteSession(PrepareAccountSession):
     def __init__(self, user) -> None:
         super().__init__()
         self.user = user
+        self.lock_events = []
 
-    def get(self, _model, user_id, **_kwargs):
-        return self.user if self.user.id == user_id else None
+    def scalar(self, query):
+        self.lock_events.append(("user", str(query)))
+        return self.user
 
 
 def ready_response(onboarding, account_id) -> InvestmentOnboardingResponse:
@@ -241,9 +243,17 @@ def test_complete_activates_new_operation_mode(monkeypatch) -> None:
     )
     session = CompleteSession(user)
     service = InvestmentOnboardingService(session)
-    monkeypatch.setattr(service, "_owned_onboarding", lambda *_args, **_kwargs: onboarding)
+    def locked_onboarding(*_args, **_kwargs):
+        session.lock_events.append(("onboarding", ""))
+        return onboarding
+
+    def locked_account(*_args, **_kwargs):
+        session.lock_events.append(("account", ""))
+        return account
+
+    monkeypatch.setattr(service, "_owned_onboarding", locked_onboarding)
     monkeypatch.setattr(service, "_require_current_agreements", lambda *_: None)
-    monkeypatch.setattr(service, "_account_for_user", lambda *_args, **_kwargs: account)
+    monkeypatch.setattr(service, "_account_for_user", locked_account)
     monkeypatch.setattr(service, "_active_strategy", lambda *_: SimpleNamespace())
     monkeypatch.setattr(service, "_response", lambda value: value)
 
@@ -253,6 +263,8 @@ def test_complete_activates_new_operation_mode(monkeypatch) -> None:
     assert account.selected_strategy_id == "low"
     assert user.active_operation_mode == "AUTO"
     assert user.operation_mode_changed_at >= now
+    assert [event[0] for event in session.lock_events] == ["user", "onboarding", "account"]
+    assert "FOR UPDATE" in session.lock_events[0][1]
     assert session.commits == 1
 
 

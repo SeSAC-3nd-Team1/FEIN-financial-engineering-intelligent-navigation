@@ -319,21 +319,28 @@ class InvestmentOnboardingService:
         return self._deposit_response(deposit, onboarding)
 
     def complete(self, user_id: int, onboarding_id: UUID) -> InvestmentOnboardingResponse:
-        onboarding = self._owned_onboarding(user_id, onboarding_id, lock=True)
-        was_completed = onboarding.status == "COMPLETED"
-        self._require_current_agreements(user_id, onboarding.strategy_id)
-        account = self._account_for_user(user_id, onboarding.operation_mode, lock=True)
-        if account is None or onboarding.account_id != account.id:
-            raise ServiceError("ACCOUNT_NOT_READY", "가상계좌 준비를 먼저 완료해야 합니다.", 409)
-        if account.status != "ACTIVE":
-            raise ServiceError("ACCOUNT_NOT_ACTIVE", "사용할 수 없는 가상계좌입니다.", 409)
-        if Decimal(account.cash_balance) < Decimal(onboarding.investment_amount):
-            raise ServiceError("INSUFFICIENT_VIRTUAL_CASH", "가상계좌 현금이 투자 예정 금액보다 부족합니다.", 409)
-        self._active_strategy(onboarding.strategy_id)
         try:
-            user = self.session.get(User, user_id, with_for_update=True)
+            # 운용방식 전환과 공통으로 User를 가장 먼저 잠가 두 요청의 lock 순서를 통일한다.
+            user = self.session.scalar(
+                select(User).where(User.id == user_id).with_for_update()
+            )
             if user is None:
                 raise NotFoundError("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.")
+            onboarding = self._owned_onboarding(user_id, onboarding_id, lock=True)
+            was_completed = onboarding.status == "COMPLETED"
+            self._require_current_agreements(user_id, onboarding.strategy_id)
+            account = self._account_for_user(user_id, onboarding.operation_mode, lock=True)
+            if account is None or onboarding.account_id != account.id:
+                raise ServiceError("ACCOUNT_NOT_READY", "가상계좌 준비를 먼저 완료해야 합니다.", 409)
+            if account.status != "ACTIVE":
+                raise ServiceError("ACCOUNT_NOT_ACTIVE", "사용할 수 없는 가상계좌입니다.", 409)
+            if Decimal(account.cash_balance) < Decimal(onboarding.investment_amount):
+                raise ServiceError(
+                    "INSUFFICIENT_VIRTUAL_CASH",
+                    "가상계좌 현금이 투자 예정 금액보다 부족합니다.",
+                    409,
+                )
+            self._active_strategy(onboarding.strategy_id)
             now = datetime.now(UTC)
             account.selected_strategy_id = onboarding.strategy_id
             onboarding.status = "COMPLETED"
