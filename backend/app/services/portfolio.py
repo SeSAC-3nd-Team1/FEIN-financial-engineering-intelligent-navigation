@@ -2,10 +2,12 @@
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ServiceError
@@ -36,6 +38,17 @@ from app.services.market import MarketService
 HISTORY_DAYS = {"1M": 31, "3M": 93, "1Y": 366}
 KST = timezone(timedelta(hours=9))
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PortfolioHomeData:
+    account: PortfolioHomeAccountResponse
+    portfolio: PortfolioResponse
+    history: PortfolioHistoryResponse
+    positions: list[PositionResponse]
+    allocations: list[PortfolioAllocationResponse]
+    valuation_as_of: datetime | None
+    price_sources: list[str]
 
 
 def calculate_return(profit: Decimal, purchase: Decimal) -> Decimal:
@@ -192,6 +205,53 @@ class PortfolioService:
     ) -> PortfolioHomeResponse:
         """홈 화면에 필요한 실제 계좌 평가와 기간 이력을 한 번에 조합한다."""
 
+        data = await run_in_threadpool(
+            self._prepare_home,
+            user_id,
+            account_id,
+            period,
+            sort_by,
+            order,
+        )
+        insight, proposals = await self._ai_rebalancing(
+            data.account,
+            data.portfolio,
+            valuation_as_of=data.valuation_as_of,
+        )
+        return PortfolioHomeResponse(
+            account=data.account,
+            summary=PortfolioHomeSummaryResponse(
+                cash_balance=data.portfolio.cash_balance,
+                total_purchase_amount=data.portfolio.total_purchase_amount,
+                total_evaluation_amount=data.portfolio.total_evaluation_amount,
+                total_assets=data.portfolio.total_assets,
+                unrealized_profit=data.portfolio.unrealized_profit,
+                realized_profit=data.portfolio.realized_profit,
+                return_rate=data.portfolio.return_rate,
+                today_profit=data.portfolio.today_profit,
+                top_contributor=data.portfolio.top_contributor,
+            ),
+            trend=data.history,
+            allocations=data.allocations,
+            positions=data.positions,
+            contributions=data.portfolio.contributions,
+            strategy_targets_available=data.portfolio.strategy_targets_available,
+            rebalancing_insight=insight,
+            rebalancing_proposals=proposals,
+            valuation_as_of=data.valuation_as_of,
+            price_sources=data.price_sources,
+        )
+
+    def _prepare_home(
+        self,
+        user_id: int,
+        account_id: UUID,
+        period: str,
+        sort_by: str,
+        order: str,
+    ) -> PortfolioHomeData:
+        """DB·Redis/KIS 조회와 포트폴리오 계산을 동기 worker에서 완료한다."""
+
         account = self.repo.owned_account(account_id, user_id)
         if not account:
             raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
@@ -203,12 +263,7 @@ class PortfolioService:
             (position.price_as_of for position in portfolio.positions),
             default=None,
         )
-        insight, proposals = await self._ai_rebalancing(
-            account,
-            portfolio,
-            valuation_as_of=valuation_as_of,
-        )
-        return PortfolioHomeResponse(
+        return PortfolioHomeData(
             account=PortfolioHomeAccountResponse(
                 id=account.id,
                 account_name=account.account_name,
@@ -216,24 +271,10 @@ class PortfolioService:
                 status=account.status,
                 selected_strategy_id=account.selected_strategy_id,
             ),
-            summary=PortfolioHomeSummaryResponse(
-                cash_balance=portfolio.cash_balance,
-                total_purchase_amount=portfolio.total_purchase_amount,
-                total_evaluation_amount=portfolio.total_evaluation_amount,
-                total_assets=portfolio.total_assets,
-                unrealized_profit=portfolio.unrealized_profit,
-                realized_profit=portfolio.realized_profit,
-                return_rate=portfolio.return_rate,
-                today_profit=portfolio.today_profit,
-                top_contributor=portfolio.top_contributor,
-            ),
-            trend=history,
-            allocations=build_allocations(portfolio),
+            portfolio=portfolio,
+            history=history,
             positions=positions,
-            contributions=portfolio.contributions,
-            strategy_targets_available=portfolio.strategy_targets_available,
-            rebalancing_insight=insight,
-            rebalancing_proposals=proposals,
+            allocations=build_allocations(portfolio),
             valuation_as_of=valuation_as_of,
             price_sources=sorted({position.price_source for position in portfolio.positions}),
         )

@@ -12,6 +12,7 @@ from app.core.errors import ServiceError
 from app.integrations.kis.models import CurrentQuote
 from app.integrations.ai.rebalancing_client import AIRebalancingResult
 from app.schemas.api import PortfolioResponse, PositionResponse
+from app.services import portfolio as portfolio_service_module
 from app.services.portfolio import (
     PortfolioService,
     build_allocations,
@@ -237,7 +238,7 @@ def test_home_combines_account_evaluation_history_and_sorting_without_second_own
     assert result.rebalancing_insight.status == "UNAVAILABLE"
 
 
-def test_home_uses_only_validated_ai_rebalancing_proposals() -> None:
+def test_home_offloads_sync_work_before_awaiting_ai_rebalancing(monkeypatch) -> None:
     account_id = uuid4()
     account = SimpleNamespace(
         id=account_id,
@@ -269,8 +270,15 @@ def test_home_uses_only_validated_ai_rebalancing_proposals() -> None:
         positions=[],
     )
 
+    events = []
+
+    async def fake_run_in_threadpool(func, *args, **kwargs):
+        events.append("sync")
+        return func(*args, **kwargs)
+
     class FakeClient:
         async def analyze(self, context):
+            events.append("ai")
             self.context = context
             return AIRebalancingResult(
                 summary="목표 비중과 5%p 차이가 발생했습니다.",
@@ -301,9 +309,11 @@ def test_home_uses_only_validated_ai_rebalancing_proposals() -> None:
     service.rebalancing_client = client
     service.rebalancing_model_version = "rebalancing-v1"
     service._evaluate_account = lambda _account: portfolio
+    monkeypatch.setattr(portfolio_service_module, "run_in_threadpool", fake_run_in_threadpool)
 
     result = asyncio.run(service.home(7, account_id, "3M", "weight", "desc"))
 
+    assert events == ["sync", "ai"]
     assert result.rebalancing_insight.status == "AVAILABLE"
     assert result.rebalancing_insight.model_version == "rebalancing-v1"
     assert result.rebalancing_proposals[0].source == "AI"
