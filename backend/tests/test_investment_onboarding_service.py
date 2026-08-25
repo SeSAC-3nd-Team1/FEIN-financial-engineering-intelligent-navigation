@@ -249,6 +249,7 @@ def test_exact_deposit_updates_account_ledger_and_onboarding_once(monkeypatch) -
     assert ledger.transaction_type == "DEPOSIT"
     assert ledger.reference_id == str(deposit.id)
     assert result.required_deposit_amount == Decimal("0")
+    assert str(result.required_deposit_amount) == "0.00"
     assert result.onboarding.next_step == "CONFIRM"
     assert session.commits == 1
 

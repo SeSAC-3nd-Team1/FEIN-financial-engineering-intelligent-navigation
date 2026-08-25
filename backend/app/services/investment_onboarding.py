@@ -423,7 +423,8 @@ class InvestmentOnboardingService:
 
     @staticmethod
     def _required_deposit(investment_amount: Decimal, cash_balance: Decimal) -> Decimal:
-        return max(Decimal("0"), Decimal(investment_amount) - Decimal(cash_balance))
+        shortfall = max(Decimal("0.00"), Decimal(investment_amount) - Decimal(cash_balance))
+        return shortfall.quantize(Decimal("0.01"))
 
     def _deposit_response(
         self,
