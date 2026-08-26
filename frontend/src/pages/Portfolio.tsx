@@ -567,9 +567,11 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
         (목업 데이터 포함)를 블러 처리하고 중앙에 설정을 유도하는 모달을 띄운다. 대시보드 자체엔 블러
         클래스를 추가하지 않아도 backdrop-blur 가 이 오버레이 뒤에 있는 걸 그대로 블러해준다.
         닫기 버튼 없이 CTA 로만 빠져나갈 수 있게 해서 설정을 미루지 않도록 유도한다.
-        다른 팝업(사유 모달·차트 확대, z-[700])보다 아래 레이어(z-40)에 둔다. */}
+        다른 팝업(사유 모달·차트 확대)과 같은 z-[700]에 둔다 — App.tsx 전역에 항상 떠 있는 챗봇
+        FAB/패널(z-[600])보다 아래였던 적이 있어(z-40), 이 모달이 떠 있어도 챗봇을 열어 우회할 수
+        있었다. 필수 게이트인 만큼 챗봇보다 항상 위여야 한다. */}
     {unconfiguredReason && (
-      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-8 backdrop-blur-md">
+      <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/40 p-8 backdrop-blur-md">
         <div className="flex w-full max-w-[480px] flex-col gap-6 rounded-card bg-surface p-10 text-center">
           <h2 className="text-2xl font-bold leading-9 tracking-[-0.02em]">
             {userName} 고객님! {UNCONFIGURED_COPY[unconfiguredReason].title}
