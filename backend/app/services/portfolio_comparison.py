@@ -1,7 +1,7 @@
 """AI 자동투자와 사용자 투자의 실제 일별 snapshot 성과를 비교한다."""
 
 import logging
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from fastapi.concurrency import run_in_threadpool
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ServiceError
 from app.integrations.ai.portfolio_comparison_client import (
+    AIPortfolioComparisonResult,
     PortfolioComparisonAIClient,
     PortfolioComparisonAnalysisContext,
 )
@@ -30,15 +31,39 @@ MONEY_SCALE = Decimal("0.01")
 logger = logging.getLogger(__name__)
 
 
-def _return_rate(current: Decimal, baseline: Decimal) -> Decimal:
-    return ((current / baseline - 1) * 100).quantize(RATE_SCALE)
+def _cash_flows_by_date(cash_flows: list) -> dict[date, Decimal]:
+    result: dict[date, Decimal] = {}
+    for cash_flow in cash_flows:
+        recorded_at = cash_flow.created_at
+        if recorded_at.tzinfo is None:
+            recorded_at = recorded_at.replace(tzinfo=KST)
+        flow_date = recorded_at.astimezone(KST).date()
+        result[flow_date] = result.get(flow_date, Decimal("0")) + cash_flow.amount
+    return result
+
+
+def _flows_between(
+    cash_flows: dict[date, Decimal],
+    previous_date: date,
+    current_date: date,
+) -> Decimal:
+    return sum(
+        (
+            amount
+            for flow_date, amount in cash_flows.items()
+            if previous_date < flow_date <= current_date
+        ),
+        Decimal("0"),
+    )
 
 
 def build_comparison_series(
     auto_snapshots: list,
     my_snapshots: list,
+    auto_cash_flows: list | None = None,
+    my_cash_flows: list | None = None,
 ) -> list[PortfolioComparisonPointResponse]:
-    """두 계좌에 모두 존재하는 실제 관측일만 같은 기준일로 정규화한다."""
+    """공통 관측일 사이 외부 현금흐름을 제거한 연결 TWR을 계산한다."""
 
     auto_by_date = {item.snapshot_date: item for item in auto_snapshots}
     my_by_date = {item.snapshot_date: item for item in my_snapshots}
@@ -51,10 +76,36 @@ def build_comparison_series(
     if auto_baseline <= 0 or my_baseline <= 0:
         return []
 
+    auto_flows_by_date = _cash_flows_by_date(auto_cash_flows or [])
+    my_flows_by_date = _cash_flows_by_date(my_cash_flows or [])
+    auto_growth = Decimal("1")
+    my_growth = Decimal("1")
     result: list[PortfolioComparisonPointResponse] = []
-    for observed_on in common_dates:
-        auto_rate = _return_rate(auto_by_date[observed_on].total_assets, auto_baseline)
-        my_rate = _return_rate(my_by_date[observed_on].total_assets, my_baseline)
+    for index, observed_on in enumerate(common_dates):
+        if index > 0:
+            previous_on = common_dates[index - 1]
+            previous_auto_assets = auto_by_date[previous_on].total_assets
+            previous_my_assets = my_by_date[previous_on].total_assets
+            if previous_auto_assets <= 0 or previous_my_assets <= 0:
+                return []
+            auto_external_flow = _flows_between(
+                auto_flows_by_date,
+                previous_on,
+                observed_on,
+            )
+            my_external_flow = _flows_between(
+                my_flows_by_date,
+                previous_on,
+                observed_on,
+            )
+            auto_growth *= (
+                auto_by_date[observed_on].total_assets - auto_external_flow
+            ) / previous_auto_assets
+            my_growth *= (
+                my_by_date[observed_on].total_assets - my_external_flow
+            ) / previous_my_assets
+        auto_rate = ((auto_growth - 1) * 100).quantize(RATE_SCALE)
+        my_rate = ((my_growth - 1) * 100).quantize(RATE_SCALE)
         result.append(PortfolioComparisonPointResponse(
             date=observed_on,
             ai_auto_return_rate=auto_rate,
@@ -87,6 +138,7 @@ class PortfolioComparisonService:
 
         try:
             result = await self.comparison_client.analyze(context)
+            analysis = self._render_ai_analysis(result, response)
         except ServiceError as exc:
             if not exc.code.startswith("AI_"):
                 raise
@@ -94,17 +146,14 @@ class PortfolioComparisonService:
             return response.model_copy(update={
                 "ai_analysis": self._unavailable_analysis("AI 비교 분석을 현재 불러올 수 없습니다."),
             })
+        except Exception:
+            logger.exception("Unexpected AI portfolio comparison failure")
+            return response.model_copy(update={
+                "ai_analysis": self._unavailable_analysis("AI 비교 분석을 현재 불러올 수 없습니다."),
+            })
 
         return response.model_copy(update={
-            "ai_analysis": PortfolioComparisonAIAnalysisResponse(
-                status="AVAILABLE",
-                headline=result.headline,
-                summary=result.summary,
-                key_points=result.key_points,
-                caution=result.caution,
-                model_version=self.comparison_model_version,
-                generated_at=datetime.now(UTC),
-            ),
+            "ai_analysis": analysis,
         })
 
     def _prepare(
@@ -131,11 +180,40 @@ class PortfolioComparisonService:
             start_date = datetime.now(KST).date() - timedelta(days=HISTORY_DAYS[period])
         auto_snapshots = self.repo.snapshots_since(auto_account.id, start_date)
         my_snapshots = self.repo.snapshots_since(my_account.id, start_date)
-        common_observation_count = len(
+        common_dates = sorted(
             {item.snapshot_date for item in auto_snapshots}
             & {item.snapshot_date for item in my_snapshots}
         )
-        series = build_comparison_series(auto_snapshots, my_snapshots)
+        common_observation_count = len(common_dates)
+        auto_cash_flows = []
+        my_cash_flows = []
+        if len(common_dates) >= 2:
+            cash_flow_started_at = datetime.combine(
+                common_dates[0] + timedelta(days=1),
+                time.min,
+                KST,
+            )
+            cash_flow_ended_before = datetime.combine(
+                common_dates[-1] + timedelta(days=1),
+                time.min,
+                KST,
+            )
+            auto_cash_flows = self.repo.external_cash_flows(
+                auto_account.id,
+                cash_flow_started_at,
+                cash_flow_ended_before,
+            )
+            my_cash_flows = self.repo.external_cash_flows(
+                my_account.id,
+                cash_flow_started_at,
+                cash_flow_ended_before,
+            )
+        series = build_comparison_series(
+            auto_snapshots,
+            my_snapshots,
+            auto_cash_flows,
+            my_cash_flows,
+        )
 
         if not series:
             response = PortfolioComparisonResponse(
@@ -243,6 +321,74 @@ class PortfolioComparisonService:
             baseline_assets=None,
             current_assets=latest.total_assets.quantize(MONEY_SCALE) if latest else None,
             return_rate=None,
+        )
+
+    def _render_ai_analysis(
+        self,
+        result: AIPortfolioComparisonResult,
+        response: PortfolioComparisonResponse,
+    ) -> PortfolioComparisonAIAnalysisResponse:
+        metrics = response.metrics
+        if metrics is None or result.assessment != metrics.leader:
+            raise ServiceError(
+                "AI_INVALID_COMPARISON_RESPONSE",
+                "투자 비교 분석이 서버 계산 결과와 일치하지 않습니다.",
+                502,
+            )
+
+        auto = response.accounts.ai_auto
+        mine = response.accounts.my_investment
+        if auto.return_rate is None or mine.return_rate is None:
+            raise ServiceError(
+                "AI_INVALID_COMPARISON_RESPONSE",
+                "투자 비교 분석에 필요한 서버 계산값이 없습니다.",
+                502,
+            )
+
+        leader_labels = {
+            "AI_AUTO": "AI 자동투자",
+            "MY_INVESTMENT": "내 투자",
+        }
+        if metrics.leader == "TIE":
+            headline = "두 투자 방식의 비교 기간 수익률이 같습니다."
+        else:
+            headline = f"{leader_labels[metrics.leader]}가 비교 기간 수익률에서 앞섰습니다."
+
+        if result.summary_focus == "ACCOUNT_RETURNS":
+            summary = (
+                f"AI 자동투자 수익률은 {auto.return_rate:+.2f}%, "
+                f"내 투자 수익률은 {mine.return_rate:+.2f}%입니다."
+            )
+        elif metrics.leader == "TIE":
+            summary = "공통 관측 기간의 수익률 격차는 0.00%p입니다."
+        else:
+            summary = (
+                f"공통 관측 기간의 수익률 격차는 "
+                f"{abs(metrics.return_rate_gap):.2f}%p이며 "
+                f"{leader_labels[metrics.leader]}가 앞섰습니다."
+            )
+
+        key_point_templates = {
+            "AI_AUTO_RETURN": f"AI 자동투자 기간수익률 {auto.return_rate:+.2f}%",
+            "MY_INVESTMENT_RETURN": f"내 투자 기간수익률 {mine.return_rate:+.2f}%",
+            "RETURN_GAP": f"수익률 격차 {abs(metrics.return_rate_gap):.2f}%p",
+            "OBSERVATION_COUNT": f"공통 장마감 관측 {response.observation_count}개",
+            "ASSET_GAP": (
+                f"원화 자산 차이(AI-내 투자) {metrics.asset_gap:+,.2f}원"
+            ),
+        }
+        return PortfolioComparisonAIAnalysisResponse(
+            status="AVAILABLE",
+            headline=headline,
+            summary=summary,
+            key_points=[key_point_templates[focus] for focus in result.key_point_focuses],
+            caution=(
+                "수익률은 외부 현금흐름을 조정한 과거 가상투자 결과이며 "
+                "미래 수익을 보장하지 않습니다. 원화 자산 차이는 초기 자산 규모의 "
+                "영향을 받을 수 있습니다."
+            ),
+            model_version=self.comparison_model_version,
+            generated_at=datetime.now(UTC),
         )
 
     @staticmethod

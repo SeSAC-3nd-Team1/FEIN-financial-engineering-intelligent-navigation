@@ -548,6 +548,7 @@ class PortfolioComparisonAIAnalysisResponse(BaseModel):
 class PortfolioComparisonResponse(BaseModel):
     comparison_status: Literal["AVAILABLE", "INSUFFICIENT_DATA"]
     calculation_version: Literal["portfolio-comparison-v1"] = "portfolio-comparison-v1"
+    return_calculation: Literal["CASH_FLOW_ADJUSTED_TWR"] = "CASH_FLOW_ADJUSTED_TWR"
     period: Literal["1M", "3M", "1Y", "ALL"]
     baseline_date: date | None
     as_of: date | None

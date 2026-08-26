@@ -3,11 +3,11 @@
 import json
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Literal, Protocol
+from typing import Literal, Protocol
 from urllib.parse import quote
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.errors import ServiceError
 
@@ -18,13 +18,12 @@ SYSTEM_PROMPT = """당신은 가상투자 성과 비교 해설 모델입니다.
 사용자 투자(MY_INVESTMENT)의 검증된 지표입니다.
 1. 입력에 있는 수치와 전략 정보만 사용하고 뉴스, 종목, 거래 원인 또는 미래 수익률을
    추측하지 마세요.
-2. 수익 보장, 투자 권유, 우열의 영속성을 암시하는 표현을 사용하지 마세요.
-3. headline은 현재 비교 결과를 한 문장으로, summary는 기준 기간과 수익률 격차를
-   설명하세요.
-4. key_points에는 프론트 화면에서 바로 보여줄 핵심 관찰을 1~3개 작성하세요.
-5. caution에는 과거 가상투자 결과이며 초기 자산 규모가 다르면 원화 자산 차이를
-   성과 우열로 해석할 수 없다는 점을 간결하게 안내하세요.
-6. 모든 문구는 간결한 한국어로 작성하세요.
+2. 숫자나 문장을 생성하지 말고 허용된 코드만 선택하세요. Backend가 검증된 서버 숫자로
+   최종 문구를 만듭니다.
+3. assessment는 입력 leader와 반드시 같아야 합니다.
+4. summary_focus는 가장 유용한 비교 관점을 하나 선택하세요.
+5. key_point_focuses는 중복 없이 1~3개를 선택하세요.
+6. caution_code는 항상 PAST_PERFORMANCE_AND_CASH_FLOW로 반환하세요.
 """
 
 
@@ -55,13 +54,27 @@ class PortfolioComparisonAnalysisContext(BaseModel):
 class AIPortfolioComparisonResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    headline: str = Field(min_length=1, max_length=120)
-    summary: str = Field(min_length=1, max_length=500)
-    key_points: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
+    assessment: Literal["AI_AUTO", "MY_INVESTMENT", "TIE"]
+    summary_focus: Literal["RETURN_GAP", "ACCOUNT_RETURNS"]
+    key_point_focuses: list[
+        Literal[
+            "AI_AUTO_RETURN",
+            "MY_INVESTMENT_RETURN",
+            "RETURN_GAP",
+            "OBSERVATION_COUNT",
+            "ASSET_GAP",
+        ]
+    ] = Field(
         min_length=1,
         max_length=3,
     )
-    caution: str = Field(min_length=1, max_length=300)
+    caution_code: Literal["PAST_PERFORMANCE_AND_CASH_FLOW"]
+
+    @model_validator(mode="after")
+    def validate_unique_key_points(self) -> "AIPortfolioComparisonResult":
+        if len(set(self.key_point_focuses)) != len(self.key_point_focuses):
+            raise ValueError("key point focuses must be unique")
+        return self
 
 
 class PortfolioComparisonAIClient(Protocol):
@@ -166,7 +179,7 @@ class AzureOpenAIPortfolioComparisonClient:
             if message.get("refusal") or not isinstance(content, str):
                 raise ValueError("model did not return content")
             return AIPortfolioComparisonResult.model_validate_json(content)
-        except (ValueError, KeyError, IndexError, TypeError, ValidationError) as exc:
+        except Exception as exc:
             raise ServiceError(
                 "AI_INVALID_COMPARISON_RESPONSE",
                 "투자 비교 분석 결과를 확인할 수 없습니다.",

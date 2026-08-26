@@ -15,10 +15,10 @@ from app.integrations.ai.portfolio_comparison_client import (
 
 
 MODEL_RESULT = {
-    "headline": "AI 자동투자 수익률이 비교 기간에 앞섰습니다.",
-    "summary": "공통 관측 기간 동안 5.00%p의 수익률 격차가 확인됐습니다.",
-    "key_points": ["AI 자동투자 +10.00%", "내 투자 +5.00%"],
-    "caution": "과거 가상투자 성과이며 미래 수익을 보장하지 않습니다.",
+    "assessment": "AI_AUTO",
+    "summary_focus": "RETURN_GAP",
+    "key_point_focuses": ["AI_AUTO_RETURN", "MY_INVESTMENT_RETURN"],
+    "caution_code": "PAST_PERFORMANCE_AND_CASH_FLOW",
 }
 
 
@@ -81,12 +81,26 @@ def test_client_sends_only_validated_anonymous_metrics() -> None:
     assert "account_id" not in str(user_payload)
     assert "user_id" not in str(user_payload)
     assert captured["body"]["response_format"]["json_schema"]["strict"] is True
-    assert result.headline.startswith("AI 자동투자")
+    assert result.assessment == "AI_AUTO"
 
 
 def test_client_rejects_invalid_structured_result() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    client = make_client(handler)
+    try:
+        with pytest.raises(ServiceError) as raised:
+            asyncio.run(client.analyze(context()))
+    finally:
+        asyncio.run(client.client.aclose())
+
+    assert raised.value.code == "AI_INVALID_COMPARISON_RESPONSE"
+
+
+def test_client_converts_unexpected_message_type_to_invalid_response() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": None}]})
 
     client = make_client(handler)
     try:

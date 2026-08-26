@@ -89,3 +89,25 @@ def test_completed_onboarding_lookup_requires_user_mode_and_completed_status() -
     assert "investment_onboardings.user_id" in sql
     assert "investment_onboardings.operation_mode" in sql
     assert "investment_onboardings.status" in sql
+
+
+def test_external_cash_flows_excludes_buy_and_sell_ledger_rows() -> None:
+    class FakeSession:
+        def scalars(self, query):
+            self.query = query
+            return []
+
+    session = FakeSession()
+    repository = TradingRepository(session)
+
+    repository.external_cash_flows(
+        uuid4(),
+        datetime(2026, 8, 20, tzinfo=UTC),
+        datetime(2026, 8, 26, tzinfo=UTC),
+    )
+
+    sql = str(session.query)
+    assert "cash_ledger.transaction_type IN" in sql
+    assert "cash_ledger.created_at >=" in sql
+    assert "cash_ledger.created_at <" in sql
+    assert "cash_ledger.created_at, cash_ledger.id" in sql

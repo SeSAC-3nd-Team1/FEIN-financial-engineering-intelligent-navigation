@@ -64,6 +64,7 @@ def test_comparison_endpoint_uses_authenticated_user_and_period() -> None:
 
     assert response.status_code == 200
     assert response.json()["calculation_version"] == "portfolio-comparison-v1"
+    assert response.json()["return_calculation"] == "CASH_FLOW_ADJUSTED_TWR"
     assert response.json()["metrics"]["leader"] == "AI_AUTO"
     assert response.json()["ai_analysis"]["status"] == "AVAILABLE"
     assert service.calls == [(7, "1Y")]
