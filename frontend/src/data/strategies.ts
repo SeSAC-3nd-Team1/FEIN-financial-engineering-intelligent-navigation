@@ -9,7 +9,10 @@ export interface Strategy {
   vol: string;
   sharpe: string;
   rebalance: string;
+  /** 전략 자체에 대한 일반 설명 — 비회원을 포함한 모든 사용자에게 공개 */
   why: string;
+  /** "왜 나에게 맞는지" — 로그인 + 투자성향 진단 완료 사용자에게만 why 아래 추가로 보여준다(showSuitability) */
+  suitabilityNote?: string;
 }
 
 /** Strategy List 카드용 최소 요약 — 백테스트/위험도 등 상세 지표는 의도적으로 제외한다(모델 확정 전) */
@@ -24,7 +27,8 @@ export const STRATEGIES: Strategy[] = [
     id: 'low', name: '저변동성 전략', tagline: '큰 손실은 줄이고, 꾸준히 투자하고 싶다면',
     match: 92, annual: '+10.2%', risk: '보통',
     mdd: '-18.6%', vol: '12.4%', sharpe: '0.82', rebalance: '월 1회',
-    why: '손실 감내 수준이 "보통"이고 투자 기간이 긴 편이라, 시장이 흔들릴 때 방어하면서도 장기 수익을 기대할 수 있는 전략을 먼저 골랐어요.',
+    why: '시장이 흔들릴 때는 방어하면서, 꾸준한 장기 수익을 기대할 수 있는 전략이에요.',
+    suitabilityNote: '손실 감내 수준이 "보통"이고 투자 기간이 긴 편이라, 이 전략을 먼저 추천드려요.',
   },
   {
     id: 'value', name: '가치 전략', tagline: '가격보다 기업의 가치를 중요하게 본다면',

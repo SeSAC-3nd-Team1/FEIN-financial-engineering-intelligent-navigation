@@ -9,6 +9,7 @@ import InvestDeposit from './pages/InvestDeposit';
 import InvestorProfileCheck from './pages/InvestorProfileCheck';
 import InvestTerms from './pages/InvestTerms';
 import Login from './pages/Login';
+import type { LoginContext } from './pages/Login';
 import Portfolio from './pages/Portfolio';
 import RiskProfile from './pages/RiskProfile';
 import RiskResult from './pages/RiskResult';
@@ -69,6 +70,12 @@ export default function App() {
   // 비회원이 Strategy Detail "이 전략으로 시작하기"를 눌러 로그인 화면으로 보내진 경우 true —
   // 로그인 완료 후 Portfolio가 아니라 원래 하려던 투자 시작 절차로 이어간다(아래 Login onLogin 참고).
   const [pendingStartAfterLogin, setPendingStartAfterLogin] = useState(false);
+  // 비회원이 백테스트 잠긴 기간(Inline Login CTA)에서 로그인 화면으로 보내진 경우 true — 로그인 후
+  // Portfolio가 아니라 보고 있던 Strategy Detail로만 복귀시킨다(그 기간을 자동 실행하지는 않는다).
+  const [pendingReturnToStrategy, setPendingReturnToStrategy] = useState(false);
+  // 로그인 화면 title/subtitle을 결정하는 진입 경로 — Header의 일반 로그인은 기본값(header)을 쓰고,
+  // Home/Strategy Detail의 특정 CTA는 각자 진입 시점에 이 값을 명시적으로 세팅한다.
+  const [loginContext, setLoginContext] = useState<LoginContext>('header');
   // 투자 시작 Flow(약관 → 계좌 준비 → 입금 → 최종 확인) 동안 유지해야 하는 선택 금액/운용방식
   // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
   const [investmentAmount, setInvestmentAmount] = useState(1_000_000);
@@ -161,6 +168,12 @@ export default function App() {
    * 강제로 다시 hydrate한 뒤 스토어에서 바로 최신 값을 읽는다.
    */
   const navigate = (target: Screen) => {
+    // 이 함수를 거쳐 로그인으로 가는 경로(Header 일반 로그인, "나의 포트폴리오" 등 guarded 메뉴 리다이렉트)는
+    // 모두 기본 context — Home/Strategy Detail의 특정 CTA는 이 함수를 거치지 않고 각자
+    // requestLoginFromHome/requestLoginForBacktest/handleStartInvesting에서 직접 context를 세팅한다.
+    if (target === 'login') {
+      setLoginContext('header');
+    }
     if (target === 'portfolio') {
       const userId = useAuthStore.getState().user?.user_id ?? null;
       hydrateForUser(userId);
@@ -233,6 +246,7 @@ export default function App() {
    */
   const handleStartInvesting = () => {
     if (!isLoggedIn) {
+      setLoginContext('strategy');
       setPendingStartAfterLogin(true);
       setScreen('login');
       return;
@@ -240,25 +254,49 @@ export default function App() {
     proceedToStartInvesting();
   };
 
+  /** Home "내 투자성향 알아보기 →"/"무료로 시작하기" — 로그인 화면에 context="home"으로 진입시킨다 */
+  const requestLoginFromHome = () => {
+    setLoginContext('home');
+    setScreen('login');
+  };
+
+  /**
+   * Strategy Detail 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보내진 경우 —
+   * 로그인 완료 후 Portfolio가 아니라 보고 있던 Strategy Detail로만 복귀한다(그 기간을 자동 실행하지는
+   * 않는다). strategyId는 이미 상태로 유지되고 있어 따로 안 챙겨도 된다.
+   */
+  const requestLoginForBacktest = () => {
+    setLoginContext('strategy');
+    setPendingReturnToStrategy(true);
+    setScreen('login');
+  };
+
   return (
     <div className="min-h-screen bg-canvas">
-      {screen === 'home' && <Home userName={userName} onNavigate={navigate} />}
+      {screen === 'home' && <Home userName={userName} onNavigate={navigate} onRequestLogin={requestLoginFromHome} />}
 
       {screen === 'login' && (
         <Login
-          // 로그인 성공 — "이 전략으로 시작하기"를 거쳐 왔으면 그 절차로 이어가고,
-          // 그 외에는 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
+          context={loginContext}
+          // 로그인 성공 — "이 전략으로 시작하기"를 거쳐 왔으면 그 절차로 이어가고, 잠긴 백테스트에서
+          // 왔으면 보고 있던 Strategy Detail로 복귀하며, 그 외에는 헤더 "나의 포트폴리오"와 동일한
+          // 목적지(Portfolio)로 이동
           onLogin={() => {
             if (pendingStartAfterLogin) {
               setPendingStartAfterLogin(false);
               proceedToStartInvesting();
               return;
             }
+            if (pendingReturnToStrategy) {
+              setPendingReturnToStrategy(false);
+              setScreen('strategy');
+              return;
+            }
             navigate('portfolio');
           }}
-          onSignup={() => { setPendingStartAfterLogin(false); setScreen('signup-1'); }}
-          onHome={() => { setPendingStartAfterLogin(false); setScreen('home'); }}
-          onNavigate={(s) => { setPendingStartAfterLogin(false); navigate(s); }}
+          onSignup={() => { setPendingStartAfterLogin(false); setPendingReturnToStrategy(false); setScreen('signup-1'); }}
+          onHome={() => { setPendingStartAfterLogin(false); setPendingReturnToStrategy(false); setScreen('home'); }}
+          onNavigate={(s) => { setPendingStartAfterLogin(false); setPendingReturnToStrategy(false); navigate(s); }}
         />
       )}
 
@@ -326,6 +364,9 @@ export default function App() {
       {screen === 'risk' && (
         <RiskProfile
           notice={riskNotice}
+          // postDiagnosisTarget이 'start'면 Strategy Detail "이 전략으로 시작하기"에서 온 것 —
+          // 새 진입 state를 따로 만들지 않고 이미 있는 이 값을 그대로 재사용해 context를 판단한다.
+          context={postDiagnosisTarget === 'start' ? 'strategy' : 'general'}
           onComplete={({ investorType, answers }) => {
             completeInvestorProfile(investorType, answers, new Date().toISOString());
             setRiskNotice(undefined);
@@ -364,6 +405,7 @@ export default function App() {
           userName={userName}
           onNavigate={navigate}
           onStart={handleStartInvesting}
+          onRequestLoginForBacktest={requestLoginForBacktest}
           pendingDeposit={
             pendingInvestment && pendingInvestment.strategyId === strategyId
               // InvestDeposit과 동일하게, 이미 보유한 잔액(대기 중인 투자와 같은 운용방식 계좌 기준)을 제외한 부족분만 안내한다

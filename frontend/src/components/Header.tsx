@@ -5,8 +5,10 @@ interface Props {
   active?: 'home' | 'strategy' | 'information' | 'portfolio';
   userName: string;
   onNavigate: (s: Screen) => void;
-  /** 비로그인 상태일 때 "로그인" 옆에 추가로 보여줄 CTA — 현재 비로그인 Home에서만 사용 */
-  guestCta?: { label: string; to: Screen };
+  /** 비로그인 상태일 때 "로그인" 옆에 추가로 보여줄 CTA — 현재 비로그인 Home에서만 사용.
+   * onClick으로 받는 이유: Home의 CTA는 로그인 화면 진입 context("home")를 함께 기록해야 해서
+   * 단순 화면 이동(Screen) 이상의 동작이 필요하다. */
+  guestCta?: { label: string; onClick: () => void };
 }
 
 /**
@@ -44,7 +46,7 @@ export default function Header({ active, userName, onNavigate, guestCta }: Props
     <header className="sticky top-0 z-50 flex h-20 items-center justify-between bg-canvas px-16">
       <div className="flex items-center gap-10">
         <button onClick={() => onNavigate('home')} className="flex items-center gap-2">
-          <img src="/main_logo.png" alt="FE!N" className="h-16 w-auto object-contain" />
+          <img src="/main_logo_2.png" alt="FE!N" className="h-16 w-auto object-contain" />
         </button>
         <nav className="flex gap-7">
           {NAV.map((n) => (
@@ -72,7 +74,7 @@ export default function Header({ active, userName, onNavigate, guestCta }: Props
           </button>
           {guestCta && (
             <button
-              onClick={() => onNavigate(guestCta.to)}
+              onClick={guestCta.onClick}
               className="rounded-[10px] bg-lime px-5 py-3 text-base font-bold text-navy"
             >
               {guestCta.label}

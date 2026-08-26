@@ -5,6 +5,8 @@ import type { Screen } from '../types';
 interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
+  /** "내 투자성향 알아보기"/"무료로 시작하기" — 로그인 화면에 context="home"으로 진입시킨다 */
+  onRequestLogin: () => void;
 }
 
 const HOME_STEPS = [
@@ -20,13 +22,15 @@ const HOME_STEPS = [
  * 로그인 직후 자동 랜딩 규칙(Portfolio/입금 요청)은 App.tsx의 navigate()가 그대로 담당하고 있어
  * 여기서는 건드리지 않는다.
  */
-export default function Home({ userName, onNavigate }: Props) {
+export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
 
   return (
     <div className="min-h-screen bg-canvas">
-      <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '무료로 시작하기', to: 'login' }} />
-      {isLoggedIn ? <LoggedInHome userName={userName} onNavigate={onNavigate} /> : <LoggedOutHome onNavigate={onNavigate} />}
+      <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '무료로 시작하기', onClick: onRequestLogin }} />
+      {isLoggedIn
+        ? <LoggedInHome userName={userName} onNavigate={onNavigate} />
+        : <LoggedOutHome onNavigate={onNavigate} onRequestLogin={onRequestLogin} />}
     </div>
   );
 }
@@ -65,7 +69,7 @@ function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: 
 
 /** 비로그인 Home — "기능/성과를 나열하는 페이지"가 아니라, 물방개와 한 문장으로 FE!N이 무엇을
  * 도와주는 서비스인지 바로 알리고 시작 행동(투자성향 진단)으로 보내는 것이 목적이다. */
-function LoggedOutHome({ onNavigate }: { onNavigate: (s: Screen) => void }) {
+function LoggedOutHome({ onNavigate, onRequestLogin }: { onNavigate: (s: Screen) => void; onRequestLogin: () => void }) {
   return (
     <main className="flex flex-col items-center pb-24">
       <section className="grid w-[1312px] grid-cols-[1fr_auto] items-center gap-16 px-16 pb-24 pt-20">
@@ -74,10 +78,10 @@ function LoggedOutHome({ onNavigate }: { onNavigate: (s: Screen) => void }) {
             투자는 어려워도,<br />내 전략은 이해할 수 있게.
           </h1>
           <p className="max-w-[540px] text-xl leading-[34px] text-muted">
-            FE!N이 투자성향을 알아보고<br />나에게 맞는 전략을 쉽게 설명해드려요.
+            내 투자성향에 맞는 전략을 찾고,<br />왜 이 전략인지 쉽게 이해할 수 있어요.
           </p>
           <div className="flex items-center gap-6 pt-3">
-            <button onClick={() => onNavigate('login')} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
+            <button onClick={onRequestLogin} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
               내 투자성향 알아보기 →
             </button>
             <button onClick={() => onNavigate('strategy-list')} className="text-[17px] font-semibold text-muted transition-colors hover:text-navy">
@@ -94,8 +98,8 @@ function LoggedOutHome({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         <div className="flex items-start">
           {HOME_STEPS.map((step, i) => (
             <div key={step.title} className="flex items-start">
-              <div className="flex w-[300px] flex-col gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F1FBD4] text-[15px] font-bold text-[#3F5222]">
+              <div className="flex w-[300px] flex-col gap-2">
+                <span className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-[#F1FBD4] text-[15px] font-bold text-[#3F5222]">
                   {i + 1}
                 </span>
                 <span className="text-xl font-bold tracking-[-0.02em] text-ink">{step.title}</span>

@@ -17,6 +17,9 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   onStart: () => void;
+  /** 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보낼 때 사용 —
+   * 로그인 후 Portfolio가 아니라 이 화면으로 복귀시키기 위해 App.tsx가 별도로 처리한다 */
+  onRequestLoginForBacktest: () => void;
   /** 이 전략으로 계좌 연결까지는 끝냈지만 "나중에 입금할게요"로 미룬 투자가 있으면 전달된다 */
   pendingDeposit?: { amount: number } | null;
   /** 위 배너의 CTA — 약관/계좌 단계를 다시 거치지 않고 곧장 입금 화면으로 이동한다 */
@@ -27,10 +30,15 @@ const PRINCIPAL = 10_000_000;
 
 const METRIC_TERMS: Record<string, string> = {
   cumulativeReturn: '투자 시작 시점부터 해당 기간 끝까지 누적된 수익률이에요.',
-  cagr: '연평균 성장률이에요. 기간 동안의 수익을 매년 일정하게 늘어난 것으로 환산한 값이에요.',
-  mdd: '투자 기간 중 고점에서 가장 크게 떨어졌던 폭이에요.',
-  volatility: '수익률이 오르내리는 정도예요. 클수록 등락이 심했다는 뜻이에요.',
-  sharpe: '위험 대비 수익이 얼마나 좋았는지 보여주는 지표예요. 높을수록 위험 대비 수익이 좋았다는 뜻이에요.',
+  cagr: '투자 기간의 전체 성과를 1년 평균 수익률로 환산한 값이에요.',
+  mdd: '투자 기간 중 가장 크게 떨어졌던 폭이에요. 숫자가 작을수록 하락 위험이 상대적으로 낮아요.',
+  volatility: '수익률이 얼마나 크게 오르내렸는지를 보여줘요. 낮을수록 움직임이 비교적 안정적이에요.',
+  sharpe: '감수한 위험에 비해 얼마나 효율적으로 수익을 냈는지 보여줘요. 일반적으로 높을수록 좋아요.',
+};
+
+const METRIC_LABELS: Record<string, string> = {
+  cagr: '연평균 수익률(CAGR)',
+  mdd: '최대 낙폭(MDD)',
 };
 
 const fmtDate = (iso: string) => iso.replaceAll('-', '.');
@@ -40,7 +48,9 @@ const fmtWon = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}
 const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 
 /** 03 전략 상세 — 추천 기간(또는 직접 설정한 기간)으로 전략을 직접 체험한 뒤 바로 투자 시작으로 이어진다 */
-export default function StrategyDetail({ strategyId, userName, onNavigate, onStart, pendingDeposit, onResumeDeposit }: Props) {
+export default function StrategyDetail({
+  strategyId, userName, onNavigate, onStart, onRequestLoginForBacktest, pendingDeposit, onResumeDeposit,
+}: Props) {
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   // 비회원 공개 정책: 전략을 읽고 백테스트 기본 결과를 보는 것은 PUBLIC이지만, "나와 몇% 잘
   // 맞는지" 같은 개인화 적합도는 로그인 + 투자성향 진단 완료 사용자에게만 보여준다.
@@ -217,11 +227,20 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
       <main className="flex flex-col items-center px-16 pb-24 pt-6">
         <div className="flex w-[1040px] flex-col gap-10">
           <section className="flex flex-col gap-4">
+            <button
+              onClick={() => onNavigate('strategy-list')}
+              className="self-start text-[15px] font-semibold text-muted transition-colors hover:text-navy"
+            >
+              ← 투자전략 목록
+            </button>
             {showSuitability && (
               <span className="text-base font-semibold text-[#3F5222]">✦ 나와 {strategy.match}% 잘 맞는 전략</span>
             )}
             <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">{strategy.name}</h1>
             <p className="max-w-[820px] text-[19px] leading-8 text-muted">{strategy.why}</p>
+            {showSuitability && strategy.suitabilityNote && (
+              <p className="max-w-[820px] text-[17px] leading-7 text-[#3F5222]">✦ {strategy.suitabilityNote}</p>
+            )}
           </section>
 
           {pendingDeposit && (
@@ -248,17 +267,21 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
             </div>
 
             <div className="flex flex-wrap gap-3">
-              {periods.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => selectPreset(p.id)}
-                  className={`rounded-full px-6 py-3.5 text-[17px] font-semibold ${
-                    periodMode === 'preset' && p.id === presetPeriodId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+              {periods.map((p) => {
+                const isLocked = !isLoggedIn && p.id !== presetPeriodId;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => selectPreset(p.id)}
+                    className={`group relative flex items-center gap-1.5 rounded-full px-6 py-3.5 text-[17px] font-semibold ${
+                      periodMode === 'preset' && p.id === presetPeriodId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
+                    }`}
+                  >
+                    {p.label}
+                    {isLocked && <LoginLockBadge />}
+                  </button>
+                );
+              })}
             </div>
 
             <p className="text-[15px] leading-6 text-muted">
@@ -277,7 +300,7 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
                   </p>
                 </div>
                 <button
-                  onClick={() => onNavigate('login')}
+                  onClick={onRequestLoginForBacktest}
                   className="shrink-0 rounded-field bg-lime px-6 py-3.5 text-[15px] font-bold text-navy"
                 >
                   다른 기간도 직접 확인하기 →
@@ -290,9 +313,10 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
                 if (!isLoggedIn) { setShowBacktestLoginLock(true); return; }
                 setCustomPanelOpen((o) => !o);
               }}
-              className="self-start text-[15px] font-semibold text-navy underline"
+              className="group relative inline-flex w-fit items-center gap-1.5 self-start text-[15px] font-semibold text-navy underline"
             >
               원하는 기간이 있나요? 직접 설정 →
+              {!isLoggedIn && <LoginLockBadge />}
             </button>
 
             {customPanelOpen && (
@@ -398,8 +422,8 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
 
                 <div className="grid grid-cols-4 gap-8 border-t border-[#F0F2ED] pt-7">
                   <MetricTile label="누적 수익률" value={signed(result.metrics.cumulativeReturn)} termKey="cumulativeReturn" />
-                  <MetricTile label="CAGR" value={signed(result.metrics.cagr)} termKey="cagr" />
-                  <MetricTile label="MDD" value={`${result.metrics.mdd}%`} accent termKey="mdd" />
+                  <MetricTile label={METRIC_LABELS.cagr} value={signed(result.metrics.cagr)} termKey="cagr" />
+                  <MetricTile label={METRIC_LABELS.mdd} value={`${result.metrics.mdd}%`} accent termKey="mdd" />
                   <MetricTile label="변동성" value={`${result.metrics.volatility}%`} termKey="volatility" />
                   {result.metrics.sharpe != null && (
                     <MetricTile label="샤프 지수" value={`${result.metrics.sharpe}`} termKey="sharpe" />
@@ -452,10 +476,17 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
             <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
               <div className="flex flex-col gap-2.5">
                 <span className="text-2xl font-bold tracking-[-0.025em] text-white">현재 이 전략으로 운용하고 있어요</span>
-                <span className="text-[17px] leading-7 text-[#B9C2BA]">투자 현황은 나의 포트폴리오에서 확인할 수 있어요.</span>
+                <span className="text-[17px] leading-7 text-[#B9C2BA]">
+                  투자 현황은{' '}
+                  <button onClick={() => onNavigate('portfolio')} className="inline font-semibold text-lime hover:underline">
+                    나의 포트폴리오 →
+                  </button>
+                  {' '}에서 확인할 수 있어요.
+                </span>
               </div>
-              <span className="shrink-0 rounded-field bg-white/10 px-9 py-5 text-lg font-bold text-white/70">
-                현재 운용 중
+              {/* 행동 버튼이 아니라 상태 표시이므로 lime(액션 색)을 쓰지 않고, 클릭도 불가능한 정보성 배지로 둔다 */}
+              <span className="shrink-0 flex items-center gap-2 rounded-full bg-white/10 px-7 py-4 text-base font-bold text-white">
+                <span className="text-lime">✓</span> 현재 운용 중
               </span>
             </section>
           )}
@@ -465,7 +496,7 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
               <div className="flex flex-col gap-2.5">
                 <span className="text-2xl font-bold tracking-[-0.025em] text-white">다른 전략으로 바꿔볼까요?</span>
                 <span className="text-[17px] leading-7 text-[#B9C2BA]">
-                  지금은 {activeStrategyName}으로 운용 중이에요. 계좌 하나에는 전략을 하나만 운용할 수 있어요.
+                  지금은 {activeStrategyName}으로 운용 중이에요. 한 계좌에서는 하나의 전략만 운용할 수 있어요.
                 </span>
               </div>
               <button
@@ -509,7 +540,7 @@ function StrategyChangeModal({
     <div className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8" onClick={onCancel}>
       <div className="flex w-[560px] flex-col gap-7 rounded-card bg-surface p-12" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-col gap-2">
-          <h2 className="text-[24px] font-bold tracking-[-0.025em]">현재 다른 전략을 운용하고 있어요</h2>
+          <h2 className="text-[24px] font-bold tracking-[-0.025em]">{nextStrategyName}으로 변경할까요?</h2>
         </div>
 
         <div className="flex flex-col gap-3 rounded-[16px] bg-canvas px-7 py-6">
@@ -526,7 +557,7 @@ function StrategyChangeModal({
 
         <p className="text-[15px] leading-[24px] text-muted">
           한 계좌에서는 하나의 전략만 운용할 수 있어요.<br />
-          이 전략으로 변경하면 현재 전략 대신 새 전략으로 운용됩니다.
+          변경하면 {currentStrategyName} 대신 {nextStrategyName}으로 운용돼요.
         </p>
 
         <div className="flex gap-3">
@@ -534,11 +565,31 @@ function StrategyChangeModal({
             현재 전략 유지하기
           </button>
           <button onClick={onConfirm} className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy">
-            이 전략으로 변경하기
+            {nextStrategyName}으로 변경하기
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 비회원 백테스트 interaction 잠금 표시 — 일반 🔒 emoji 대신 FE!N 물방개 얼굴 아이콘(button-pixel.png)을
+ * 쓴다. "로그인하면 쓸 수 있는 기능"이라는 뜻으로만 쓰고 에러/경고 의미로는 쓰지 않는다. 부모 버튼에
+ * hover가 걸리면(desktop) CSS group-hover로만 tooltip을 보여주는 순수 장식 요소라 자체 클릭 핸들러는
+ * 없다 — 실제 클릭 시 안내는 이미 구현된 Inline Login CTA(showBacktestLoginLock)가 담당한다.
+ */
+function LoginLockBadge() {
+  return (
+    <>
+      <img src="/button-pixel.png" alt="" className="h-4 w-4 shrink-0 object-contain" />
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-navy px-2.5 py-1.5 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100"
+      >
+        로그인 후 이용할 수 있어요
+      </span>
+    </>
   );
 }
 

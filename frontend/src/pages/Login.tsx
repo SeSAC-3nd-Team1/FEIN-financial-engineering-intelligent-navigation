@@ -3,15 +3,26 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
 
+export type LoginContext = 'header' | 'home' | 'strategy';
+
 interface Props {
   onLogin: () => void;
   onSignup: () => void;
   onHome: () => void;
   onNavigate: (s: Screen) => void;
+  /** 로그인 화면에 진입한 경로 — title/subtitle만 바뀌고 폼/버튼/레이아웃은 동일하다 */
+  context: LoginContext;
 }
 
+const LOGIN_COPY: Record<LoginContext, { title: string; subtitle: string }> = {
+  header: { title: '다시 오셨네요.', subtitle: '로그인하고 FE!N을 계속 이용해보세요.' },
+  home: { title: 'FE!N을 시작해볼까요?', subtitle: '로그인하거나 회원가입하고 내 투자성향을 알아보세요.' },
+  strategy: { title: '이 전략으로 시작해볼까요?', subtitle: '로그인하거나 회원가입하고 투자 준비를 이어가세요.' },
+};
+
 /** 로그인 — 기존 회원은 포트폴리오로, "회원가입하기"는 가입 1단계로 */
-export default function Login({ onLogin, onSignup, onHome }: Props) {
+export default function Login({ onLogin, onSignup, onHome, context }: Props) {
+  const { title, subtitle } = LOGIN_COPY[context];
   const login = useAuthStore((s) => s.login);
   const [id, setId] = useState('');
   const [pw, setPw] = useState('');
@@ -46,7 +57,10 @@ export default function Login({ onLogin, onSignup, onHome }: Props) {
       </header>
 
       <main className="mx-auto flex w-[440px] flex-col gap-8 py-16">
-        <h1 className="text-[40px] font-bold leading-[56px] tracking-[-0.035em]">다시 오셨네요.</h1>
+        <div className="flex flex-col gap-3">
+          <h1 className="text-[40px] font-bold leading-[56px] tracking-[-0.035em]">{title}</h1>
+          <p className="text-lg leading-7 text-muted">{subtitle}</p>
+        </div>
 
         <div className="flex flex-col gap-3.5">
           <input
