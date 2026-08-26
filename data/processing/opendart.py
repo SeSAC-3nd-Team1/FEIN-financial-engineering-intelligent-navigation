@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+import hashlib
 import re
 from typing import Any
 
@@ -76,13 +77,20 @@ def _normalized_label(value: Any) -> str:
 
 
 def _stock_kind(value: Any) -> str | None:
-    """OpenDART 주식 종류를 서비스 우선순위에 쓰는 안정적인 값으로 정규화한다."""
+    """OpenDART 주식 종류를 UPSERT에 쓸 수 있는 안정적인 식별자로 만든다."""
 
     raw = _normalized_label(value)
     if not raw or raw == "-":
         return None
-    if "우선" in raw:
+    if raw == "우선주":
         return "PREFERRED"
+    if "우선" in raw:
+        # 세부 우선주 종류는 사람이 식별할 수 있는 원문을 우선 사용한다. 컬럼 한도를
+        # 넘을 때만 원문 전체의 digest로 재수집 가능한 충돌키를 만든다.
+        if len(raw) <= 20:
+            return raw
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:10].upper()
+        return f"PREFERRED_{digest}"
     if "보통" in raw:
         return "COMMON"
     return raw[:20]

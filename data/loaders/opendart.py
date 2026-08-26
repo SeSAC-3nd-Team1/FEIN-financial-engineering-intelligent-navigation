@@ -1,5 +1,6 @@
 """OpenDART 정제 행의 transaction 단위 UPSERT를 제공한다."""
 
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from db.models.opendart import (
@@ -100,6 +101,39 @@ class OpenDartRepository:
                 "stock_kind",
             ],
         )
+
+    def replace_dividends(
+        self,
+        rows: list[dict],
+        *,
+        stock_code: str,
+        business_year: str,
+        report_code: str,
+    ) -> int:
+        """한 종목·사업연도·보고서 범위를 새 응답으로 원자적으로 교체한다."""
+
+        scope = (stock_code, business_year, report_code)
+        if any(
+            (
+                row.get("stock_code"),
+                row.get("business_year"),
+                row.get("report_code"),
+            )
+            != scope
+            for row in rows
+        ):
+            raise ValueError("dividend replacement rows must match the requested scope")
+
+        # UPSERT만으로는 정규화 키가 바뀐 legacy 행을 제거할 수 없으므로 refresh 범위만
+        # 먼저 지운다. session_scope가 delete와 insert를 같은 transaction으로 확정한다.
+        self.session.execute(
+            delete(StockDividend).where(
+                StockDividend.stock_code == stock_code,
+                StockDividend.business_year == business_year,
+                StockDividend.report_code == report_code,
+            )
+        )
+        return self.upsert_dividends(rows)
 
     def upsert_disclosures(self, rows: list[dict]) -> int:
         return upsert_rows(

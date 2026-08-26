@@ -270,6 +270,53 @@ def test_dividend_rows_parse_common_and_preferred_without_double_counting() -> N
     assert preferred["dividend_per_share"] == Decimal("1550")
 
 
+def test_dividend_rows_keep_distinct_preferred_stock_classes() -> None:
+    payload = {
+        "list": [
+            {
+                "se": "현금배당수익률(%)",
+                "stock_knd": "1 우선주",
+                "thstrm": "2.1",
+            },
+            {
+                "se": "주당 현금배당금(원)",
+                "stock_knd": "1우선주",
+                "thstrm": "1,100",
+            },
+            {
+                "se": "현금배당수익률(%)",
+                "stock_knd": "2우선주",
+                "thstrm": "2.2",
+            },
+            {
+                "se": "주당 현금배당금(원)",
+                "stock_knd": "2우선주",
+                "thstrm": "1,200",
+            },
+        ]
+    }
+
+    rows = dividend_rows(
+        payload,
+        stock_code="000000",
+        corp_code="00000000",
+        business_year="2025",
+        report_code="11011",
+    )
+
+    assert len(rows) == 2
+    assert {row["raw_stock_kind"].replace(" ", "") for row in rows} == {
+        "1우선주",
+        "2우선주",
+    }
+    assert {row["stock_kind"] for row in rows} == {"1우선주", "2우선주"}
+    by_raw_kind = {row["raw_stock_kind"].replace(" ", ""): row for row in rows}
+    assert by_raw_kind["1우선주"]["dividend_per_share"] == Decimal("1100")
+    assert by_raw_kind["1우선주"]["reported_dividend_yield"] == Decimal("2.1")
+    assert by_raw_kind["2우선주"]["dividend_per_share"] == Decimal("1200")
+    assert by_raw_kind["2우선주"]["reported_dividend_yield"] == Decimal("2.2")
+
+
 def test_dividend_rows_do_not_fabricate_missing_values() -> None:
     rows = dividend_rows(
         {"list": [{"se": "주당 현금배당금(원)", "stock_knd": "보통주", "thstrm": "-"}]},
@@ -365,6 +412,71 @@ def test_repository_uses_domain_conflict_keys(monkeypatch) -> None:
         ),
         ("company_disclosures", ("receipt_no",)),
     ]
+
+
+def test_repository_replaces_only_requested_dividend_scope(monkeypatch) -> None:
+    calls = []
+
+    class Session:
+        def execute(self, statement):
+            calls.append(("delete", str(statement)))
+
+    rows = [
+        {
+            "stock_code": "005930",
+            "business_year": "2025",
+            "report_code": "11011",
+            "stock_kind": "1우선주",
+        },
+        {
+            "stock_code": "005930",
+            "business_year": "2025",
+            "report_code": "11011",
+            "stock_kind": "2우선주",
+        },
+    ]
+    monkeypatch.setattr(
+        "loaders.opendart.upsert_rows",
+        lambda _session, _model, upserted, *, conflict_columns: calls.append(
+            ("upsert", [row["stock_kind"] for row in upserted])
+        )
+        or len(upserted),
+    )
+
+    affected = OpenDartRepository(Session()).replace_dividends(
+        rows,
+        stock_code="005930",
+        business_year="2025",
+        report_code="11011",
+    )
+
+    assert affected == 2
+    assert [call[0] for call in calls] == ["delete", "upsert"]
+    delete_sql = calls[0][1]
+    assert "stock_dividends.stock_code =" in delete_sql
+    assert "stock_dividends.business_year =" in delete_sql
+    assert "stock_dividends.report_code =" in delete_sql
+    assert calls[1] == ("upsert", ["1우선주", "2우선주"])
+
+
+def test_repository_rejects_dividend_rows_outside_replacement_scope() -> None:
+    class Session:
+        def execute(self, _statement):
+            raise AssertionError("scope validation must happen before delete")
+
+    with pytest.raises(ValueError, match="must match the requested scope"):
+        OpenDartRepository(Session()).replace_dividends(
+            [
+                {
+                    "stock_code": "005930",
+                    "business_year": "2024",
+                    "report_code": "11011",
+                }
+            ],
+            stock_code="005930",
+            business_year="2025",
+            report_code="11011",
+        )
 
 
 def test_opendart_raw_writer_keeps_original_bytes_and_daily_path() -> None:
