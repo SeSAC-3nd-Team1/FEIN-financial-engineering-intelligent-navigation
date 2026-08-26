@@ -107,15 +107,17 @@ class MarketDataRepository:
         )
 
     def latest_dividend(self, stock_code: str) -> StockDividend | None:
-        """최신 연도에서 사업보고서·보통주를 우선해 한 배당 행을 반환한다."""
+        """사업보고서 보통주 중 가장 최신 연도의 배당 행을 반환한다."""
 
         return self.session.scalar(
             select(StockDividend)
-            .where(StockDividend.stock_code == stock_code)
+            .where(
+                StockDividend.stock_code == stock_code,
+                StockDividend.report_code == "11011",
+                StockDividend.stock_kind == "COMMON",
+            )
             .order_by(
                 StockDividend.business_year.desc(),
-                case((StockDividend.report_code == "11011", 0), else_=1),
-                case((StockDividend.stock_kind == "COMMON", 0), else_=1),
                 StockDividend.updated_at.desc(),
             )
             .limit(1)
