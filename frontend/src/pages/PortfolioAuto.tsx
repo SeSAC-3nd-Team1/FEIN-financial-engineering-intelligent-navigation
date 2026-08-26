@@ -6,11 +6,12 @@ import {
 import { Check, Maximize2, X } from 'lucide-react';
 import Header from '../components/Header';
 import {
-  AI_ALERTS, ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL,
+  ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL,
   PORTFOLIO_TREND, STOCK_CONTRIBUTION, STOCK_INFO,
 } from '../data/holdings';
 import { useTradingData } from '../hooks/useTradingData';
 import { getPortfolioHistoryApi, type PortfolioHistoryPeriod, type PortfolioHistoryResponse } from '../lib/backendApi';
+import { getDisplayAlerts } from '../lib/rebalancing';
 import { getDisplayTransactions } from '../lib/transactions';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
@@ -133,9 +134,11 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
   const [hasSelectedHolding, setHasSelectedHolding] = useState(false);
   // 도넛 위에 마우스를 올린 조각 — 호버 중에는 고정된 선택보다 우선해서 도넛 중앙 라벨을 잠깐 바꿔 보여준다
   const [hoverHoldingIdx, setHoverHoldingIdx] = useState<number | null>(null);
+  // 실 계좌에 리밸런싱 제안이 있으면 그 값을, 없으면 목업을 쓴다 — lib/rebalancing.ts 참고
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
   // 우측 하단 "AI 실행 내역" 위젯에서 카드를 클릭하면 여는 사유 팝업 — id 로 열림 상태를 관리한다
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
-  const alertModal = AI_ALERTS.find((a) => a.id === alertModalId) ?? null;
+  const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
   // 차트 우상단 "크게 보기" 픽토그램 — 세 탭(요약/자산 변화/종목별 기여) 모두에서 쓰며,
   // 클릭 시 현재 tab 이 가리키는 차트를 그대로 훨씬 큰 크기의 팝업으로 다시 그린다.
   const [isChartZoomOpen, setIsChartZoomOpen] = useState(false);
@@ -492,11 +495,11 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
                       "더 알아보기"는 박스 밖이 아니라 박스 안 우하단에 둔다(self-end, 마지막 자식). */}
                   <div className="flex flex-col gap-2 rounded-[16px] bg-surface p-4">
                     <span className="text-xs font-semibold text-[#3F5222]">✦ AI가 자동으로 처리했어요</span>
-                    {AI_ALERTS.length === 0 ? (
+                    {displayAlerts.length === 0 ? (
                       <p className="text-xs text-subtle">최근 자동 실행 내역이 없어요.</p>
                     ) : (
                       <div className="grid grid-cols-3 gap-2">
-                        {AI_ALERTS.slice(0, 3).map((a) => (
+                        {displayAlerts.slice(0, 3).map((a) => (
                           <button
                             key={a.id}
                             onClick={() => setAlertModalId(a.id)}

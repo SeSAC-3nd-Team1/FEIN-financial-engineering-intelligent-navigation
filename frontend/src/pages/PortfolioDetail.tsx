@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import Header from '../components/Header';
 import {
-  AI_ALERTS, ALL_HOLDINGS as MOCK_HOLDINGS, AUTO_VS_MANUAL, DECISION_SUMMARY,
-  HOLD_TOTAL as MOCK_HOLD_TOTAL, PAST_DECISIONS, STOCK_INFO,
+  ALL_HOLDINGS as MOCK_HOLDINGS, AUTO_VS_MANUAL,
+  HOLD_TOTAL as MOCK_HOLD_TOTAL, STOCK_INFO,
 } from '../data/holdings';
 import { toAccountOperationMode } from '../data/fees';
 import { STRATEGIES } from '../data/strategies';
 import { useTradingData } from '../hooks/useTradingData';
+import { getDisplayDecisions, type DisplayDecisionSummary } from '../lib/decisions';
+import { getDisplayAlerts } from '../lib/rebalancing';
 import { getDisplayTransactions } from '../lib/transactions';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
@@ -54,8 +56,11 @@ export default function PortfolioDetail({
   const logout = useAuthStore((state) => state.logout);
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
+  const decisions = useTradingStore((state) => state.decisions);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
   const activeMode = useInvestmentStore((state) => state.activeMode);
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+  const displayDecisions: DisplayDecisionSummary = useMemo(() => getDisplayDecisions(decisions), [decisions]);
 
   // 전략 변경 모달 상태
   const [isModalOpen, setModalOpen] = useState(false);
@@ -79,7 +84,7 @@ export default function PortfolioDetail({
   // "왜 지금인가요?" — 보유 종목 배지를 누르면 여는 AI 제안 사유 모달. AI 제안 카드 자체는
   // "조정 제안/손절 조치 확인하기" 시트가 같은 내용(사유+조치)을 보여줘 중복이라 별도 버튼을 두지 않는다.
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
-  const alertModal = AI_ALERTS.find((a) => a.id === alertModalId) ?? null;
+  const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
 
   // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — Portfolio.tsx(PowerBI)와 동일한 대체 규칙.
   // 실 포지션에는 investor-facing 메타(섹터/AI 편입 사유 등)가 없어 STOCK_INFO 코드로 목업과 매칭해 보완한다.
@@ -126,12 +131,14 @@ export default function PortfolioDetail({
   // 어떤 결정을 내렸는지 세션 동안 기억한다 — 백엔드에 실행 로직이 없는 목업이라 서버에 반영하진 않지만,
   // 카드/시트에 결정이 그대로 보여야 두 버튼이 "모달만 닫는 동일 동작"으로 보이지 않는다.
   const [alertDecisions, setAlertDecisions] = useState<Record<string, 'adjusted' | 'held'>>({});
-  const rebalanceAlert = AI_ALERTS.find((a) => a.id === rebalanceSheetId) ?? null;
+  const rebalanceAlert = displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
   const rebalanceHolding = rebalanceAlert ? ALL_HOLDINGS.find((h) => h.name === rebalanceAlert.stockName) : undefined;
-  const rebalanceTargetPct = rebalanceHolding ? rebalanceHolding.target ?? rebalanceHolding.pct : 0;
-  const rebalanceAdjustAmount = rebalanceHolding
-    ? Math.round((HOLD_TOTAL * (rebalanceHolding.pct - rebalanceTargetPct)) / 100)
-    : 0;
+  // 실 제안이면 API가 이미 계산해 준 현재/목표 비중·조정금액을 그대로 쓴다 — 목업일 때만 보유 종목 목록에서
+  // 같은 이름을 찾아(이름 매칭이라 실패할 수 있음) 대신 파생시킨다.
+  const rebalanceCurrentPct = rebalanceAlert?.currentWeight ?? (rebalanceHolding ? rebalanceHolding.pct : 0);
+  const rebalanceTargetPct = rebalanceAlert?.targetWeight ?? (rebalanceHolding ? rebalanceHolding.target ?? rebalanceHolding.pct : 0);
+  const rebalanceAdjustAmount = rebalanceAlert?.recommendedAmount
+    ?? (rebalanceHolding ? Math.round((HOLD_TOTAL * (rebalanceHolding.pct - rebalanceTargetPct)) / 100) : 0);
 
   // 보유 종목 미리보기 — 비중이 큰 상위 5개만 보여주고, 전체 목록은 별도 페이지(/all-holdings)로 뺀다.
   const previewHoldings = useMemo(() => [...gains].sort((a, b) => b.pct - a.pct).slice(0, 5), [gains]);
@@ -145,6 +152,7 @@ export default function PortfolioDetail({
         userName={userName}
         onNavigate={onNavigate}
         onBack={() => setView('main')}
+        decisions={displayDecisions}
       />
     );
   }
@@ -204,9 +212,9 @@ export default function PortfolioDetail({
             </button>
           </section>
 
-          {/* AI 손절/리밸런싱 제안 — 백엔드에 판단 로직이 아직 없어 목업이다.
+          {/* AI 손절/리밸런싱 제안 — 실 계좌에 제안이 있으면 그 값을, 없으면 목업을 쓴다(lib/rebalancing.ts).
               "조정 제안/손절 조치 확인하기"를 누르면 사유+조치 시트가 열린다 */}
-          {AI_ALERTS.length > 0 && (
+          {displayAlerts.length > 0 && (
             <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
               <div className="flex items-baseline justify-between">
                 <div className="flex flex-col gap-2.5">
@@ -216,7 +224,7 @@ export default function PortfolioDetail({
                 <button onClick={() => onNavigate('rebalance-alerts')} className="text-base font-semibold text-navy">더보기 →</button>
               </div>
               <div className="flex flex-col gap-4">
-                {AI_ALERTS.slice(0, 3).map((a) => {
+                {displayAlerts.slice(0, 3).map((a) => {
                   const decision = alertDecisions[a.id];
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-6 rounded-[20px] bg-canvas px-9 py-7">
@@ -259,7 +267,7 @@ export default function PortfolioDetail({
             <div className="flex flex-col">
               {previewHoldings.map((h) => {
                 const stockCode = STOCK_INFO[h.name]?.code;
-                const alert = AI_ALERTS.find((a) => a.stockName === h.name);
+                const alert = displayAlerts.find((a) => a.stockName === h.name);
                 return (
                   <button
                     key={h.name}
@@ -347,35 +355,30 @@ export default function PortfolioDetail({
           </section>
 
           {/* "내 투자 판단은 어땠을까요?" — 요약 카드. 상세 회고는 "지난 판단 돌아보기"에서 서브뷰로 전환한다.
-              백엔드에 판단 기록 API 가 없어 목업이다. */}
+              실 계좌에 리밸런싱 판단 이력이 있으면 그 값을, 없으면 목업을 쓴다(lib/decisions.ts). */}
           <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
             <div className="flex flex-col gap-3.5">
               <h2 className="text-[26px] font-bold tracking-[-0.025em]">내 투자 판단은 어땠을까요?</h2>
               <p className="text-lg leading-[30px] text-muted">
-                AI 제안을 따랐을 때와 내가 선택한 결과를 함께 돌아볼 수 있어요.
+                최근 리밸런싱 제안에 어떻게 대응했는지, 그 결과를 확인할 수 있어요.
               </p>
             </div>
-            <div className="flex flex-col gap-3">
-              <span className="text-[15px] text-muted">지난 리밸런싱 제안</span>
-              <div className="flex items-center gap-3.5 text-[19px] text-[#3F4A43]">
-                <span>AI 제안 <b>{PAST_DECISIONS[0].action}</b></span>
-                <span className="text-[#A6AFA7]">·</span>
-                <span>내 선택 <b>{PAST_DECISIONS[0].choice === '수락' ? '수락함' : '하지 않음 (보류)'}</b></span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                <span className="text-[15px] text-muted">AI 제안을 따랐다면</span>
-                <span className="text-[26px] font-bold tracking-[-0.03em] text-up">{PAST_DECISIONS[0].result}</span>
-              </div>
-              <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                <span className="text-[15px] text-muted">실제 내 선택</span>
-                <span className="text-[26px] font-bold tracking-[-0.03em] text-down">현재 자산 -3,800원</span>
-              </div>
-            </div>
-            <p className="text-[17px] leading-7 text-muted">
-              이번에는 AI 제안을 따랐을 때 변동성이 조금 더 낮았어요.
-            </p>
+            {displayDecisions.items.length > 0 && (
+              <>
+                <div className="flex flex-col gap-3">
+                  <span className="text-[15px] text-muted">지난 리밸런싱 제안</span>
+                  <div className="flex items-center gap-3.5 text-[19px] text-[#3F4A43]">
+                    <span>AI 제안 <b>{displayDecisions.items[0].action}</b></span>
+                    <span className="text-[#A6AFA7]">·</span>
+                    <span>내 선택 <b>{displayDecisions.items[0].choice === '수락' ? '수락함' : '하지 않음 (보류)'}</b></span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
+                  <span className="text-[15px] text-muted">결과</span>
+                  <span className="text-[26px] font-bold tracking-[-0.03em]">{displayDecisions.items[0].result}</span>
+                </div>
+              </>
+            )}
             <button
               onClick={() => setView('review')}
               className="self-start text-base font-semibold text-navy"
@@ -456,7 +459,7 @@ export default function PortfolioDetail({
 
       {/* Dashboard.tsx 병합 — 리밸런싱 "조정 전/후" 상세 시트. 손절 제안은 목표 비중 개념이 없어
           같은 시트에서 "현재→조정후" 비교 대신 AI 제안 액션을 보여준다. "조정 제안/손절 조치 확인하기" 클릭 시 연다. */}
-      {rebalanceAlert && rebalanceHolding && (
+      {rebalanceAlert && (
         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8" onClick={() => setRebalanceSheetId(null)}>
           <div className="flex w-[720px] flex-col gap-7 rounded-card bg-surface p-12" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-6">
@@ -472,8 +475,8 @@ export default function PortfolioDetail({
               <div className="flex items-center gap-6 rounded-[18px] bg-canvas px-8 py-7">
                 <div className="flex flex-1 flex-col gap-2">
                   <span className="text-[15px] text-muted">현재</span>
-                  <span className="text-[28px] font-bold tracking-[-0.03em] text-warn">{rebalanceHolding.pct.toFixed(1)}%</span>
-                  <div className="h-2.5 rounded-full bg-[#E5E9E3]"><div className="h-2.5 rounded-full bg-warn" style={{ width: `${rebalanceHolding.pct}%` }} /></div>
+                  <span className="text-[28px] font-bold tracking-[-0.03em] text-warn">{rebalanceCurrentPct.toFixed(1)}%</span>
+                  <div className="h-2.5 rounded-full bg-[#E5E9E3]"><div className="h-2.5 rounded-full bg-warn" style={{ width: `${rebalanceCurrentPct}%` }} /></div>
                 </div>
                 <span className="text-2xl text-[#A6AFA7]">→</span>
                 <div className="flex flex-1 flex-col gap-2">
@@ -544,9 +547,12 @@ export default function PortfolioDetail({
   );
 }
 
-/** PDF Page 5 — "내 투자 판단 돌아보기" 서브뷰. 라우터가 생기면 `/portfolio/review` 로 그대로 옮길 수 있다 */
-function ReviewView({ userName, onNavigate, onBack }: { userName: string; onNavigate: (s: Screen) => void; onBack: () => void }) {
-  const maxVol = Math.max(DECISION_SUMMARY.volIfFollowed, DECISION_SUMMARY.volActual);
+/** PDF Page 5 — "내 투자 판단 돌아보기" 서브뷰. 라우터가 생기면 `/portfolio/review` 로 그대로 옮길 수 있다.
+ *  변동성 비교(AI 제안을 따랐을 때 vs 실제 선택)는 실 API에 그 개념 자체가 없어(수익률만 제공) 뺐다 —
+ *  리밸런싱 모델이 그런 지표를 내려주기 시작하면 다시 넣을 수 있다. */
+function ReviewView({
+  userName, onNavigate, onBack, decisions,
+}: { userName: string; onNavigate: (s: Screen) => void; onBack: () => void; decisions: DisplayDecisionSummary }) {
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -567,32 +573,23 @@ function ReviewView({ userName, onNavigate, onBack }: { userName: string; onNavi
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
             <div className="flex items-center justify-between">
               <h2 className="text-[22px] font-bold tracking-[-0.025em]">요약 통계</h2>
-              <span className="rounded-full bg-[#F4F6F1] px-4 py-2 text-sm font-semibold text-[#3F4A43]">{DECISION_SUMMARY.periodLabel}</span>
+              <span className="rounded-full bg-[#F4F6F1] px-4 py-2 text-sm font-semibold text-[#3F4A43]">{decisions.periodLabel}</span>
             </div>
             <div className="grid grid-cols-3 gap-8">
-              <Stat label="AI 제안" value={`${DECISION_SUMMARY.proposed}회`} />
-              <Stat label="수락" value={`${DECISION_SUMMARY.accepted}회`} />
-              <Stat label="보류" value={`${DECISION_SUMMARY.held}회`} />
+              <Stat label="AI 제안" value={`${decisions.proposed}회`} />
+              <Stat label="수락" value={`${decisions.accepted}회`} />
+              <Stat label="보류" value={`${decisions.held}회`} />
             </div>
-          </section>
-
-          <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
-            <h2 className="text-[22px] font-bold tracking-[-0.025em]">AI 제안을 따랐을 때 vs 내 실제 선택</h2>
-            <div className="grid grid-cols-2 gap-10">
-              <VolBar label="AI 제안을 따랐을 때" value={DECISION_SUMMARY.volIfFollowed} max={maxVol} good />
-              <VolBar label="내 실제 선택" value={DECISION_SUMMARY.volActual} max={maxVol} />
-            </div>
-            <Insight>이번 기간에는 AI 제안을 따랐을 때 포트폴리오의 변동성이 조금 더 낮았어요.</Insight>
           </section>
 
           <section className="flex flex-col gap-5 rounded-card bg-surface p-12">
             <div className="flex items-baseline justify-between">
               <h2 className="text-[22px] font-bold tracking-[-0.025em]">최근 판단 기록</h2>
-              <span className="text-[15px] text-subtle">최근 {PAST_DECISIONS.length}건</span>
+              <span className="text-[15px] text-subtle">최근 {decisions.items.length}건</span>
             </div>
             <div className="flex flex-col">
-              {PAST_DECISIONS.map((d) => (
-                <div key={d.date} className="flex items-center gap-6 border-b border-line py-5 last:border-0">
+              {decisions.items.map((d) => (
+                <div key={d.id} className="flex items-center gap-6 border-b border-line py-5 last:border-0">
                   <span className="w-24 shrink-0 text-[14px] text-subtle">{d.date}</span>
                   <span className="flex-1 text-[17px] font-semibold text-[#3F4A43]">{d.action}</span>
                   <span
@@ -628,26 +625,6 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="flex flex-col gap-2">
       <span className="text-[15px] text-muted">{label}</span>
       <span className="text-[32px] font-bold tracking-[-0.03em]">{value}</span>
-    </div>
-  );
-}
-
-function VolBar({ label, value, max, good }: { label: string; value: number; max: number; good?: boolean }) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between">
-        <span className="text-[17px] font-semibold text-[#3F4A43]">{label}</span>
-        <span className="text-[22px] font-bold tracking-[-0.02em]">{value.toFixed(1)}%</span>
-      </div>
-      <div className="h-2.5 rounded-full bg-[#E5E9E3]">
-        <div
-          className={`h-2.5 rounded-full ${good ? 'bg-lime' : 'bg-[#C3CBC4]'}`}
-          style={{ width: `${(value / max) * 100}%` }}
-        />
-      </div>
-      <span className="text-[15px] text-muted">
-        변동성 지표가 상대적으로 {good ? '낮은' : '높은'} 편이에요.
-      </span>
     </div>
   );
 }
