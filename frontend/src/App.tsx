@@ -839,6 +839,7 @@ export default function App() {
           strategyId={strategyId}
           onNavigate={navigate}
           onBack={() => setScreen('portfolio-detail')}
+          isAutoMode={activeMode === 'auto'}
         />
       )}
 
