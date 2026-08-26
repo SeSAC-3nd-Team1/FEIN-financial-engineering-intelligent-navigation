@@ -26,6 +26,10 @@ interface Props {
   onNavigate: (s: Screen) => void;
   onSelectStock: (stockCode: string) => void;
   onSelectTransaction: (id: string) => void;
+  /** "더보기" — AI 손절·리밸런싱 제안 전체 목록(rebalance-alerts)으로 이동한다. onNavigate 대신 별도 prop을
+   *  두는 이유는, 그 화면의 "돌아가기"가 진입 지점(Portfolio/PortfolioAuto 요약 위젯 vs 여기)에 따라
+   *  달라져야 해서 App.tsx가 이동과 함께 back target을 같이 기록해야 하기 때문이다. */
+  onOpenRebalanceAlerts: () => void;
   /** 모달의 "다시 진단하기" — 투자성향 진단으로 되돌린다 */
   onRediagnose: () => void;
   /** 상단 "돌아가기" — PowerBI 컨테이너만 있는 `/portfolio` 로 되돌아간다 */
@@ -64,7 +68,8 @@ type ComparisonState =
  *  오늘의 스토리, 전략 설정, AI 손절·리밸런싱 제안(목업), 보유 종목, 거래 내역(실 체결), 자동매매 비교(실 API), 판단 회고(목업).
  *  매매 방식(반자동/전체자동) 토글은 백엔드에 그런 구분이 없어 넣지 않았다 — PR #57 에서도 같은 이유로 제거된 것으로 보인다. */
 export default function PortfolioDetail({
-  userName, strategyId, onStrategyChange, onNavigate, onSelectStock, onSelectTransaction, onRediagnose, onBack,
+  userName, strategyId, onStrategyChange, onNavigate, onSelectStock, onSelectTransaction, onOpenRebalanceAlerts,
+  onRediagnose, onBack,
 }: Props) {
   const token = useTradingData();
   const logout = useAuthStore((state) => state.logout);
@@ -259,7 +264,7 @@ export default function PortfolioDetail({
                   <span className="text-base font-semibold text-[#3F5222]">✦ AI의 리밸런싱 제안</span>
                   <h2 className="text-[26px] font-bold tracking-[-0.025em]">지금 확인해야 할 손절·리밸런싱 제안이 있어요</h2>
                 </div>
-                <button onClick={() => onNavigate('rebalance-alerts')} className="text-base font-semibold text-navy">더보기 →</button>
+                <button onClick={onOpenRebalanceAlerts} className="text-base font-semibold text-navy">더보기 →</button>
               </div>
               <div className="flex flex-col gap-4">
                 {displayAlerts.slice(0, 3).map((a) => {
