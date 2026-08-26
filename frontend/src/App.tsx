@@ -27,7 +27,7 @@ import TransactionHistory from './pages/TransactionHistory';
 import { STRATEGIES } from './data/strategies';
 import { toAccountOperationMode, type OperationMode } from './data/fees';
 import { analyzeInvestorProfileApi, signupTermsApi } from './lib/backendApi';
-import { buildInvestorAnswerPayload } from './lib/investorProfile';
+import { buildInvestorAnswerPayload, computeInvestorProfile, mapInvestorProfileResponse } from './lib/investorProfile';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
@@ -102,6 +102,9 @@ export default function App() {
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
+  // 투자자 정보 확인(risk) 완료 버튼을 누른 뒤 백엔드 분석 응답을 기다리는 동안 true — 이 결과가
+  // RiskResult/재로그인 복원의 Source of Truth이므로, 응답이 오기 전까지는 화면을 넘기지 않는다.
+  const [isDiagnosisSubmitting, setIsDiagnosisSubmitting] = useState(false);
   // 투자 시작 Flow(약관 → 계좌 준비 → 입금 → 최종 확인) 동안 유지해야 하는 선택 금액/운용방식
   // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
   const [investmentAmount, setInvestmentAmount] = useState(1_000_000);
@@ -364,20 +367,30 @@ export default function App() {
       {screen === 'risk' && (
         <RiskProfile
           notice={riskNotice}
-          onComplete={({ investorType, answers }) => {
-            completeInvestorProfile(investorType, answers, new Date().toISOString());
+          isSubmitting={isDiagnosisSubmitting}
+          onComplete={async (answers) => {
+            setIsDiagnosisSubmitting(true);
+            // 백엔드 AI 분석(investor_profile_assessments)이 Source of Truth다 — RiskResult와 재로그인
+            // 복원(hydrateInvestorProfile)이 모두 이 결과를 그대로 쓴다. 로컬 computeInvestorProfile()은
+            // 토큰이 없거나(이 화면은 로그인 후에만 진입하므로 사실상 발생하지 않음) API 호출이 실패했을
+            // 때만 쓰는 fallback이다.
+            let profile = computeInvestorProfile(answers);
+            if (accessToken) {
+              try {
+                const response = await analyzeInvestorProfileApi(
+                  { questionnaire_version: 'v1', answers: buildInvestorAnswerPayload(answers) },
+                  accessToken,
+                );
+                profile = mapInvestorProfileResponse(response);
+              } catch {
+                // AI_PERSONALIZATION 약관 비동의/일시 오류 — 로컬 계산 결과로 흐름을 이어간다.
+              }
+            }
+            completeInvestorProfile(profile, answers, new Date().toISOString());
+            setIsDiagnosisSubmitting(false);
             setRiskNotice(undefined);
             setScreen(postDiagnosisTarget);
             setPostDiagnosisTarget('risk-result');
-            // 백엔드에도 실제로 저장을 시도한다(investor_profile_assessments) — AI 분석이라 시간이
-            // 걸리고, AI_PERSONALIZATION 약관 비동의/일시 오류로 실패할 수도 있다. 화면 전환은 이미
-            // 위에서 로컬 결과로 끝났으니, 실패해도 사용자 흐름을 막지 않는 best-effort 로 둔다.
-            if (accessToken) {
-              void analyzeInvestorProfileApi(
-                { questionnaire_version: 'v1', answers: buildInvestorAnswerPayload(answers) },
-                accessToken,
-              ).catch(() => undefined);
-            }
           }}
           onExit={() => setScreen('home')}
         />

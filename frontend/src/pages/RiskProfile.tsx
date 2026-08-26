@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { RISK_QUESTIONS } from '../data/riskQuestions';
-import { computeInvestorProfile } from '../lib/investorProfile';
 
 interface Props {
-  onComplete: (result: { investorType: string; answers: number[] }) => void;
+  /** 백엔드 분석 결과가 Source of Truth이므로, 여기서는 답변만 넘기고 유형 판정은 호출부(App.tsx)에서 한다. */
+  onComplete: (answers: number[]) => void;
   onExit: () => void;
   /** 실제 투자 시작 등 특정 목적으로 진입했을 때 상단에 보여줄 안내 문구 */
   notice?: string;
+  /** onComplete 이후 백엔드 분석 응답을 기다리는 동안 true — 완료 버튼을 비활성화하고 로딩 문구를 보여준다 */
+  isSubmitting?: boolean;
 }
 
 type Phase = 'intro' | 'question' | 'done' | 'review';
@@ -16,7 +18,7 @@ type Phase = 'intro' | 'question' | 'done' | 'review';
 const REVIEW_GROUPS = Array.from(new Set(RISK_QUESTIONS.map((q) => q.reviewGroup)));
 
 /** 투자자 정보 확인 — 인트로 → 8문항(한 화면 한 질문) → 완료 → 답변 확인(Review) */
-export default function RiskProfile({ onComplete, onExit, notice }: Props) {
+export default function RiskProfile({ onComplete, onExit, notice, isSubmitting }: Props) {
   const [phase, setPhase] = useState<Phase>('intro');
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<(number | null)[]>(Array(RISK_QUESTIONS.length).fill(null));
@@ -59,8 +61,7 @@ export default function RiskProfile({ onComplete, onExit, notice }: Props) {
 
   const finish = () => {
     const finalAnswers = answers as number[]; // 모든 문항 응답 완료 후에만 도달 가능
-    const { type } = computeInvestorProfile(finalAnswers);
-    onComplete({ investorType: type, answers: finalAnswers });
+    onComplete(finalAnswers);
   };
 
   return (
@@ -200,8 +201,12 @@ export default function RiskProfile({ onComplete, onExit, notice }: Props) {
             ))}
           </div>
 
-          <button onClick={finish} className="rounded-field bg-lime py-5 text-[19px] font-bold text-navy">
-            이 내용으로 결과 확인하기
+          <button
+            onClick={finish}
+            disabled={isSubmitting}
+            className="rounded-field bg-lime py-5 text-[19px] font-bold text-navy disabled:cursor-default disabled:bg-[#E8EBE5] disabled:text-[#A6AFA7]"
+          >
+            {isSubmitting ? '결과 분석 중...' : '이 내용으로 결과 확인하기'}
           </button>
         </main>
       )}

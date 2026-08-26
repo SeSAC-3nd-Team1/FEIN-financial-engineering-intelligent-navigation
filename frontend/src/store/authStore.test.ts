@@ -63,21 +63,33 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
 
     await useAuthStore.getState().login('a', 'pw');
     await flush();
-    expect(useAuthStore.getState().investorProfileCompleted).toBe(true);
-    expect(useAuthStore.getState().investorType).toBe('안정추구형');
+    const hydrated = useAuthStore.getState();
+    expect(hydrated.investorProfileCompleted).toBe(true);
+    expect(hydrated.investorType).toBe('안정추구형');
+    // 백엔드 응답이 Source of Truth — RiskResult/InvestorProfileCheck가 쓰는 나머지 필드도 그대로 매핑돼야 한다.
+    expect(hydrated.investorTendencyLine).toBe('지키는 것을 중요하게 생각해요');
+    expect(hydrated.investorDescription).toBe('설명');
+    expect(hydrated.investorTraits).toEqual({ stability: 5, returnSeeking: 1, horizon: 1 });
 
     await useAuthStore.getState().logout();
     const state = useAuthStore.getState();
     expect(state.investorProfileCompleted).toBe(false);
     expect(state.investorProfileCompletedAt).toBeNull();
     expect(state.investorType).toBeNull();
+    expect(state.investorTendencyLine).toBeNull();
+    expect(state.investorDescription).toBeNull();
+    expect(state.investorTraits).toBeNull();
     expect(state.investorAnswers).toBeNull();
     expect(state.isInvestorProfileHydrating).toBe(false);
   });
 
   it('인증 실패(initialize)로 로그아웃되는 경우에도 투자성향 상태가 초기화된다', async () => {
     // completeInvestorProfile 로 로컬에만 값을 채운 뒤(예: 방금 진단 완료), 토큰 만료로 initialize() 가 실패하는 상황
-    useAuthStore.getState().completeInvestorProfile('공격투자형', [0, 1, 2], '2026-01-01T00:00:00Z');
+    useAuthStore.getState().completeInvestorProfile(
+      { type: '공격투자형', tendencyLine: '', description: '', traits: { stability: 1, returnSeeking: 5, horizon: 5 } },
+      [0, 1, 2],
+      '2026-01-01T00:00:00Z',
+    );
     useAuthStore.setState({ accessToken: 'expired-token' });
     vi.mocked(currentUserApi).mockRejectedValue(new Error('401'));
 

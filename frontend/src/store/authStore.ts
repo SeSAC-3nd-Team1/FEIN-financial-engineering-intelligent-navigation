@@ -3,6 +3,7 @@ import {
   currentUserApi, latestInvestorProfileApi, loginApi, logoutApi, signupApi, TOKEN_STORAGE_KEY,
   type AuthUser, type SignupPayload,
 } from '../lib/backendApi';
+import { mapInvestorProfileResponse, type InvestorProfileResult } from '../lib/investorProfile';
 
 interface AuthState {
   isLoggedIn: boolean;
@@ -12,6 +13,11 @@ interface AuthState {
   investorProfileCompleted: boolean;
   investorProfileCompletedAt: string | null;
   investorType: string | null;
+  investorTendencyLine: string | null;
+  investorDescription: string | null;
+  investorTraits: InvestorProfileResult['traits'] | null;
+  /** 이번 세션에서 방금 진단을 마쳤을 때만 채워진다 — 재로그인으로 복원된 경우 백엔드가 원문 답변을
+   *  내려주지 않으므로 항상 null 이다(InvestorProfileCheck 는 이 경우 관련 행을 숨긴다). */
   investorAnswers: number[] | null;
   /** /investor-profile/me/latest 조회가 진행 중인 동안 true — 이 값이 true 인 동안은 화면(Portfolio.tsx 등)이
    *  investorProfileCompleted=false 를 "진짜 미진단"으로 오판하지 않아야 한다(조회가 끝나기 전 스냅샷일 뿐이므로). */
@@ -20,7 +26,7 @@ interface AuthState {
   login: (userId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   register: (payload: SignupPayload) => Promise<void>;
-  completeInvestorProfile: (type: string, answers: number[], completedAt: string) => void;
+  completeInvestorProfile: (profile: InvestorProfileResult, answers: number[], completedAt: string) => void;
   resetInvestorProfile: () => void;
 }
 
@@ -37,8 +43,21 @@ const INVESTOR_PROFILE_RESET = {
   investorProfileCompleted: false,
   investorProfileCompletedAt: null,
   investorType: null,
+  investorTendencyLine: null,
+  investorDescription: null,
+  investorTraits: null,
   investorAnswers: null,
 } satisfies Partial<AuthState>;
+
+/** InvestorProfileResult(화면 공용 모양) → AuthState 의 flat 필드로 펼친다. */
+function toInvestorProfileFields(profile: InvestorProfileResult) {
+  return {
+    investorType: profile.type,
+    investorTendencyLine: profile.tendencyLine,
+    investorDescription: profile.description,
+    investorTraits: profile.traits,
+  } satisfies Partial<AuthState>;
+}
 
 /** 로그인 직후/새로고침 복원 시 이미 저장된 투자성향 진단이 있으면 investorProfileCompleted 를 되살린다.
  *  이 값은 완료 즉시(completeInvestorProfile) 로컬에서도 true 가 되지만, 백엔드에 저장은 되어도
@@ -61,7 +80,7 @@ async function hydrateInvestorProfile(
     set({
       investorProfileCompleted: true,
       investorProfileCompletedAt: profile.created_at,
-      investorType: profile.profile_type,
+      ...toInvestorProfileFields(mapInvestorProfileResponse(profile)),
       isInvestorProfileHydrating: false,
     });
   } catch {
@@ -119,10 +138,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await get().login(payload.user_id, payload.password);
   },
 
-  completeInvestorProfile: (type, answers, completedAt) => set({
+  completeInvestorProfile: (profile, answers, completedAt) => set({
     investorProfileCompleted: true,
     investorProfileCompletedAt: completedAt,
-    investorType: type,
+    ...toInvestorProfileFields(profile),
     investorAnswers: answers,
   }),
   resetInvestorProfile: () => set({ investorProfileCompleted: false }),
