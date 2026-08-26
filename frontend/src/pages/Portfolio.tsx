@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Sector, Tooltip, XAxis, YAxis,
@@ -6,10 +6,12 @@ import {
 import { Maximize2, X } from 'lucide-react';
 import Header from '../components/Header';
 import {
-  AI_ALERTS, ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL,
+  ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL,
   PORTFOLIO_TREND, STOCK_CONTRIBUTION, STOCK_INFO,
 } from '../data/holdings';
 import { useTradingData } from '../hooks/useTradingData';
+import { getPortfolioHistoryApi, type PortfolioHistoryPeriod, type PortfolioHistoryResponse } from '../lib/backendApi';
+import { getDisplayAlerts } from '../lib/rebalancing';
 import { getDisplayTransactions } from '../lib/transactions';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
@@ -55,13 +57,15 @@ const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: 'contribution', label: '종목별 기여' },
 ];
 
-// n:1 이면 라인 차트에 점이 하나뿐이라(dot={false}) 아무것도 안 보인다 — 최소 2개 포인트를 보장한다.
-const TREND_PERIODS = [
-  { label: '1개월', n: 2 },
-  { label: '3개월', n: 3 },
-  { label: '1년', n: PORTFOLIO_TREND.length },
-  { label: '전체', n: PORTFOLIO_TREND.length },
-] as const;
+// 실 계좌가 있으면 GET /portfolio/history 가 기간별로 직접 필터링해서 내려준다(서버 사이드 기간 필터).
+// 실 계좌가 없을 때만 목업 PORTFOLIO_TREND 를 포인트 개수로 잘라 쓴다 — n:1 이면 라인 차트에 점이
+// 하나뿐이라(dot={false}) 아무것도 안 보이니 최소 2개 포인트를 보장한다.
+const TREND_PERIODS: { label: string; value: PortfolioHistoryPeriod; mockN: number }[] = [
+  { label: '1개월', value: '1M', mockN: 2 },
+  { label: '3개월', value: '3M', mockN: 3 },
+  { label: '1년', value: '1Y', mockN: PORTFOLIO_TREND.length },
+  { label: '전체', value: 'ALL', mockN: PORTFOLIO_TREND.length },
+];
 
 /** 도넛(보유 비중) 색 — 선택된 조각만 라임, 나머지는 순환 셰이드 */
 const DONUT_SHADES = ['#18243A', '#2E4160', '#4A5F80', '#6C819E', '#8FA0B4', '#C3CBC4'];
@@ -117,6 +121,7 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
+  const accessToken = useAuthStore((state) => state.accessToken);
   // 미설정 유저 감지 — investorProfileCompleted(투자성향)는 로그인/새로고침마다 백엔드
   // (/investor-profile/me/latest)에서 다시 복원하는 값이라, 조회가 끝나기 전(isInvestorProfileHydrating)에는
   // 아직 false 인 게 "진짜 미진단"인지 "복원 중이라 아직 모르는 것"인지 구분할 수 없다. 그래서
@@ -166,16 +171,19 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
 
   // ── Power BI 스타일 분석 섹션 상태 ───────────────────────────────
   const [tab, setTab] = useState<AnalyticsTab>('weight');
-  const [periodIdx, setPeriodIdx] = useState(2); // 기본값 "1년"
+  const [historyPeriod, setHistoryPeriod] = useState<PortfolioHistoryPeriod>('1Y'); // 기본값 "1년"
+  const [history, setHistory] = useState<PortfolioHistoryResponse | null>(null);
   const [selectedHoldingIdx, setSelectedHoldingIdx] = useState(0);
   // 도넛을 실제로 클릭한 적이 있는지 — 클릭 전에는 중앙 라벨이 기본값("총 자산 100%")을 유지하다가,
   // 한 번 클릭하면 그 조각으로 고정된다(hasSelectedHolding 이 true 로 바뀐 뒤에는 selectedHoldingIdx 를 계속 보여준다).
   const [hasSelectedHolding, setHasSelectedHolding] = useState(false);
   // 도넛 위에 마우스를 올린 조각 — 호버 중에는 고정된 선택보다 우선해서 도넛 중앙 라벨을 잠깐 바꿔 보여준다
   const [hoverHoldingIdx, setHoverHoldingIdx] = useState<number | null>(null);
+  // 실 계좌에 리밸런싱 제안이 있으면 그 값을, 없으면 목업을 쓴다 — lib/rebalancing.ts 참고
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
   // 우측 하단 "AI 제안" 위젯에서 카드를 클릭하면 여는 사유 팝업 — id 로 열림 상태를 관리한다
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
-  const alertModal = AI_ALERTS.find((a) => a.id === alertModalId) ?? null;
+  const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
   // 차트 우상단 "크게 보기" 픽토그램 — 세 탭(요약/자산 변화/종목별 기여) 모두에서 쓰며,
   // 클릭 시 현재 tab 이 가리키는 차트를 그대로 훨씬 큰 크기의 팝업으로 다시 그린다.
   const [isChartZoomOpen, setIsChartZoomOpen] = useState(false);
@@ -184,14 +192,46 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
   // 가로 3칸 레이아웃이라 항상 최신 3건만 보여준다.
   const recentTransactions = useMemo(() => getDisplayTransactions(executions).slice(0, 3), [executions]);
 
-  // 자산 변화 탭: 선택된 기간만큼 최근 구간을 자른다 — 실 자산 이력 API 가 아직 없어 목업 추이를 그대로 쓴다
-  const trendData = useMemo(() => PORTFOLIO_TREND.slice(-TREND_PERIODS[periodIdx].n), [periodIdx]);
+  // 자산 변화 탭: 실 계좌가 있으면 GET /portfolio/history 를 선택된 기간으로 다시 조회한다(서버가 기간별로
+  // 필터링해 내려주므로 클라이언트에서 자를 필요가 없다). 계좌가 없거나 그 계좌에 아직 쌓인 이력이 없으면
+  // (신규 계좌) 목업 추이를 기존과 동일하게 포인트 개수로 잘라 보여준다.
+  useEffect(() => {
+    if (!account || !accessToken) { setHistory(null); return; }
+    let cancelled = false;
+    getPortfolioHistoryApi(account.id, historyPeriod, accessToken)
+      .then((r) => { if (!cancelled) setHistory(r); })
+      .catch(() => { if (!cancelled) setHistory(null); });
+    return () => { cancelled = true; };
+  }, [account, accessToken, historyPeriod]);
 
-  // 종목별 기여 탭: 큰 기여 순으로 정렬 — 역시 목업(실 기여도 산출 API 없음)
-  const contributionData = useMemo(
-    () => [...STOCK_CONTRIBUTION].sort((a, b) => b.amount - a.amount),
-    []
-  );
+  // 실 계좌가 있으면(account) 이력이 0건이어도 그 실제 결과를 그대로 쓴다 — history가 아직 응답을
+  // 못 받았을 때(요청 중)만 잠깐 빈 배열로 보이고, 없는 데이터를 mock으로 대신 채우지는 않는다.
+  // mock은 애초에 실 계좌 자체가 없을 때(account === null)만 쓴다.
+  const trendData = useMemo(() => {
+    if (account) {
+      return (history?.items ?? []).map((item) => ({
+        label: item.date.slice(5).replace('-', '.'),
+        port: Number(item.portfolio_return_rate),
+        // 벤치마크 값이 없는 것과 실제 수익률 0%는 다르다 — null을 0으로 바꾸지 않고 그대로 둬서
+        // 차트가 그 구간을 비워 그리게 한다(연결하지 않음).
+        kospi: item.benchmark_return_rate == null ? null : Number(item.benchmark_return_rate),
+      }));
+    }
+    const mockN = TREND_PERIODS.find((p) => p.value === historyPeriod)?.mockN ?? PORTFOLIO_TREND.length;
+    return PORTFOLIO_TREND.slice(-mockN);
+  }, [account, history, historyPeriod]);
+  const benchmarkName = history?.benchmark_name ?? 'KOSPI';
+
+  // 종목별 기여 탭: 실 계좌가 있으면(portfolio) 기여도가 0건이어도 그 실제 결과를 그대로 쓴다.
+  // mock은 실 계좌 자체가 없을 때(portfolio === null)만 쓴다.
+  const contributionData = useMemo(() => {
+    if (portfolio) {
+      return [...portfolio.contributions]
+        .map((c) => ({ name: c.stock_name ?? c.stock_code, amount: Number(c.amount) }))
+        .sort((a, b) => b.amount - a.amount);
+    }
+    return [...STOCK_CONTRIBUTION].sort((a, b) => b.amount - a.amount);
+  }, [portfolio]);
   const topContributor = contributionData[0];
 
   // 보유 비중 탭: 선택된 종목의 현재 비중 vs 전략 목표 비중
@@ -305,12 +345,12 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
     <div className={`flex flex-col gap-3 ${heightClass}`}>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2">
-          {TREND_PERIODS.map((p, i) => (
+          {TREND_PERIODS.map((p) => (
             <button
-              key={p.label}
-              onClick={() => setPeriodIdx(i)}
+              key={p.value}
+              onClick={() => setHistoryPeriod(p.value)}
               className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                i === periodIdx ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
+                p.value === historyPeriod ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
               }`}
             >
               {p.label}
@@ -318,7 +358,7 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
           ))}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-subtle">비교 기준 <b className="text-[#3F4A43]">KOSPI</b></span>
+          <span className="text-sm text-subtle">비교 기준 <b className="text-[#3F4A43]">{benchmarkName}</b></span>
           {onExpand && (
             <button
               aria-label="차트 크게 보기"
@@ -343,9 +383,10 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
               width={52}
               tickFormatter={(v: number) => `${v}%`}
             />
-            <Tooltip formatter={(v: number) => `${v}%`} />
+            <Tooltip formatter={(v) => v == null ? '데이터 없음' : `${v}%`} />
             <Legend iconType="plainline" wrapperStyle={{ fontSize: 13, color: '#5C665F' }} />
-            <Line type="monotone" dataKey="kospi" name="KOSPI" stroke="#C3CBC4" strokeWidth={3.5} dot={false} />
+            {/* connectNulls를 켜지 않는다 — benchmark_return_rate가 없는 구간은 값을 지어내지 않고 선을 끊어 보여준다 */}
+            <Line type="monotone" dataKey="kospi" name={benchmarkName} stroke="#C3CBC4" strokeWidth={3.5} dot={false} />
             <Line type="monotone" dataKey="port" name="내 포트폴리오" stroke="#18243A" strokeWidth={5} dot={false} />
           </LineChart>
         </ResponsiveContainer>
@@ -432,11 +473,22 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
                   <div className="flex h-full flex-col gap-3">
                     {/* "크게 보기" 버튼은 기간 선택 버튼들과 같은 헤더 줄(우측)에 있다(renderTrendChart 내부, onExpand) */}
                     {renderTrendChart('h-full', () => setIsChartZoomOpen(true))}
-                    <Insight compact>
-                      {trendData[trendData.length - 1].port >= trendData[trendData.length - 1].kospi
-                        ? '시장보다 덜 흔들리면서 더 높은 누적 수익을 내고 있어요.'
-                        : '최근 구간에서는 KOSPI가 더 좋았지만, 변동성은 여전히 낮게 유지되고 있어요.'}
-                    </Insight>
+                    {trendData.length === 0 ? (
+                      <Insight compact>아직 표시할 자산 변화 데이터가 없어요.</Insight>
+                    ) : (
+                      (() => {
+                        const last = trendData[trendData.length - 1];
+                        return (
+                          <Insight compact>
+                            {last.kospi == null
+                              ? '이 기간의 비교 벤치마크 데이터가 아직 없어요.'
+                              : last.port >= last.kospi
+                                ? '시장보다 덜 흔들리면서 더 높은 누적 수익을 내고 있어요.'
+                                : '최근 구간에서는 KOSPI가 더 좋았지만, 변동성은 여전히 낮게 유지되고 있어요.'}
+                          </Insight>
+                        );
+                      })()
+                    )}
                   </div>
                 )}
 
@@ -444,7 +496,9 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
                   <div className="flex h-full flex-col gap-3">
                     {/* "크게 보기" 버튼은 캡션 문구와 같은 헤더 줄(우측)에 있다(renderContributionChart 내부, onExpand) */}
                     {renderContributionChart('h-full', () => setIsChartZoomOpen(true))}
-                    <Insight compact>{topContributor.name}가 수익에 가장 많이 기여했어요.</Insight>
+                    <Insight compact>
+                      {topContributor ? `${topContributor.name}가 수익에 가장 많이 기여했어요.` : '아직 표시할 기여도 데이터가 없어요.'}
+                    </Insight>
                   </div>
                 )}
 
@@ -505,11 +559,11 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
                       "더 알아보기"는 박스 밖이 아니라 박스 안 우하단에 둔다(self-end, 마지막 자식). */}
                   <div className="flex flex-col gap-2 rounded-[16px] bg-surface p-4">
                     <span className="text-xs font-semibold text-[#3F5222]">✦ AI의 리밸런싱 제안</span>
-                    {AI_ALERTS.length === 0 ? (
+                    {displayAlerts.length === 0 ? (
                       <p className="text-xs text-subtle">지금은 확인할 제안이 없어요.</p>
                     ) : (
                       <div className="grid grid-cols-3 gap-2">
-                        {AI_ALERTS.slice(0, 3).map((a) => (
+                        {displayAlerts.slice(0, 3).map((a) => (
                           <button
                             key={a.id}
                             onClick={() => setAlertModalId(a.id)}

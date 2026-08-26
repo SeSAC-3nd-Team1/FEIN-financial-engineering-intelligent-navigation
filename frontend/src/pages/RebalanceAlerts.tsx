@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import Header from '../components/Header';
-import { AI_ALERTS, ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL, STOCK_INFO } from '../data/holdings';
+import { ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL, STOCK_INFO } from '../data/holdings';
 import { STRATEGIES } from '../data/strategies';
 import { useTradingData } from '../hooks/useTradingData';
+import { getDisplayAlerts } from '../lib/rebalancing';
 import { won } from '../lib/validation';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
@@ -22,11 +23,12 @@ const ALERT_BADGE: Record<'손절' | '리밸런싱', string> = {
 };
 
 /** `/rebalance-alerts` — AI 손절·리밸런싱 제안 전체 목록. PortfolioDetail "AI의 리밸런싱 제안"의 "더보기"에서 진입한다.
- *  백엔드에 아직 판단 로직이 없어 AI_ALERTS(목업)를 그대로 쓰고, 조정 비중 계산에만 실 계좌 보유 종목을 우선 사용한다. */
+ *  실 계좌에 리밸런싱 제안(규칙기반)이 있으면 그 값을, 없으면 AI_ALERTS(목업)를 그대로 쓴다 — lib/rebalancing.ts 참고. */
 export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBack }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
 
   // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — PortfolioDetail 과 동일한 대체 규칙.
   const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
@@ -52,12 +54,14 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
   // 시트의 두 액션("조정하기"/"이번에는 하지 않을게요")이 실제로 다른 결과를 남기도록, 제안 id별로
   // 어떤 결정을 내렸는지 세션 동안 기억한다 — PortfolioDetail 의 같은 위젯과 동일한 패턴.
   const [alertDecisions, setAlertDecisions] = useState<Record<string, 'adjusted' | 'held'>>({});
-  const rebalanceAlert = AI_ALERTS.find((a) => a.id === rebalanceSheetId) ?? null;
+  const rebalanceAlert = displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
   const rebalanceHolding = rebalanceAlert ? ALL_HOLDINGS.find((h) => h.name === rebalanceAlert.stockName) : undefined;
-  const rebalanceTargetPct = rebalanceHolding ? rebalanceHolding.target ?? rebalanceHolding.pct : 0;
-  const rebalanceAdjustAmount = rebalanceHolding
-    ? Math.round((HOLD_TOTAL * (rebalanceHolding.pct - rebalanceTargetPct)) / 100)
-    : 0;
+  // 실 제안이면 API가 이미 계산해 준 현재/목표 비중·조정금액을 그대로 쓴다 — 목업일 때만 보유 종목 목록에서
+  // 같은 이름을 찾아(이름 매칭이라 실패할 수 있음) 대신 파생시킨다.
+  const rebalanceCurrentPct = rebalanceAlert?.currentWeight ?? (rebalanceHolding ? rebalanceHolding.pct : 0);
+  const rebalanceTargetPct = rebalanceAlert?.targetWeight ?? (rebalanceHolding ? rebalanceHolding.target ?? rebalanceHolding.pct : 0);
+  const rebalanceAdjustAmount = rebalanceAlert?.recommendedAmount
+    ?? (rebalanceHolding ? Math.round((HOLD_TOTAL * (rebalanceHolding.pct - rebalanceTargetPct)) / 100) : 0);
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -70,14 +74,14 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
           <section className="flex flex-col gap-4">
             <span className="text-base font-semibold text-[#3F5222]">✦ AI의 리밸런싱 제안</span>
             <h1 className="text-[38px] font-bold leading-[52px] tracking-[-0.03em]">지금 확인해야 할 손절·리밸런싱 제안이 있어요</h1>
-            <span className="text-[17px] text-subtle">총 {AI_ALERTS.length}건</span>
+            <span className="text-[17px] text-subtle">총 {displayAlerts.length}건</span>
           </section>
 
           <section className="flex flex-col gap-4 rounded-card bg-surface p-6">
-            {AI_ALERTS.length === 0 ? (
+            {displayAlerts.length === 0 ? (
               <p className="px-6 py-10 text-center text-[17px] text-subtle">확인할 제안이 없어요.</p>
             ) : (
-              AI_ALERTS.map((a) => {
+              displayAlerts.map((a) => {
                 const decision = alertDecisions[a.id];
                 return (
                   <div key={a.id} className="flex items-center justify-between gap-6 rounded-[20px] bg-canvas px-9 py-7">
@@ -113,7 +117,7 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
 
       {/* 리밸런싱 "조정 전/후" 상세 시트 — 손절 제안은 목표 비중 개념이 없어 AI 제안 액션을 대신 보여준다.
           "조정 제안/손절 조치 확인하기" 클릭 시 연다 */}
-      {rebalanceAlert && rebalanceHolding && (
+      {rebalanceAlert && (
         <div className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8" onClick={() => setRebalanceSheetId(null)}>
           <div className="flex w-[720px] flex-col gap-7 rounded-card bg-surface p-12" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-6">
@@ -129,8 +133,8 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
               <div className="flex items-center gap-6 rounded-[18px] bg-canvas px-8 py-7">
                 <div className="flex flex-1 flex-col gap-2">
                   <span className="text-[15px] text-muted">현재</span>
-                  <span className="text-[28px] font-bold tracking-[-0.03em] text-warn">{rebalanceHolding.pct.toFixed(1)}%</span>
-                  <div className="h-2.5 rounded-full bg-[#E5E9E3]"><div className="h-2.5 rounded-full bg-warn" style={{ width: `${rebalanceHolding.pct}%` }} /></div>
+                  <span className="text-[28px] font-bold tracking-[-0.03em] text-warn">{rebalanceCurrentPct.toFixed(1)}%</span>
+                  <div className="h-2.5 rounded-full bg-[#E5E9E3]"><div className="h-2.5 rounded-full bg-warn" style={{ width: `${rebalanceCurrentPct}%` }} /></div>
                 </div>
                 <span className="text-2xl text-[#A6AFA7]">→</span>
                 <div className="flex flex-1 flex-col gap-2">

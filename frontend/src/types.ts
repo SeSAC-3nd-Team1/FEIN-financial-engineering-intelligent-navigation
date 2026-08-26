@@ -75,7 +75,9 @@ export interface TransactionRecord {
   status: '체결완료';
 }
 
-/** AI 손절/리밸런싱 제안 — 백엔드에 아직 판단 로직이 없어 목업으로만 존재한다 */
+/** AI 손절/리밸런싱 제안 — 실 계좌가 있으면 lib/rebalancing.ts가 PortfolioResponse.rebalancing_proposals(실
+ *  데이터, 규칙기반)로부터 이 모양을 만들어 채운다. 그 실데이터 경로는 항상 kind: '리밸런싱'만 쓴다 — 손절 판단은
+ *  아직 모델이 없어 서술형 reason과 함께 리밸런싱 모델이 붙기 전까지는 만들 수 없다(그때까지는 목업만 '손절'을 쓴다). */
 export interface AiAlert {
   id: string;
   stockName: string;
@@ -84,6 +86,11 @@ export interface AiAlert {
   headline: string;  // 제안 카드 한 줄 요약
   reason: string;    // "왜 지금인가요?" 모달 본문 — 근거
   action: string;    // 제안하는 구체적 조치
+  /** 실 데이터일 때만 채워진다 — 있으면 "조정 전/후" 시트가 이 값을 그대로 쓰고,
+   *  없으면(목업) 화면이 보유 종목 목록에서 같은 이름을 찾아 대신 파생시킨다. */
+  currentWeight?: number;
+  targetWeight?: number;
+  recommendedAmount?: number;
 }
 
 export interface TermDef {
