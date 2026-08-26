@@ -270,6 +270,53 @@ def test_dividend_rows_parse_common_and_preferred_without_double_counting() -> N
     assert preferred["dividend_per_share"] == Decimal("1550")
 
 
+def test_dividend_rows_keep_distinct_preferred_stock_classes() -> None:
+    payload = {
+        "list": [
+            {
+                "se": "현금배당수익률(%)",
+                "stock_knd": "1 우선주",
+                "thstrm": "2.1",
+            },
+            {
+                "se": "주당 현금배당금(원)",
+                "stock_knd": "1우선주",
+                "thstrm": "1,100",
+            },
+            {
+                "se": "현금배당수익률(%)",
+                "stock_knd": "2우선주",
+                "thstrm": "2.2",
+            },
+            {
+                "se": "주당 현금배당금(원)",
+                "stock_knd": "2우선주",
+                "thstrm": "1,200",
+            },
+        ]
+    }
+
+    rows = dividend_rows(
+        payload,
+        stock_code="000000",
+        corp_code="00000000",
+        business_year="2025",
+        report_code="11011",
+    )
+
+    assert len(rows) == 2
+    assert {row["raw_stock_kind"].replace(" ", "") for row in rows} == {
+        "1우선주",
+        "2우선주",
+    }
+    assert {row["stock_kind"] for row in rows} == {"1우선주", "2우선주"}
+    by_raw_kind = {row["raw_stock_kind"].replace(" ", ""): row for row in rows}
+    assert by_raw_kind["1우선주"]["dividend_per_share"] == Decimal("1100")
+    assert by_raw_kind["1우선주"]["reported_dividend_yield"] == Decimal("2.1")
+    assert by_raw_kind["2우선주"]["dividend_per_share"] == Decimal("1200")
+    assert by_raw_kind["2우선주"]["reported_dividend_yield"] == Decimal("2.2")
+
+
 def test_dividend_rows_do_not_fabricate_missing_values() -> None:
     rows = dividend_rows(
         {"list": [{"se": "주당 현금배당금(원)", "stock_knd": "보통주", "thstrm": "-"}]},
