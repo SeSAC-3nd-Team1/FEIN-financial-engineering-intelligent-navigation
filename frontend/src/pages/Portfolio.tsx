@@ -577,8 +577,9 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
                         ))}
                       </div>
                     )}
-                    {/* AI 제안 전체 목록은 portfolio-detail 에 있어 "자세히"와 동일한 목적지로 보낸다 */}
-                    <button onClick={onOpenDetail} className="self-end text-xs font-bold text-navy">
+                    {/* AI 제안 전체 목록은 rebalance-alerts 화면에 있다 — PortfolioDetail 의 같은 위젯과
+                        동일한 목적지(onNavigate('rebalance-alerts'))로 보낸다. */}
+                    <button onClick={() => onNavigate('rebalance-alerts')} className="self-end text-xs font-bold text-navy">
                       더 알아보기 →
                     </button>
                   </div>
