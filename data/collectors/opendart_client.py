@@ -64,7 +64,9 @@ def parse_corp_code_zip(content: bytes) -> list[CorpCodeRecord]:
                 if name.rsplit("/", 1)[-1].lower() == "corpcode.xml"
             ]
             if len(names) != 1:
-                raise OpenDartError("corpCode ZIP must contain exactly one CORPCODE.xml")
+                raise OpenDartError(
+                    "corpCode ZIP must contain exactly one CORPCODE.xml"
+                )
             xml_bytes = archive.read(names[0])
         root = ET.fromstring(xml_bytes)
     except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
@@ -122,7 +124,9 @@ class OpenDartClient:
         if self.rate_limiter is not None:
             self.rate_limiter()
             return
-        remaining = self.min_interval_seconds - (time.monotonic() - self._last_request_at)
+        remaining = self.min_interval_seconds - (
+            time.monotonic() - self._last_request_at
+        )
         if remaining > 0:
             time.sleep(remaining)
 
@@ -177,7 +181,11 @@ class OpenDartClient:
                 type(last_error).__name__,
             )
             response = getattr(last_error, "response", None)
-            retry_after = getattr(response, "headers", {}).get("Retry-After") if response else None
+            retry_after = (
+                getattr(response, "headers", {}).get("Retry-After")
+                if response
+                else None
+            )
             try:
                 delay = float(retry_after) if retry_after is not None else None
             except ValueError:
@@ -187,7 +195,9 @@ class OpenDartClient:
                 if delay is not None
                 else min(2 ** (attempt - 1), 8) + random.uniform(0, 0.25)
             )
-        raise OpenDartError(f"OpenDART request failed endpoint={endpoint}") from last_error
+        raise OpenDartError(
+            f"OpenDART request failed endpoint={endpoint}"
+        ) from last_error
 
     def download_corp_codes(self) -> bytes:
         """corpCode XML ZIP 원문을 반환한다."""
@@ -215,6 +225,27 @@ class OpenDartClient:
                 "bsns_year": business_year,
                 "reprt_code": report_code,
                 "fs_div": fs_div,
+            },
+        )
+
+    def dividends(
+        self,
+        corp_code: str,
+        business_year: str,
+        report_code: str = "11011",
+    ) -> OpenDartJsonResponse:
+        """배당에 관한 사항의 HTTP 원문과 검증된 payload를 반환한다."""
+
+        if len(corp_code) != 8 or not corp_code.isdigit():
+            raise ValueError("OpenDART corp_code must be 8 digits")
+        if len(business_year) != 4 or not business_year.isdigit():
+            raise ValueError("business_year must be YYYY")
+        return self._request(
+            "alotMatter.json",
+            {
+                "corp_code": corp_code,
+                "bsns_year": business_year,
+                "reprt_code": report_code,
             },
         )
 

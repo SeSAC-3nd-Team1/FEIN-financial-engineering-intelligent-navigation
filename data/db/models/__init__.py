@@ -12,10 +12,32 @@ from db.models.membership import (
     User,
     UserAgreement,
 )
-from db.models.trading import AccountDeposit, CashLedger, Execution, InvestmentOnboarding, Order, PortfolioSnapshot, Position, RebalancingDecision, Strategy, StrategyTargetWeight, VirtualAccount
-from db.models.opendart import Company, CompanyDisclosure, CompanyFinancial, CompanyFinancialAccount
+from db.models.trading import (
+    AccountDeposit,
+    CashLedger,
+    Execution,
+    InvestmentOnboarding,
+    Order,
+    PortfolioSnapshot,
+    Position,
+    RebalancingDecision,
+    Strategy,
+    StrategyTargetWeight,
+    VirtualAccount,
+)
+from db.models.opendart import (
+    Company,
+    CompanyDisclosure,
+    CompanyFinancial,
+    CompanyFinancialAccount,
+    StockDividend,
+)
 from db.models.market_data import MarketIndex, MarketStock, MarketStockPrice
-from db.models.recommendation import InvestorProfileAssessment, StrategyRecommendation, StrategyRecommendationItem
+from db.models.recommendation import (
+    InvestorProfileAssessment,
+    StrategyRecommendation,
+    StrategyRecommendationItem,
+)
 
 __all__ = [
     "RegistrationAgreement",
@@ -38,6 +60,7 @@ __all__ = [
     "CompanyDisclosure",
     "CompanyFinancial",
     "CompanyFinancialAccount",
+    "StockDividend",
     "MarketIndex",
     "MarketStock",
     "MarketStockPrice",
