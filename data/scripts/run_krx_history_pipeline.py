@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from datetime import date, datetime, timezone
+import gc
 import gzip
 import hashlib
 import io
@@ -17,11 +18,12 @@ from typing import Any
 
 from dotenv import load_dotenv
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from collectors.krx_config import OPERATIONS, KrxOperation
 from db.connection.session import PROJECT_ROOT
 from features.model_dataset import (
-    assign_purged_time_split,
     compute_market_features,
     compute_stock_features,
 )
@@ -368,6 +370,180 @@ def _write_feature_monthly(
     return outputs
 
 
+def _split_contract(trade_dates: list[pd.Timestamp]) -> dict[str, str]:
+    """전체 KRX 거래일로 batch와 무관한 purged split 경계를 계산한다."""
+
+    dates = pd.Index(sorted(pd.unique(pd.to_datetime(trade_dates))))
+    if len(dates) < 30:
+        raise RuntimeError("not enough unique trade dates for temporal split")
+    return {
+        "train_end": pd.Timestamp(dates[int(len(dates) * 0.70) - 1]).date().isoformat(),
+        "validation_end": pd.Timestamp(
+            dates[int(len(dates) * 0.85) - 1]
+        ).date().isoformat(),
+        "test_end": pd.Timestamp(dates[-1]).date().isoformat(),
+        "split_method": "chronological_70_15_15_with_target_horizon_purge",
+    }
+
+
+def _apply_split_contract(
+    frame: pd.DataFrame, split: dict[str, str]
+) -> pd.DataFrame:
+    """종목 batch에 전체 거래일 기준 split과 target 경계 purge를 적용한다."""
+
+    data = frame.copy()
+    train_end = pd.Timestamp(split["train_end"])
+    validation_end = pd.Timestamp(split["validation_end"])
+    test_end = pd.Timestamp(split["test_end"])
+    data["split"] = "test"
+    data.loc[data["trade_date"] <= train_end, "split"] = "train"
+    data.loc[
+        (data["trade_date"] > train_end)
+        & (data["trade_date"] <= validation_end),
+        "split",
+    ] = "validation"
+    split_end = data["split"].map({
+        "train": train_end,
+        "validation": validation_end,
+        "test": test_end,
+    })
+    for horizon in (5, 20):
+        data[f"eligible_target_{horizon}d"] = data[
+            f"target_date_{horizon}d"
+        ].notna() & (data[f"target_date_{horizon}d"] <= split_end)
+    return data
+
+
+def _build_stock_features_bounded(
+    storage: BlobStorage,
+    *,
+    processed_container: str,
+    features_container: str,
+    schema_version: str,
+    feature_version: str,
+) -> tuple[list[dict[str, Any]], int, dict[str, str], pd.Timestamp, pd.Timestamp]:
+    """Processed를 로컬 disk에 한 번만 받고 종목 batch별로 정확한 Feature를 만든다.
+
+    전체 8년치를 pandas 하나에 담지 않는다. 각 종목은 전 기간을 같은 batch에서 처리하므로
+    120관측 rolling과 미래 20관측 target의 월 경계 정확성은 기존 전량 계산과 동일하다.
+    """
+
+    prefix = f"krx_stock_price_daily/operation=daily/schema=v{schema_version}/"
+    source_paths = sorted(
+        path
+        for path in storage.list_paths(processed_container, prefix=prefix)
+        if path.endswith(".parquet")
+    )
+    if not source_paths:
+        raise RuntimeError("KRX processed dataset not found: krx_stock_price_daily")
+
+    configured = int(os.getenv("KRX_FEATURE_STOCK_BATCH_SIZE", "100"))
+    batch_size = max(10, min(configured, 500))
+    with tempfile.TemporaryDirectory(prefix="fein-krx-feature-bounded-") as directory:
+        root = Path(directory)
+        sources: list[Path] = []
+        stock_codes: set[str] = set()
+        all_dates: set[pd.Timestamp] = set()
+        for index, source_path in enumerate(source_paths):
+            local = root / "source" / f"{index:04d}.parquet"
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_bytes(storage.download_bytes(processed_container, source_path))
+            sources.append(local)
+            keys = pq.read_table(local, columns=["stock_code", "trade_date"]).to_pandas()
+            stock_codes.update(keys["stock_code"].astype("string").dropna().tolist())
+            all_dates.update(pd.to_datetime(keys["trade_date"], errors="raise").tolist())
+
+        ordered_codes = sorted(stock_codes)
+        split = _split_contract(list(all_dates))
+        writers: dict[tuple[int, int], pq.ParquetWriter] = {}
+        schemas: dict[tuple[int, int], pa.Schema] = {}
+        output_paths: dict[tuple[int, int], Path] = {}
+        row_counts: dict[tuple[int, int], int] = defaultdict(int)
+        try:
+            total_batches = (len(ordered_codes) + batch_size - 1) // batch_size
+            for offset in range(0, len(ordered_codes), batch_size):
+                codes = ordered_codes[offset:offset + batch_size]
+                frames = [
+                    pd.read_parquet(
+                        local,
+                        filters=[("stock_code", "in", codes)],
+                    )
+                    for local in sources
+                ]
+                source = pd.concat(
+                    [frame for frame in frames if not frame.empty],
+                    ignore_index=True,
+                )
+                del frames
+                if source.empty:
+                    continue
+                feature = _apply_split_contract(compute_stock_features(source), split)
+                del source
+                feature["_year"] = feature["trade_date"].dt.year
+                feature["_month"] = feature["trade_date"].dt.month
+                for (year, month), monthly in feature.groupby(
+                    ["_year", "_month"], sort=True
+                ):
+                    key = (int(year), int(month))
+                    output = monthly.drop(columns=["_year", "_month"]).reset_index(drop=True)
+                    table = pa.Table.from_pandas(output, preserve_index=False)
+                    if key not in writers:
+                        local_output = root / "output" / f"{key[0]:04d}-{key[1]:02d}.parquet"
+                        local_output.parent.mkdir(parents=True, exist_ok=True)
+                        output_paths[key] = local_output
+                        schemas[key] = table.schema
+                        writers[key] = pq.ParquetWriter(
+                            local_output,
+                            table.schema,
+                            compression="zstd",
+                        )
+                    elif table.schema != schemas[key]:
+                        table = table.cast(schemas[key], safe=False)
+                    writers[key].write_table(table)
+                    row_counts[key] += len(output)
+                del feature
+                gc.collect()
+                batch_no = offset // batch_size + 1
+                print(
+                    f"KRX FEATURES STOCK BATCH {batch_no}/{total_batches} "
+                    f"codes={len(codes)}"
+                )
+        finally:
+            for writer in writers.values():
+                writer.close()
+
+        outputs: list[dict[str, Any]] = []
+        for (year, month), local_output in sorted(output_paths.items()):
+            path = (
+                f"model_stock_daily/version=v{feature_version}/year={year:04d}/"
+                f"month={month:02d}/part-00000.parquet"
+            )
+            blob = storage.upload_file(
+                features_container,
+                path,
+                local_output,
+                overwrite=True,
+                content_type="application/vnd.apache.parquet",
+                metadata={
+                    "source": "krx",
+                    "feature_version": feature_version,
+                    "record_count": str(row_counts[(year, month)]),
+                },
+            )
+            outputs.append({
+                "path": path,
+                "rows": row_counts[(year, month)],
+                "bytes": blob.size,
+            })
+        return (
+            outputs,
+            sum(row_counts.values()),
+            split,
+            min(all_dates),
+            max(all_dates),
+        )
+
+
 def build_features(
     storage: BlobStorage,
     *,
@@ -396,28 +572,22 @@ def build_features(
             print("KRX FEATURES SKIP source fingerprint unchanged")
             return previous
 
-    stock_source = _load_processed(
-        storage,
-        processed_container,
-        "krx_stock_price_daily",
-        schema_version,
-    )
     market_source = _load_processed(
         storage,
         processed_container,
         "krx_market_index_daily",
         schema_version,
     )
-    stock, split = assign_purged_time_split(compute_stock_features(stock_source))
     market = compute_market_features(market_source)
 
-    stock_outputs = _write_feature_monthly(
-        storage,
-        features_container,
-        dataset="model_stock_daily",
-        frame=stock,
-        date_column="trade_date",
-        version=feature_version,
+    stock_outputs, stock_rows, split, stock_min_date, stock_max_date = (
+        _build_stock_features_bounded(
+            storage,
+            processed_container=processed_container,
+            features_container=features_container,
+            schema_version=schema_version,
+            feature_version=feature_version,
+        )
     )
     market_outputs = _write_feature_monthly(
         storage,
@@ -435,7 +605,7 @@ def build_features(
         "source_fingerprint": source_fingerprint,
         "model_stock_daily": {
             "status": "training_ready",
-            "rows": len(stock),
+            "rows": stock_rows,
             "files": stock_outputs,
             "split": split,
         },
@@ -444,8 +614,8 @@ def build_features(
             "rows": len(market),
             "files": market_outputs,
         },
-        "min_trade_date": min(stock["trade_date"].min(), market["trade_date"].min()).date().isoformat(),
-        "max_trade_date": max(stock["trade_date"].max(), market["trade_date"].max()).date().isoformat(),
+        "min_trade_date": min(stock_min_date, market["trade_date"].min()).date().isoformat(),
+        "max_trade_date": max(stock_max_date, market["trade_date"].max()).date().isoformat(),
     }
     storage.upload_bytes(
         features_container,
@@ -456,7 +626,7 @@ def build_features(
     )
     print(
         "KRX FEATURES COMPLETE "
-        f"stock_rows={len(stock)} market_rows={len(market)} "
+        f"stock_rows={stock_rows} market_rows={len(market)} "
         f"range={payload['min_trade_date']}..{payload['max_trade_date']}"
     )
     return payload
