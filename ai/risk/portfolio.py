@@ -27,17 +27,13 @@ class PortfolioConstraints:
             raise ValueError("max_turnover must be in [0, 2]")
         if not 0 <= self.min_trade_weight <= 1:
             raise ValueError("min_trade_weight must be in [0, 1]")
-        if self.max_positions * self.max_weight < 1 - self.cash_buffer:
-            raise ValueError("position limits cannot deploy the requested invested weight")
 
 
 def _normalize_capped_equal_weight(codes: list[str], constraints: PortfolioConstraints) -> pd.Series:
-    invested = 1.0 - constraints.cash_buffer
+    invested_limit = np.nextafter(1.0 - constraints.cash_buffer, -np.inf)
     if not codes:
         return pd.Series(dtype=float)
-    weight = invested / len(codes)
-    if weight > constraints.max_weight + 1e-12:
-        raise ValueError("selected positions cannot satisfy max_weight")
+    weight = min(invested_limit / len(codes), constraints.max_weight)
     return pd.Series(weight, index=codes, dtype=float)
 
 
@@ -66,8 +62,9 @@ def construct_portfolio(
     target = _normalize_capped_equal_weight(selected["stock_code"].astype(str).tolist(), constraints)
 
     current = pd.Series(dtype=float) if current_weights is None else pd.Series(current_weights, dtype=float)
-    if (current < 0).any() or current.sum() > 1 + 1e-9:
-        raise ValueError("current weights must be long-only and sum to at most one")
+    invested_limit = np.nextafter(1.0 - constraints.cash_buffer, -np.inf)
+    if (current < 0).any() or current.sum() > invested_limit + 1e-9:
+        raise ValueError("current weights must be long-only and preserve cash_buffer")
     if (current > constraints.max_weight + 1e-9).any():
         raise ValueError("current weights cannot exceed max_weight")
     if int(current.gt(0).sum()) > constraints.max_positions:
@@ -98,7 +95,7 @@ def construct_portfolio(
                 if not available_exits:
                     break
                 proposal.loc[available_exits[0]] = 0.0
-            available_cash = 1.0 - float(proposal.sum())
+            available_cash = invested_limit - float(proposal.sum())
             buy_weight = min(float(target.loc[new_code]), max(0.0, available_cash))
             if buy_weight < constraints.min_trade_weight:
                 continue
@@ -114,7 +111,7 @@ def construct_portfolio(
         # 매수 총액을 현재 현금과 실행할 매도의 합으로 제한해 총 자산 비중을 보존한다.
         sells = float(-delta.clip(upper=0.0).sum())
         buys = float(delta.clip(lower=0.0).sum())
-        available_to_buy = 1.0 - float(current.sum()) + sells
+        available_to_buy = invested_limit - float(current.sum()) + sells
         if buys > available_to_buy and buys > 0:
             delta.loc[delta > 0] *= max(0.0, available_to_buy) / buys
 
@@ -125,10 +122,15 @@ def construct_portfolio(
         final = current + delta
 
     invested = float(final.sum())
+    if invested > invested_limit:
+        excess = invested - invested_limit
+        largest_position = final.idxmax()
+        final.loc[largest_position] -= excess
+        invested = float(final.sum())
     if (final < -1e-9).any() or (final > constraints.max_weight + 1e-9).any():
         raise RuntimeError("portfolio construction violated position constraints")
-    if invested > 1.0 + 1e-9:
-        raise RuntimeError("portfolio construction exceeded available capital")
+    if invested > invested_limit + 1e-9:
+        raise RuntimeError("portfolio construction violated cash_buffer")
     if int(final.gt(1e-12).sum()) > constraints.max_positions:
         raise RuntimeError("portfolio construction exceeded max_positions")
     if turnover_to(final) > constraints.max_turnover + 1e-9:
@@ -139,5 +141,11 @@ def construct_portfolio(
     result = result.loc[result["weight"].gt(0)].sort_values(
         ["weight", "stock_code"], ascending=[False, True]
     )
+    if result.empty:
+        return pd.DataFrame({
+            "stock_code": ["CASH"],
+            "weight": [0.0],
+            "cash_weight": [1.0],
+        })
     result["cash_weight"] = cash_weight
     return result.reset_index(drop=True)

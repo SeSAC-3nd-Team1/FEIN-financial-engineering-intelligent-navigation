@@ -26,12 +26,18 @@ from models.contracts import (
 class RankerConfig:
     feature_columns: tuple[str, ...] = DEFAULT_FEATURE_COLUMNS
     target_column: str = "target_return_20d"
+    target_date_column: str = "target_date_20d"
+    eligible_column: str | None = "eligible_target_20d"
     random_state: int = 42
 
     def __post_init__(self) -> None:
         validate_feature_columns(self.feature_columns)
-        if not self.target_column.startswith("target_"):
-            raise ValueError("target_column must be explicitly named as a target")
+        if not self.target_column.startswith("target_return_"):
+            raise ValueError("target_column must use the target_return_* contract")
+        if not self.target_date_column.startswith("target_date_"):
+            raise ValueError("target_date_column must use the target_date_* contract")
+        if self.eligible_column is not None and not self.eligible_column.startswith("eligible_target_"):
+            raise ValueError("eligible_column must use the eligible_target_* contract")
 
 
 class BaseMLRanker:
@@ -47,6 +53,13 @@ class BaseMLRanker:
 
     def fit(self, frame: pd.DataFrame, *, training_end: str | pd.Timestamp) -> "BaseMLRanker":
         cutoff = pd.Timestamp(training_end)
+        required_target_columns = {self.config.target_date_column}
+        if self.config.eligible_column is not None:
+            required_target_columns.add(self.config.eligible_column)
+        missing = sorted(required_target_columns - set(frame.columns))
+        if missing:
+            raise ValueError(f"target contract columns missing: {missing}")
+
         data = validate_panel(
             frame,
             self.config.feature_columns,
@@ -54,13 +67,14 @@ class BaseMLRanker:
             require_target=True,
         )
         data = data.loc[data["trade_date"].le(cutoff)].copy()
-        target_date_column = self.config.target_column.replace("return_", "date_")
-        if target_date_column in data:
-            target_dates = pd.to_datetime(data[target_date_column], errors="coerce")
-            data = data.loc[target_dates.le(cutoff)].copy()
-        eligible_column = self.config.target_column.replace("target_return_", "eligible_target_")
-        if eligible_column in data:
-            data = data.loc[data[eligible_column].fillna(False).astype(bool)].copy()
+        target_dates = pd.to_datetime(
+            data[self.config.target_date_column], errors="coerce"
+        )
+        data = data.loc[target_dates.notna() & target_dates.le(cutoff)].copy()
+        if self.config.eligible_column is not None:
+            data = data.loc[
+                data[self.config.eligible_column].fillna(False).astype(bool)
+            ].copy()
         data = data.loc[data[self.config.target_column].notna()]
         if data.empty:
             raise ValueError("no eligible training rows remain before training_end")
@@ -116,7 +130,6 @@ class LightGBMStockRanker(BaseMLRanker):
     def _build_estimator(self) -> LGBMRegressor:
         params = {
             "objective": "regression",
-
             "n_estimators": 200,
             "learning_rate": 0.03,
             "num_leaves": 15,
@@ -129,6 +142,6 @@ class LightGBMStockRanker(BaseMLRanker):
             "random_state": self.config.random_state,
             "n_jobs": -1,
             "verbosity": -1,
-                }
+        }
         params.update(self.model_params)
         return LGBMRegressor(**params)

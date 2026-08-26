@@ -35,12 +35,18 @@ class FactorRuleRanker:
 
     def rank(self, frame: pd.DataFrame) -> pd.DataFrame:
         required = {"trade_date", "stock_code", "market_cap", self.score_column}
+        if self.config.min_trading_value > 0:
+            required.add("trading_value_sma_20d")
         missing = sorted(required - set(frame.columns))
         if missing:
             raise ValueError(f"rule model columns missing: {missing}")
         data = frame.copy()
         data["trade_date"] = pd.to_datetime(data["trade_date"], errors="raise")
         data["stock_code"] = data["stock_code"].astype("string")
+        if data[["trade_date", "stock_code"]].isna().any(axis=None):
+            raise ValueError("trade_date and stock_code cannot be null")
+        if data.duplicated(["trade_date", "stock_code"]).any():
+            raise ValueError("duplicate trade_date + stock_code rows are not allowed")
         for column in ("market_cap", self.score_column):
             data[column] = pd.to_numeric(data[column], errors="coerce")
         if "trading_value_sma_20d" in data:
@@ -72,6 +78,7 @@ class FactorRuleRanker:
         )
         data["selected"] = data["rank"].le(self.config.top_n)
         return data.sort_values(["trade_date", "rank", "stock_code"]).reset_index(drop=True)
+
 
 
 class LowVolatilityRanker(FactorRuleRanker):

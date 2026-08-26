@@ -124,6 +124,66 @@ def test_portfolio_converges_to_disjoint_target_over_rebalances() -> None:
     assert current.sum() == pytest.approx(1.0 - constraints.cash_buffer)
 
 
+def test_portfolio_preserves_cash_buffer_during_rebalancing() -> None:
+    candidates = pd.DataFrame({
+        "stock_code": ["A", "B"],
+        "score": [2.0, 1.0],
+        "risk_eligible": [True, True],
+    })
+    constraints = PortfolioConstraints(
+        max_positions=2,
+        max_weight=0.60,
+        cash_buffer=0.10,
+        max_turnover=1.0,
+    )
+
+    portfolio = construct_portfolio(
+        candidates,
+        current_weights=pd.Series({"A": 0.50, "C": 0.40}),
+        constraints=constraints,
+    )
+
+    assert portfolio["weight"].sum() <= 1.0 - constraints.cash_buffer
+    assert portfolio["cash_weight"].iloc[0] >= constraints.cash_buffer
+    assert portfolio["weight"].sum() + portfolio["cash_weight"].iloc[0] == pytest.approx(1.0)
+
+
+def test_portfolio_caps_sparse_candidates_and_keeps_residual_cash() -> None:
+    candidates = pd.DataFrame({
+        "stock_code": [f"S{i}" for i in range(6)],
+        "score": list(reversed(range(6))),
+        "risk_eligible": [True] * 6,
+    })
+    constraints = PortfolioConstraints(
+        max_positions=10,
+        max_weight=0.15,
+        cash_buffer=0.05,
+        max_turnover=1.0,
+    )
+
+    portfolio = construct_portfolio(candidates, constraints=constraints)
+
+    assert len(portfolio) == 6
+    assert portfolio["weight"].max() == pytest.approx(constraints.max_weight)
+    assert portfolio["cash_weight"].iloc[0] == pytest.approx(0.10)
+
+
+def test_portfolio_returns_explicit_cash_position_without_eligible_candidates() -> None:
+    candidates = pd.DataFrame({
+        "stock_code": ["A"],
+        "score": [1.0],
+        "risk_eligible": [False],
+    })
+
+    portfolio = construct_portfolio(candidates)
+
+    assert portfolio.to_dict("records") == [{
+        "stock_code": "CASH",
+        "weight": 0.0,
+        "cash_weight": 1.0,
+    }]
+
+
 def test_minimum_trade_filter_cannot_create_unfunded_buys() -> None:
     candidates = pd.DataFrame({
         "stock_code": ["A", "B"],
