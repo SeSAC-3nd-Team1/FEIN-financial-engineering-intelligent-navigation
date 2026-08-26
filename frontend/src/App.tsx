@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import AllHoldings from './pages/AllHoldings';
 import Chatbot from './components/Chatbot';
 import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
@@ -11,6 +12,9 @@ import InvestTerms from './pages/InvestTerms';
 import Login from './pages/Login';
 import type { LoginContext } from './pages/Login';
 import Portfolio from './pages/Portfolio';
+import PortfolioAuto from './pages/PortfolioAuto';
+import PortfolioDetail from './pages/PortfolioDetail';
+import RebalanceAlerts from './pages/RebalanceAlerts';
 import RiskProfile from './pages/RiskProfile';
 import RiskResult from './pages/RiskResult';
 import SignupStep1 from './pages/SignupStep1';
@@ -20,14 +24,43 @@ import StartInvesting from './pages/StartInvesting';
 import StockDetail from './pages/StockDetail';
 import StrategyDetail from './pages/StrategyDetail';
 import StrategyList from './pages/StrategyList';
+import TransactionDetail from './pages/TransactionDetail';
+import TransactionHistory from './pages/TransactionHistory';
 import { STRATEGIES } from './data/strategies';
-import type { OperationMode } from './data/fees';
+import { toAccountOperationMode, type OperationMode } from './data/fees';
 import { signupTermsApi } from './lib/backendApi';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
 import { useTradingStore } from './store/tradingStore';
 import type { Screen, SignupPersonal } from './types';
+
+/** 새로고침해도 유지할 최소한의 내비게이션 상태 — sessionStorage 에 저장한다(탭을 닫으면 사라짐).
+ *  회원가입 입력값처럼 민감하거나 오래 들고 있을 필요 없는 값은 여기 포함하지 않는다.
+ *  사용자별로 분리된 키가 아니라, 로그아웃 시 authStore.logout()/initialize() 이 이 키를 함께 지운다
+ *  (같은 브라우저에서 다른 사용자가 로그인해도 이전 사용자의 화면 상태를 이어받지 않도록). */
+const SESSION_KEY = 'fein.session-nav';
+interface PersistedNav {
+  screen: Screen; strategyId: string; stockCode: string; stockBackTarget: Screen;
+  selectedTransactionId: string; transactionBackTarget: Screen;
+}
+function loadPersistedNav(): Partial<PersistedNav> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as Partial<PersistedNav>) : {};
+  } catch {
+    return {};
+  }
+}
+/** 로그인이 필요한 화면 — 새로고침 후 토큰이 없거나 만료된 걸로 확인되면 이 화면들에서는 로그인으로 돌려보낸다.
+ *  투자 시작 Flow(invest-*) 화면들도 로그인 이후에만 진입 가능한 흐름이라 함께 포함한다.
+ *  'strategy'(Strategy Detail)와 'strategy-list'는 의도적으로 제외한다 — 비회원 접근 정책상 전략을
+ *  읽고 기본 백테스트를 보는 것은 공개(PUBLIC)이고, 실제 조작/투자만 그 화면 내부에서 개별적으로
+ *  로그인을 요구한다(handleStartInvesting/requestLoginForBacktest 참고). */
+const PROTECTED_SCREENS: Screen[] = [
+  'dashboard', 'portfolio', 'portfolio-detail', 'stock', 'start', 'transactions', 'transaction-detail',
+  'rebalance-alerts', 'all-holdings', 'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm',
+];
 
 /** 투자 시작 Flow(약관~최종확인) 화면 목록 — Header 등으로 이 밖으로 나가면 inFlight(새로고침 복원용 진행 상태)를 정리한다 */
 const INVEST_FLOW_SCREENS: Screen[] = ['invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm'];
@@ -51,7 +84,10 @@ const INVEST_FLOW_SCREENS: Screen[] = ['invest-terms', 'invest-account', 'invest
  * 챗봇 FAB 는 라우팅 밖에 있어 모든 화면에 상주한다.
  */
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('home');
+  // screen/strategyId/stockCode/stockBackTarget 은 새로고침 직후 첫 렌더에서 sessionStorage 값으로
+  // 곧바로 초기화한다(useState lazy initializer) — 그래야 'home' 으로 한 번 그렸다가 다시 튀는 깜빡임이 없다.
+  const [persistedNav] = useState(loadPersistedNav);
+  const [screen, setScreen] = useState<Screen>(persistedNav.screen ?? 'home');
   const [personal, setPersonal] = useState<SignupPersonal>({
     name: '', birthdate: '', phone: '', aiPersonalizationConsent: false,
     agreements: { a1: false, a2: false, a3: false, a4: false, b: false, c: false, ai: false },
@@ -59,11 +95,14 @@ export default function App() {
   // 전략 선택은 strategyId(=STRATEGIES 의 id) 하나만 상태로 두고, 화면별 표시 이름은 여기서 파생시킨다.
   // (과거엔 strategyId 와 별도로 strategy 표시 이름을 따로 들고 있어, 전략 선택 후에도
   //  StartInvesting/Portfolio 가 갱신되지 않는 불일치가 있었다.)
-  const [strategyId, setStrategyId] = useState<string>('low');
+  const [strategyId, setStrategyId] = useState<string>(persistedNav.strategyId ?? 'low');
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
-  const [stockCode, setStockCode] = useState('005930');
-  // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio로)
-  const [stockBackTarget, setStockBackTarget] = useState<Screen>('portfolio');
+  const [stockCode, setStockCode] = useState(persistedNav.stockCode ?? '005930');
+  // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio-detail로)
+  const [stockBackTarget, setStockBackTarget] = useState<Screen>(persistedNav.stockBackTarget ?? 'portfolio-detail');
+  // 거래 상세 진입 지점(포트폴리오 상세의 "최근 거래" 3건 vs 전체 거래 내역)에 따라 뒤로가기 목적지가 달라진다.
+  const [selectedTransactionId, setSelectedTransactionId] = useState(persistedNav.selectedTransactionId ?? '');
+  const [transactionBackTarget, setTransactionBackTarget] = useState<Screen>(persistedNav.transactionBackTarget ?? 'portfolio-detail');
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
@@ -84,6 +123,7 @@ export default function App() {
   const initialize = useAuthStore((s) => s.initialize);
   const authenticatedUser = useAuthStore((s) => s.user);
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const isHydrating = useAuthStore((s) => s.isHydrating);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -192,6 +232,10 @@ export default function App() {
   const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
 
   const hasRestoredInvestFlowRef = useRef(false);
+  // 직전 렌더의 로그인 사용자 id — 로그아웃(비로그인으로 전환)을 감지해 화면 상태를 초기화하는 데만 쓴다.
+  // 최초 마운트 시(아직 initialize() 가 안 끝나 null → null 로 시작하는 순간)에는 건드리지 않아야
+  // 새로고침 복원(sessionStorage 에서 그대로 이어받기)이 깨지지 않는다.
+  const prevUserIdRef = useRef<string | null>(null);
 
   // 앱 최초 로드(새로고침 포함) — 토큰이 있으면 로그인 사용자를 복원하고, 그 사용자의 투자 Flow가
   // invest-terms~invest-confirm 중간에 있었다면 화면/선택값(strategyId·금액·운용방식)까지 그대로 복원한다.
@@ -216,8 +260,46 @@ export default function App() {
   // 세션 중 로그인/로그아웃으로 사용자가 바뀔 때마다 해당 사용자의 저장된 상태로 다시 hydrate한다.
   // (화면 복원은 위 최초 로드 시점에만 하고, 로그인 직후 명시적 이동(navigate('portfolio') 등)과는 겹치지 않게 한다)
   useEffect(() => {
-    hydrateForUser(authenticatedUser?.user_id ?? null);
+    const currentUserId = authenticatedUser?.user_id ?? null;
+    hydrateForUser(currentUserId);
+    // sessionStorage 의 nav 키는 사용자별로 분리돼 있지 않다(authStore.logout 이 로그아웃 시 통째로 지운다).
+    // 그래도 React state 는 메모리에 남아있어서, 로그인 상태였다가(prevUserIdRef 가 non-null) 로그아웃으로
+    // 전환된 순간(currentUserId 가 null)에는 다음 로그인 사용자가 이전 사용자의 전략/종목 선택을
+    // 이어받지 않도록 화면 상태를 기본값으로 되돌린다. 최초 마운트(null → null/user 로 시작)에는 건드리지 않는다.
+    if (prevUserIdRef.current && !currentUserId) {
+      setScreen('home');
+      setStrategyId('low');
+      setStockCode('005930');
+      setStockBackTarget('portfolio-detail');
+      setSelectedTransactionId('');
+      setTransactionBackTarget('portfolio-detail');
+    }
+    prevUserIdRef.current = currentUserId;
   }, [authenticatedUser?.user_id, hydrateForUser]);
+
+  // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
+  useEffect(() => {
+    const nav: PersistedNav = {
+      screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget,
+    };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(nav));
+  }, [screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget]);
+
+  // 로그인이 필요한 화면을 새로고침으로 복원했는데, 토큰 검증(initialize)이 끝난 뒤
+  // 실제로는 로그인 상태가 아닌 것으로 확인되면(토큰 만료 등) 로그인 화면으로 돌려보낸다.
+  useEffect(() => {
+    if (!isHydrating && !isLoggedIn && PROTECTED_SCREENS.includes(screen)) {
+      setScreen('login');
+    }
+  }, [isHydrating, isLoggedIn, screen]);
+
+  // 거래 상세를 새로고침으로 복원했는데 selectedTransactionId 를 복원할 수 없으면(예: 이 필드가 없던
+  // 이전 버전의 sessionStorage) "거래 내역을 찾을 수 없어요" 대신 전체 거래 내역으로 보낸다.
+  useEffect(() => {
+    if (screen === 'transaction-detail' && !selectedTransactionId) {
+      setScreen('transactions');
+    }
+  }, [screen, selectedTransactionId]);
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
@@ -510,7 +592,7 @@ export default function App() {
               setScreen('login');
               throw new Error('로그인이 필요합니다.');
             }
-            await ensureAccount(accessToken, strategyId);
+            await ensureAccount(accessToken, strategyId, toAccountOperationMode(investmentMode));
             setActiveMode(investmentMode);
             // "계좌 1개 = 활성 전략 1개" — 실제 투자가 시작된 이 시점에만 계좌의 활성 전략을 기록한다
             setAccountActiveStrategy(investmentMode, strategyId);
@@ -530,20 +612,85 @@ export default function App() {
           strategyName={strategy.name}
           mode={activeMode}
           onNavigate={navigate}
-          onOpenHoldings={() => navigate('portfolio')}
-          onChangeStrategy={() => navigate('portfolio')}
+          onOpenHoldings={() => navigate('portfolio-detail')}
+          onChangeStrategy={() => navigate('portfolio-detail')}
         />
       )}
 
+      {/* 운용방식(activeMode)에 따라 요약 화면을 다르게 보여준다 — 반자동은 AI 제안을 사용자가 승인해야 하는
+          Portfolio.tsx, 자동매매는 AI가 이미 실행을 마친 PortfolioAuto.tsx. 계좌를 아직 안 만든 경우(null)는
+          기존 기본값인 반자동으로 보여준다. */}
       {screen === 'portfolio' && (
-        <Portfolio
+        activeMode === 'auto' ? (
+          <PortfolioAuto
+            userName={userName}
+            onNavigate={setScreen}
+            onOpenDetail={() => setScreen('portfolio-detail')}
+          />
+        ) : (
+          <Portfolio
+            userName={userName}
+            onNavigate={setScreen}
+            onOpenDetail={() => setScreen('portfolio-detail')}
+          />
+        )
+      )}
+
+      {screen === 'portfolio-detail' && (
+        <PortfolioDetail
           userName={userName}
           strategyId={strategyId}
           onStrategyChange={setStrategyId}
           onNavigate={navigate}
-          onSelectStock={(code) => { setStockCode(code); setStockBackTarget('portfolio'); setScreen('stock'); }}
+          onSelectStock={(code) => { setStockCode(code); setStockBackTarget('portfolio-detail'); setScreen('stock'); }}
+          onSelectTransaction={(id) => {
+            setSelectedTransactionId(id);
+            setTransactionBackTarget('portfolio-detail');
+            setScreen('transaction-detail');
+          }}
           onRediagnose={() => startInvestorProfile('risk-result')}
-          onBack={() => setScreen('dashboard')}
+          onBack={() => setScreen('portfolio')}
+        />
+      )}
+
+      {screen === 'rebalance-alerts' && (
+        <RebalanceAlerts
+          userName={userName}
+          strategyId={strategyId}
+          onNavigate={navigate}
+          onBack={() => setScreen('portfolio-detail')}
+        />
+      )}
+
+      {screen === 'all-holdings' && (
+        <AllHoldings
+          userName={userName}
+          onNavigate={navigate}
+          onSelectStock={(code) => { setStockCode(code); setStockBackTarget('all-holdings'); setScreen('stock'); }}
+          onBack={() => setScreen('portfolio-detail')}
+        />
+      )}
+
+      {screen === 'transactions' && (
+        <TransactionHistory
+          userName={userName}
+          onNavigate={setScreen}
+          onSelectTransaction={(id) => {
+            setSelectedTransactionId(id);
+            setTransactionBackTarget('transactions');
+            setScreen('transaction-detail');
+          }}
+          onBack={() => setScreen('portfolio-detail')}
+        />
+      )}
+
+      {screen === 'transaction-detail' && (
+        <TransactionDetail
+          transactionId={selectedTransactionId}
+          backTarget={transactionBackTarget}
+          userName={userName}
+          onNavigate={setScreen}
+          onBack={() => setScreen(transactionBackTarget)}
         />
       )}
 

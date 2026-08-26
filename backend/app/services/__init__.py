@@ -4,5 +4,6 @@ from app.services.market import MarketService
 from app.services.portfolio import PortfolioService
 from app.services.strategy_recommendation import StrategyRecommendationService
 from app.services.trading import TradingService
+from app.services.transactions import TransactionHistoryService
 
-__all__ = ["AuthService", "InvestmentOnboardingService", "MarketService", "PortfolioService", "StrategyRecommendationService", "TradingService"]
+__all__ = ["AuthService", "InvestmentOnboardingService", "MarketService", "PortfolioService", "StrategyRecommendationService", "TradingService", "TransactionHistoryService"]

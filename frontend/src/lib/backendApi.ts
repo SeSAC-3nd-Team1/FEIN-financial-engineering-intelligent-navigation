@@ -31,9 +31,14 @@ export interface SignupTerm {
 /** Backend Decimal은 JSON 문자열로 직렬화된다. 금액 계산 시 Number로 명시 변환한다. */
 export type DecimalString = string;
 
+/** 백엔드가 구분하는 운용방식 — 프론트 전역의 `OperationMode`('auto'|'manual', data/fees.ts)와는
+ *  표기가 달라 혼동하기 쉽다. 계좌 API 호출부에서만 쓰고, 그 밖의 화면은 계속 프론트 표기를 쓴다. */
+export type AccountOperationMode = 'AUTO' | 'SEMI_AUTO';
+
 export interface AccountResponse {
   id: string;
   account_name: string;
+  operation_mode: AccountOperationMode;
   initial_cash: DecimalString;
   cash_balance: DecimalString;
   status: string;
@@ -297,13 +302,13 @@ export function logoutApi(token: string): Promise<void> {
   return request<void>('/auth/logout', { method: 'POST' }, token);
 }
 
-export function getMyAccountApi(token: string): Promise<AccountResponse> {
-  return request<AccountResponse>('/accounts/me', {}, token);
+export function getMyAccountApi(token: string, mode: AccountOperationMode): Promise<AccountResponse> {
+  return request<AccountResponse>(`/accounts/me?operation_mode=${mode}`, {}, token);
 }
 
-export function createAccountApi(accountName: string, token: string): Promise<AccountResponse> {
+export function createAccountApi(accountName: string, mode: AccountOperationMode, token: string): Promise<AccountResponse> {
   return request<AccountResponse>('/accounts', {
-    method: 'POST', body: JSON.stringify({ account_name: accountName }),
+    method: 'POST', body: JSON.stringify({ account_name: accountName, operation_mode: mode }),
   }, token);
 }
 

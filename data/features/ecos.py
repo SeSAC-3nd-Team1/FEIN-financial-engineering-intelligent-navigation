@@ -109,6 +109,8 @@ def build_macro_features(
     manifest: dict[str, object] = {
         "dataset": "macro_daily", "feature_version": feature_version,
         "processed_schema_version": schema_version, "rows": len(data), "files": files,
+        "min_date": data["date"].min().date().isoformat(),
+        "max_date": data["date"].max().date().isoformat(),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "git_sha": os.getenv("GIT_SHA", "unknown"),
         "point_in_time_policy": "available_at <= feature date; CPI available from observation month + 2 months",

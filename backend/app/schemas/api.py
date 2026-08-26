@@ -61,6 +61,8 @@ class UserResponse(BaseModel):
     name: str
     email: str
     account_status: str
+    active_operation_mode: OperationMode | None = None
+    operation_mode_changed_at: datetime | None = None
 
 
 class TermResponse(BaseModel):
@@ -132,6 +134,27 @@ class AccountResponse(BaseModel):
     status: str
     selected_strategy_id: str | None
     created_at: datetime
+
+
+class OperationModeSwitchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_mode: OperationMode
+
+
+class OperationModeChangeNoticeResponse(BaseModel):
+    code: Literal["OPERATION_MODE_CHANGED", "OPERATION_MODE_UNCHANGED"]
+    title: str
+    message: str
+
+
+class OperationModeSwitchResponse(BaseModel):
+    previous_operation_mode: OperationMode | None
+    operation_mode: OperationMode
+    changed: bool
+    changed_at: datetime | None
+    account: AccountResponse
+    notice: OperationModeChangeNoticeResponse
 
 
 class InvestmentAccountPrepareResponse(BaseModel):
@@ -266,6 +289,25 @@ class ExecutionResponse(BaseModel):
     executed_at: datetime
 
 
+class PortfolioTransactionResponse(BaseModel):
+    id: int
+    order_id: UUID
+    stock_code: str
+    stock_name: str | None
+    side: Literal["BUY", "SELL"]
+    quantity: Decimal
+    execution_price: Decimal
+    transaction_amount: Decimal
+    executed_at: datetime
+
+
+class PortfolioTransactionListResponse(BaseModel):
+    account_id: UUID
+    items: list[PortfolioTransactionResponse]
+    next_cursor: str | None
+    has_more: bool
+
+
 class PriceResponse(BaseModel):
     stock_code: str
     price: Decimal
@@ -396,6 +438,17 @@ class RebalancingProposalResponse(BaseModel):
     weight_diff: Decimal
     action: Literal["BUY", "SELL"]
     recommended_amount: Decimal
+    priority: int | None = Field(default=None, ge=1, le=5)
+    reason: str | None = Field(default=None, max_length=500)
+    why_now: str | None = Field(default=None, max_length=500)
+    source: Literal["RULE", "AI"] = "RULE"
+
+
+class RebalancingInsightResponse(BaseModel):
+    status: Literal["AVAILABLE", "NOT_NEEDED", "UNAVAILABLE"]
+    summary: str | None
+    model_version: str | None
+    generated_at: datetime | None
 
 
 class PortfolioResponse(BaseModel):
@@ -465,6 +518,7 @@ class PortfolioHomeResponse(BaseModel):
     positions: list[PositionResponse]
     contributions: list[PortfolioContributionResponse]
     strategy_targets_available: bool
+    rebalancing_insight: RebalancingInsightResponse
     rebalancing_proposals: list[RebalancingProposalResponse]
     valuation_as_of: datetime | None
     price_sources: list[str]

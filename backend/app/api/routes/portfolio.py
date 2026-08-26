@@ -5,12 +5,15 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
+from app.core.config import settings
 from app.db.session import get_session
+from app.integrations.ai import AzureOpenAIRebalancingClient
 from app.models import User
 from app.schemas.api import (
     PortfolioHomeResponse,
     PortfolioHistoryResponse,
     PortfolioResponse,
+    PortfolioTransactionListResponse,
     RebalancingDecisionCreateRequest,
     RebalancingDecisionHistoryResponse,
     RebalancingDecisionResponse,
@@ -18,6 +21,7 @@ from app.schemas.api import (
 )
 from app.services.portfolio_analytics import PortfolioAnalyticsService
 from app.services.portfolio import PortfolioService
+from app.services.transactions import TransactionHistoryService
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -27,11 +31,39 @@ def get_portfolio_analytics_service(session: Session = Depends(get_session)) -> 
 
 
 def get_portfolio_service(session: Session = Depends(get_session)) -> PortfolioService:
-    return PortfolioService(session)
+    client = AzureOpenAIRebalancingClient(
+        endpoint=settings.azure_openai_endpoint,
+        api_key=settings.azure_openai_api_key,
+        deployment=settings.azure_openai_rebalancing_deployment,
+        api_version=settings.azure_openai_api_version,
+        timeout_seconds=settings.ai_rebalancing_timeout_seconds,
+    )
+    return PortfolioService(
+        session,
+        rebalancing_client=client,
+        rebalancing_model_version=settings.ai_rebalancing_model_version,
+    )
+
+
+def get_transaction_history_service(
+    session: Session = Depends(get_session),
+) -> TransactionHistoryService:
+    return TransactionHistoryService(session)
+
+
+@router.get("/transactions", response_model=PortfolioTransactionListResponse)
+def portfolio_transactions(
+    account_id: UUID = Query(),
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = Query(default=None, min_length=1, max_length=500),
+    user: User = Depends(current_user),
+    service: TransactionHistoryService = Depends(get_transaction_history_service),
+) -> PortfolioTransactionListResponse:
+    return service.list(user.id, account_id, limit=limit, cursor=cursor)
 
 
 @router.get("/home", response_model=PortfolioHomeResponse)
-def portfolio_home(
+async def portfolio_home(
     account_id: UUID = Query(),
     period: Literal["1M", "3M", "1Y", "ALL"] = Query(default="3M"),
     sort_by: Literal["stock_name", "weight", "purchase_amount", "return_rate"] = Query(
@@ -42,7 +74,7 @@ def portfolio_home(
     user: User = Depends(current_user),
     service: PortfolioService = Depends(get_portfolio_service),
 ) -> PortfolioHomeResponse:
-    return service.home(user.id, account_id, period, sort_by, order)
+    return await service.home(user.id, account_id, period, sort_by, order)
 
 
 @router.get("", response_model=PortfolioResponse)

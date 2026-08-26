@@ -1,14 +1,21 @@
 """거래 도메인의 SQLAlchemy repository."""
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models import Order, PortfolioSnapshot, Position, RebalancingDecision, Strategy, StrategyTargetWeight, VirtualAccount
+from app.models import Execution, InvestmentOnboarding, MarketStock, Order, PortfolioSnapshot, Position, RebalancingDecision, Strategy, StrategyTargetWeight, User, VirtualAccount
+
+
+@dataclass(frozen=True)
+class ExecutionHistoryRecord:
+    execution: Execution
+    stock_name: str | None
 
 
 class TradingRepository:
@@ -21,13 +28,26 @@ class TradingRepository:
             query = query.with_for_update()
         return self.session.scalar(query)
 
-    def account_for_user(self, user_id: int, operation_mode: str) -> VirtualAccount | None:
-        return self.session.scalar(
-            select(VirtualAccount).where(
-                VirtualAccount.user_id == user_id,
-                VirtualAccount.operation_mode == operation_mode,
-            )
+    def user(self, user_id: int, *, lock: bool = False) -> User | None:
+        query = select(User).where(User.id == user_id)
+        if lock:
+            query = query.with_for_update()
+        return self.session.scalar(query)
+
+    def account_for_user(
+        self,
+        user_id: int,
+        operation_mode: str,
+        *,
+        lock: bool = False,
+    ) -> VirtualAccount | None:
+        query = select(VirtualAccount).where(
+            VirtualAccount.user_id == user_id,
+            VirtualAccount.operation_mode == operation_mode,
         )
+        if lock:
+            query = query.with_for_update()
+        return self.session.scalar(query)
 
     def accounts_for_user(self, user_id: int) -> list[VirtualAccount]:
         return list(self.session.scalars(
@@ -35,6 +55,19 @@ class TradingRepository:
             .where(VirtualAccount.user_id == user_id)
             .order_by(VirtualAccount.operation_mode)
         ))
+
+    def completed_onboarding_for_user_mode(
+        self,
+        user_id: int,
+        operation_mode: str,
+    ) -> InvestmentOnboarding | None:
+        return self.session.scalar(
+            select(InvestmentOnboarding).where(
+                InvestmentOnboarding.user_id == user_id,
+                InvestmentOnboarding.operation_mode == operation_mode,
+                InvestmentOnboarding.status == "COMPLETED",
+            )
+        )
 
     def position(self, account_id: UUID, stock_code: str, *, lock: bool = False) -> Position | None:
         query = select(Position).where(Position.account_id == account_id, Position.stock_code == stock_code)
@@ -49,6 +82,34 @@ class TradingRepository:
         return list(self.session.scalars(
             select(VirtualAccount).where(VirtualAccount.status == "ACTIVE").order_by(VirtualAccount.id)
         ))
+
+    def execution_history(
+        self,
+        account_id: UUID,
+        *,
+        limit: int,
+        before_executed_at: datetime | None = None,
+        before_id: int | None = None,
+    ) -> list[ExecutionHistoryRecord]:
+        """동일 시각 체결도 누락되지 않도록 시각과 PK를 함께 사용해 다음 페이지를 조회한다."""
+
+        query = (
+            select(Execution, MarketStock.stock_name)
+            .outerjoin(MarketStock, MarketStock.stock_code == Execution.stock_code)
+            .where(Execution.account_id == account_id)
+        )
+        if before_executed_at is not None and before_id is not None:
+            query = query.where(or_(
+                Execution.executed_at < before_executed_at,
+                (Execution.executed_at == before_executed_at) & (Execution.id < before_id),
+            ))
+        rows = self.session.execute(
+            query.order_by(Execution.executed_at.desc(), Execution.id.desc()).limit(limit)
+        )
+        return [
+            ExecutionHistoryRecord(execution=row[0], stock_name=row[1])
+            for row in rows
+        ]
 
     def save_snapshot(self, account_id: UUID, snapshot_date: date, **values) -> None:
         """동시 조회도 계좌·일자 한 행으로 수렴하도록 PostgreSQL UPSERT한다."""

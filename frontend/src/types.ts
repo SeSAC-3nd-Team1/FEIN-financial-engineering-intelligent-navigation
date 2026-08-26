@@ -6,7 +6,8 @@ export type Screen =
   | 'strategy-list' | 'strategy' | 'start'
   // 투자 시작 Flow — "이 전략으로 시작하기" 이후, 사용자 준비 상태에 따라 필요한 화면으로만 분기
   | 'invest-terms' | 'invest-account' | 'invest-deposit' | 'invest-confirm'
-  | 'information' | 'dashboard' | 'portfolio' | 'stock';
+  | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail'
+  | 'rebalance-alerts' | 'all-holdings';
 
 /** 온보딩 Step 01 폼 값 */
 export interface SignupPersonal {
@@ -45,6 +46,10 @@ export interface Holding {
   pct: number;        // 현재 비중 (05)
   target?: number;    // 전략 목표 비중 (04 신규 매수). 없으면 pct 와 동일
   chg: number | null; // 오늘 등락률 %. 제공되지 않으면 null
+  // 투자 원금/누적 수익률 — buildPortfolioHoldings() 로 만든 실 계좌 보유 종목엔 없고(PositionResponse 에서 직접 읽는다),
+  // PortfolioDetail/AllHoldings/RebalanceAlerts 처럼 종목별로 원금·수익률을 표로 보여주는 화면의 로컬 홀딩 모델만 채운다.
+  principal?: number;  // 투자 원금(KRW) — 실 계좌가 있으면 PositionResponse.purchase_amount 로 대체된다
+  returnRate?: number; // 원금 대비 누적 수익률(%) — 실 계좌가 있으면 PositionResponse.return_rate 로 대체된다
   why: string;        // AI 편입 사유
 }
 
@@ -58,6 +63,32 @@ export interface StockInfo {
   roe: string;
   ai: number[];
   desc: string;
+}
+
+/** 거래 내역 화면에서 쓰는 표시용 모델 — 실 계좌가 있으면 ExecutionResponse(체결내역)를 이 모양으로 매핑해서 쓰고,
+ *  계좌가 없거나 체결 기록이 없으면 아래 RECENT_TRANSACTIONS(목업)를 그대로 쓴다. */
+export interface TransactionRecord {
+  id: string;
+  date: string;      // 'YYYY.MM.DD'
+  type: '매수' | '매도' | '리밸런싱' | '배당';
+  stockName: string;
+  amount: number;    // 매수/배당은 양수, 매도/리밸런싱 축소는 음수(KRW)
+  note: string;
+  quantity: number;  // 체결 수량(소수 주 단위, 소수점 투자 기준) — 배당은 0
+  price: number;     // 체결 단가(KRW) — 배당은 0
+  fee: number;       // 수수료(KRW) — 실 체결에는 수수료 필드가 없어 0으로 채운다
+  status: '체결완료';
+}
+
+/** AI 손절/리밸런싱 제안 — 백엔드에 아직 판단 로직이 없어 목업으로만 존재한다 */
+export interface AiAlert {
+  id: string;
+  stockName: string;
+  kind: '손절' | '리밸런싱';
+  badge: string;     // 종목 배지에 쓰는 짧은 라벨
+  headline: string;  // 제안 카드 한 줄 요약
+  reason: string;    // "왜 지금인가요?" 모달 본문 — 근거
+  action: string;    // 제안하는 구체적 조치
 }
 
 export interface TermDef {

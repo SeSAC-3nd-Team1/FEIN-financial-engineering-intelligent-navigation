@@ -90,7 +90,13 @@ docker compose --profile migration run --rm --no-deps db-init
 docker compose exec -T backend env RUN_INTEGRATION=1 pytest -q tests/test_integration_flow.py
 ```
 
-E2E는 `GET /auth/terms`부터 회원가입 동의 저장, AUTO/SEMI_AUTO별 계좌, 부족분 가상 입금과 멱등 재시도, 전략·매수·포트폴리오·매도·원장 정합성까지 확인합니다. 생성한 사용자와 가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 공용 개발 데이터 전체를 삭제하지 않습니다. 전체 schema drop/recreate, 전체 truncate, migration rollback 같은 파괴적 테스트는 별도 임시 PostgreSQL에서만 수행합니다.
+E2E는 `GET /auth/terms`부터 회원가입 동의 저장, AUTO/SEMI_AUTO별 계좌, 부족분 가상 입금과
+멱등 재시도, 전략·매수·매도·원장 정합성까지 확인합니다. 체결 이후에는 포트폴리오 홈의
+평가·자산 배분·기간별 snapshot 추이, 거래내역 cursor 페이지 이동과 잘못된 cursor, 다른
+사용자의 계좌 접근 차단도 실제 PostgreSQL/Redis 데이터로 검증합니다. 생성한 사용자와
+가상거래 관계 및 전용 Redis 가격 key만 테스트 종료 시 FK 역순으로 제거하며 공용 개발 데이터
+전체를 삭제하지 않습니다. 전체 schema drop/recreate, 전체 truncate, migration rollback 같은
+파괴적 테스트는 별도 임시 PostgreSQL에서만 수행합니다.
 
 기존 Frontend Mock의 20개 종목·비중을 특정 개발용 가상계좌에 PostgreSQL 최신 KRX 종가
 기준의 실제 가상 주문으로 한 번만
@@ -127,7 +133,14 @@ Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다.
 
 투자성향 분석은 인증된 `POST /api/v1/investor-profile/analyze` 요청으로 처리한다. Backend는 `v1` 설문의 8개 문항 ID와 선택지 ID를 검증한 뒤 Azure OpenAI에 전달하고, 모델 분석이 끝나면 같은 HTTP 요청에서 5단계 투자유형과 설명을 구조화된 JSON으로 반환한다. 답변과 분석 결과는 DB에 저장하지 않는다. 로컬 실행 전 `.env`에 `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`를 설정한다.
 
-Frontend 가상투자 화면은 FastAPI만 호출한다. `/accounts/me?operation_mode=`로 AUTO/SEMI_AUTO별 동적 계좌 ID를 얻고 `/portfolio` 한 번으로 현금·보유종목·현재 평가를 조회한다. 시장가 BUY/SELL은 UUID idempotency key와 함께 `/orders`로 보내며 성공 후 portfolio/orders/executions를 다시 조회한다. KIS는 Backend `MarketService`의 가격 공급자로만 사용하고, 가상계좌·가상 입금·주문·체결·포지션·현금원장은 Azure PostgreSQL에서 관리한다. 브라우저 bundle에는 KIS key/secret이나 KIS 직접 호출 URL이 포함되지 않는다.
+Frontend 가상투자 화면은 FastAPI만 호출한다. `/auth/me`의 `active_operation_mode`를 복원하고
+`/accounts/me?operation_mode=`로 AUTO/SEMI_AUTO별 동적 계좌 ID를 얻은 뒤 `/portfolio` 한 번으로
+현금·보유종목·현재 평가를 조회한다. 운용방식 전환은 완료된 별도 계좌 사이에서
+`PUT /accounts/me/active-operation-mode`를 사용하며 계좌 자산이나 거래 이력을 이동하지 않는다.
+시장가 BUY/SELL은 UUID idempotency key와 함께 `/orders`로 보내며 성공 후
+portfolio/orders/executions를 다시 조회한다. KIS는 Backend `MarketService`의 가격 공급자로만
+사용하고, 가상계좌·가상 입금·주문·체결·포지션·현금원장은 Azure PostgreSQL에서 관리한다.
+브라우저 bundle에는 KIS key/secret이나 KIS 직접 호출 URL이 포함되지 않는다.
 
 | 서비스 | 접속/확인 위치 |
 | --- | --- |
