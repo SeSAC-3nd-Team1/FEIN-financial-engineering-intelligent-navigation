@@ -15,10 +15,15 @@ interface Props {
 /** 답변 없이 이 화면에 도달한 경우를 위한 안전한 기본값 (정상 플로우에서는 발생하지 않음) */
 const FALLBACK_PROFILE = computeInvestorProfile([2, 1, 1, 4, 1, 2]);
 
-/** 02 결과 — 투자성향 확인 + AI 추천 전략 + 대안 2개 */
+/** 02 결과 — 투자성향 확인 + AI 추천 전략 + 대안 2개
+ *  방금 완료한 진단 결과(백엔드 응답, 실패 시 로컬 계산 fallback)는 App.tsx 가 이미 authStore 에
+ *  Source of Truth로 저장해뒀다 — 여기서 답변을 다시 로컬 계산하면 결과가 어긋날 수 있어 store 값을 그대로 쓴다. */
 export default function RiskResult({ userName, onNavigate, onSelectStrategy }: Props) {
-  const investorAnswers = useAuthStore((s) => s.investorAnswers);
-  const profile = investorAnswers ? computeInvestorProfile(investorAnswers) : FALLBACK_PROFILE;
+  const investorType = useAuthStore((s) => s.investorType);
+  const investorDescription = useAuthStore((s) => s.investorDescription);
+  const profile = investorType && investorDescription
+    ? { type: investorType, description: investorDescription }
+    : FALLBACK_PROFILE;
 
   // 투자성향 유형에 따라 "AI가 가장 추천해요" 카드가 달라지도록 한다 — 과거엔 항상 저변동성이 hero였다.
   const heroId = recommendedStrategyId(profile.type);

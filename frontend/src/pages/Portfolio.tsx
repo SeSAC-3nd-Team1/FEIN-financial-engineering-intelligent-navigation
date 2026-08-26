@@ -12,6 +12,7 @@ import {
 import { useTradingData } from '../hooks/useTradingData';
 import { getDisplayTransactions } from '../lib/transactions';
 import { won } from '../lib/validation';
+import { useAuthStore } from '../store/authStore';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen, TransactionRecord } from '../types';
 
@@ -20,7 +21,31 @@ interface Props {
   onNavigate: (s: Screen) => void;
   /** "자세히" — 보유종목/AI 제안/거래내역 등 전체 관리 화면(PortfolioDetail)으로 이동한다 */
   onOpenDetail: () => void;
+  /** 미설정 유저 안내 모달의 "투자성향 진단하러 가기" — 투자자 정보 확인(risk) Flow로 보낸다.
+   *  'strategy'/'start'(전략 둘러보기/계좌 연동·입금)는 이미 있는 onNavigate 로 충분해 별도 prop 을 두지 않았다. */
+  onStartRiskProfile: () => void;
 }
+
+/** 미설정 유저 안내 모달 — 어떤 항목이 비어있는지에 따라 문구/버튼이 달라진다.
+ *  세 항목을 동시에 검사해서 "먼저 걸리는 것" 하나만 보여준다(투자성향 → 계좌/입금 → 전략 순). */
+type UnconfiguredReason = 'risk' | 'account' | 'strategy';
+const UNCONFIGURED_COPY: Record<UnconfiguredReason, { title: string; message: string; cta: string }> = {
+  risk: {
+    title: '아직 투자성향을 진단하지 않으셨어요!',
+    message: '고객님의 안전하고 정확한 포트폴리오 구성을 위해 투자 성향 진단이 필요합니다.',
+    cta: '투자성향 진단하러 가기',
+  },
+  account: {
+    title: '아직 계좌 연동·입금을 완료하지 않으셨어요!',
+    message: '자산 분석 및 AI 투자를 진행하기 위해 계좌 연동 및 입금을 진행해주세요.',
+    cta: '계좌 연동 / 입금하기',
+  },
+  strategy: {
+    title: '아직 투자 전략을 선택하지 않으셨어요!',
+    message: '맞춤형 AI 포트폴리오를 구성하기 위해 원하시는 투자 전략을 선택해주세요.',
+    cta: '전략 둘러보기',
+  },
+};
 
 /** Power BI 임베드 그래프 변형 3종 — 탭 전환 대상 (위험 분석 탭은 미사용으로 제거됨) */
 type AnalyticsTab = 'weight' | 'trend' | 'contribution';
@@ -88,10 +113,32 @@ const MOCK_PRINCIPAL_TOTAL = MOCK_HOLDINGS.reduce((sum, h) => sum + (h.principal
  *  나머지 포트폴리오 관리 기능은 전부 "자세히" → PortfolioDetail.tsx(`/portfolio/detail`)로 분리했다.
  *  보유 비중 탭은 실 계좌(useTradingStore.portfolio)가 있으면 그 데이터를, 없으면
  *  MOCK_HOLDINGS 로 대체해 보여준다 — 이 대체 규칙은 PortfolioDetail.tsx 와 동일하게 맞춰뒀다. */
-export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props) {
+export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartRiskProfile }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
+  // 미설정 유저 감지 — investorProfileCompleted(투자성향)는 로그인/새로고침마다 백엔드
+  // (/investor-profile/me/latest)에서 다시 복원하는 값이라, 조회가 끝나기 전(isInvestorProfileHydrating)에는
+  // 아직 false 인 게 "진짜 미진단"인지 "복원 중이라 아직 모르는 것"인지 구분할 수 없다. 그래서
+  // "계좌에 전략이 이미 선택돼 있다(account.selected_strategy_id)"를 가장 먼저 확인한다 — 실제 투자 시작
+  // Flow는 반드시 투자성향 진단 → 계좌/입금 → 전략 선택 순서를 강제하므로, 전략이 선택돼 있다는 것 자체가
+  // 앞 단계를 모두 마쳤다는 더 확실한 증거다. 이 신호가 없을 때만 세션 상태로 투자성향 → 계좌/입금 → 전략
+  // 순서를 확인한다. 계좌 데이터를 아직 못 불러온 로딩 중(isAccountLoading)에는 account/accountMissing 이
+  // 둘 다 초기값(null/false)이라 오판할 수 있어, 두 로딩이 모두 끝난 뒤에만 판정한다.
+  const investorProfileCompleted = useAuthStore((state) => state.investorProfileCompleted);
+  const isInvestorProfileHydrating = useAuthStore((state) => state.isInvestorProfileHydrating);
+  const account = useTradingStore((state) => state.account);
+  const accountMissing = useTradingStore((state) => state.accountMissing);
+  const isAccountLoading = useTradingStore((state) => state.isLoading);
+  const unconfiguredReason: UnconfiguredReason | null = isAccountLoading || isInvestorProfileHydrating
+    ? null
+    : account?.selected_strategy_id
+      ? null
+      : !investorProfileCompleted
+        ? 'risk'
+        : accountMissing
+          ? 'account'
+          : 'strategy';
 
   const ALL_HOLDINGS = useMemo(() => {
     if (!portfolio || portfolio.positions.length === 0) return MOCK_HOLDINGS;
@@ -515,6 +562,44 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail }: Props)
         </div>
       </main>
     </div>
+
+    {/* 미설정 유저 안내 — 투자성향 진단/계좌 연동·입금/전략 선택 중 하나라도 비어있으면 배경 대시보드
+        (목업 데이터 포함)를 블러 처리하고 중앙에 설정을 유도하는 모달을 띄운다. 대시보드 자체엔 블러
+        클래스를 추가하지 않아도 backdrop-blur 가 이 오버레이 뒤에 있는 걸 그대로 블러해준다.
+        닫기 버튼 없이 CTA 로만 빠져나갈 수 있게 해서 설정을 미루지 않도록 유도한다.
+        다른 팝업(사유 모달·차트 확대, z-[700])보다 아래 레이어(z-40)에 둔다. */}
+    {unconfiguredReason && (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-8 backdrop-blur-md">
+        <div className="flex w-full max-w-[480px] flex-col gap-6 rounded-card bg-surface p-10 text-center">
+          <h2 className="text-2xl font-bold leading-9 tracking-[-0.02em]">
+            {userName} 고객님! {UNCONFIGURED_COPY[unconfiguredReason].title}
+          </h2>
+          <p className="text-[17px] leading-7 text-[#3F4A43]">
+            {UNCONFIGURED_COPY[unconfiguredReason].message}
+          </p>
+          <button
+            onClick={() => {
+              // 항목별로 목적지가 다르다 — 투자성향은 전용 Flow(startInvestorProfile)가 필요해 부모의
+              // onStartRiskProfile 을 쓰고, 계좌/전략은 이미 있는 화면 전환(onNavigate)만으로 충분하다.
+              switch (unconfiguredReason) {
+                case 'risk':
+                  onStartRiskProfile();
+                  break;
+                case 'account':
+                  onNavigate('start');
+                  break;
+                case 'strategy':
+                  onNavigate('strategy');
+                  break;
+              }
+            }}
+            className="rounded-field bg-lime py-5 text-lg font-bold text-navy"
+          >
+            {UNCONFIGURED_COPY[unconfiguredReason].cta}
+          </button>
+        </div>
+      </div>
+    )}
 
     {/* AI 제안 사유 팝업 — 좌하단 위젯의 카드를 클릭하면 왜 지금 손절/리밸런싱을 제안하는지 보여준다.
         h-screen overflow-hidden 인 페이지 루트 바깥(형제)에 둬서, 루트의 overflow-hidden 에 잘리지 않게 한다. */}

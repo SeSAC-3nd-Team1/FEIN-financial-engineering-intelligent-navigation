@@ -28,7 +28,8 @@ import TransactionDetail from './pages/TransactionDetail';
 import TransactionHistory from './pages/TransactionHistory';
 import { STRATEGIES } from './data/strategies';
 import { toAccountOperationMode, toOperationMode, type OperationMode } from './data/fees';
-import { getMyAccountApi, signupTermsApi } from './lib/backendApi';
+import { analyzeInvestorProfileApi, getMyAccountApi, signupTermsApi } from './lib/backendApi';
+import { buildInvestorAnswerPayload, computeInvestorProfile, mapInvestorProfileResponse } from './lib/investorProfile';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
@@ -106,6 +107,9 @@ export default function App() {
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
+  // 투자자 정보 확인(risk) 완료 버튼을 누른 뒤 백엔드 분석 응답을 기다리는 동안 true — 이 결과가
+  // RiskResult/재로그인 복원의 Source of Truth이므로, 응답이 오기 전까지는 화면을 넘기지 않는다.
+  const [isDiagnosisSubmitting, setIsDiagnosisSubmitting] = useState(false);
   // 비회원이 Strategy Detail "이 전략으로 시작하기"를 눌러 로그인 화면으로 보내진 경우 true —
   // 로그인 완료 후 Portfolio가 아니라 원래 하려던 투자 시작 절차로 이어간다(아래 Login onLogin 참고).
   const [pendingStartAfterLogin, setPendingStartAfterLogin] = useState(false);
@@ -543,11 +547,30 @@ export default function App() {
       {screen === 'risk' && (
         <RiskProfile
           notice={riskNotice}
+          isSubmitting={isDiagnosisSubmitting}
           // postDiagnosisTarget이 'start'면 Strategy Detail "이 전략으로 시작하기"에서 온 것 —
           // 새 진입 state를 따로 만들지 않고 이미 있는 이 값을 그대로 재사용해 context를 판단한다.
           context={postDiagnosisTarget === 'start' ? 'strategy' : 'general'}
-          onComplete={({ investorType, answers }) => {
-            completeInvestorProfile(investorType, answers, new Date().toISOString());
+          onComplete={async (answers) => {
+            setIsDiagnosisSubmitting(true);
+            // 백엔드 AI 분석(investor_profile_assessments)이 Source of Truth다 — RiskResult와 재로그인
+            // 복원(hydrateInvestorProfile)이 모두 이 결과를 그대로 쓴다. 로컬 computeInvestorProfile()은
+            // 토큰이 없거나(이 화면은 로그인 후에만 진입하므로 사실상 발생하지 않음) API 호출이 실패했을
+            // 때만 쓰는 fallback이다.
+            let profile = computeInvestorProfile(answers);
+            if (accessToken) {
+              try {
+                const response = await analyzeInvestorProfileApi(
+                  { questionnaire_version: 'v1', answers: buildInvestorAnswerPayload(answers) },
+                  accessToken,
+                );
+                profile = mapInvestorProfileResponse(response);
+              } catch {
+                // AI_PERSONALIZATION 약관 비동의/일시 오류 — 로컬 계산 결과로 흐름을 이어간다.
+              }
+            }
+            completeInvestorProfile(profile, answers, new Date().toISOString());
+            setIsDiagnosisSubmitting(false);
             setRiskNotice(undefined);
             setScreen(postDiagnosisTarget);
             setPostDiagnosisTarget('risk-result');
@@ -730,6 +753,7 @@ export default function App() {
             userName={userName}
             onNavigate={navigate}
             onOpenDetail={() => setScreen('portfolio-detail')}
+            onStartRiskProfile={() => startInvestorProfile('risk-result')}
           />
         )
       )}

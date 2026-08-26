@@ -45,8 +45,14 @@ export default function InvestorProfileCheck({ userName, onNavigate, onContinue,
             </div>
             <div className="h-px bg-line" />
             <Row label="확인일" value={completedAt ? formatDate(completedAt) : '-'} />
-            <Row label="투자 목적" value={answerLabel(3, answers?.[3])} />
-            <Row label="투자 경험" value={answerLabel(0, answers?.[0])} />
+            {/* answers는 이번 세션에서 방금 진단을 마쳤을 때만 채워진다 — 재로그인으로 복원된 경우
+             *  백엔드가 원문 답변을 내려주지 않아 null이므로, "-"로 잘못 보여주는 대신 행 자체를 숨긴다. */}
+            {answers && (
+              <>
+                <Row label="투자 목적" value={answerLabel(3, answers[3])} />
+                <Row label="투자 경험" value={answerLabel(0, answers[0])} />
+              </>
+            )}
           </div>
 
           <div className="flex flex-col gap-3">
