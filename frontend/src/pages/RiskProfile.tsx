@@ -93,7 +93,7 @@ export default function RiskProfile({ onComplete, onExit, notice, context = 'gen
     <div className="min-h-screen bg-canvas">
       <header className="flex h-20 items-center gap-6 px-16">
         <button onClick={onExit} className="flex shrink-0 items-center gap-2">
-          <img src="/main_logo.png" alt="FE!N" className="h-16 w-auto object-contain" />
+          <img src="/main_logo_2.png" alt="FE!N" className="h-16 w-auto object-contain" />
         </button>
 
         {phase === 'question' && (
