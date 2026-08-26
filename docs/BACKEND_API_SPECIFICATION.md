@@ -71,7 +71,8 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 ```
 
 ACS Email로 6자리 인증번호를 보내며 원문 인증번호는 Redis에 저장하지 않는다. 같은 이메일은 기본
-60초 뒤 재발송할 수 있고 시간당 5회로 제한한다.
+60초 뒤 재발송할 수 있고 시간당 5회, 요청 IP는 시간당 20회로 제한한다. IP 식별은 ASGI server가
+검증한 `request.client.host`를 사용하며 클라이언트가 직접 보낸 전달 헤더는 애플리케이션에서 신뢰하지 않는다.
 
 ### POST `/auth/email-verifications/verify`
 

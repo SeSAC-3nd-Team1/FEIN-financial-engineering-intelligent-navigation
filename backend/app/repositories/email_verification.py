@@ -11,6 +11,7 @@ class SendSlotResult(Enum):
     ACQUIRED = "ACQUIRED"
     COOLDOWN = "COOLDOWN"
     HOURLY_LIMIT = "HOURLY_LIMIT"
+    IP_HOURLY_LIMIT = "IP_HOURLY_LIMIT"
 
 
 class ChallengeResult(Enum):
@@ -38,12 +39,16 @@ class RedisEmailVerificationRepository:
 
     _SEND_SLOT_SCRIPT = """
     if redis.call('EXISTS', KEYS[1]) == 1 then return -1 end
-    local count = tonumber(redis.call('GET', KEYS[2]) or '0')
-    if count >= tonumber(ARGV[3]) then return -2 end
+    local target_count = tonumber(redis.call('GET', KEYS[2]) or '0')
+    if target_count >= tonumber(ARGV[3]) then return -2 end
+    local ip_count = tonumber(redis.call('GET', KEYS[3]) or '0')
+    if ip_count >= tonumber(ARGV[4]) then return -3 end
     redis.call('SET', KEYS[1], '1', 'EX', ARGV[1])
-    count = redis.call('INCR', KEYS[2])
-    if count == 1 then redis.call('EXPIRE', KEYS[2], ARGV[2]) end
-    return count
+    target_count = redis.call('INCR', KEYS[2])
+    if target_count == 1 then redis.call('EXPIRE', KEYS[2], ARGV[2]) end
+    ip_count = redis.call('INCR', KEYS[3])
+    if ip_count == 1 then redis.call('EXPIRE', KEYS[3], ARGV[2]) end
+    return target_count
     """
 
     _DISCARD_SCRIPT = """
@@ -117,22 +122,28 @@ class RedisEmailVerificationRepository:
     def acquire_send_slot(
         self,
         target_hash: str,
+        client_hash: str,
         resend_seconds: int,
         hourly_limit: int,
+        ip_hourly_limit: int,
     ) -> SendSlotResult:
         result = int(self.cache.eval(
             self._SEND_SLOT_SCRIPT,
-            2,
+            3,
             f"auth:email-send-cooldown:{target_hash}",
             f"auth:email-send-hourly:{target_hash}",
+            f"auth:email-send-ip-hourly:{client_hash}",
             resend_seconds,
             3600,
             hourly_limit,
+            ip_hourly_limit,
         ))
         if result == -1:
             return SendSlotResult.COOLDOWN
         if result == -2:
             return SendSlotResult.HOURLY_LIMIT
+        if result == -3:
+            return SendSlotResult.IP_HOURLY_LIMIT
         return SendSlotResult.ACQUIRED
 
     def release_cooldown(self, target_hash: str) -> None:

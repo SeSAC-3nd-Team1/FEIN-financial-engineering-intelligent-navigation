@@ -47,7 +47,8 @@ Copy-Item .env.example .env
 
 이메일 인증을 사용할 때 위 세 값을 모두 설정해야 한다. TTL·재발송·시도 횟수·시간당 한도는
 `EMAIL_OTP_TTL_SECONDS`, `EMAIL_OTP_RESEND_SECONDS`, `EMAIL_OTP_MAX_ATTEMPTS`,
-`EMAIL_OTP_HOURLY_LIMIT`, `EMAIL_VERIFICATION_TOKEN_TTL_SECONDS`로 조정한다. 실제 ACS 연결 문자열과
+`EMAIL_OTP_HOURLY_LIMIT`, `EMAIL_OTP_IP_HOURLY_LIMIT`,
+`EMAIL_VERIFICATION_TOKEN_TTL_SECONDS`로 조정한다. 실제 ACS 연결 문자열과
 OTP secret은 로그나 버전 관리 파일에 남기지 않는다.
 
 ## PostgreSQL URL

@@ -39,8 +39,9 @@ class VerificationStub:
     def __init__(self) -> None:
         self.verification_id = uuid4()
 
-    def send_code(self, email: str) -> EmailChallenge:
+    def send_code(self, email: str, client_address: str | None = None) -> EmailChallenge:
         assert email == "test@example.com"
+        assert client_address == "testclient"
         return EmailChallenge(self.verification_id, 300, 60)
 
     def verify_code(self, verification_id, code: str) -> EmailVerificationProof:

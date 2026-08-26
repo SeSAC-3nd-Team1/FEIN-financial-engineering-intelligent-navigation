@@ -64,15 +64,18 @@ class EmailVerificationService:
     def normalize_email(email: str) -> str:
         return email.strip().lower()
 
-    def send_code(self, email: str) -> EmailChallenge:
+    def send_code(self, email: str, client_address: str | None = None) -> EmailChallenge:
         self._ensure_configured()
         normalized = self.normalize_email(email)
         target_hash = sha256(normalized.encode()).hexdigest()
+        client_hash = sha256((client_address or "unknown").encode()).hexdigest()
         try:
             slot = self.repository.acquire_send_slot(
                 target_hash,
+                client_hash,
                 self.configuration.email_otp_resend_seconds,
                 self.configuration.email_otp_hourly_limit,
+                self.configuration.email_otp_ip_hourly_limit,
             )
         except redis.RedisError as exc:
             raise self._redis_unavailable() from exc
@@ -82,7 +85,7 @@ class EmailVerificationService:
                 "인증번호를 다시 받기 전에 잠시 기다려 주세요.",
                 429,
             )
-        if slot == SendSlotResult.HOURLY_LIMIT:
+        if slot in (SendSlotResult.HOURLY_LIMIT, SendSlotResult.IP_HOURLY_LIMIT):
             raise ServiceError(
                 "EMAIL_VERIFICATION_RATE_LIMITED",
                 "인증번호 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.",

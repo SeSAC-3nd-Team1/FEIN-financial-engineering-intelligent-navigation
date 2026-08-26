@@ -33,11 +33,13 @@ class FailingSender:
 class FakeRepository:
     def __init__(self) -> None:
         self.slot_result = SendSlotResult.ACQUIRED
+        self.send_slot_args = None
         self.challenges: dict[UUID, tuple[str, str]] = {}
         self.tokens: dict[str, dict[str, str]] = {}
         self.cooldown_released = False
 
-    def acquire_send_slot(self, *_args) -> SendSlotResult:
+    def acquire_send_slot(self, *args) -> SendSlotResult:
+        self.send_slot_args = args
         return self.slot_result
 
     def release_cooldown(self, _target_hash: str) -> None:
@@ -113,10 +115,17 @@ def configured_service() -> tuple[EmailVerificationService, FakeRepository, Fake
 def test_send_verify_and_consume_token_once() -> None:
     service, repository, sender = configured_service()
 
-    challenge = service.send_code("  User@Example.COM ")
+    challenge = service.send_code("  User@Example.COM ", "203.0.113.10")
     assert sender.messages[0][0] == "user@example.com"
     assert sender.messages[0][1].isdigit()
     assert len(sender.messages[0][1]) == 6
+    assert repository.send_slot_args == (
+        sha256(b"user@example.com").hexdigest(),
+        sha256(b"203.0.113.10").hexdigest(),
+        service.configuration.email_otp_resend_seconds,
+        service.configuration.email_otp_hourly_limit,
+        service.configuration.email_otp_ip_hourly_limit,
+    )
 
     proof = service.verify_code(challenge.verification_id, sender.messages[0][1])
     reservation = service.reserve_token(proof.verification_token, "USER@example.com")
@@ -145,6 +154,7 @@ def test_verification_token_cannot_be_used_for_another_email() -> None:
     [
         (SendSlotResult.COOLDOWN, "EMAIL_VERIFICATION_COOLDOWN"),
         (SendSlotResult.HOURLY_LIMIT, "EMAIL_VERIFICATION_RATE_LIMITED"),
+        (SendSlotResult.IP_HOURLY_LIMIT, "EMAIL_VERIFICATION_RATE_LIMITED"),
     ],
 )
 def test_send_rate_limits_are_reported(slot: SendSlotResult, expected_code: str) -> None:

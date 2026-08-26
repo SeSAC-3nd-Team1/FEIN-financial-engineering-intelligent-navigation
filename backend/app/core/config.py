@@ -28,6 +28,7 @@ class Settings:
     email_otp_max_attempts: int = int(os.getenv("EMAIL_OTP_MAX_ATTEMPTS", "5"))
     email_otp_resend_seconds: int = int(os.getenv("EMAIL_OTP_RESEND_SECONDS", "60"))
     email_otp_hourly_limit: int = int(os.getenv("EMAIL_OTP_HOURLY_LIMIT", "5"))
+    email_otp_ip_hourly_limit: int = int(os.getenv("EMAIL_OTP_IP_HOURLY_LIMIT", "20"))
     email_verification_token_ttl_seconds: int = int(
         os.getenv("EMAIL_VERIFICATION_TOKEN_TTL_SECONDS", "1800")
     )

@@ -313,9 +313,12 @@ reservation_id   UUID (RESERVED일 때만)
 ```text
 auth:email-send-cooldown:{sha256(email)}
 auth:email-send-hourly:{sha256(email)}
+auth:email-send-ip-hourly:{sha256(client_address)}
 ```
 
-API 명세의 target/IP rate limit을 Redis counter + TTL로 구현한다.
+기본 정책은 이메일별 60초 cooldown/시간당 5회와 IP별 시간당 20회다. 세 조건을 단일 Redis Lua
+연산으로 검사·증가시켜 동시 요청에서도 한도를 초과하지 않는다. IP는 임의 전달 헤더가 아니라 ASGI
+server가 신뢰 프록시 정책을 적용해 제공한 client address를 사용한다.
 
 ## 9. 가입 데이터 흐름
 
@@ -349,7 +352,7 @@ ACS Email 발송, Redis OTP hash/시도 횟수/TTL/rate limit, 이메일에 묶�
 
 1. 실제 휴대폰 OTP provider와 관련 약관 연결
 2. 필요 시 `registration_sessions` 기반 단계별 가입 API 연결
-3. IP 단위 rate limit과 abuse monitoring 보강
+3. rate limit 초과와 ACS 반송률에 대한 운영 abuse monitoring 보강
 4. Azure PostgreSQL 운영 약관 version 적용
 
 ## 12. 구현 전 확인할 정책

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
@@ -46,9 +46,11 @@ def signup(
 )
 def send_email_verification(
     payload: EmailVerificationSendRequest,
+    request: Request,
     verification: EmailVerificationService = Depends(email_verification_service),
 ) -> EmailVerificationSendResponse:
-    challenge = verification.send_code(str(payload.email))
+    client_address = request.client.host if request.client is not None else None
+    challenge = verification.send_code(str(payload.email), client_address)
     return EmailVerificationSendResponse(
         verification_id=challenge.verification_id,
         expires_in_seconds=challenge.expires_in_seconds,
