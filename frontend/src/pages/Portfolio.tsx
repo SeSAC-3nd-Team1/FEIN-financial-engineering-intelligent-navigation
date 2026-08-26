@@ -204,22 +204,28 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
     return () => { cancelled = true; };
   }, [account, accessToken, historyPeriod]);
 
+  // 실 계좌가 있으면(account) 이력이 0건이어도 그 실제 결과를 그대로 쓴다 — history가 아직 응답을
+  // 못 받았을 때(요청 중)만 잠깐 빈 배열로 보이고, 없는 데이터를 mock으로 대신 채우지는 않는다.
+  // mock은 애초에 실 계좌 자체가 없을 때(account === null)만 쓴다.
   const trendData = useMemo(() => {
-    if (history && history.items.length > 0) {
-      return history.items.map((item) => ({
+    if (account) {
+      return (history?.items ?? []).map((item) => ({
         label: item.date.slice(5).replace('-', '.'),
         port: Number(item.portfolio_return_rate),
-        kospi: item.benchmark_return_rate == null ? 0 : Number(item.benchmark_return_rate),
+        // 벤치마크 값이 없는 것과 실제 수익률 0%는 다르다 — null을 0으로 바꾸지 않고 그대로 둬서
+        // 차트가 그 구간을 비워 그리게 한다(연결하지 않음).
+        kospi: item.benchmark_return_rate == null ? null : Number(item.benchmark_return_rate),
       }));
     }
     const mockN = TREND_PERIODS.find((p) => p.value === historyPeriod)?.mockN ?? PORTFOLIO_TREND.length;
     return PORTFOLIO_TREND.slice(-mockN);
-  }, [history, historyPeriod]);
+  }, [account, history, historyPeriod]);
   const benchmarkName = history?.benchmark_name ?? 'KOSPI';
 
-  // 종목별 기여 탭: 실 계좌가 있고 기여도가 산출됐으면 그 값을, 없으면 목업을 큰 기여 순으로 정렬해 보여준다.
+  // 종목별 기여 탭: 실 계좌가 있으면(portfolio) 기여도가 0건이어도 그 실제 결과를 그대로 쓴다.
+  // mock은 실 계좌 자체가 없을 때(portfolio === null)만 쓴다.
   const contributionData = useMemo(() => {
-    if (portfolio && portfolio.contributions.length > 0) {
+    if (portfolio) {
       return [...portfolio.contributions]
         .map((c) => ({ name: c.stock_name ?? c.stock_code, amount: Number(c.amount) }))
         .sort((a, b) => b.amount - a.amount);
@@ -377,8 +383,9 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
               width={52}
               tickFormatter={(v: number) => `${v}%`}
             />
-            <Tooltip formatter={(v: number) => `${v}%`} />
+            <Tooltip formatter={(v) => v == null ? '데이터 없음' : `${v}%`} />
             <Legend iconType="plainline" wrapperStyle={{ fontSize: 13, color: '#5C665F' }} />
+            {/* connectNulls를 켜지 않는다 — benchmark_return_rate가 없는 구간은 값을 지어내지 않고 선을 끊어 보여준다 */}
             <Line type="monotone" dataKey="kospi" name={benchmarkName} stroke="#C3CBC4" strokeWidth={3.5} dot={false} />
             <Line type="monotone" dataKey="port" name="내 포트폴리오" stroke="#18243A" strokeWidth={5} dot={false} />
           </LineChart>
@@ -466,11 +473,22 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
                   <div className="flex h-full flex-col gap-3">
                     {/* "크게 보기" 버튼은 기간 선택 버튼들과 같은 헤더 줄(우측)에 있다(renderTrendChart 내부, onExpand) */}
                     {renderTrendChart('h-full', () => setIsChartZoomOpen(true))}
-                    <Insight compact>
-                      {trendData[trendData.length - 1].port >= trendData[trendData.length - 1].kospi
-                        ? '시장보다 덜 흔들리면서 더 높은 누적 수익을 내고 있어요.'
-                        : '최근 구간에서는 KOSPI가 더 좋았지만, 변동성은 여전히 낮게 유지되고 있어요.'}
-                    </Insight>
+                    {trendData.length === 0 ? (
+                      <Insight compact>아직 표시할 자산 변화 데이터가 없어요.</Insight>
+                    ) : (
+                      (() => {
+                        const last = trendData[trendData.length - 1];
+                        return (
+                          <Insight compact>
+                            {last.kospi == null
+                              ? '이 기간의 비교 벤치마크 데이터가 아직 없어요.'
+                              : last.port >= last.kospi
+                                ? '시장보다 덜 흔들리면서 더 높은 누적 수익을 내고 있어요.'
+                                : '최근 구간에서는 KOSPI가 더 좋았지만, 변동성은 여전히 낮게 유지되고 있어요.'}
+                          </Insight>
+                        );
+                      })()
+                    )}
                   </div>
                 )}
 
@@ -478,7 +496,9 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
                   <div className="flex h-full flex-col gap-3">
                     {/* "크게 보기" 버튼은 캡션 문구와 같은 헤더 줄(우측)에 있다(renderContributionChart 내부, onExpand) */}
                     {renderContributionChart('h-full', () => setIsChartZoomOpen(true))}
-                    <Insight compact>{topContributor.name}가 수익에 가장 많이 기여했어요.</Insight>
+                    <Insight compact>
+                      {topContributor ? `${topContributor.name}가 수익에 가장 많이 기여했어요.` : '아직 표시할 기여도 데이터가 없어요.'}
+                    </Insight>
                   </div>
                 )}
 

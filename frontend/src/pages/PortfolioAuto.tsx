@@ -136,6 +136,11 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
   const [hoverHoldingIdx, setHoverHoldingIdx] = useState<number | null>(null);
   // 실 계좌에 리밸런싱 제안이 있으면 그 값을, 없으면 목업을 쓴다 — lib/rebalancing.ts 참고
   const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+  // rebalancing_proposals는 "제안"이지 "실행 완료된 조치"가 아니다 — 실 계좌 데이터를 쓸 때는(portfolio가
+  // 있을 때) 이 화면 특유의 "이미 실행했어요" 과거형 문구/완료 체크를 쓰면 안 되고, 반자동(Portfolio.tsx)과
+  // 같은 "제안" 문구를 써야 한다. mock(AI_ALERTS)은 여전히 "완료된 자동 실행"이라는 스토리 데이터라 기존
+  // 과거형 문구를 그대로 쓴다.
+  const usingRealAlerts = portfolio !== null;
   // 우측 하단 "AI 실행 내역" 위젯에서 카드를 클릭하면 여는 사유 팝업 — id 로 열림 상태를 관리한다
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
   const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
@@ -159,22 +164,28 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
     return () => { cancelled = true; };
   }, [account, accessToken, historyPeriod]);
 
+  // 실 계좌가 있으면(account) 이력이 0건이어도 그 실제 결과를 그대로 쓴다 — history가 아직 응답을
+  // 못 받았을 때(요청 중)만 잠깐 빈 배열로 보이고, 없는 데이터를 mock으로 대신 채우지는 않는다.
+  // mock은 애초에 실 계좌 자체가 없을 때(account === null)만 쓴다.
   const trendData = useMemo(() => {
-    if (history && history.items.length > 0) {
-      return history.items.map((item) => ({
+    if (account) {
+      return (history?.items ?? []).map((item) => ({
         label: item.date.slice(5).replace('-', '.'),
         port: Number(item.portfolio_return_rate),
-        kospi: item.benchmark_return_rate == null ? 0 : Number(item.benchmark_return_rate),
+        // 벤치마크 값이 없는 것과 실제 수익률 0%는 다르다 — null을 0으로 바꾸지 않고 그대로 둬서
+        // 차트가 그 구간을 비워 그리게 한다(연결하지 않음).
+        kospi: item.benchmark_return_rate == null ? null : Number(item.benchmark_return_rate),
       }));
     }
     const mockN = TREND_PERIODS.find((p) => p.value === historyPeriod)?.mockN ?? PORTFOLIO_TREND.length;
     return PORTFOLIO_TREND.slice(-mockN);
-  }, [history, historyPeriod]);
+  }, [account, history, historyPeriod]);
   const benchmarkName = history?.benchmark_name ?? 'KOSPI';
 
-  // 종목별 기여 탭: 실 계좌가 있고 기여도가 산출됐으면 그 값을, 없으면 목업을 큰 기여 순으로 정렬해 보여준다.
+  // 종목별 기여 탭: 실 계좌가 있으면(portfolio) 기여도가 0건이어도 그 실제 결과를 그대로 쓴다.
+  // mock은 실 계좌 자체가 없을 때(portfolio === null)만 쓴다.
   const contributionData = useMemo(() => {
-    if (portfolio && portfolio.contributions.length > 0) {
+    if (portfolio) {
       return [...portfolio.contributions]
         .map((c) => ({ name: c.stock_name ?? c.stock_code, amount: Number(c.amount) }))
         .sort((a, b) => b.amount - a.amount);
@@ -332,8 +343,9 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
               width={52}
               tickFormatter={(v: number) => `${v}%`}
             />
-            <Tooltip formatter={(v: number) => `${v}%`} />
+            <Tooltip formatter={(v) => v == null ? '데이터 없음' : `${v}%`} />
             <Legend iconType="plainline" wrapperStyle={{ fontSize: 13, color: '#5C665F' }} />
+            {/* connectNulls를 켜지 않는다 — benchmark_return_rate가 없는 구간은 값을 지어내지 않고 선을 끊어 보여준다 */}
             <Line type="monotone" dataKey="kospi" name={benchmarkName} stroke="#C3CBC4" strokeWidth={3.5} dot={false} />
             <Line type="monotone" dataKey="port" name="내 포트폴리오" stroke="#18243A" strokeWidth={5} dot={false} />
           </LineChart>
@@ -421,11 +433,22 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
                   <div className="flex h-full flex-col gap-3">
                     {/* "크게 보기" 버튼은 기간 선택 버튼들과 같은 헤더 줄(우측)에 있다(renderTrendChart 내부, onExpand) */}
                     {renderTrendChart('h-full', () => setIsChartZoomOpen(true))}
-                    <Insight compact>
-                      {trendData[trendData.length - 1].port >= trendData[trendData.length - 1].kospi
-                        ? '시장보다 덜 흔들리면서 더 높은 누적 수익을 내고 있어요.'
-                        : '최근 구간에서는 KOSPI가 더 좋았지만, 변동성은 여전히 낮게 유지되고 있어요.'}
-                    </Insight>
+                    {trendData.length === 0 ? (
+                      <Insight compact>아직 표시할 자산 변화 데이터가 없어요.</Insight>
+                    ) : (
+                      (() => {
+                        const last = trendData[trendData.length - 1];
+                        return (
+                          <Insight compact>
+                            {last.kospi == null
+                              ? '이 기간의 비교 벤치마크 데이터가 아직 없어요.'
+                              : last.port >= last.kospi
+                                ? '시장보다 덜 흔들리면서 더 높은 누적 수익을 내고 있어요.'
+                                : '최근 구간에서는 KOSPI가 더 좋았지만, 변동성은 여전히 낮게 유지되고 있어요.'}
+                          </Insight>
+                        );
+                      })()
+                    )}
                   </div>
                 )}
 
@@ -433,7 +456,9 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
                   <div className="flex h-full flex-col gap-3">
                     {/* "크게 보기" 버튼은 캡션 문구와 같은 헤더 줄(우측)에 있다(renderContributionChart 내부, onExpand) */}
                     {renderContributionChart('h-full', () => setIsChartZoomOpen(true))}
-                    <Insight compact>{topContributor.name}가 수익에 가장 많이 기여했어요.</Insight>
+                    <Insight compact>
+                      {topContributor ? `${topContributor.name}가 수익에 가장 많이 기여했어요.` : '아직 표시할 기여도 데이터가 없어요.'}
+                    </Insight>
                   </div>
                 )}
 
@@ -494,9 +519,13 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
                       "왜 실행했나요?"(과거형) 사유 팝업을 연다. 가로 3칸(grid-cols-3)으로 배치하고, 항상 최신 3건만 보여준다.
                       "더 알아보기"는 박스 밖이 아니라 박스 안 우하단에 둔다(self-end, 마지막 자식). */}
                   <div className="flex flex-col gap-2 rounded-[16px] bg-surface p-4">
-                    <span className="text-xs font-semibold text-[#3F5222]">✦ AI가 자동으로 처리했어요</span>
+                    <span className="text-xs font-semibold text-[#3F5222]">
+                      {usingRealAlerts ? '✦ AI의 리밸런싱 제안' : '✦ AI가 자동으로 처리했어요'}
+                    </span>
                     {displayAlerts.length === 0 ? (
-                      <p className="text-xs text-subtle">최근 자동 실행 내역이 없어요.</p>
+                      <p className="text-xs text-subtle">
+                        {usingRealAlerts ? '지금은 확인할 제안이 없어요.' : '최근 자동 실행 내역이 없어요.'}
+                      </p>
                     ) : (
                       <div className="grid grid-cols-3 gap-2">
                         {displayAlerts.slice(0, 3).map((a) => (
@@ -509,7 +538,8 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
                               <span className={`w-fit whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold ${ALERT_BADGE[a.kind]}`}>
                                 {a.badge}
                               </span>
-                              <Check size={12} className="shrink-0 text-[#3F5222]" aria-label="완료" />
+                              {/* 완료 체크는 "이미 실행된 조치"를 뜻한다 — 아직 실행 전인 실 제안 데이터에는 붙이지 않는다 */}
+                              {!usingRealAlerts && <Check size={12} className="shrink-0 text-[#3F5222]" aria-label="완료" />}
                             </div>
                             <span className="w-full truncate text-xs font-semibold text-ink">{a.stockName}</span>
                           </button>
@@ -570,7 +600,9 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
               <span className={`w-fit rounded-full px-3 py-1.5 text-sm font-bold ${ALERT_BADGE[alertModal.kind]}`}>
                 {alertModal.badge}
               </span>
-              <h2 className="text-xl font-bold tracking-[-0.02em]">{alertModal.stockName} · 왜 실행했나요?</h2>
+              <h2 className="text-xl font-bold tracking-[-0.02em]">
+                {alertModal.stockName} · {usingRealAlerts ? '왜 지금인가요?' : '왜 실행했나요?'}
+              </h2>
             </div>
             <button aria-label="닫기" onClick={() => setAlertModalId(null)} className="rounded-[9px] bg-canvas p-2 text-muted">
               <X size={16} />
@@ -578,7 +610,7 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
           </div>
           <p className="text-[15px] leading-6 text-[#3F4A43]">{alertModal.reason}</p>
           <div className="flex items-center gap-3 rounded-[14px] bg-[#F8FCEE] px-6 py-5">
-            <span className="shrink-0 text-sm font-semibold text-[#3F5222]">AI 조치</span>
+            <span className="shrink-0 text-sm font-semibold text-[#3F5222]">{usingRealAlerts ? 'AI 제안' : 'AI 조치'}</span>
             <span className="text-sm font-semibold text-ink">{alertModal.action}</span>
           </div>
         </div>

@@ -588,20 +588,24 @@ function ReviewView({
               <span className="text-[15px] text-subtle">최근 {decisions.items.length}건</span>
             </div>
             <div className="flex flex-col">
-              {decisions.items.map((d) => (
-                <div key={d.id} className="flex items-center gap-6 border-b border-line py-5 last:border-0">
-                  <span className="w-24 shrink-0 text-[14px] text-subtle">{d.date}</span>
-                  <span className="flex-1 text-[17px] font-semibold text-[#3F4A43]">{d.action}</span>
-                  <span
-                    className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm font-bold ${
-                      d.choice === '수락' ? 'bg-[#EAF7EF] text-[#2E9B65]' : 'bg-[#F4F6F1] text-muted'
-                    }`}
-                  >
-                    ● {d.choice}
-                  </span>
-                  <span className="w-48 shrink-0 text-right text-[15px] text-muted">{d.result}</span>
-                </div>
-              ))}
+              {decisions.items.length === 0 ? (
+                <p className="py-10 text-center text-[15px] text-subtle">아직 판단 기록이 없어요.</p>
+              ) : (
+                decisions.items.map((d) => (
+                  <div key={d.id} className="flex items-center gap-6 border-b border-line py-5 last:border-0">
+                    <span className="w-24 shrink-0 text-[14px] text-subtle">{d.date}</span>
+                    <span className="flex-1 text-[17px] font-semibold text-[#3F4A43]">{d.action}</span>
+                    <span
+                      className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm font-bold ${
+                        d.choice === '수락' ? 'bg-[#EAF7EF] text-[#2E9B65]' : 'bg-[#F4F6F1] text-muted'
+                      }`}
+                    >
+                      ● {d.choice}
+                    </span>
+                    <span className="w-48 shrink-0 text-right text-[15px] text-muted">{d.result}</span>
+                  </div>
+                ))
+              )}
             </div>
           </section>
         </div>

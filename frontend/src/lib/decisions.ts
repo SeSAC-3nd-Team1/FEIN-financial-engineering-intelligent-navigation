@@ -35,9 +35,11 @@ function toDisplayDecision(item: RebalancingDecisionHistoryResponse['items'][num
   };
 }
 
-/** 실 계좌에 리밸런싱 판단 이력이 있으면 그 값을, 없으면(신규 계좌 등) 기존 목업을 그대로 보여준다. */
+/** 실 계좌 조회가 성공했으면(decisions가 있으면) 판단 이력이 0건이어도 그 실제 결과를 그대로 보여준다 —
+ *  "이력 없음"과 "계좌 조회 자체가 안 돼 mock을 보여줘야 하는 상황"은 다르다. mock은 조회 자체가 안 된
+ *  경우(비로그인·신규 계좌·조회 실패 등, decisions === null)에만 쓴다. */
 export function getDisplayDecisions(decisions: RebalancingDecisionHistoryResponse | null): DisplayDecisionSummary {
-  if (decisions && decisions.items.length > 0) {
+  if (decisions) {
     return {
       periodLabel: decisions.period_label,
       proposed: decisions.proposed,
