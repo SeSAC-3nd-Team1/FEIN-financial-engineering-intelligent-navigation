@@ -26,7 +26,7 @@
 React → FastAPI /market → MarketService → Redis price cache → (miss) KIS 현재가
 React → FastAPI /orders → TradingService → MarketService + PostgreSQL transaction
 React → FastAPI /portfolio/home → account + portfolio evaluation + snapshot history + validated candidates → AI reason/why-now
-React → FastAPI /portfolio/comparison → AUTO/SEMI_AUTO common snapshots + server metrics → AI screen copy
+React → FastAPI /portfolio/comparison → AUTO/SEMI_AUTO common snapshots + cash ledger-adjusted TWR → AI focus codes → server-rendered screen copy
 React → FastAPI /portfolio/transactions → PostgreSQL executions + KRX stock metadata
 React → FastAPI /portfolio → PostgreSQL positions/account + MarketService
 React → FastAPI /accounts/me/active-operation-mode → completed onboarding + mode account → users active selection

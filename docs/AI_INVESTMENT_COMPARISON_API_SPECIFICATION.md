@@ -14,7 +14,13 @@ API는 `GET /api/v1/portfolio/comparison?period=3M`이다. `period`는 `1M`, `3M
 - 원천 데이터는 장 마감 후 저장된 `portfolio_snapshots.total_assets`다.
 - 선택 기간 안에서 두 계좌에 모두 snapshot이 존재하는 날짜만 사용한다.
 - 첫 공통 관측일의 각 계좌 자산을 각각 0% 기준으로 정규화한다.
-- 계좌별 수익률은 `(현재 자산 / 기준 자산 - 1) * 100`이며 소수 둘째 자리까지 반환한다.
+- 공통 관측일 사이의 `cash_ledger` 중 매매와 무관한 `INITIAL_DEPOSIT`, `DEPOSIT`,
+  `ADJUSTMENT`를 외부 현금흐름으로 사용한다. `BUY`, `SELL` 원장은 포트폴리오 내부 자산
+  이동이므로 제외한다.
+- 각 구간 수익률은 `(구간 말 자산 - 구간 외부 현금흐름) / 구간 시작 자산 - 1`이고,
+  구간별 성장률을 연결한 TWR을 기간수익률로 반환한다. 응답값은 소수 둘째 자리까지 표시한다.
+- 첫 공통 관측일에 이미 반영된 현금흐름은 기준 자산에 포함하고, 그 다음 날부터 최신 공통
+  관측일까지 기록된 현금흐름만 조정한다.
 - `return_rate_gap`은 `AI 자동투자 수익률 - 내 투자 수익률`이다.
 - `leader`는 수익률 격차 기준 `AI_AUTO`, `MY_INVESTMENT`, `TIE` 중 하나다.
 - `asset_gap`은 최신 공통 관측일의 원화 자산 차이다. 초기 투자금이 다르면 성과 우열로
@@ -30,6 +36,7 @@ API는 `GET /api/v1/portfolio/comparison?period=3M`이다. `period`는 `1M`, `3M
 {
   "comparison_status": "AVAILABLE",
   "calculation_version": "portfolio-comparison-v1",
+  "return_calculation": "CASH_FLOW_ADJUSTED_TWR",
   "period": "3M",
   "baseline_date": "2026-06-01",
   "as_of": "2026-08-25",
@@ -84,12 +91,27 @@ API는 `GET /api/v1/portfolio/comparison?period=3M`이다. `period`는 `1M`, `3M
 
 ## AI 경계와 부분 실패
 
-모델 입력에는 기간, 공통 기준일, 관측 수, 두 운용방식의 전략 ID·기준/현재 자산·수익률,
-서버 산출 격차와 leader만 포함한다. 사용자 ID, 계좌 ID, 계좌명은 전송하지 않는다. 모델은
-숫자를 계산하지 않고 `headline`, `summary`, `key_points`, `caution`만 구조화 JSON으로 생성한다.
+모델 입력에는 기간, 공통 기준일, 관측 수, 두 운용방식의 전략 ID·기준/현재 자산·TWR,
+서버 산출 격차와 leader만 포함한다. 사용자 ID, 계좌 ID, 계좌명은 전송하지 않는다.
 
-모델 설정 누락, timeout, 429/5xx, 네트워크 오류, 거부 응답 또는 schema 오류는 비교 숫자 API를
-실패시키지 않는다. 이 경우 `comparison_status`와 서버 계산 결과는 유지하고
+모델은 자유 문장이나 숫자를 생성하지 않는다. 다음과 같은 제한된 코드만 선택한다.
+
+```json
+{
+  "assessment": "AI_AUTO",
+  "summary_focus": "RETURN_GAP",
+  "key_point_focuses": ["AI_AUTO_RETURN", "MY_INVESTMENT_RETURN"],
+  "caution_code": "PAST_PERFORMANCE_AND_CASH_FLOW"
+}
+```
+
+Backend는 `assessment`가 서버의 `leader`와 같은지 검증한 뒤, 응답의 `headline`, `summary`,
+`key_points`, `caution`을 서버 계산 Decimal 값으로 렌더링한다. 따라서 모델이 서버와 다른
+수익률이나 격차 숫자를 프론트에 전달할 수 없다. 코드 불일치나 중복 key point는 유효하지 않은
+AI 응답으로 격리한다.
+
+모델 설정 누락, timeout, 429/5xx, 네트워크 오류, 거부 응답, schema 오류 및 예상 밖 provider
+payload 타입은 비교 숫자 API를 실패시키지 않는다. 이 경우 `comparison_status`와 서버 계산 결과는 유지하고
 `ai_analysis.status="UNAVAILABLE"` 및 안전한 안내 문구를 반환한다.
 
 ## 환경변수
