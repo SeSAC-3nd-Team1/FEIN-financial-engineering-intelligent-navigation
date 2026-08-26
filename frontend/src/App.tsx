@@ -207,8 +207,14 @@ export default function App() {
    *
    * 로그인 직후에는 Login.tsx가 login() 완료와 동시에 이 함수를 동기적으로 호출하는데, 이 시점엔
    * "사용자별 hydrate" useEffect가 아직 커밋되지 않았을 수 있다(리액트 이펙트는 렌더 이후 실행).
-   * 그래서 반응형 클로저 값(pendingInvestment)을 믿는 대신, 여기서 현재 로그인된 사용자 기준으로
-   * 강제로 다시 hydrate한 뒤 스토어에서 바로 최신 값을 읽는다.
+   * 그래서 반응형 클로저 값(pendingInvestment/accountsByMode/termsAcceptedStrategyIds)을 믿는 대신,
+   * 여기서 현재 로그인된 사용자 기준으로 강제로 다시 hydrate한 뒤 스토어에서 바로 최신 값을 읽는다.
+   *
+   * DEPOSIT_PENDING 복귀 화면은 'invest-deposit'으로 고정하지 않는다 — pendingInvestment가 남아있어도
+   * 그 사이 다른 경로로 이미 입금이 끝나 잔액이 충분해졌을 수 있어(예: "이 전략으로 시작하기"를 다시
+   * 눌러 곧장 입금까지 마친 경우), resolveInvestmentEntryStep으로 현재 계좌 잔액 기준 필요한 단계를
+   * 다시 계산한다 — 잔액이 이미 충분하면 "0원 입금하기"가 뜨는 invest-deposit 대신 invest-confirm 등
+   * 실제로 필요한 단계로 보낸다.
    */
   const navigate = (target: Screen) => {
     // 이 함수를 거쳐 로그인으로 가는 경로(Header 일반 로그인, "나의 포트폴리오" 등 guarded 메뉴 리다이렉트)는
@@ -220,9 +226,17 @@ export default function App() {
     if (target === 'portfolio') {
       const userId = useAuthStore.getState().user?.user_id ?? null;
       hydrateForUser(userId);
-      const pending = useInvestmentStore.getState().pendingInvestment;
+      const freshState = useInvestmentStore.getState();
+      const pending = freshState.pendingInvestment;
       if (pending) {
-        enterInvestmentStep('invest-deposit', pending.strategyId, pending.amount, pending.mode);
+        const accountForPendingMode = freshState.accountsByMode[pending.mode] ?? null;
+        const step = resolveInvestmentEntryStep({
+          strategyId: pending.strategyId,
+          amount: pending.amount,
+          termsAcceptedStrategyIds: freshState.termsAcceptedStrategyIds,
+          sesacAccount: accountForPendingMode,
+        });
+        enterInvestmentStep(step, pending.strategyId, pending.amount, pending.mode);
         return;
       }
     }
@@ -662,13 +676,13 @@ export default function App() {
         activeMode === 'auto' ? (
           <PortfolioAuto
             userName={userName}
-            onNavigate={setScreen}
+            onNavigate={navigate}
             onOpenDetail={() => setScreen('portfolio-detail')}
           />
         ) : (
           <Portfolio
             userName={userName}
-            onNavigate={setScreen}
+            onNavigate={navigate}
             onOpenDetail={() => setScreen('portfolio-detail')}
           />
         )
@@ -712,7 +726,7 @@ export default function App() {
       {screen === 'transactions' && (
         <TransactionHistory
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onSelectTransaction={(id) => {
             setSelectedTransactionId(id);
             setTransactionBackTarget('transactions');
@@ -727,7 +741,7 @@ export default function App() {
           transactionId={selectedTransactionId}
           backTarget={transactionBackTarget}
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onBack={() => setScreen(transactionBackTarget)}
         />
       )}
