@@ -7,6 +7,8 @@ import { fetchAiExplanation, getBacktestAvailableRange, runBacktest, USE_MOCK_BA
 import type { BacktestAvailableRange } from '../data/backtestApi';
 import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
 import { STRATEGIES } from '../data/strategies';
+import type { StrategyResponse } from '../lib/backendApi';
+import { applyStrategyCatalog, fetchStrategyCatalog } from '../lib/strategyCatalog';
 import { won } from '../lib/validation';
 import { useTradingData } from '../hooks/useTradingData';
 import { useAuthStore } from '../store/authStore';
@@ -56,7 +58,19 @@ const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 export default function StrategyDetail({
   strategyId, userName, onNavigate, onStart, onRequestLoginForBacktest, onConfirmStrategyChange, pendingDeposit, onResumeDeposit,
 }: Props) {
-  const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
+  const baseStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
+  // 실 전략 카탈로그(GET /strategies, public, 모델 무관)로 name/risk/rebalance를 최신화한다 — 나머지
+  // 필드(tagline/why/백테스트 대표값 등)는 아직 실 대응 데이터가 없어 정적 STRATEGIES를 그대로 쓴다.
+  // 화면 전체가 이 조회를 기다리지 않도록(공개 화면이라 응답 전에도 바로 보여야 함) 실패/로딩 중에는
+  // 그냥 정적 값을 쓰고, 응답이 오면 해당 필드만 조용히 갱신한다.
+  const [catalog, setCatalog] = useState<StrategyResponse[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchStrategyCatalog().then((result) => { if (!cancelled) setCatalog(result); });
+    return () => { cancelled = true; };
+  }, []);
+  const catalogEntry = catalog?.find((s) => s.id === strategyId);
+  const strategy = catalogEntry ? applyStrategyCatalog(baseStrategy, catalogEntry) : baseStrategy;
   // 비회원 공개 정책: 전략을 읽고 백테스트 기본 결과를 보는 것은 PUBLIC이지만, "나와 몇% 잘
   // 맞는지" 같은 개인화 적합도는 로그인 + 투자성향 진단 완료 사용자에게만 보여준다.
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);

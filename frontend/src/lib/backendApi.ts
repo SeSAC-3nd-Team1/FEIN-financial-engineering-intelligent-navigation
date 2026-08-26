@@ -354,6 +354,19 @@ export function logoutApi(token: string): Promise<void> {
   return request<void>('/auth/logout', { method: 'POST' }, token);
 }
 
+export interface StrategyResponse {
+  id: string;
+  name: string;
+  description: string;
+  risk_level: string;
+  rebalance_cycle: string;
+}
+
+/** 실 전략 카탈로그 — public(로그인 불필요) */
+export function getStrategiesApi(): Promise<StrategyResponse[]> {
+  return request<StrategyResponse[]>('/strategies');
+}
+
 export function getMyAccountApi(token: string, mode: AccountOperationMode): Promise<AccountResponse> {
   return request<AccountResponse>(`/accounts/me?operation_mode=${mode}`, {}, token);
 }
