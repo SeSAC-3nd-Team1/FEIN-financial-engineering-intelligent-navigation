@@ -171,8 +171,13 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PYTHONPATH: /app
+      AZURE_CONFIG_DIR: /root/.azure
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
     volumes:
       - ./ai:/app
+      - azure_cli_data:/root/.azure
     depends_on:
       redis:
         condition: service_healthy
