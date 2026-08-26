@@ -12,6 +12,8 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 | 기능 | Method | Endpoint | 인증 | 주요 status | 관련 화면 |
 | --- | --- | --- | --- | --- | --- |
+| 이메일 인증번호 발송 | POST | `/auth/email-verifications/send` | 불필요 | 202, 422, 429, 502, 503 | SignupStep3 연동 대상 |
+| 이메일 인증번호 확인 | POST | `/auth/email-verifications/verify` | 불필요 | 200, 400, 422, 429, 503 | SignupStep3 연동 대상 |
 | 회원가입 | POST | `/auth/signup` | 불필요 | 201, 400, 409, 422, 503 | SignupStep3 |
 | 가입 약관 | GET | `/auth/terms` | 불필요 | 200, 503 | SignupStep1~3 |
 | 로그인 | POST | `/auth/login` | 불필요 | 200, 401 | Login |
@@ -58,23 +60,48 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 ## 주요 Request/Response
 
+### POST `/auth/email-verifications/send`
+
+요청 `{"email":"hong@example.com"}`
+
+응답 `202`:
+
+```json
+{"verification_id":"f9c28124-981b-4ee7-8cee-f13b850c2855","expires_in_seconds":300,"resend_after_seconds":60}
+```
+
+ACS Email로 6자리 인증번호를 보내며 원문 인증번호는 Redis에 저장하지 않는다. 같은 이메일은 기본
+60초 뒤 재발송할 수 있고 시간당 5회로 제한한다.
+
+### POST `/auth/email-verifications/verify`
+
+```json
+{"verification_id":"f9c28124-981b-4ee7-8cee-f13b850c2855","code":"123456"}
+```
+
+응답 `200`: `{"verification_token":"<single-use-token>","expires_in_seconds":1800}`
+
+인증번호는 기본 5회까지만 시도할 수 있다. 반환된 증명은 해당 이메일의 회원가입에만 사용할 수 있고,
+Redis에서 예약 후 DB commit 시 소비되므로 재사용할 수 없다.
+
 ### POST `/auth/signup`
 
 ```json
 {
   "user_id":"hong01","password":"SafePass!23","name":"홍길동",
   "birthdate":"000101","phone_number":"01012345678","email":"hong@example.com",
-  "phone_verified":true,"email_verified":true,
+  "email_verification_token":"<single-use-token>",
   "agreements":[
-    {"term_code":"A1_THIRD_PARTY","version":"dev-20260823","agreed":true},
-    {"term_code":"A2_UNIQUE_ID","version":"dev-20260823","agreed":true},
-    {"term_code":"A3_CARRIER","version":"dev-20260823","agreed":true},
-    {"term_code":"A4_KCB","version":"dev-20260823","agreed":true},
     {"term_code":"B_PRIVACY","version":"dev-20260823","agreed":true},
-    {"term_code":"C_ASSOCIATE_TERMS","version":"dev-20260823","agreed":true}
+    {"term_code":"C_ASSOCIATE_TERMS","version":"dev-20260823","agreed":true},
+    {"term_code":"AI_PERSONALIZATION","version":"dev-20260823","agreed":false}
   ]
 }
 ```
+
+클라이언트가 인증 여부 boolean을 선언할 수 없다. Backend는 `email_verification_token`의 대상 이메일,
+TTL, single-use 상태를 Redis에서 확인한다. 현재 휴대폰 인증은 범위에서 제외되어 번호만 저장하고
+`phone_verified_at`은 `NULL`로 둔다.
 
 `GET /auth/terms`가 `effective_at <= now()`인 row 중 각 약관 코드의 최신 버전을 반환한다. Frontend는 Step1의 실제 동의 상태와 이 code/version을 함께 가입 요청으로 전달한다. API에는 내부 `term_id` 대신 불변 자연키인 `term_code + version`을 사용하고, Backend가 현재 catalog의 `term_id`로 변환한다.
 
@@ -99,7 +126,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 ]
 ```
 
-실제 응답에는 현재 seed된 기존 6종 약관이 포함된다. catalog가 준비되지 않은 경우 빈 배열로 가입을 허용하지 않고 `503`을 반환한다.
+현재 가입 catalog는 `B_PRIVACY`, `C_ASSOCIATE_TERMS`, `AI_PERSONALIZATION`만 포함한다. 휴대폰·본인확인 사업자용 약관은 휴대폰 인증을 도입할 때 함께 연결한다. catalog가 준비되지 않은 경우 빈 배열로 가입을 허용하지 않고 `503`을 반환한다.
 
 ### POST `/auth/login`
 
