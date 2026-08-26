@@ -35,6 +35,24 @@ def test_stock_filter_keeps_rejection_reason_for_audit() -> None:
     assert "price" in result.loc[1, "risk_reason"]
 
 
+def test_stock_filter_rejects_missing_history_readiness() -> None:
+    frame = pd.DataFrame({
+        "stock_code": ["A"],
+        "trade_date": ["2026-01-02"],
+        "close_price": [20_000],
+        "market_cap": [1_000],
+        "trading_value_sma_20d": [100],
+        "volatility_60d": [0.2],
+        "volume_ratio_20d": [1.0],
+        "history_120d_ready": [float("nan")],
+    })
+
+    result = apply_stock_risk_filter(frame)
+
+    assert not bool(result.loc[0, "risk_eligible"])
+    assert result.loc[0, "risk_reason"] == "history"
+
+
 def test_portfolio_enforces_position_weight_and_turnover() -> None:
     candidates = pd.DataFrame({
         "stock_code": [f"S{i}" for i in range(10)],
@@ -54,3 +72,31 @@ def test_portfolio_enforces_position_weight_and_turnover() -> None:
     )
     turnover = (aligned - current.reindex(aligned.index, fill_value=0.0)).abs().sum() / 2
     assert turnover == pytest.approx(0.30)
+    assert portfolio["weight"].sum() + portfolio["cash_weight"].iloc[0] == pytest.approx(1.0)
+
+
+def test_minimum_trade_filter_cannot_create_unfunded_buys() -> None:
+    candidates = pd.DataFrame({
+        "stock_code": ["A", "B"],
+        "score": [2.0, 1.0],
+        "risk_eligible": [True, True],
+    })
+    constraints = PortfolioConstraints(
+        max_positions=2,
+        max_weight=0.60,
+        cash_buffer=0.0,
+        max_turnover=1.0,
+        min_trade_weight=0.02,
+    )
+
+    portfolio = construct_portfolio(
+        candidates,
+        current_weights=pd.Series({"A": 0.51, "C": 0.49}),
+        constraints=constraints,
+    )
+
+    assert portfolio["weight"].sum() <= 1.0
+    assert portfolio["weight"].max() <= constraints.max_weight
+    assert portfolio["cash_weight"].iloc[0] == pytest.approx(
+        1.0 - portfolio["weight"].sum()
+    )

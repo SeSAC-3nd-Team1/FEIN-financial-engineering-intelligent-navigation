@@ -68,18 +68,39 @@ def construct_portfolio(
     current = pd.Series(dtype=float) if current_weights is None else pd.Series(current_weights, dtype=float)
     if (current < 0).any() or current.sum() > 1 + 1e-9:
         raise ValueError("current weights must be long-only and sum to at most one")
+    if (current > constraints.max_weight + 1e-9).any():
+        raise ValueError("current weights cannot exceed max_weight")
     all_codes = current.index.union(target.index)
     current = current.reindex(all_codes, fill_value=0.0)
     target = target.reindex(all_codes, fill_value=0.0)
     delta = target - current
     delta = delta.where(delta.abs().ge(constraints.min_trade_weight), 0.0)
-    turnover = float(delta.abs().sum() / 2.0)
+
+    # 최소 거래 필터로 작은 매도만 제거되면 남은 매수가 보유 현금을 초과할 수 있다.
+    # 매수 총액을 현재 현금과 실행할 매도의 합으로 제한해 총 자산 비중을 보존한다.
+    sells = float(-delta.clip(upper=0.0).sum())
+    buys = float(delta.clip(lower=0.0).sum())
+    available_to_buy = 1.0 - float(current.sum()) + sells
+    if buys > available_to_buy and buys > 0:
+        delta.loc[delta > 0] *= max(0.0, available_to_buy) / buys
+
+    # 현금도 하나의 자산으로 포함해야 주식 순매수·순매도가 회전율에서 누락되지 않는다.
+    cash_delta = -float(delta.sum())
+    turnover = float((delta.abs().sum() + abs(cash_delta)) / 2.0)
     if turnover > constraints.max_turnover and turnover > 0:
         delta *= constraints.max_turnover / turnover
-    final = (current + delta).clip(lower=0.0, upper=constraints.max_weight)
+
+    final = current + delta
+    invested = float(final.sum())
+    if (final < -1e-9).any() or (final > constraints.max_weight + 1e-9).any():
+        raise RuntimeError("portfolio construction violated position constraints")
+    if invested > 1.0 + 1e-9:
+        raise RuntimeError("portfolio construction exceeded available capital")
+    final = final.clip(lower=0.0, upper=constraints.max_weight)
+    cash_weight = 1.0 - float(final.sum())
     result = pd.DataFrame({"stock_code": final.index.astype(str), "weight": final.values})
     result = result.loc[result["weight"].gt(0)].sort_values(
         ["weight", "stock_code"], ascending=[False, True]
     )
-    result["cash_weight"] = max(0.0, 1.0 - float(result["weight"].sum()))
+    result["cash_weight"] = cash_weight
     return result.reset_index(drop=True)

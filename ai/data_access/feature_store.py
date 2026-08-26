@@ -65,8 +65,16 @@ class FeatureStore:
         )
 
     def read_partition(self, path: str, columns: Iterable[str] | None = None) -> pd.DataFrame:
-        expected_prefixes = ("model_stock_daily/", "market_index_daily/", "macro_daily/")
-        if path.startswith("/") or ".." in PurePosixPath(path).parts or not path.startswith(expected_prefixes):
-            raise ValueError("path is outside an approved feature dataset")
+        approved_datasets = {"model_stock_daily", "market_index_daily", "macro_daily"}
+        parts = PurePosixPath(path).parts
+        versioned_path = (
+            len(parts) >= 3
+            and parts[0] in approved_datasets
+            and parts[1].startswith("version=v")
+            and len(parts[1]) > len("version=v")
+            and path.endswith(".parquet")
+        )
+        if path.startswith("/") or ".." in parts or not versioned_path:
+            raise ValueError("path must be an approved, versioned Parquet feature partition")
         payload = self.client.get_blob_client(self.config.container, path).download_blob().readall()
         return pd.read_parquet(BytesIO(payload), columns=list(columns) if columns is not None else None)

@@ -66,7 +66,9 @@ def apply_stock_risk_filter(
             failures.append("volatility")
         if pd.isna(row.volume_ratio_20d) or row.volume_ratio_20d > config.max_volume_ratio_20d:
             failures.append("abnormal_volume")
-        if config.require_history_120d and not bool(row.history_120d_ready):
+        if config.require_history_120d and (
+            pd.isna(row.history_120d_ready) or not bool(row.history_120d_ready)
+        ):
             failures.append("history")
         eligible.append(not failures)
         reasons.append("eligible" if not failures else ",".join(failures))

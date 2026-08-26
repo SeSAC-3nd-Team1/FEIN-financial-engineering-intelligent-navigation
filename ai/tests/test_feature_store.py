@@ -67,7 +67,16 @@ def test_read_partition_supports_column_projection() -> None:
     pd.testing.assert_frame_equal(actual, source[["stock_code"]])
 
 
-def test_read_partition_rejects_unapproved_paths() -> None:
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../raw/secrets.parquet",
+        "model_stock_daily/year=2024/part.parquet",
+        "model_stock_daily/version=/part.parquet",
+        "model_stock_daily/version=v2/manifest.json",
+    ],
+)
+def test_read_partition_rejects_unapproved_or_unversioned_paths(path: str) -> None:
     store = FeatureStore(FeatureStoreConfig("account"), client=FakeServiceClient())
     with pytest.raises(ValueError):
-        store.read_partition("../raw/secrets.parquet")
+        store.read_partition(path)
