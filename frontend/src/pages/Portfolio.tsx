@@ -117,18 +117,20 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
-  // 미설정 유저 감지 — investorProfileCompleted(투자성향)는 백엔드에 저장되지 않는 프론트 세션 전용 플래그라
-  // 새로고침/재로그인하면 이미 예전에 진단을 마친 유저도 매번 false 로 되돌아간다. 그래서 "계좌에 전략이
-  // 이미 선택돼 있다(account.selected_strategy_id)"를 가장 먼저 확인한다 — 실제 투자 시작 Flow는 반드시
-  // 투자성향 진단 → 계좌/입금 → 전략 선택 순서를 강제하므로, 전략이 선택돼 있다는 것 자체가 앞 단계를
-  // 모두 마쳤다는 더 확실한 증거다. 이 신호가 없을 때만 세션 플래그로 투자성향 → 계좌/입금 → 전략 순서를
-  // 확인한다. 계좌 데이터를 아직 못 불러온 로딩 중(isLoading)에는 account/accountMissing 이 둘 다
-  // 초기값(null/false)이라 오판할 수 있어 로딩이 끝난 뒤에만 판정한다.
+  // 미설정 유저 감지 — investorProfileCompleted(투자성향)는 로그인/새로고침마다 백엔드
+  // (/investor-profile/me/latest)에서 다시 복원하는 값이라, 조회가 끝나기 전(isInvestorProfileHydrating)에는
+  // 아직 false 인 게 "진짜 미진단"인지 "복원 중이라 아직 모르는 것"인지 구분할 수 없다. 그래서
+  // "계좌에 전략이 이미 선택돼 있다(account.selected_strategy_id)"를 가장 먼저 확인한다 — 실제 투자 시작
+  // Flow는 반드시 투자성향 진단 → 계좌/입금 → 전략 선택 순서를 강제하므로, 전략이 선택돼 있다는 것 자체가
+  // 앞 단계를 모두 마쳤다는 더 확실한 증거다. 이 신호가 없을 때만 세션 상태로 투자성향 → 계좌/입금 → 전략
+  // 순서를 확인한다. 계좌 데이터를 아직 못 불러온 로딩 중(isAccountLoading)에는 account/accountMissing 이
+  // 둘 다 초기값(null/false)이라 오판할 수 있어, 두 로딩이 모두 끝난 뒤에만 판정한다.
   const investorProfileCompleted = useAuthStore((state) => state.investorProfileCompleted);
+  const isInvestorProfileHydrating = useAuthStore((state) => state.isInvestorProfileHydrating);
   const account = useTradingStore((state) => state.account);
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const isAccountLoading = useTradingStore((state) => state.isLoading);
-  const unconfiguredReason: UnconfiguredReason | null = isAccountLoading
+  const unconfiguredReason: UnconfiguredReason | null = isAccountLoading || isInvestorProfileHydrating
     ? null
     : account?.selected_strategy_id
       ? null
@@ -568,7 +570,7 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
         다른 팝업(사유 모달·차트 확대, z-[700])보다 아래 레이어(z-40)에 둔다. */}
     {unconfiguredReason && (
       <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-8 backdrop-blur-md">
-        <div className="flex w-[480px] flex-col gap-6 rounded-card bg-surface p-10 text-center">
+        <div className="flex w-full max-w-[480px] flex-col gap-6 rounded-card bg-surface p-10 text-center">
           <h2 className="text-2xl font-bold leading-9 tracking-[-0.02em]">
             {userName} 고객님! {UNCONFIGURED_COPY[unconfiguredReason].title}
           </h2>
