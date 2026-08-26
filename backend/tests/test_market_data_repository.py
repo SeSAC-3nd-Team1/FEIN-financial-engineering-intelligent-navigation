@@ -7,11 +7,34 @@ from types import SimpleNamespace
 from app.repositories.market_data import MarketDataRepository
 
 
+def test_latest_dividend_prioritizes_year_annual_report_and_common_stock() -> None:
+    class FakeSession:
+        def scalar(self, query):
+            self.query = query
+            return None
+
+    session = FakeSession()
+
+    MarketDataRepository(session).latest_dividend("005930")
+
+    sql = str(session.query)
+    assert "stock_dividends.stock_code" in sql
+    assert "stock_dividends.business_year DESC" in sql
+    assert "stock_dividends.report_code" in sql
+    assert "stock_dividends.stock_kind" in sql
+
+
 def test_kospi_since_filters_sorts_and_deduplicates_trade_dates() -> None:
     rows = [
-        SimpleNamespace(id=3, trade_date=date(2026, 8, 22), close_value=Decimal("3040")),
-        SimpleNamespace(id=1, trade_date=date(2026, 8, 20), close_value=Decimal("3000")),
-        SimpleNamespace(id=2, trade_date=date(2026, 8, 20), close_value=Decimal("3010")),
+        SimpleNamespace(
+            id=3, trade_date=date(2026, 8, 22), close_value=Decimal("3040")
+        ),
+        SimpleNamespace(
+            id=1, trade_date=date(2026, 8, 20), close_value=Decimal("3000")
+        ),
+        SimpleNamespace(
+            id=2, trade_date=date(2026, 8, 20), close_value=Decimal("3010")
+        ),
     ]
 
     class FakeSession:

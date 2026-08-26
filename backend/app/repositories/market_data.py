@@ -5,7 +5,14 @@ from datetime import date
 from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
-from app.models import Company, CompanyFinancial, MarketIndex, MarketStock, MarketStockPrice
+from app.models import (
+    Company,
+    CompanyFinancial,
+    MarketIndex,
+    MarketStock,
+    MarketStockPrice,
+    StockDividend,
+)
 
 
 class MarketDataRepository:
@@ -24,14 +31,16 @@ class MarketDataRepository:
         )
 
     def prices_since(self, stock_code: str, start_date: date) -> list[MarketStockPrice]:
-        return list(self.session.scalars(
-            select(MarketStockPrice)
-            .where(
-                MarketStockPrice.stock_code == stock_code,
-                MarketStockPrice.trade_date >= start_date,
+        return list(
+            self.session.scalars(
+                select(MarketStockPrice)
+                .where(
+                    MarketStockPrice.stock_code == stock_code,
+                    MarketStockPrice.trade_date >= start_date,
+                )
+                .order_by(MarketStockPrice.trade_date)
             )
-            .order_by(MarketStockPrice.trade_date)
-        ))
+        )
 
     def kospi_since(self, start_date: date | None) -> list[MarketIndex]:
         query = select(MarketIndex).where(
@@ -40,39 +49,55 @@ class MarketDataRepository:
         )
         if start_date is not None:
             query = query.where(MarketIndex.trade_date >= start_date)
-        rows = self.session.scalars(query.order_by(MarketIndex.trade_date, MarketIndex.id))
+        rows = self.session.scalars(
+            query.order_by(MarketIndex.trade_date, MarketIndex.id)
+        )
         unique = {row.trade_date: row for row in rows}
         return [unique[trade_date] for trade_date in sorted(unique)]
 
-    def closing_prices(self, stock_code: str, effective_on: date) -> list[MarketStockPrice]:
-        return list(self.session.scalars(
-            select(MarketStockPrice)
-            .where(
-                MarketStockPrice.stock_code == stock_code,
-                MarketStockPrice.trade_date <= effective_on,
+    def closing_prices(
+        self, stock_code: str, effective_on: date
+    ) -> list[MarketStockPrice]:
+        return list(
+            self.session.scalars(
+                select(MarketStockPrice)
+                .where(
+                    MarketStockPrice.stock_code == stock_code,
+                    MarketStockPrice.trade_date <= effective_on,
+                )
+                .order_by(MarketStockPrice.trade_date.desc())
+                .limit(2)
             )
-            .order_by(MarketStockPrice.trade_date.desc())
-            .limit(2)
-        ))
+        )
 
     def has_kospi_close(self, trade_date: date) -> bool:
-        return self.session.scalar(
-            select(MarketIndex.id).where(
-                MarketIndex.market == "KOSPI",
-                MarketIndex.index_name.in_(("코스피", "KOSPI")),
-                MarketIndex.trade_date == trade_date,
-            ).limit(1)
-        ) is not None
+        return (
+            self.session.scalar(
+                select(MarketIndex.id)
+                .where(
+                    MarketIndex.market == "KOSPI",
+                    MarketIndex.index_name.in_(("코스피", "KOSPI")),
+                    MarketIndex.trade_date == trade_date,
+                )
+                .limit(1)
+            )
+            is not None
+        )
 
     def company(self, stock_code: str) -> Company | None:
-        return self.session.scalar(select(Company).where(Company.stock_code == stock_code))
+        return self.session.scalar(
+            select(Company).where(Company.stock_code == stock_code)
+        )
 
     def latest_annual_financial(self, stock_code: str) -> CompanyFinancial | None:
         """PER/PBR/ROE의 기간 왜곡을 막기 위해 최신 FY를 CFS 우선으로 선택한다."""
 
         return self.session.scalar(
             select(CompanyFinancial)
-            .where(CompanyFinancial.stock_code == stock_code, CompanyFinancial.quarter == "FY")
+            .where(
+                CompanyFinancial.stock_code == stock_code,
+                CompanyFinancial.quarter == "FY",
+            )
             .order_by(
                 CompanyFinancial.business_year.desc(),
                 case((CompanyFinancial.fs_div == "CFS", 0), else_=1),
@@ -81,16 +106,35 @@ class MarketDataRepository:
             .limit(1)
         )
 
+    def latest_dividend(self, stock_code: str) -> StockDividend | None:
+        """최신 연도에서 사업보고서·보통주를 우선해 한 배당 행을 반환한다."""
+
+        return self.session.scalar(
+            select(StockDividend)
+            .where(StockDividend.stock_code == stock_code)
+            .order_by(
+                StockDividend.business_year.desc(),
+                case((StockDividend.report_code == "11011", 0), else_=1),
+                case((StockDividend.stock_kind == "COMMON", 0), else_=1),
+                StockDividend.updated_at.desc(),
+            )
+            .limit(1)
+        )
+
     def annual_financials(self, stock_code: str) -> list[CompanyFinancial]:
         """연도별 CFS 우선순위로 최근 FY 재무제표 후보를 반환한다."""
 
-        return list(self.session.scalars(
-            select(CompanyFinancial)
-            .where(CompanyFinancial.stock_code == stock_code, CompanyFinancial.quarter == "FY")
-            .order_by(
-                CompanyFinancial.business_year.desc(),
-                case((CompanyFinancial.fs_div == "CFS", 0), else_=1),
-                CompanyFinancial.updated_at.desc(),
+        return list(
+            self.session.scalars(
+                select(CompanyFinancial)
+                .where(
+                    CompanyFinancial.stock_code == stock_code,
+                    CompanyFinancial.quarter == "FY",
+                )
+                .order_by(
+                    CompanyFinancial.business_year.desc(),
+                    case((CompanyFinancial.fs_div == "CFS", 0), else_=1),
+                    CompanyFinancial.updated_at.desc(),
+                )
             )
-        ))
-
+        )

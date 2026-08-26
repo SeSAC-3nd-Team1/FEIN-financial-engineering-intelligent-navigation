@@ -2,9 +2,14 @@
 
 from sqlalchemy.orm import Session
 
-from db.models.opendart import Company, CompanyDisclosure, CompanyFinancial, CompanyFinancialAccount
+from db.models.opendart import (
+    Company,
+    CompanyDisclosure,
+    CompanyFinancial,
+    CompanyFinancialAccount,
+    StockDividend,
+)
 from loaders.upsert import upsert_rows
-
 
 CASH_FLOW_COLUMNS = (
     "operating_cash_flow",
@@ -27,7 +32,14 @@ class OpenDartRepository:
             self.session,
             CompanyFinancialAccount,
             rows,
-            conflict_columns=["corp_code", "business_year", "report_code", "fs_div", "sj_div", "account_id"],
+            conflict_columns=[
+                "corp_code",
+                "business_year",
+                "report_code",
+                "fs_div",
+                "sj_div",
+                "account_id",
+            ],
         )
 
     def upsert_financials(
@@ -76,5 +88,20 @@ class OpenDartRepository:
             ],
         )
 
+    def upsert_dividends(self, rows: list[dict]) -> int:
+        return upsert_rows(
+            self.session,
+            StockDividend,
+            rows,
+            conflict_columns=[
+                "stock_code",
+                "business_year",
+                "report_code",
+                "stock_kind",
+            ],
+        )
+
     def upsert_disclosures(self, rows: list[dict]) -> int:
-        return upsert_rows(self.session, CompanyDisclosure, rows, conflict_columns=["receipt_no"])
+        return upsert_rows(
+            self.session, CompanyDisclosure, rows, conflict_columns=["receipt_no"]
+        )
