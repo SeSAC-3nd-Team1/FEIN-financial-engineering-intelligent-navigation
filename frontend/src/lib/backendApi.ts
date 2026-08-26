@@ -433,6 +433,55 @@ export function getPortfolioHistoryApi(
   );
 }
 
+export interface PortfolioComparisonAccountResponse {
+  account_id: string;
+  account_name: string;
+  operation_mode: AccountOperationMode;
+  strategy_id: string | null;
+  baseline_assets: DecimalString | null;
+  current_assets: DecimalString | null;
+  return_rate: DecimalString | null;
+}
+
+export interface PortfolioComparisonMetricsResponse {
+  return_rate_gap: DecimalString;
+  asset_gap: DecimalString;
+  leader: 'AI_AUTO' | 'MY_INVESTMENT' | 'TIE';
+}
+
+export interface PortfolioComparisonAIAnalysisResponse {
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  headline: string | null;
+  summary: string;
+  key_points: string[];
+  caution: string | null;
+  model_version: string | null;
+  generated_at: string | null;
+}
+
+export interface PortfolioComparisonResponse {
+  comparison_status: 'AVAILABLE' | 'INSUFFICIENT_DATA';
+  period: PortfolioHistoryPeriod;
+  baseline_date: string | null;
+  as_of: string | null;
+  observation_count: number;
+  accounts: {
+    ai_auto: PortfolioComparisonAccountResponse;
+    my_investment: PortfolioComparisonAccountResponse;
+  };
+  metrics: PortfolioComparisonMetricsResponse | null;
+  ai_analysis: PortfolioComparisonAIAnalysisResponse;
+}
+
+/** 자동투자(AUTO) vs 반자동(SEMI_AUTO) 계좌 비교 — 두 계좌가 모두 있어야 하고, 없으면 백엔드가
+ *  409 COMPARISON_ACCOUNTS_REQUIRED를 반환한다(ApiError.code로 구분). */
+export function getPortfolioComparisonApi(
+  period: PortfolioHistoryPeriod,
+  token: string,
+): Promise<PortfolioComparisonResponse> {
+  return request<PortfolioComparisonResponse>(`/portfolio/comparison?period=${period}`, {}, token);
+}
+
 export function getStockEvaluationApi(
   accountId: string,
   stockCode: string,
