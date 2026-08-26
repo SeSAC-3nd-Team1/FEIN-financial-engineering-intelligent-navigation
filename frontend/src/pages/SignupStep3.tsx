@@ -1,46 +1,37 @@
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import Header from '../components/Header';
-import { useCountdown } from '../hooks/useCountdown';
 import { RE, digitsOnly } from '../lib/validation';
 import type { Credentials, Screen } from '../types';
 
 interface Props {
-  onComplete: (userId: string, password: string, email: string) => Promise<void>;
+  onComplete: (userId: string, password: string, phone: string) => Promise<void>;
   onBack: () => void;
   userName: string;
   onNavigate: (s: Screen) => void;
 }
 
 export default function SignupStep3({ onComplete, onBack, userName, onNavigate }: Props) {
-  const [v, setV] = useState<Credentials>({
-    userId: '', password: '', passwordConfirm: '', email: '', emailOtp: '', emailVerified: false,
-  });
+  const [v, setV] = useState<Credentials>({ userId: '', password: '', passwordConfirm: '', phone: '' });
   const [showPw, setShowPw] = useState(false);
   const [showPwConfirm, setShowPwConfirm] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const timer = useCountdown(300);
 
   const idValid = RE.userId.test(v.userId);
   const pwValid = RE.password.test(v.password);
-  const emailValid = RE.email.test(v.email);
+  const phoneValid = RE.phone.test(v.phone);
   // 불일치는 확인란에 값이 있을 때만 에러로 표시한다
   const mismatch = v.passwordConfirm.length > 0 && v.password !== v.passwordConfirm;
 
-  const canSubmit = idValid && pwValid && !mismatch && v.passwordConfirm.length > 0 && v.emailVerified;
-
-  /** TEST MODE: 이메일 인증 요청 시 OTP 입력란과 5분 타이머를 생성 */
-  const sendEmailOtp = () => { setOtpSent(true); timer.start(); };
-  const verifyEmailOtp = () => { if (v.emailOtp.length === 6) setV({ ...v, emailVerified: true }); };
+  const canSubmit = idValid && pwValid && !mismatch && v.passwordConfirm.length > 0 && phoneValid;
 
   const completeSignup = async () => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
     setSubmitError('');
     try {
-      await onComplete(v.userId, v.password, v.email);
+      await onComplete(v.userId, v.password, v.phone);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : '회원가입을 완료하지 못했습니다.');
     } finally {
@@ -90,46 +81,21 @@ export default function SignupStep3({ onComplete, onBack, userName, onNavigate }
         error={mismatch ? '비밀번호가 일치하지 않습니다.' : null}
       />
 
-      <div className="flex flex-col gap-2">
-        <span className="text-[15px] font-semibold text-muted">이메일</span>
-        <div className="flex gap-2">
-          <input
-            value={v.email}
-            onChange={(e) => setV({ ...v, email: e.target.value, emailVerified: false })}
-            placeholder="name@email.com"
-            className="flex-1 rounded-field bg-surface px-5 py-4 text-[17px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
-          />
-          <button
-            onClick={sendEmailOtp}
-            disabled={!emailValid}
-            className="shrink-0 rounded-field px-6 text-[16px] font-semibold disabled:cursor-default disabled:bg-[#E8EBE5] disabled:text-[#A6AFA7] enabled:bg-navy enabled:text-white"
-          >
-            이메일 인증
-          </button>
-        </div>
-
-        {/* 인증 요청 시에만 나타나는 OTP 입력란 + 5분 타이머 */}
-        {otpSent && !v.emailVerified && (
-          <div className="flex items-center gap-3 pt-1">
-            <input
-              value={v.emailOtp}
-              inputMode="numeric"
-              onChange={(e) => setV({ ...v, emailOtp: digitsOnly(e.target.value, 6) })}
-              placeholder="000000"
-              className="flex-1 rounded-field bg-surface px-5 py-4 text-[17px] tracking-[0.3em] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none"
-            />
-            <span className="w-14 text-right text-[16px] font-bold text-down">{timer.label}</span>
-            <button
-              onClick={verifyEmailOtp}
-              disabled={v.emailOtp.length !== 6}
-              className="shrink-0 rounded-field px-5 py-4 text-[16px] font-semibold disabled:bg-[#E8EBE5] disabled:text-[#A6AFA7] enabled:bg-lime enabled:text-navy"
-            >
-              확인
-            </button>
-          </div>
+      <label className="flex flex-col gap-2">
+        <span className="text-[15px] font-semibold text-muted">휴대폰 번호</span>
+        <input
+          value={v.phone}
+          inputMode="numeric"
+          onChange={(e) => setV({ ...v, phone: digitsOnly(e.target.value, 11) })}
+          placeholder="01012345678"
+          className="rounded-field bg-surface px-5 py-4 text-[17px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
+        />
+        {v.phone.length > 0 && !phoneValid && (
+          <span className="text-sm text-up">올바른 휴대폰 번호 형식으로 입력해주세요.</span>
         )}
-        {v.emailVerified && <span className="text-sm font-semibold text-[#2E9B65]">✓ 이메일 인증이 완료됐어요</span>}
-      </div>
+        <span className="text-sm text-muted">고객 안내와 계좌·투자 관련 알림을 위해 사용해요.</span>
+        <span className="text-xs text-subtle">개인정보 수집·이용 동의에 따라 저장돼요.</span>
+      </label>
 
       <div className="flex gap-3">
         <button onClick={onBack} className="rounded-field bg-[#F4F6F1] px-7 py-5 text-[17px] font-semibold text-[#3F4A43]">
