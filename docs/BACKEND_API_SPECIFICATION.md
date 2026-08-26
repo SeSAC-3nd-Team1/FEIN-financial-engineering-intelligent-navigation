@@ -5,59 +5,59 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 공통 오류:
 
 ```json
-{"code":"INSUFFICIENT_CASH","message":"주문 가능한 현금이 부족합니다."}
+{ "code": "INSUFFICIENT_CASH", "message": "주문 가능한 현금이 부족합니다." }
 ```
 
 ## Endpoint 목록
 
-| 기능 | Method | Endpoint | 인증 | 주요 status | 관련 화면 |
-| --- | --- | --- | --- | --- | --- |
-| 이메일 인증번호 발송 | POST | `/auth/email-verifications/send` | 불필요 | 202, 422, 429, 502, 503 | SignupStep3 연동 대상 |
-| 이메일 인증번호 확인 | POST | `/auth/email-verifications/verify` | 불필요 | 200, 400, 422, 429, 503 | SignupStep3 연동 대상 |
-| 회원가입 | POST | `/auth/signup` | 불필요 | 201, 400, 409, 422, 503 | SignupStep3 |
-| 가입 약관 | GET | `/auth/terms` | 불필요 | 200, 503 | SignupStep1~3 |
-| 로그인 | POST | `/auth/login` | 불필요 | 200, 401 | Login |
-| 로그아웃 | POST | `/auth/logout` | 필요 | 204, 401 | Header |
-| 내 정보 | GET | `/auth/me` | 필요 | 200, 401 | Header/My page |
-| 투자 약관 | GET | `/investment/terms?strategy_id=` | 필요 | 200, 401, 404, 503 | InvestTerms |
-| 투자 시작 생성/갱신 | POST | `/investment/onboardings` | 필요 | 200, 401, 404, 422 | StartInvesting |
-| 현재 투자 시작 상태 | GET | `/investment/onboardings/me/current?operation_mode=` | 필요 | 200, 401, 404, 503 | 투자 시작 Flow |
-| 운용방식별 투자 시작 상태 | GET | `/investment/onboardings/me` | 필요 | 200, 401, 503 | 로그인 후 Flow 복원 |
-| 투자 약관 동의 | POST | `/investment/onboardings/{id}/agreements` | 필요/소유권 | 200, 400, 401, 404, 503 | InvestTerms |
-| 가상계좌 준비 | POST | `/investment/onboardings/{id}/account` | 필요/소유권 | 200, 401, 403, 404, 409 | InvestAccount |
-| 부족분 가상 입금 | POST | `/investment/onboardings/{id}/deposit` | 필요/소유권 | 200, 401, 404, 409, 422 | InvestDeposit |
-| 투자 시작 확정 | POST | `/investment/onboardings/{id}/complete` | 필요/소유권 | 200, 401, 404, 409 | InvestConfirm |
-| 가상계좌 생성 | POST | `/accounts` | 필요 | 201, 409 | StartInvesting |
-| 내 계좌 | GET | `/accounts/me?operation_mode=` | 필요 | 200, 404 | Portfolio |
-| 내 계좌 전체 | GET | `/accounts/me/all` | 필요 | 200 | Portfolio |
-| 활성 운용방식 전환 | PUT | `/accounts/me/active-operation-mode` | 필요/소유권 | 200, 409, 422 | Portfolio/Dashboard |
-| 전략 선택 | PUT | `/accounts/{account_id}/strategy` | 필요/소유권 | 200, 404 | StartInvesting |
-| 전략 목록 | GET | `/strategies` | 불필요 | 200 | RiskResult/StrategyDetail |
-| 실제 시세 백테스트 | POST | `/backtest/run` | 불필요 | 200, 404, 422 | StrategyDetail |
-| 백테스트 가용 기간 | GET | `/backtest/available-range` | 불필요 | 200, 404 | StrategyDetail |
-| 현재가 | GET | `/market/stocks/{stock_code}/price` | 필요 | 200, 404, 503 | StockDetail |
-| 당일 1분봉 | GET | `/market/stocks/{stock_code}/candles?interval=1m&limit=120` | 필요 | 200, 404, 422, 503 | StockDetail chart |
-| 종목 상세 요약 | GET | `/market/stocks/{stock_code}/summary` | 필요 | 200, 404 | StockDetail |
-| 종목 상세 차트 | GET | `/market/stocks/{stock_code}/chart?period=3M` | 필요 | 200, 404, 422, 503 | StockDetail chart |
-| 시장가 주문 | POST | `/orders` | 필요/소유권 | 201, 404, 409, 503 | 전략 기반 자동 운용 계층/Model signal 전용 |
-| 주문 목록 | GET | `/orders?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
-| 체결 목록 | GET | `/executions?account_id=` | 필요/소유권 | 200, 404 | 거래내역 |
-| 포트폴리오 거래내역 | GET | `/portfolio/transactions?account_id=&limit=&cursor=` | 필요/소유권 | 200, 404, 422 | 종목명·거래금액 포함 최신순 cursor pagination |
-| 포트폴리오 홈 통합 조회 | GET | `/portfolio/home?account_id=&period=&sort=&order=` | 필요/소유권 | 200, 404, 422, 503 | 계좌·평가·추이·배분·정렬된 보유종목 통합 |
-| 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | 실제 metadata·당일 기여·목표비중 제안 포함 |
-| 포트폴리오 이력 | GET | `/portfolio/history?account_id=&period=` | 필요/소유권 | 200, 404 | 실제 snapshot 수익률과 KOSPI 비교 |
-| AI 투자 비교 | GET | `/portfolio/comparison?period=` | 필요 | 200, 401, 409 | AUTO/SEMI_AUTO 외부 현금흐름 조정 TWR과 서버 검증 AI 해설 |
-| 종목 5축 feature | GET | `/portfolio/stock-evaluation?account_id=&stock_code=` | 필요/소유권 | 200, 404 | KRX·OpenDART·보유종목 기반 평가 |
-| 리밸런싱 판단 기록 | POST | `/portfolio/decisions` | 필요/소유권 | 201, 404, 409 | 현재 서버 제안 수락·보류 기록 |
-| 리밸런싱 판단 이력 | GET | `/portfolio/decisions?account_id=` | 필요/소유권 | 200, 404 | 최근 6개월 실제 판단·후속 수익률 |
-| 한국 금융 뉴스 | GET | `/information/news/kr?page=&size=` | 불필요 | 200, 422, 502, 503 | InformationExam |
-| 기업 기본정보 | GET | `/companies/{stock_code}` | 불필요 | 200, 404 | Agent/향후 기업 화면 |
-| 기업 재무정보 | GET | `/companies/{stock_code}/financials?year=&quarter=` | 불필요 | 200, 404, 422 | Agent/향후 기업 화면 |
-| 기업 공시 | GET | `/companies/{stock_code}/disclosures?start_date=&end_date=&disclosure_type=&limit=` | 불필요 | 200, 404, 422 | Disclosure Agent |
-| 투자성향 AI 분석 | POST | `/investor-profile/analyze` | 필요 | 200, 400, 401, 422, 502, 503, 504 | RiskProfile/RiskResult |
-| 최신 투자성향 | GET | `/investor-profile/me/latest` | 필요 | 200, 401, 404 | RiskResult |
-| AI 전략 추천 | POST | `/strategy-recommendations` | 필요/소유권 | 201, 401, 403, 404, 502, 503, 504 | RiskResult |
-| 최신 AI 전략 추천 | GET | `/strategy-recommendations/me/latest` | 필요 | 200, 401, 404 | RiskResult |
+| 기능                      | Method | Endpoint                                                                            | 인증        | 주요 status                       | 관련 화면                                                 |
+| ------------------------- | ------ | ----------------------------------------------------------------------------------- | ----------- | --------------------------------- | --------------------------------------------------------- |
+| 이메일 인증번호 발송      | POST   | `/auth/email-verifications/send`                                                    | 불필요      | 202, 422, 429, 502, 503           | SignupStep3 연동 대상                                     |
+| 이메일 인증번호 확인      | POST   | `/auth/email-verifications/verify`                                                  | 불필요      | 200, 400, 422, 429, 503           | SignupStep3 연동 대상                                     |
+| 회원가입                  | POST   | `/auth/signup`                                                                      | 불필요      | 201, 400, 409, 422, 503           | SignupStep3                                               |
+| 가입 약관                 | GET    | `/auth/terms`                                                                       | 불필요      | 200, 503                          | SignupStep1~3                                             |
+| 로그인                    | POST   | `/auth/login`                                                                       | 불필요      | 200, 401                          | Login                                                     |
+| 로그아웃                  | POST   | `/auth/logout`                                                                      | 필요        | 204, 401                          | Header                                                    |
+| 내 정보                   | GET    | `/auth/me`                                                                          | 필요        | 200, 401                          | Header/My page                                            |
+| 투자 약관                 | GET    | `/investment/terms?strategy_id=`                                                    | 필요        | 200, 401, 404, 503                | InvestTerms                                               |
+| 투자 시작 생성/갱신       | POST   | `/investment/onboardings`                                                           | 필요        | 200, 401, 404, 422                | StartInvesting                                            |
+| 현재 투자 시작 상태       | GET    | `/investment/onboardings/me/current?operation_mode=`                                | 필요        | 200, 401, 404, 503                | 투자 시작 Flow                                            |
+| 운용방식별 투자 시작 상태 | GET    | `/investment/onboardings/me`                                                        | 필요        | 200, 401, 503                     | 로그인 후 Flow 복원                                       |
+| 투자 약관 동의            | POST   | `/investment/onboardings/{id}/agreements`                                           | 필요/소유권 | 200, 400, 401, 404, 503           | InvestTerms                                               |
+| 가상계좌 준비             | POST   | `/investment/onboardings/{id}/account`                                              | 필요/소유권 | 200, 401, 403, 404, 409           | InvestAccount                                             |
+| 부족분 가상 입금          | POST   | `/investment/onboardings/{id}/deposit`                                              | 필요/소유권 | 200, 401, 404, 409, 422           | InvestDeposit                                             |
+| 투자 시작 확정            | POST   | `/investment/onboardings/{id}/complete`                                             | 필요/소유권 | 200, 401, 404, 409                | InvestConfirm                                             |
+| 가상계좌 생성             | POST   | `/accounts`                                                                         | 필요        | 201, 409                          | StartInvesting                                            |
+| 내 계좌                   | GET    | `/accounts/me?operation_mode=`                                                      | 필요        | 200, 404                          | Portfolio                                                 |
+| 내 계좌 전체              | GET    | `/accounts/me/all`                                                                  | 필요        | 200                               | Portfolio                                                 |
+| 활성 운용방식 전환        | PUT    | `/accounts/me/active-operation-mode`                                                | 필요/소유권 | 200, 409, 422                     | Portfolio/Dashboard                                       |
+| 전략 선택                 | PUT    | `/accounts/{account_id}/strategy`                                                   | 필요/소유권 | 200, 404                          | StartInvesting                                            |
+| 전략 목록                 | GET    | `/strategies`                                                                       | 불필요      | 200                               | RiskResult/StrategyDetail                                 |
+| 실제 시세 백테스트        | POST   | `/backtest/run`                                                                     | 불필요      | 200, 404, 422                     | StrategyDetail                                            |
+| 백테스트 가용 기간        | GET    | `/backtest/available-range`                                                         | 불필요      | 200, 404                          | StrategyDetail                                            |
+| 현재가                    | GET    | `/market/stocks/{stock_code}/price`                                                 | 필요        | 200, 404, 503                     | StockDetail                                               |
+| 당일 1분봉                | GET    | `/market/stocks/{stock_code}/candles?interval=1m&limit=120`                         | 필요        | 200, 404, 422, 503                | StockDetail chart                                         |
+| 종목 상세 요약            | GET    | `/market/stocks/{stock_code}/summary`                                               | 필요        | 200, 404                          | StockDetail                                               |
+| 종목 상세 차트            | GET    | `/market/stocks/{stock_code}/chart?period=3M`                                       | 필요        | 200, 404, 422, 503                | StockDetail chart                                         |
+| 시장가 주문               | POST   | `/orders`                                                                           | 필요/소유권 | 201, 404, 409, 503                | 전략 기반 자동 운용 계층/Model signal 전용                |
+| 주문 목록                 | GET    | `/orders?account_id=`                                                               | 필요/소유권 | 200, 404                          | 거래내역                                                  |
+| 체결 목록                 | GET    | `/executions?account_id=`                                                           | 필요/소유권 | 200, 404                          | 거래내역                                                  |
+| 포트폴리오 거래내역       | GET    | `/portfolio/transactions?account_id=&limit=&cursor=`                                | 필요/소유권 | 200, 404, 422                     | 종목명·거래금액 포함 최신순 cursor pagination             |
+| 포트폴리오 홈 통합 조회   | GET    | `/portfolio/home?account_id=&period=&sort=&order=`                                  | 필요/소유권 | 200, 404, 422, 503                | 계좌·평가·추이·배분·정렬된 보유종목 통합                  |
+| 포트폴리오 평가           | GET    | `/portfolio?account_id=`                                                            | 필요/소유권 | 200, 404, 503                     | 실제 metadata·당일 기여·목표비중 제안 포함                |
+| 포트폴리오 이력           | GET    | `/portfolio/history?account_id=&period=`                                            | 필요/소유권 | 200, 404                          | 실제 snapshot 수익률과 KOSPI 비교                         |
+| AI 투자 비교              | GET    | `/portfolio/comparison?period=`                                                     | 필요        | 200, 401, 409                     | AUTO/SEMI_AUTO 외부 현금흐름 조정 TWR과 서버 검증 AI 해설 |
+| 종목 5축 feature          | GET    | `/portfolio/stock-evaluation?account_id=&stock_code=`                               | 필요/소유권 | 200, 404                          | KRX·OpenDART·보유종목 기반 평가                           |
+| 리밸런싱 판단 기록        | POST   | `/portfolio/decisions`                                                              | 필요/소유권 | 201, 404, 409                     | 현재 서버 제안 수락·보류 기록                             |
+| 리밸런싱 판단 이력        | GET    | `/portfolio/decisions?account_id=`                                                  | 필요/소유권 | 200, 404                          | 최근 6개월 실제 판단·후속 수익률                          |
+| 한국 금융 뉴스            | GET    | `/information/news/kr?page=&size=`                                                  | 불필요      | 200, 422, 502, 503                | InformationExam                                           |
+| 기업 기본정보             | GET    | `/companies/{stock_code}`                                                           | 불필요      | 200, 404                          | Agent/향후 기업 화면                                      |
+| 기업 재무정보             | GET    | `/companies/{stock_code}/financials?year=&quarter=`                                 | 불필요      | 200, 404, 422                     | Agent/향후 기업 화면                                      |
+| 기업 공시                 | GET    | `/companies/{stock_code}/disclosures?start_date=&end_date=&disclosure_type=&limit=` | 불필요      | 200, 404, 422                     | Disclosure Agent                                          |
+| 투자성향 AI 분석          | POST   | `/investor-profile/analyze`                                                         | 필요        | 200, 400, 401, 422, 502, 503, 504 | RiskProfile/RiskResult                                    |
+| 최신 투자성향             | GET    | `/investor-profile/me/latest`                                                       | 필요        | 200, 401, 404                     | RiskResult                                                |
+| AI 전략 추천              | POST   | `/strategy-recommendations`                                                         | 필요/소유권 | 201, 401, 403, 404, 502, 503, 504 | RiskResult                                                |
+| 최신 AI 전략 추천         | GET    | `/strategy-recommendations/me/latest`                                               | 필요        | 200, 401, 404                     | RiskResult                                                |
 
 ## 주요 Request/Response
 
@@ -68,7 +68,11 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 응답 `202`:
 
 ```json
-{"verification_id":"f9c28124-981b-4ee7-8cee-f13b850c2855","expires_in_seconds":300,"resend_after_seconds":60}
+{
+  "verification_id": "f9c28124-981b-4ee7-8cee-f13b850c2855",
+  "expires_in_seconds": 300,
+  "resend_after_seconds": 60
+}
 ```
 
 ACS Email로 6자리 인증번호를 보내며 원문 인증번호는 Redis에 저장하지 않는다. 같은 이메일은 기본
@@ -78,7 +82,7 @@ ACS Email로 6자리 인증번호를 보내며 원문 인증번호는 Redis에 �
 ### POST `/auth/email-verifications/verify`
 
 ```json
-{"verification_id":"f9c28124-981b-4ee7-8cee-f13b850c2855","code":"123456"}
+{ "verification_id": "f9c28124-981b-4ee7-8cee-f13b850c2855", "code": "123456" }
 ```
 
 응답 `200`: `{"verification_token":"<single-use-token>","expires_in_seconds":1800}`
@@ -90,13 +94,25 @@ Redis에서 예약 후 DB commit 시 소비되므로 재사용할 수 없다.
 
 ```json
 {
-  "user_id":"hong01","password":"SafePass!23","name":"홍길동",
-  "birthdate":"000101","phone_number":"01012345678","email":"hong@example.com",
-  "email_verification_token":"<single-use-token>",
-  "agreements":[
-    {"term_code":"B_PRIVACY","version":"dev-20260823","agreed":true},
-    {"term_code":"C_ASSOCIATE_TERMS","version":"dev-20260823","agreed":true},
-    {"term_code":"AI_PERSONALIZATION","version":"dev-20260823","agreed":false}
+  "user_id": "hong01",
+  "password": "SafePass!23",
+  "name": "홍길동",
+  "birthdate": "000101",
+  "phone_number": "01012345678",
+  "email": "hong@example.com",
+  "email_verification_token": "<single-use-token>",
+  "agreements": [
+    { "term_code": "B_PRIVACY", "version": "dev-20260823", "agreed": true },
+    {
+      "term_code": "C_ASSOCIATE_TERMS",
+      "version": "dev-20260823",
+      "agreed": true
+    },
+    {
+      "term_code": "AI_PERSONALIZATION",
+      "version": "dev-20260823",
+      "agreed": false
+    }
   ]
 }
 ```
@@ -127,8 +143,18 @@ API나 클라이언트 선언 인증 상태는 지원하지 않는다.
 
 ```json
 [
-  {"term_code":"B_PRIVACY","version":"dev-20260823","title":"개인정보 수집 및 이용 동의","is_required":true},
-  {"term_code":"C_ASSOCIATE_TERMS","version":"dev-20260823","title":"준회원 이용약관 동의","is_required":true}
+  {
+    "term_code": "B_PRIVACY",
+    "version": "dev-20260823",
+    "title": "개인정보 수집 및 이용 동의",
+    "is_required": true
+  },
+  {
+    "term_code": "C_ASSOCIATE_TERMS",
+    "version": "dev-20260823",
+    "title": "준회원 이용약관 동의",
+    "is_required": true
+  }
 ]
 ```
 
@@ -148,9 +174,14 @@ API나 클라이언트 선언 인증 상태는 지원하지 않는다.
 
 ```json
 {
-  "id":"92be9e3e-4364-4428-86c4-b730cc841847","account_name":"나의 가상 투자계좌",
-  "operation_mode":"SEMI_AUTO","initial_cash":"0.00","cash_balance":"0.00","status":"ACTIVE",
-  "selected_strategy_id":null,"created_at":"2026-08-23T12:00:00Z"
+  "id": "92be9e3e-4364-4428-86c4-b730cc841847",
+  "account_name": "나의 가상 투자계좌",
+  "operation_mode": "SEMI_AUTO",
+  "initial_cash": "0.00",
+  "cash_balance": "0.00",
+  "status": "ACTIVE",
+  "selected_strategy_id": null,
+  "created_at": "2026-08-23T12:00:00Z"
 }
 ```
 
@@ -162,7 +193,7 @@ API나 클라이언트 선언 인증 상태는 지원하지 않는다.
 ### PUT `/accounts/me/active-operation-mode`
 
 ```json
-{"operation_mode":"AUTO"}
+{ "operation_mode": "AUTO" }
 ```
 
 같은 계좌의 `operation_mode`를 수정하거나 자산·포지션·거래내역을 옮기지 않는다. 사용자가 해당
@@ -175,24 +206,24 @@ API나 클라이언트 선언 인증 상태는 지원하지 않는다.
 
 ```json
 {
-  "previous_operation_mode":"SEMI_AUTO",
-  "operation_mode":"AUTO",
-  "changed":true,
-  "changed_at":"2026-08-25T15:30:00Z",
-  "account":{
-    "id":"92be9e3e-4364-4428-86c4-b730cc841847",
-    "account_name":"자동 운용 계좌",
-    "operation_mode":"AUTO",
-    "initial_cash":"1000000.00",
-    "cash_balance":"750000.00",
-    "status":"ACTIVE",
-    "selected_strategy_id":"low",
-    "created_at":"2026-08-25T12:00:00Z"
+  "previous_operation_mode": "SEMI_AUTO",
+  "operation_mode": "AUTO",
+  "changed": true,
+  "changed_at": "2026-08-25T15:30:00Z",
+  "account": {
+    "id": "92be9e3e-4364-4428-86c4-b730cc841847",
+    "account_name": "자동 운용 계좌",
+    "operation_mode": "AUTO",
+    "initial_cash": "1000000.00",
+    "cash_balance": "750000.00",
+    "status": "ACTIVE",
+    "selected_strategy_id": "low",
+    "created_at": "2026-08-25T12:00:00Z"
   },
-  "notice":{
-    "code":"OPERATION_MODE_CHANGED",
-    "title":"운용방식이 변경됐어요",
-    "message":"확인하고 실행 계좌에서 자동으로 운용 계좌로 전환했어요. 각 계좌의 자산과 거래내역은 이동하지 않고 그대로 유지됩니다."
+  "notice": {
+    "code": "OPERATION_MODE_CHANGED",
+    "title": "운용방식이 변경됐어요",
+    "message": "확인하고 실행 계좌에서 자동으로 운용 계좌로 전환했어요. 각 계좌의 자산과 거래내역은 이동하지 않고 그대로 유지됩니다."
   }
 }
 ```
@@ -203,8 +234,12 @@ API나 클라이언트 선언 인증 상태는 지원하지 않는다.
 
 ```json
 {
-  "account_id":"92be9e3e-4364-4428-86c4-b730cc841847","stock_code":"005930",
-  "side":"BUY","order_type":"MARKET","quantity":10.125,"idempotency_key":"client-uuid-0001"
+  "account_id": "92be9e3e-4364-4428-86c4-b730cc841847",
+  "stock_code": "005930",
+  "side": "BUY",
+  "order_type": "MARKET",
+  "quantity": 10.125,
+  "idempotency_key": "client-uuid-0001"
 }
 ```
 
@@ -212,9 +247,15 @@ API나 클라이언트 선언 인증 상태는 지원하지 않는다.
 
 ```json
 {
-  "id":"82b2e790-79ee-4d7f-b94f-f37a7a99a7e6","account_id":"92be9e3e-4364-4428-86c4-b730cc841847",
-  "stock_code":"005930","side":"BUY","order_type":"MARKET","quantity":"10.12500000",
-  "status":"FILLED","requested_price":"70000.0000","requested_at":"2026-08-23T12:00:00Z"
+  "id": "82b2e790-79ee-4d7f-b94f-f37a7a99a7e6",
+  "account_id": "92be9e3e-4364-4428-86c4-b730cc841847",
+  "stock_code": "005930",
+  "side": "BUY",
+  "order_type": "MARKET",
+  "quantity": "10.12500000",
+  "status": "FILLED",
+  "requested_price": "70000.0000",
+  "requested_at": "2026-08-23T12:00:00Z"
 }
 ```
 
@@ -257,8 +298,20 @@ snapshot 이력을 조합하는 읽기 전용 API이며 거래나 snapshot을 �
     "items": []
   },
   "allocations": [
-    {"type":"STOCK","stock_code":"005930","name":"삼성전자","amount":"710000.00","weight":"70.30"},
-    {"type":"CASH","stock_code":null,"name":"현금","amount":"300000.00","weight":"29.70"}
+    {
+      "type": "STOCK",
+      "stock_code": "005930",
+      "name": "삼성전자",
+      "amount": "710000.00",
+      "weight": "70.30"
+    },
+    {
+      "type": "CASH",
+      "stock_code": null,
+      "name": "현금",
+      "amount": "300000.00",
+      "weight": "29.70"
+    }
   ],
   "positions": [],
   "contributions": [],
@@ -319,13 +372,44 @@ snapshot 이력을 조합하는 읽기 전용 API이며 거래나 snapshot을 �
 
 ```json
 {
-  "account_id":"92be9e3e-4364-4428-86c4-b730cc841847","cash_balance":"9300000.00",
-  "total_purchase_amount":"700000.00","total_evaluation_amount":"710000.00",
-  "total_assets":"10010000.00","unrealized_profit":"10000.00","realized_profit":"0.00",
-  "return_rate":"1.43","today_profit":"10000.00",
-  "top_contributor":{"stock_code":"005930","stock_name":"삼성전자","amount":"10000.00","share_rate":"100.00"},
-  "strategy_targets_available":false,"rebalancing_proposals":[],
-  "positions":[{"stock_code":"005930","stock_name":"삼성전자","sector":"반도체","quantity":"10.12500000","average_price":"70000.0000","current_price":"71000","previous_close":"70000","change_rate":"1.43","purchase_amount":"708750.00","evaluation_amount":"718875.00","unrealized_profit":"10125.00","return_rate":"1.43","realized_profit":"0.00","weight":"7.09","today_profit":"10125.00","price_source":"KIS","price_as_of":"2026-08-25T09:00:00+09:00"}]
+  "account_id": "92be9e3e-4364-4428-86c4-b730cc841847",
+  "cash_balance": "9300000.00",
+  "total_purchase_amount": "700000.00",
+  "total_evaluation_amount": "710000.00",
+  "total_assets": "10010000.00",
+  "unrealized_profit": "10000.00",
+  "realized_profit": "0.00",
+  "return_rate": "1.43",
+  "today_profit": "10000.00",
+  "top_contributor": {
+    "stock_code": "005930",
+    "stock_name": "삼성전자",
+    "amount": "10000.00",
+    "share_rate": "100.00"
+  },
+  "strategy_targets_available": false,
+  "rebalancing_proposals": [],
+  "positions": [
+    {
+      "stock_code": "005930",
+      "stock_name": "삼성전자",
+      "sector": "반도체",
+      "quantity": "10.12500000",
+      "average_price": "70000.0000",
+      "current_price": "71000",
+      "previous_close": "70000",
+      "change_rate": "1.43",
+      "purchase_amount": "708750.00",
+      "evaluation_amount": "718875.00",
+      "unrealized_profit": "10125.00",
+      "return_rate": "1.43",
+      "realized_profit": "0.00",
+      "weight": "7.09",
+      "today_profit": "10125.00",
+      "price_source": "KIS",
+      "price_as_of": "2026-08-25T09:00:00+09:00"
+    }
+  ]
 }
 ```
 
@@ -354,7 +438,12 @@ OpenDART FY 재무 또는 다른 보유종목 표본이 부족하면 해당 축�
 ### POST `/portfolio/decisions`
 
 ```json
-{"account_id":"92be9e3e-4364-4428-86c4-b730cc841847","stock_code":"005930","decision":"ACCEPTED","idempotency_key":"<uuid>"}
+{
+  "account_id": "92be9e3e-4364-4428-86c4-b730cc841847",
+  "stock_code": "005930",
+  "decision": "ACCEPTED",
+  "idempotency_key": "<uuid>"
+}
 ```
 
 비중·금액·BUY/SELL은 요청에서 받지 않고 Backend가 현재 포트폴리오 제안에서 다시 산출한다.
@@ -414,7 +503,25 @@ job을 실행하지 않는다. `{stock_code}`는 선행 0을 포함한 문자열
 기업 기본정보를 반환한다. 응답 `200`:
 
 ```json
-{"corp_code":"00126380","stock_code":"005930","corp_name":"삼성전자","corp_name_eng":"Samsung Electronics Co., Ltd.","stock_name":"삼성전자","market":"Y","ceo_name":"대표이사","jurir_no":"...","bizr_no":"...","address":"...","homepage_url":"https://...","ir_url":"https://...","phone_number":"...","industry_code":"264","established_date":"1969-01-13","accounting_month":"12","source":"OpenDART"}
+{
+  "corp_code": "00126380",
+  "stock_code": "005930",
+  "corp_name": "삼성전자",
+  "corp_name_eng": "Samsung Electronics Co., Ltd.",
+  "stock_name": "삼성전자",
+  "market": "Y",
+  "ceo_name": "대표이사",
+  "jurir_no": "...",
+  "bizr_no": "...",
+  "address": "...",
+  "homepage_url": "https://...",
+  "ir_url": "https://...",
+  "phone_number": "...",
+  "industry_code": "264",
+  "established_date": "1969-01-13",
+  "accounting_month": "12",
+  "source": "OpenDART"
+}
 ```
 
 ### GET `/companies/{stock_code}/financials`
@@ -424,7 +531,27 @@ Query parameter는 `year`(선택, `YYYY`)와 `quarter`(선택, `Q1|Q2|Q3|FY`)다
 보고서별로 반환한다. 금액이 공시에 없으면 `null`이다.
 
 ```json
-{"stock_code":"005930","items":[{"business_year":"2025","report_code":"11011","quarter":"FY","fs_div":"CFS","revenue":"300000000000000.00","operating_income":null,"net_income":null,"total_assets":null,"total_liabilities":null,"total_equity":null,"operating_cash_flow":null,"investing_cash_flow":null,"financing_cash_flow":null}],"source":"OpenDART"}
+{
+  "stock_code": "005930",
+  "items": [
+    {
+      "business_year": "2025",
+      "report_code": "11011",
+      "quarter": "FY",
+      "fs_div": "CFS",
+      "revenue": "300000000000000.00",
+      "operating_income": null,
+      "net_income": null,
+      "total_assets": null,
+      "total_liabilities": null,
+      "total_equity": null,
+      "operating_cash_flow": null,
+      "investing_cash_flow": null,
+      "financing_cash_flow": null
+    }
+  ],
+  "source": "OpenDART"
+}
 ```
 
 ### GET `/companies/{stock_code}/disclosures`
@@ -433,13 +560,31 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 보고서명 부분 일치), `limit`(기본 20, 1~100)이다. 최신 접수일과 접수번호 순으로 반환한다.
 
 ```json
-{"stock_code":"005930","items":[{"receipt_no":"202608240001","corp_code":"00126380","stock_code":"005930","corp_name":"삼성전자","report_name":"사업보고서","filer_name":"삼성전자","receipt_date":"2026-08-24","remarks":null}],"source":"OpenDART"}
+{
+  "stock_code": "005930",
+  "items": [
+    {
+      "receipt_no": "202608240001",
+      "corp_code": "00126380",
+      "stock_code": "005930",
+      "corp_name": "삼성전자",
+      "report_name": "사업보고서",
+      "filer_name": "삼성전자",
+      "receipt_date": "2026-08-24",
+      "remarks": null
+    }
+  ],
+  "source": "OpenDART"
+}
 ```
 
 세 endpoint 모두 종목이 없으면 `404`를 반환한다.
 
 ```json
-{"code":"COMPANY_NOT_FOUND","message":"OpenDART 기업정보를 찾을 수 없습니다."}
+{
+  "code": "COMPANY_NOT_FOUND",
+  "message": "OpenDART 기업정보를 찾을 수 없습니다."
+}
 ```
 
 잘못된 날짜, `year`, `quarter`, `limit`은 FastAPI validation의 `422` 응답이다.
@@ -464,24 +609,59 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 
 ## StockDetail 실제 데이터 계약
 
-`GET /market/stocks/{stock_code}/price`는 PostgreSQL을 조회하지 않고 Redis/KIS에서 현재가·전일 대비·등락률·거래량을 반환하는 유일한 현재가 계약이다. `GET /market/stocks/{stock_code}/summary`는 KIS를 호출하지 않고 KRX 종목 마스터·최근 일별시세와 OpenDART 최근 연결 사업보고서를 조합한다. 호환성을 위해 summary의 `price`, `previous_close`, `change_amount`, `change_rate`, `volume` 필드는 유지하지만 항상 `null`이며 Frontend는 `/price` 응답만 사용한다. 외부 데이터가 없거나 계산할 수 없는 필드는 `0`이나 추정값 대신 `null`을 반환한다. PER은 `시가총액/순이익`, PBR은 `시가총액/자본`, ROE는 `순이익/자본*100`이며 분모가 0 이하이면 `null`이다. 배당 원천을 아직 연결하지 않았으므로 `dividend_yield`는 `null`이다. 재무비율은 최신 연간 공시 단순 비율로 금융업 등 업종별 조정이나 TTM 계산을 하지 않는다.
+`GET /market/stocks/{stock_code}/price`는 PostgreSQL을 조회하지 않고 Redis/KIS에서 현재가·전일 대비·등락률·거래량을 반환하는 유일한 현재가 계약이다. `GET /market/stocks/{stock_code}/summary`는 KIS를 호출하지 않고 KRX 종목 마스터·최근 일별시세와 OpenDART 최근 연결 사업보고서·연간 배당 공시를 조합한다. 호환성을 위해 summary의 `price`, `previous_close`, `change_amount`, `change_rate`, `volume` 필드는 유지하지만 항상 `null`이며 Frontend는 `/price` 응답만 사용한다. 외부 데이터가 없거나 계산할 수 없는 필드는 `0`이나 추정값 대신 `null`을 반환한다. PER은 `시가총액/순이익`, PBR은 `시가총액/자본`, ROE는 `순이익/자본*100`이며 분모가 0 이하이면 `null`이다. `dividend_yield`는 최근 사업보고서의 보통주 공시 수익률을 우선하며, 공시 수익률이 없고 연간 DPS가 있으면 최근 KRX 종가로 계산한다. 재무비율은 최신 연간 공시 단순 비율로 금융업 등 업종별 조정이나 TTM 계산을 하지 않는다.
 
 ```json
 {
-  "stock_code":"005930","stock_name":"삼성전자","market":"KOSPI","sector":"전기전자",
-  "listing_date":"1975-06-11","listed_shares":5969782550,"security_type":"주권",
-  "description":"삼성전자은(는) KOSPI 상장 기업입니다.",
-  "price":null,"previous_close":null,"change_amount":null,"change_rate":null,"volume":null,
-  "market_cap":"423000000000000","per":"14.1","pbr":"1.4","roe":"9.9","dividend_yield":null,
-  "financial_year":"2025","as_of":"2026-08-24T06:30:00Z",
-  "sources":{"price":null,"market":"KRX","financial":"OpenDART"}
+  "stock_code": "005930",
+  "stock_name": "삼성전자",
+  "market": "KOSPI",
+  "sector": "전기전자",
+  "listing_date": "1975-06-11",
+  "listed_shares": 5969782550,
+  "security_type": "주권",
+  "description": "삼성전자은(는) KOSPI 상장 기업입니다.",
+  "price": null,
+  "previous_close": null,
+  "change_amount": null,
+  "change_rate": null,
+  "volume": null,
+  "market_cap": "423000000000000",
+  "per": "14.1",
+  "pbr": "1.4",
+  "roe": "9.9",
+  "dividend_yield": "1.8",
+  "financial_year": "2025",
+  "as_of": "2026-08-24T06:30:00Z",
+  "sources": {
+    "price": null,
+    "market": "KRX",
+    "financial": "OpenDART",
+    "dividend": "OpenDART_ALOT_MATTER",
+    "dividend_price": null
+  }
 }
 ```
 
 `GET /market/stocks/{stock_code}/chart`의 `period`는 `1D|1W|3M|6M|1Y|5Y`다. `1D`는 KRX DB 존재 여부와 무관하게 KIS 당일 1분봉 최대 390개로 정규장 전체를 조회한다. 그 외 기간은 종목별 최신 KRX 거래일을 기간의 끝으로 삼아 PostgreSQL의 일별 OHLCV를 날짜 오름차순으로 반환한다. 저장된 기간에 실제 행이 없으면 `404 CHART_DATA_UNAVAILABLE`이며 빈 선이나 합성 시계열을 만들지 않는다.
 
 ```json
-{"stock_code":"005930","period":"3M","source":"KRX","as_of":"2026-08-24T00:00:00Z","items":[{"date":"2026-08-24","open":"70000","high":"71500","low":"69800","close":"71000","volume":1234567}]}
+{
+  "stock_code": "005930",
+  "period": "3M",
+  "source": "KRX",
+  "as_of": "2026-08-24T00:00:00Z",
+  "items": [
+    {
+      "date": "2026-08-24",
+      "open": "70000",
+      "high": "71500",
+      "low": "69800",
+      "close": "71000",
+      "volume": 1234567
+    }
+  ]
+}
 ```
 
 ## 실제 시세 Strategy Backtest
@@ -491,17 +671,17 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 `GET /backtest/available-range`는 주가 lookback 260일을 확보한 최초일과 주가·KOSPI의 공통 최종일을 반환한다. Frontend는 이 값을 추천 기간과 직접 입력의 경계로 사용하며 공개 DB에 없는 연도를 하드코딩하지 않는다.
 
 ```json
-{"minDate":"2022-09-18","maxDate":"2026-08-24"}
+{ "minDate": "2022-09-18", "maxDate": "2026-08-24" }
 ```
 
 ```json
 {
-  "strategyId":"low",
-  "periodId":"custom",
-  "periodLabel":"직접 설정",
-  "periodDescription":"",
-  "startDate":"2022-01-01",
-  "endDate":"2026-08-01"
+  "strategyId": "low",
+  "periodId": "custom",
+  "periodLabel": "직접 설정",
+  "periodDescription": "",
+  "startDate": "2022-01-01",
+  "endDate": "2026-08-01"
 }
 ```
 
@@ -509,11 +689,25 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 
 ```json
 {
-  "strategyId":"low","strategyName":"저변동성 전략",
-  "period":{"id":"custom","label":"직접 설정","startDate":"2022-01-01","endDate":"2026-08-01","description":""},
-  "series":[{"t":"2022-01-03","strategy":0.0,"benchmark":0.0}],
-  "metrics":{"cumulativeReturn":12.3,"cagr":2.7,"mdd":-14.2,"volatility":11.8,"sharpe":0.29},
-  "benchmarkName":"KOSPI","benchmarkMetrics":{"cumulativeReturn":8.1,"mdd":-22.4}
+  "strategyId": "low",
+  "strategyName": "저변동성 전략",
+  "period": {
+    "id": "custom",
+    "label": "직접 설정",
+    "startDate": "2022-01-01",
+    "endDate": "2026-08-01",
+    "description": ""
+  },
+  "series": [{ "t": "2022-01-03", "strategy": 0.0, "benchmark": 0.0 }],
+  "metrics": {
+    "cumulativeReturn": 12.3,
+    "cagr": 2.7,
+    "mdd": -14.2,
+    "volatility": 11.8,
+    "sharpe": 0.29
+  },
+  "benchmarkName": "KOSPI",
+  "benchmarkMetrics": { "cumulativeReturn": 8.1, "mdd": -22.4 }
 }
 ```
 

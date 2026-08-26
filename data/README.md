@@ -204,7 +204,7 @@ features/_manifests/model-datasets/version=v1/manifest.json
 
 ## PostgreSQL
 
-현재 구현 기준 Alembic head는 `20260825_0020`이다.
+현재 구현 기준 Alembic head는 `20260826_0023`이다.
 
 현재 membership/registration 관계:
 
@@ -217,6 +217,7 @@ public.registration_agreements
 public.companies
 public.company_financial_accounts
 public.company_financials
+public.stock_dividends
 public.company_disclosures
 public.market_stocks
 public.market_stock_prices
@@ -268,7 +269,14 @@ docker compose --profile data run --rm --no-deps data python -m scripts.sync_ope
 docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart companies --limit 100
 docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart financials --stock-code 005930 --year 2025 --report-code 11011
 docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart disclosures --stock-code 005930 --limit 20
+docker compose --profile data run --rm --no-deps data python -m scripts.sync_opendart_dividends --start-year 2018
 ```
+
+배당 전용 명령은 상장사별 사업보고서(`11011`)의 연간 DPS와 공시 수익률을 수집한다.
+이미 적재된 종목-사업연도는 건너뛰므로 OpenDART 일일 한도에 도달해 중단되면 다음 날 같은
+명령으로 재개할 수 있다. 최근 공시를 다시 반영하려면 범위를 좁혀 `--refresh`를 사용한다.
+현재 사업연도의 사업보고서가 아직 없거나 무배당인 경우는 값을 만들지 않고 unavailable로
+처리한다.
 
 공시 `--limit`이 100을 초과하면 OpenDART `page_no`/`total_page`를 따라 여러 페이지를
 수집하며, 요청한 건수까지만 PostgreSQL에 적재하고 각 HTTP 페이지 원문은 모두 별도 Raw
