@@ -845,6 +845,7 @@ export default function App() {
           strategyId={strategyId}
           onNavigate={navigate}
           onBack={() => setScreen(rebalanceBackTarget)}
+          isAutoMode={activeMode === 'auto'}
         />
       )}
 

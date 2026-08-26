@@ -14,6 +14,11 @@ interface Props {
   strategyId: string;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
+  /** 자동매매(activeMode==='auto') 유저가 실 계좌 없이(portfolio===null) 이 화면에 들어온 경우에만
+   *  mock(AI_ALERTS) 과거형/완료 톤을 쓴다 — portfolio!==null 하나만으로 판단하면, 반자동 유저도
+   *  포트폴리오 로딩 중이거나 조회에 실패해 portfolio가 잠깐/계속 null인 동안 완료 톤으로 잘못 보인다.
+   *  반자동은 이 값과 무관하게 항상 "제안" 톤이어야 한다. */
+  isAutoMode: boolean;
 }
 
 /** AI 제안 종류별 배지 색 — PortfolioDetail 의 요약 카드와 동일한 배색을 공유한다 */
@@ -24,17 +29,18 @@ const ALERT_BADGE: Record<'손절' | '리밸런싱', string> = {
 
 /** `/rebalance-alerts` — AI 손절·리밸런싱 제안 전체 목록. PortfolioDetail "AI의 리밸런싱 제안"의 "더보기"에서 진입한다.
  *  실 계좌에 리밸런싱 제안(규칙기반)이 있으면 그 값을, 없으면 AI_ALERTS(목업)를 그대로 쓴다 — lib/rebalancing.ts 참고. */
-export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBack }: Props) {
+export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBack, isAutoMode }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
   // displayAlerts는 실 계좌가 있으면(portfolio) portfolio.rebalancing_proposals(아직 실행 전인 "제안")를,
-  // 없으면 AI_ALERTS(이미 실행됐다는 설정의 스토리 목업)를 쓴다 — lib/rebalancing.ts 참고. 그래서 "완료됨"
-  // 톤을 결정하는 신호는 activeMode(자동/반자동)가 아니라 이 실데이터 여부다. PortfolioAuto.tsx의
-  // usingRealAlerts와 동일한 기준 — 자동매매 실계좌라도 제안은 아직 제안일 뿐이라, 실데이터면 반자동과
-  // 같은 "제안" 톤을 쓰고 mock일 때만 과거형/완료 톤을 쓴다.
-  const usingRealAlerts = portfolio !== null;
+  // 없으면 AI_ALERTS(이미 실행됐다는 설정의 스토리 목업)를 쓴다 — lib/rebalancing.ts 참고. 그래서 자동매매
+  // 실계좌라도 제안은 아직 제안일 뿐이라, 실데이터면 반자동과 같은 "제안" 톤을 쓰고 mock일 때만 과거형/완료
+  // 톤을 써야 한다. 다만 portfolio!==null만으로 판단하면 반자동 유저도 로딩 중/조회 실패로 portfolio가
+  // 잠깐 null인 동안 완료 톤으로 잘못 보일 수 있어, 애초에 자동매매가 아니면(!isAutoMode) 실데이터 여부와
+  // 무관하게 항상 "제안" 톤을 쓰도록 activeMode를 우선 확인한다.
+  const usingRealAlerts = !isAutoMode || portfolio !== null;
 
   // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — PortfolioDetail 과 동일한 대체 규칙.
   const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
