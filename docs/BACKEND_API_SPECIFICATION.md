@@ -46,6 +46,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 포트폴리오 홈 통합 조회 | GET | `/portfolio/home?account_id=&period=&sort=&order=` | 필요/소유권 | 200, 404, 422, 503 | 계좌·평가·추이·배분·정렬된 보유종목 통합 |
 | 포트폴리오 평가 | GET | `/portfolio?account_id=` | 필요/소유권 | 200, 404, 503 | 실제 metadata·당일 기여·목표비중 제안 포함 |
 | 포트폴리오 이력 | GET | `/portfolio/history?account_id=&period=` | 필요/소유권 | 200, 404 | 실제 snapshot 수익률과 KOSPI 비교 |
+| AI 투자 비교 | GET | `/portfolio/comparison?period=` | 필요 | 200, 401, 409 | AUTO/SEMI_AUTO 외부 현금흐름 조정 TWR과 서버 검증 AI 해설 |
 | 종목 5축 feature | GET | `/portfolio/stock-evaluation?account_id=&stock_code=` | 필요/소유권 | 200, 404 | KRX·OpenDART·보유종목 기반 평가 |
 | 리밸런싱 판단 기록 | POST | `/portfolio/decisions` | 필요/소유권 | 201, 404, 409 | 현재 서버 제안 수락·보류 기록 |
 | 리밸런싱 판단 이력 | GET | `/portfolio/decisions?account_id=` | 필요/소유권 | 200, 404 | 최근 6개월 실제 판단·후속 수익률 |

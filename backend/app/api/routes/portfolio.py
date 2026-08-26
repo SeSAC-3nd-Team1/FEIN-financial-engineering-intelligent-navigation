@@ -7,11 +7,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user
 from app.core.config import settings
 from app.db.session import get_session
-from app.integrations.ai import AzureOpenAIRebalancingClient
+from app.integrations.ai import AzureOpenAIPortfolioComparisonClient, AzureOpenAIRebalancingClient
 from app.models import User
 from app.schemas.api import (
     PortfolioHomeResponse,
     PortfolioHistoryResponse,
+    PortfolioComparisonResponse,
     PortfolioResponse,
     PortfolioTransactionListResponse,
     RebalancingDecisionCreateRequest,
@@ -20,6 +21,7 @@ from app.schemas.api import (
     StockEvaluationResponse,
 )
 from app.services.portfolio_analytics import PortfolioAnalyticsService
+from app.services.portfolio_comparison import PortfolioComparisonService
 from app.services.portfolio import PortfolioService
 from app.services.transactions import TransactionHistoryService
 
@@ -42,6 +44,23 @@ def get_portfolio_service(session: Session = Depends(get_session)) -> PortfolioS
         session,
         rebalancing_client=client,
         rebalancing_model_version=settings.ai_rebalancing_model_version,
+    )
+
+
+def get_portfolio_comparison_service(
+    session: Session = Depends(get_session),
+) -> PortfolioComparisonService:
+    client = AzureOpenAIPortfolioComparisonClient(
+        endpoint=settings.azure_openai_endpoint,
+        api_key=settings.azure_openai_api_key,
+        deployment=settings.azure_openai_comparison_deployment,
+        api_version=settings.azure_openai_api_version,
+        timeout_seconds=settings.ai_comparison_timeout_seconds,
+    )
+    return PortfolioComparisonService(
+        session,
+        comparison_client=client,
+        comparison_model_version=settings.ai_comparison_model_version,
     )
 
 
@@ -90,6 +109,15 @@ def portfolio_history(
     session: Session = Depends(get_session),
 ) -> PortfolioHistoryResponse:
     return PortfolioService(session).history(user.id, account_id, period)
+
+
+@router.get("/comparison", response_model=PortfolioComparisonResponse)
+async def portfolio_comparison(
+    period: Literal["1M", "3M", "1Y", "ALL"] = Query(default="3M"),
+    user: User = Depends(current_user),
+    service: PortfolioComparisonService = Depends(get_portfolio_comparison_service),
+) -> PortfolioComparisonResponse:
+    return await service.compare(user.id, period)
 
 
 @router.get("/stock-evaluation", response_model=StockEvaluationResponse)

@@ -507,6 +507,58 @@ class PortfolioHistoryResponse(BaseModel):
     items: list[PortfolioHistoryPointResponse]
 
 
+class PortfolioComparisonAccountResponse(BaseModel):
+    account_id: UUID
+    account_name: str
+    operation_mode: OperationMode
+    strategy_id: str | None
+    baseline_assets: Decimal | None
+    current_assets: Decimal | None
+    return_rate: Decimal | None
+
+
+class PortfolioComparisonAccountsResponse(BaseModel):
+    ai_auto: PortfolioComparisonAccountResponse
+    my_investment: PortfolioComparisonAccountResponse
+
+
+class PortfolioComparisonMetricsResponse(BaseModel):
+    return_rate_gap: Decimal
+    asset_gap: Decimal
+    leader: Literal["AI_AUTO", "MY_INVESTMENT", "TIE"]
+
+
+class PortfolioComparisonPointResponse(BaseModel):
+    date: date
+    ai_auto_return_rate: Decimal
+    my_investment_return_rate: Decimal
+    return_rate_gap: Decimal
+
+
+class PortfolioComparisonAIAnalysisResponse(BaseModel):
+    status: Literal["AVAILABLE", "UNAVAILABLE"]
+    headline: str | None = None
+    summary: str
+    key_points: list[str] = Field(default_factory=list)
+    caution: str | None = None
+    model_version: str | None = None
+    generated_at: datetime | None = None
+
+
+class PortfolioComparisonResponse(BaseModel):
+    comparison_status: Literal["AVAILABLE", "INSUFFICIENT_DATA"]
+    calculation_version: Literal["portfolio-comparison-v1"] = "portfolio-comparison-v1"
+    return_calculation: Literal["CASH_FLOW_ADJUSTED_TWR"] = "CASH_FLOW_ADJUSTED_TWR"
+    period: Literal["1M", "3M", "1Y", "ALL"]
+    baseline_date: date | None
+    as_of: date | None
+    observation_count: int = Field(ge=0)
+    accounts: PortfolioComparisonAccountsResponse
+    metrics: PortfolioComparisonMetricsResponse | None
+    series: list[PortfolioComparisonPointResponse]
+    ai_analysis: PortfolioComparisonAIAnalysisResponse
+
+
 class PortfolioHomeAccountResponse(BaseModel):
     id: UUID
     account_name: str

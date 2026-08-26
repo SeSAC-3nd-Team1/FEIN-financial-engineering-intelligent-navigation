@@ -9,7 +9,20 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models import Execution, InvestmentOnboarding, MarketStock, Order, PortfolioSnapshot, Position, RebalancingDecision, Strategy, StrategyTargetWeight, User, VirtualAccount
+from app.models import (
+    CashLedger,
+    Execution,
+    InvestmentOnboarding,
+    MarketStock,
+    Order,
+    PortfolioSnapshot,
+    Position,
+    RebalancingDecision,
+    Strategy,
+    StrategyTargetWeight,
+    User,
+    VirtualAccount,
+)
 
 
 @dataclass(frozen=True)
@@ -129,6 +142,25 @@ class TradingRepository:
         if start_date is not None:
             query = query.where(PortfolioSnapshot.snapshot_date >= start_date)
         return list(self.session.scalars(query.order_by(PortfolioSnapshot.snapshot_date)))
+
+    def external_cash_flows(
+        self,
+        account_id: UUID,
+        started_at: datetime,
+        ended_before: datetime,
+    ) -> list[CashLedger]:
+        """매매와 무관하게 계좌 자산을 바꾼 외부 현금흐름만 반환한다."""
+
+        return list(self.session.scalars(
+            select(CashLedger)
+            .where(
+                CashLedger.account_id == account_id,
+                CashLedger.transaction_type.in_(("INITIAL_DEPOSIT", "DEPOSIT", "ADJUSTMENT")),
+                CashLedger.created_at >= started_at,
+                CashLedger.created_at < ended_before,
+            )
+            .order_by(CashLedger.created_at, CashLedger.id)
+        ))
 
     def latest_snapshot(self, account_id: UUID, effective_on: date | None = None) -> PortfolioSnapshot | None:
         query = select(PortfolioSnapshot).where(PortfolioSnapshot.account_id == account_id)
