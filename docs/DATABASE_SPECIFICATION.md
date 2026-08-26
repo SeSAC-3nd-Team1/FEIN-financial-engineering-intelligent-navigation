@@ -4,7 +4,7 @@
 
 이 문서는 현재 `develop`의 SQLAlchemy 모델과 Alembic migration history를 기준으로 PostgreSQL의 역할을 요약한다.
 
-- 현재 Alembic 구현 기준: `20260825_0020`
+- 현재 Alembic 구현 기준: `20260826_0022`
 - 금융/API 대용량 Raw source of truth: Azure Blob Storage
 - PostgreSQL 역할: 관계형 서비스 데이터와 Frontend 조회용 KRX/OpenDART 정제 결과
 - 과거 금융/API PostgreSQL `raw`, `processed` schema: retire 완료
@@ -71,7 +71,7 @@ erDiagram
 
 ## 핵심 정규화 원칙
 
-- `users.phone_verified_at`, `users.email_verified_at`으로 인증 완료 여부를 판단하며 별도 boolean을 중복 저장하지 않는다.
+- 인증 완료 여부는 timestamp에서 파생하며 별도 boolean을 중복 저장하지 않는다. 현재 가입 필수 인증은 `users.email_verified_at`이고, 휴대폰 인증 도입 전까지 `users.phone_verified_at`은 nullable이다.
 - `user_agreements`는 `term_id`로 특정 약관 version을 참조한다.
 - 가입 완료 전 상태는 `registration_sessions`, `registration_agreements`에 분리한다.
 - OTP hash, attempts, verification token single-use 상태, rate limit은 PostgreSQL 영구 데이터가 아니라 Redis 영역이다.
@@ -79,7 +79,7 @@ erDiagram
 
 ## Migration history
 
-`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을, `20260824_0014`는 투자성향·전략 추천 이력을, `20260824_0015`는 가상투자 시작 상태를, `20260824_0016`은 KRX 화면 조회용 serving table을 추가한다. `20260825_0019`는 주문·체결·보유수량을 `numeric(20,8)`로 확장해 가상 소수점 매매를 허용하고, `20260825_0020`은 운용방식별 가상계좌와 부족분 1회 입금 이력을 추가한다. `20260825_0021`은 계좌 데이터를 변경하지 않는 사용자별 활성 운용방식 선택을 추가한다.
+`20260816_0010`은 과거 금융/API PostgreSQL `raw`와 `processed` schema retirement를 migration history에 공식 기록한다. `20260816_0011`은 회원가입 구조를 3NF 기준으로 확장/정리하고, `20260823_0012`는 가상거래를, `20260824_0013`은 OpenDART serving table을, `20260824_0014`는 투자성향·전략 추천 이력을, `20260824_0015`는 가상투자 시작 상태를, `20260824_0016`은 KRX 화면 조회용 serving table을 추가한다. `20260825_0019`는 주문·체결·보유수량을 `numeric(20,8)`로 확장해 가상 소수점 매매를 허용하고, `20260825_0020`은 운용방식별 가상계좌와 부족분 1회 입금 이력을 추가한다. `20260825_0021`은 계좌 데이터를 변경하지 않는 사용자별 활성 운용방식 선택을 추가하며, `20260826_0022`는 이메일 단독 인증 가입을 위해 `users.phone_verified_at`의 필수 제약을 해제한다.
 
 과거 migration 파일은 오래된 runtime 설계를 의미하는 것이 아니라 새 DB를 head까지 재현하기 위한 역사이므로 삭제하지 않는다.
 

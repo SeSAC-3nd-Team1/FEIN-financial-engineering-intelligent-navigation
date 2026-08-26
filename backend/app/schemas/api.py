@@ -20,6 +20,8 @@ class AgreementRequest(BaseModel):
 
 
 class SignupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     user_id: str = Field(pattern=r"^[a-z0-9]{6,16}$")
     password: str = Field(
         min_length=8,
@@ -30,8 +32,7 @@ class SignupRequest(BaseModel):
     birthdate: str = Field(pattern=r"^[0-9]{6}$")
     phone_number: str = Field(pattern=r"^0[0-9]{9,10}$")
     email: EmailStr
-    phone_verified: bool
-    email_verified: bool
+    email_verification_token: str = Field(min_length=32, max_length=128)
     agreements: list[AgreementRequest] = Field(default_factory=list)
 
     @field_validator("password")
@@ -42,6 +43,30 @@ class SignupRequest(BaseModel):
         if not any(char in "@$!%*#?&" for char in value):
             raise ValueError("password must include a special character")
         return value
+
+
+class EmailVerificationSendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+
+
+class EmailVerificationSendResponse(BaseModel):
+    verification_id: UUID
+    expires_in_seconds: int
+    resend_after_seconds: int
+
+
+class EmailVerificationVerifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verification_id: UUID
+    code: str = Field(pattern=r"^[0-9]{6}$")
+
+
+class EmailVerificationVerifyResponse(BaseModel):
+    verification_token: str
+    expires_in_seconds: int
 
 
 class LoginRequest(BaseModel):

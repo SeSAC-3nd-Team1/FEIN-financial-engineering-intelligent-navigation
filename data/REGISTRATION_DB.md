@@ -15,17 +15,17 @@ users 1 ---- N user_agreements N ---- 1 terms
 registration_sessions 1 ---- N registration_agreements N ---- 1 terms
 ```
 
-- `users`: 가입 완료 회원. 휴대폰/이메일 인증 여부는 `phone_verified_at`, `email_verified_at`에서 파생한다.
+- `users`: 가입 완료 회원. 현재는 이메일 인증이 필수이며 휴대폰 인증 시각은 후속 인증 전까지 `NULL`이다.
 - `terms`: 약관 code + version catalog.
 - `user_agreements`: 회원과 `term_id` 사이의 약관 동의 감사 이력.
 - `registration_sessions`: 가입 완료 전 개인정보/검증 완료 시각을 30분 기본 TTL로 보관한다.
 - `registration_agreements`: 가입 세션과 `term_id` 사이의 가입 전 약관 선택 상태.
 
-OTP hash, attempts, verification token, rate limit은 이 PostgreSQL schema에 저장하지 않는다. 해당 단기 상태는 후속 Redis/API 구현 범위다.
+OTP HMAC digest, attempts, verification token, rate limit은 PostgreSQL에 저장하지 않고 Redis TTL 상태로 관리한다.
 
 ## 3NF에서 제거한 중복
 
-- `users.phone_verified` 제거 -> `phone_verified_at IS NOT NULL`로 판정
+- `users.phone_verified` 제거 -> 휴대폰 인증 도입 후 `phone_verified_at IS NOT NULL`로 판정
 - `users.email_verified` 제거 -> `email_verified_at IS NOT NULL`로 판정
 - `user_agreements.term_code` 제거 -> `term_id -> terms.term_code`
 - `user_agreements.term_version` 제거 -> `term_id -> terms.version`

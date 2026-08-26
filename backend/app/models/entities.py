@@ -25,7 +25,6 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(30))
     birthdate: Mapped[str] = mapped_column(String(6))
     phone_number: Mapped[str] = mapped_column(String(11))
-    phone_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     email: Mapped[str] = mapped_column(String(255), unique=True)
     email_verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     member_type: Mapped[str] = mapped_column(String(20), default="ASSOCIATE")

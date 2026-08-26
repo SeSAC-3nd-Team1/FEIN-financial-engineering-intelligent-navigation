@@ -5,7 +5,7 @@
 | Frontend 화면 | 현재 데이터/액션 | 필요한 API | DB/외부 데이터 |
 | --- | --- | --- | --- |
 | Login | Backend 로그인, JWT 영속화·복원, `/auth/me`, 로그아웃 | `POST /api/v1/auth/login`, `POST /auth/logout`, `GET /auth/me` | `users`; bcrypt hash, JWT |
-| SignupStep1~3 | 개인정보, 실제 약관 동의 상태·현재 버전, 휴대폰/이메일 OTP mock | `GET /api/v1/auth/terms`, `POST /api/v1/auth/signup` | 기존 `registration_sessions`, `terms`, `registration_agreements`, `users`, `user_agreements`; 실제 OTP provider는 후속 연결 |
+| SignupStep1~3 | 개인정보, 실제 약관 동의 상태·현재 버전, 이메일 OTP 연동 대상 | `GET /api/v1/auth/terms`, `POST /api/v1/auth/email-verifications/send`, `POST /api/v1/auth/email-verifications/verify`, `POST /api/v1/auth/signup` | Redis OTP/가입 증명, `terms`, `users`, `user_agreements`; 휴대폰 인증은 후속 연결 |
 | RiskProfile/Result | 설문 입력과 추천 결과 표시 | `POST /api/v1/investor-profile/analyze`, `GET /api/v1/investor-profile/me/latest`, `POST /api/v1/strategy-recommendations`, `GET /api/v1/strategy-recommendations/me/latest` | `investor_profile_assessments`, `strategy_recommendations`, `strategy_recommendation_items` |
 | StrategyDetail | 실제 KRX 시세 백테스트와 KOSPI 비교, DB 가용 기간 기반 기간 선택, 데이터 부족 오류 상태 | `GET /api/v1/strategies`, `GET /api/v1/backtest/available-range`, `POST /api/v1/backtest/run` | `strategies.rule_config`, `market_stock_prices`, `market_indices`; 가치 전략은 PIT 재무 가능일 부재로 unavailable |
 | StartInvesting | 전략 배분은 명시적 mock, 시작 시 투자 온보딩·약관 동의·가상계좌 준비·전략 저장 | `/investment/terms`, `/investment/onboardings*` | `investment_onboardings`, `terms`, `user_agreements`, `virtual_accounts`, `cash_ledger`, `strategies`; 신규 계좌 초기금은 선택 투자 금액 |

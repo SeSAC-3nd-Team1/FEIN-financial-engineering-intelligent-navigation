@@ -46,7 +46,7 @@ def test_user_has_3nf_signup_constraints_and_no_duplicate_verification_flags() -
     assert ("phone_number",) in _index_columns(User)
     assert "phone_verified" not in User.__table__.columns
     assert "email_verified" not in User.__table__.columns
-    assert not User.__table__.columns.phone_verified_at.nullable
+    assert User.__table__.columns.phone_verified_at.nullable
     assert not User.__table__.columns.email_verified_at.nullable
 
 

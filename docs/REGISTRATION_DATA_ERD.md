@@ -151,27 +151,16 @@ sequenceDiagram
     participant PG as PostgreSQL
     participant R as Redis
 
-    FE->>API: Step 01 개인정보 + 약관
-    API->>PG: registration_sessions INSERT
-    API->>PG: registration_agreements INSERT
-    API->>R: phone OTP challenge SET EX 300
-
-    FE->>API: phone OTP verify
-    API->>R: OTP 검증/소비
-    API->>PG: phone_verified_at UPDATE
-    API->>R: phone verification token state
-
+    Note over FE,API: 휴대폰 인증은 후속 범위
     FE->>API: email OTP send/verify
     API->>R: email OTP challenge 검증/소비
-    API->>PG: email + email_verified_at UPDATE
     API->>R: email verification token state
 
-    FE->>API: POST /users/signup
-    API->>R: 두 verification token 검증
+    FE->>API: POST /auth/signup + email token
+    API->>R: email verification token 예약
     API->>PG: BEGIN
-    API->>PG: users INSERT
-    API->>PG: registration_agreements -> user_agreements
-    API->>PG: registration_sessions.completed_at UPDATE
+    API->>PG: users INSERT (email verified, phone unverified)
+    API->>PG: user_agreements INSERT
     API->>PG: COMMIT
     API->>R: token consume 확정
 ```
@@ -195,7 +184,7 @@ terms.id
 ### 인증 여부는 timestamp로 표현
 
 ```text
-phone_verified_at IS NOT NULL -> 휴대폰 인증 완료
+phone_verified_at IS NOT NULL -> 후속 휴대폰 인증 완료
 email_verified_at IS NOT NULL -> 이메일 인증 완료
 ```
 

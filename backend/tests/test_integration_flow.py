@@ -2,8 +2,10 @@
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from hashlib import sha256
 import json
 import os
+import secrets
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -27,6 +29,7 @@ from app.models import (
     UserAgreement,
     VirtualAccount,
 )
+from app.repositories.email_verification import RedisEmailVerificationRepository
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_INTEGRATION") != "1", reason="RUN_INTEGRATION=1 required")
 
@@ -54,7 +57,12 @@ def _cleanup_test_user(user_id: str, cache: redis.Redis, stock_code: str) -> Non
     cache.delete(f"price:{stock_code}")
 
 
-def _signup_payload(user_id: str, suffix: str, agreements: list[dict]) -> dict:
+def _signup_payload(
+    user_id: str,
+    suffix: str,
+    agreements: list[dict],
+    verification_token: str = "x" * 32,
+) -> dict:
     return {
         "user_id": user_id,
         "password": "Integration!51",
@@ -62,10 +70,27 @@ def _signup_payload(user_id: str, suffix: str, agreements: list[dict]) -> dict:
         "birthdate": "900101",
         "phone_number": f"010{int(suffix, 16) % 100_000_000:08d}",
         "email": f"{user_id}@example.com",
-        "phone_verified": True,
-        "email_verified": True,
+        "email_verification_token": verification_token,
         "agreements": agreements,
     }
+
+
+def _verified_signup_payload(
+    cache: redis.Redis,
+    user_id: str,
+    suffix: str,
+    agreements: list[dict],
+) -> dict:
+    """외부 메일 발송 없이 Redis에 검증 완료 증명을 준비해 통합 가입 흐름을 검증한다."""
+
+    token = secrets.token_urlsafe(32)
+    repository = RedisEmailVerificationRepository(cache)
+    repository.create_verification_token(
+        sha256(token.encode()).hexdigest(),
+        f"{user_id}@example.com",
+        settings.email_verification_token_ttl_seconds,
+    )
+    return _signup_payload(user_id, suffix, agreements, token)
 
 
 def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
@@ -133,12 +158,20 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             assert invalid_term.status_code == 400
             assert invalid_term.json()["code"] == "INVALID_TERM_VERSION"
 
-            signup = client.post("/api/v1/auth/signup", json=_signup_payload(user_id, suffix, accepted))
+            signup = client.post(
+                "/api/v1/auth/signup",
+                json=_verified_signup_payload(cache, user_id, suffix, accepted),
+            )
             assert signup.status_code == 201, signup.text
 
             intruder_signup = client.post(
                 "/api/v1/auth/signup",
-                json=_signup_payload(intruder_user_id, intruder_suffix, accepted),
+                json=_verified_signup_payload(
+                    cache,
+                    intruder_user_id,
+                    intruder_suffix,
+                    accepted,
+                ),
             )
             assert intruder_signup.status_code == 201, intruder_signup.text
             intruder_login = client.post(

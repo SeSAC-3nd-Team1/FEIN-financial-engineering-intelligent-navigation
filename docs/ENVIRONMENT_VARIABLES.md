@@ -33,6 +33,8 @@ Copy-Item .env.example .env
 | --- | --- | --- |
 | 공용 PostgreSQL | `DATABASE_URL` | 모든 Docker Compose 실행에서 필수 |
 | Backend 인증 | `JWT_SECRET` | 로그인·인증 기능 사용 시 필수 |
+| ACS Email | `ACS_EMAIL_CONNECTION_STRING`, `ACS_EMAIL_SENDER_ADDRESS` | 회원가입 이메일 인증 사용 시 필수 |
+| 이메일 OTP | `EMAIL_OTP_SECRET` | OTP HMAC 및 가입 증명 발급 시 필수 |
 | 공공데이터포털 | `DATA_GO_KR_API_KEY` | 금융위원회 데이터 수집 시 필수 |
 | OpenDART | `OPENDART_API_KEY` | 기업·재무·공시 데이터 수집 시 필수 |
 | 한국은행 ECOS | `ECOS_API_KEY` | 거시경제 데이터 수집 시 필수 |
@@ -42,6 +44,12 @@ Copy-Item .env.example .env
 | Azure Blob | `AZURE_STORAGE_ACCOUNT_NAME` | 실제 Azure Blob 파이프라인 실행 시 필수 |
 
 전체 변수와 기본값은 [`.env.example`](../.env.example)을 기준으로 한다. 사용하지 않는 외부 연동의 키는 비워둘 수 있지만 `DATABASE_URL`은 비워둘 수 없다.
+
+이메일 인증을 사용할 때 위 세 값을 모두 설정해야 한다. TTL·재발송·시도 횟수·시간당 한도는
+`EMAIL_OTP_TTL_SECONDS`, `EMAIL_OTP_RESEND_SECONDS`, `EMAIL_OTP_MAX_ATTEMPTS`,
+`EMAIL_OTP_HOURLY_LIMIT`, `EMAIL_OTP_IP_HOURLY_LIMIT`,
+`EMAIL_VERIFICATION_TOKEN_TTL_SECONDS`로 조정한다. 실제 ACS 연결 문자열과
+OTP secret은 로그나 버전 관리 파일에 남기지 않는다.
 
 ## PostgreSQL URL
 

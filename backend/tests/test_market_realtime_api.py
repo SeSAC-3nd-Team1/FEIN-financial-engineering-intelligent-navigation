@@ -115,6 +115,9 @@ def test_authenticated_subscription_receives_normalized_price(monkeypatch) -> No
             "source": "KIS_WS",
             "is_stale": False,
         }
+        # TestClient 종료 시 서버 task를 곧바로 취소하는 최신 Starlette 동작에서도
+        # 정상 disconnect 경로와 subscriber 정리를 검증하도록 close frame을 먼저 보낸다.
+        socket.close()
 
     assert fake_hub.added == [{"005930"}]
     assert fake_hub.removed_event.wait(timeout=1)

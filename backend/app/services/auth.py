@@ -1,6 +1,7 @@
 """회원가입과 인증 service."""
 
 from datetime import UTC, datetime
+import logging
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -9,26 +10,28 @@ from app.core.errors import ServiceError
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models import Term, User, UserAgreement
 from app.schemas.api import LoginRequest, SignupRequest
+from app.services.email_verification import EmailTokenReservation, EmailVerificationService
 
 
 SIGNUP_TERM_CODES = (
-    "A1_THIRD_PARTY",
-    "A2_UNIQUE_ID",
-    "A3_CARRIER",
-    "A4_KCB",
     "B_PRIVACY",
     "C_ASSOCIATE_TERMS",
     "AI_PERSONALIZATION",
 )
 
+logger = logging.getLogger(__name__)
+
 
 class AuthService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        email_verification: EmailVerificationService | None = None,
+    ) -> None:
         self.session = session
+        self.email_verification = email_verification
 
     def signup(self, request: SignupRequest) -> User:
-        if not request.phone_verified or not request.email_verified:
-            raise ServiceError("VERIFICATION_REQUIRED", "휴대폰과 이메일 인증이 필요합니다.")
         duplicate = self.session.scalar(
             select(User).where(or_(User.user_id == request.user_id, User.email == request.email.lower()))
         )
@@ -42,6 +45,16 @@ class AuthService:
         required = {(term.term_code, term.version) for term in catalog if term.is_required}
         if not required.issubset(accepted):
             raise ServiceError("REQUIRED_TERMS_NOT_AGREED", "필수 약관에 모두 동의해야 합니다.")
+        if self.email_verification is None:
+            raise ServiceError(
+                "EMAIL_VERIFICATION_UNAVAILABLE",
+                "이메일 인증 서비스를 사용할 수 없습니다.",
+                503,
+            )
+        reservation = self.email_verification.reserve_token(
+            request.email_verification_token,
+            request.email.lower(),
+        )
         now = datetime.now(UTC)
         try:
             user = User(
@@ -50,7 +63,6 @@ class AuthService:
                 name=request.name.strip(),
                 birthdate=request.birthdate,
                 phone_number=request.phone_number,
-                phone_verified_at=now,
                 email=request.email.lower(),
                 email_verified_at=now,
                 member_type="ASSOCIATE",
@@ -65,11 +77,24 @@ class AuthService:
                     agreed_at=now if item.agreed else None,
                 ))
             self.session.commit()
-            self.session.refresh(user)
         except Exception:
             self.session.rollback()
+            self._release_email_reservation(reservation)
             raise
+        try:
+            self.email_verification.finalize_token(reservation)
+        except Exception:
+            # 회원 생성 transaction이 이미 확정된 뒤이므로 성공 응답을 뒤집지 않는다.
+            # 예약 상태는 Redis TTL이 만료시키며 같은 토큰의 재사용은 계속 차단된다.
+            logger.warning("Email verification token finalization failed user_id=%s", user.id)
         return user
+
+    def _release_email_reservation(self, reservation: EmailTokenReservation) -> None:
+        try:
+            if self.email_verification is not None:
+                self.email_verification.release_token(reservation)
+        except Exception:
+            logger.warning("Email verification token release failed")
 
     def signup_terms(self) -> list[Term]:
         """각 약관 코드에서 현재 효력이 있는 최신 버전만 반환한다."""

@@ -21,6 +21,17 @@ class Settings:
     jwt_secret: str = os.getenv("JWT_SECRET", "local-development-only-change-me")
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = int(os.getenv("ACCESS_TOKEN_MINUTES", "60"))
+    acs_email_connection_string: str = os.getenv("ACS_EMAIL_CONNECTION_STRING", "").strip()
+    acs_email_sender_address: str = os.getenv("ACS_EMAIL_SENDER_ADDRESS", "").strip()
+    email_otp_secret: str = os.getenv("EMAIL_OTP_SECRET", "").strip()
+    email_otp_ttl_seconds: int = int(os.getenv("EMAIL_OTP_TTL_SECONDS", "300"))
+    email_otp_max_attempts: int = int(os.getenv("EMAIL_OTP_MAX_ATTEMPTS", "5"))
+    email_otp_resend_seconds: int = int(os.getenv("EMAIL_OTP_RESEND_SECONDS", "60"))
+    email_otp_hourly_limit: int = int(os.getenv("EMAIL_OTP_HOURLY_LIMIT", "5"))
+    email_otp_ip_hourly_limit: int = int(os.getenv("EMAIL_OTP_IP_HOURLY_LIMIT", "20"))
+    email_verification_token_ttl_seconds: int = int(
+        os.getenv("EMAIL_VERIFICATION_TOKEN_TTL_SECONDS", "1800")
+    )
     azure_openai_endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
     azure_openai_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
     azure_openai_deployment: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
@@ -56,6 +67,18 @@ class Settings:
     news_search_query: str = os.getenv("NEWS_SEARCH_QUERY", "증시")
     news_cache_ttl_seconds: int = int(os.getenv("NEWS_CACHE_TTL_SECONDS", "300"))
     news_request_timeout_seconds: float = float(os.getenv("NEWS_REQUEST_TIMEOUT_SECONDS", "5"))
+
+    @property
+    def email_verification_configured(self) -> bool:
+        """ACS Email과 OTP 서명 설정이 모두 있을 때만 실제 발송을 허용한다."""
+
+        return all(
+            (
+                self.acs_email_connection_string,
+                self.acs_email_sender_address,
+                self.email_otp_secret,
+            )
+        )
 
 
 settings = Settings()

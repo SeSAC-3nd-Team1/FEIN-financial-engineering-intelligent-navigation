@@ -130,7 +130,6 @@ class FakeService:
 def install_overrides(service: FakeService) -> None:
     app.dependency_overrides[current_user] = lambda: SimpleNamespace(
         id=7,
-        phone_verified_at=NOW,
         email_verified_at=NOW,
     )
     app.dependency_overrides[get_investment_onboarding_service] = lambda: service

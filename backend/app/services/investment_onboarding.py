@@ -473,8 +473,8 @@ class InvestmentOnboardingService:
 
     @staticmethod
     def _ensure_verified_user(user: User) -> None:
-        if user.phone_verified_at is None or user.email_verified_at is None:
-            raise ServiceError("VERIFICATION_REQUIRED", "휴대폰과 이메일 인증이 필요합니다.", 403)
+        if user.email_verified_at is None:
+            raise ServiceError("VERIFICATION_REQUIRED", "이메일 인증이 필요합니다.", 403)
 
     def _response(self, onboarding: InvestmentOnboarding) -> InvestmentOnboardingResponse:
         terms_completed = self._has_current_agreements(onboarding.user_id, onboarding.strategy_id)

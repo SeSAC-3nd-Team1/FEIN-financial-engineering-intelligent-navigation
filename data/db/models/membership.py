@@ -70,9 +70,7 @@ class User(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(30), nullable=False)
     birthdate: Mapped[str] = mapped_column(String(6), nullable=False)
     phone_number: Mapped[str] = mapped_column(String(11), nullable=False)
-    phone_verified_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     email_verified_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

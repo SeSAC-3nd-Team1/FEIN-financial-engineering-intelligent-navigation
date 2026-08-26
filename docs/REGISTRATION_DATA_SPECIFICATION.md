@@ -14,7 +14,7 @@
 ## 2. 원본 명세에서 유지하는 요구사항
 
 - 가입 완료 계정은 최종 `POST /users/signup`에서만 생성한다.
-- 휴대폰과 이메일은 가입 전 각각 검증되어야 한다.
+- 현재 단계에서는 이메일을 가입 전에 검증한다. 휴대폰 인증은 후속 범위다.
 - OTP는 6자리이며 서버가 만료와 시도 횟수를 권위 있게 관리한다.
 - OTP TTL은 300초다.
 - verification token은 30분 TTL과 single-use 정책을 가진다.
@@ -120,7 +120,7 @@ email_verified_at -> email verification 상태
 | `name` | `VARCHAR(30)` | N |  | 본인확인 기준 이름 |
 | `birthdate` | `CHAR(6)` | N | CHECK digits | YYMMDD 원형 보존 |
 | `phone_number` | `VARCHAR(11)` | N | INDEX | 숫자만 저장, unique 아님 |
-| `phone_verified_at` | `TIMESTAMPTZ` | N |  | 가입에 사용한 휴대폰 인증 완료 시각 |
+| `phone_verified_at` | `TIMESTAMPTZ` | Y |  | 후속 휴대폰 인증 완료 시각. 현재 가입 시 `NULL` |
 | `email` | `VARCHAR(255)` | N | UNIQUE | trim/lowercase 정규화 |
 | `email_verified_at` | `TIMESTAMPTZ` | N |  | 이메일 인증 완료 시각 |
 | `ci_encrypted` | `BYTEA` | Y |  | CI 암호화 ciphertext |
@@ -268,23 +268,19 @@ Redis는 관계형 원장이 아니라 단기 검증 상태를 담당한다.
 
 ### 8.1 OTP challenge
 
-권장 key 예시:
+현재 구현 key 예시:
 
 ```text
-signup:verification:{verification_id}
+auth:email-otp:{verification_id}
 ```
 
 값의 논리 필드:
 
 ```text
-channel          PHONE | EMAIL
-target           전화번호 또는 이메일
-registration_id  UUID
-code_hash        OTP hash
+email            lowercase 정규화 이메일
+code_digest      verification_id와 code의 HMAC-SHA256
 attempts         현재 실패 횟수
 max_attempts     5
-purpose          SIGNUP
-issued_at
 ```
 
 - Redis key TTL: 300초
@@ -298,16 +294,15 @@ JWT 자체에 필요한 claim을 포함하더라도 single-use 보장을 위해 
 권장 key 예시:
 
 ```text
-signup:token:{jti}
+auth:email-verification-token:{sha256(token)}
 ```
 
 논리 필드:
 
 ```text
-channel
-registration_id
-target
-consumed
+email
+state            ISSUED | RESERVED
+reservation_id   UUID (RESERVED일 때만)
 ```
 
 - TTL: 30분
@@ -316,62 +311,49 @@ consumed
 ### 8.3 rate limit
 
 ```text
-signup:rate:phone:{phone_number}
-signup:rate:email:{email}
-signup:rate:ip:{ip}
+auth:email-send-cooldown:{sha256(email)}
+auth:email-send-hourly:{sha256(email)}
+auth:email-send-ip-hourly:{sha256(client_address)}
 ```
 
-API 명세의 target/IP rate limit을 Redis counter + TTL로 구현한다.
+기본 정책은 이메일별 60초 cooldown/시간당 5회와 IP별 시간당 20회다. 세 조건을 단일 Redis Lua
+연산으로 검사·증가시켜 동시 요청에서도 한도를 초과하지 않는다. IP는 임의 전달 헤더가 아니라 ASGI
+server가 신뢰 프록시 정책을 적용해 제공한 client address를 사용한다.
 
 ## 9. 가입 데이터 흐름
 
 ```text
-1. Step 01
-   registration_sessions 생성
-   registration_agreements 저장
-   Redis phone OTP challenge 생성
-
-2. Phone verify
-   Redis OTP 검증/소비
-   registration_sessions.phone_verified_at 갱신
-   phone verification token 발급
-
-3. Email send/verify
-   registration_sessions.email 저장
+1. Email send/verify
    Redis email OTP challenge 생성/검증
-   registration_sessions.email_verified_at 갱신
-   email verification token 발급
+   email 전용 single-use verification token 발급
 
-4. Signup
-   두 verification token과 registration_id 검증
+2. Signup
+   email verification token의 대상/TTL/상태 검증 후 예약
    user_id/password/email 최종 validation
 
    PostgreSQL transaction BEGIN
      users INSERT
-     registration_agreements -> user_agreements INSERT SELECT
-     registration_sessions.completed_at 갱신
+     전달된 약관을 user_agreements에 INSERT
    COMMIT
 
-5. transaction 성공 후
+3. transaction 성공 후
    verification token consume 확정
-   registration 임시 개인정보 정리 예약
 ```
 
 ## 10. 현재 구현 상태
 
-Alembic `20260816_0011`에서 회원가입 관계의 3NF 전환이 완료되었다. `users`는 인증 timestamp만 사용하고, `user_agreements`는 `term_id` FK만 보유하며, 회원/약관 감사 FK는 `RESTRICT`다. Backend 회원가입은 현재 유효 catalog의 필수 동의를 검증하고 같은 transaction에서 `users`와 `user_agreements`를 생성한다. `20260825_0021`은 금융 계좌 데이터를 옮기지 않고 사용자의 현재 화면 선택만 복원하기 위해 nullable `active_operation_mode`와 변경 시각을 추가한다.
+Alembic `20260816_0011`에서 회원가입 관계의 3NF 전환이 완료되었다. `users`는 인증 timestamp만 사용하고, `user_agreements`는 `term_id` FK만 보유하며, 회원/약관 감사 FK는 `RESTRICT`다. Backend 회원가입은 현재 유효 catalog의 필수 동의를 검증하고 같은 transaction에서 `users`와 `user_agreements`를 생성한다. `20260826_0022`부터 이메일 단독 인증 가입을 위해 `users.phone_verified_at`은 nullable이다.
 
-`registration_sessions`와 `registration_agreements` schema는 준비되어 있지만 실제 OTP provider 및 가입 세션 API 연결은 후속 범위다. 현재 Backend request의 `phone_verified`/`email_verified`는 MVP API 계약이며 실제 외부 인증 완료 증명으로 교체해야 한다.
+ACS Email 발송, Redis OTP hash/시도 횟수/TTL/rate limit, 이메일에 묶인 1회성 가입 증명과 가입 transaction 전후 예약·소비가 구현되어 있다. 클라이언트 인증 boolean은 더 이상 받지 않는다. `registration_sessions`와 `registration_agreements` schema는 준비되어 있지만 현재 API는 사용하지 않으며, 휴대폰 인증도 후속 범위다.
 
 ## 11. 후속 구현 범위
 
 설계 승인 후 별도 구현 단계에서 수행한다.
 
-1. Redis signup verification repository 구현
-2. 실제 휴대폰/이메일 OTP provider 연결
-3. `registration_sessions` 기반 단계별 가입 API 연결
-4. 가입 transaction과 verification token consume 상태 전이 구현
-5. Azure PostgreSQL 운영 약관 version 적용
+1. 실제 휴대폰 OTP provider와 관련 약관 연결
+2. 필요 시 `registration_sessions` 기반 단계별 가입 API 연결
+3. rate limit 초과와 ACS 반송률에 대한 운영 abuse monitoring 보강
+4. Azure PostgreSQL 운영 약관 version 적용
 
 ## 12. 구현 전 확인할 정책
 
