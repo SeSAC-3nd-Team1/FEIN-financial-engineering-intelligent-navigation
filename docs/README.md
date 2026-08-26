@@ -4,6 +4,13 @@
 
 ## 현재 기준 문서
 
+- API 관련 문서
+- Architecture
+- Database Schema
+- 개발 가이드
+- 기술적 의사결정 기록
+- [2026 알고리즘 트레이딩 기술백서 — 지침서 준수판](./주식_매매알고리즘_기술백서_지침서준수판_2026-08-14.md)
+- [한국 주식 매매 알고리즘 심층 조사보고서](./주식_매매알고리즘_조사보고서_2026-08-13.md)
 - [환경 변수 관리 가이드](ENVIRONMENT_VARIABLES.md)
 - [Azure PostgreSQL 단일 프로젝트 DB 가이드](AZURE_POSTGRESQL_DEV.md)
 - [현재 PostgreSQL 데이터 명세](DATABASE_SPECIFICATION.md)
