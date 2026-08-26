@@ -8,8 +8,10 @@ import type { BacktestAvailableRange } from '../data/backtestApi';
 import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
 import { STRATEGIES } from '../data/strategies';
 import { won } from '../lib/validation';
+import { useTradingData } from '../hooks/useTradingData';
 import { useAuthStore } from '../store/authStore';
 import { useInvestmentStore } from '../store/investmentStore';
+import { useTradingStore } from '../store/tradingStore';
 import type { BacktestAiContext, BacktestPeriod, BacktestResult, Screen } from '../types';
 
 interface Props {
@@ -67,7 +69,14 @@ export default function StrategyDetail({
   const accountsByMode = useInvestmentStore((s) => s.accountsByMode);
   const activeMode = useInvestmentStore((s) => s.activeMode);
   const activeAccount = activeMode ? accountsByMode[activeMode] : null;
-  const activeStrategyId = activeAccount?.activeStrategyId ?? null;
+  // 위 로컬 기록은 이 브라우저에서 투자 시작/전략 변경을 실제로 거친 세션에만 채워진다. 새
+  // 브라우저나 localStorage가 초기화된 환경에서는 실제 계좌(백엔드)에 이미 선택된 전략이 있어도
+  // 로컬만 보면 없는 것처럼 보여 "이 전략으로 시작하기"가 잘못 다시 노출된다. 그래서 로컬에 없으면
+  // 이미 조회된 실제 계좌(useTradingData가 채우는 tradingStore.account)의 selected_strategy_id로
+  // 한 번 더 확인한다.
+  useTradingData();
+  const realAccount = useTradingStore((s) => s.account);
+  const activeStrategyId = activeAccount?.activeStrategyId ?? realAccount?.selected_strategy_id ?? null;
   const ctaState: 'start' | 'current' | 'change' =
     !activeStrategyId ? 'start' : activeStrategyId === strategyId ? 'current' : 'change';
   const activeStrategyName = activeStrategyId

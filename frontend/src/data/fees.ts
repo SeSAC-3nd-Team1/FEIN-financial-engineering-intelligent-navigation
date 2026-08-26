@@ -14,6 +14,12 @@ export function toAccountOperationMode(mode: OperationMode | null): 'AUTO' | 'SE
   return mode === 'auto' ? 'AUTO' : 'SEMI_AUTO';
 }
 
+/** 계좌 API 표기(AUTO/SEMI_AUTO) → 프론트 표기(auto/manual) 역변환. 로컬(activeMode)에 없는
+ *  실제 계좌 정보로 프론트 상태를 되짚어야 할 때 사용한다. */
+export function toOperationMode(mode: 'AUTO' | 'SEMI_AUTO'): OperationMode {
+  return mode === 'AUTO' ? 'auto' : 'manual';
+}
+
 export const INVESTMENT_FEES: Record<OperationMode, number> = {
   manual: 0.008, // 확인하고 실행 — 연 0.8%
   auto: 0.012,   // 자동으로 운용 — 연 1.2%

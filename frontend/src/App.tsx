@@ -27,8 +27,8 @@ import StrategyList from './pages/StrategyList';
 import TransactionDetail from './pages/TransactionDetail';
 import TransactionHistory from './pages/TransactionHistory';
 import { STRATEGIES } from './data/strategies';
-import { toAccountOperationMode, type OperationMode } from './data/fees';
-import { signupTermsApi } from './lib/backendApi';
+import { toAccountOperationMode, toOperationMode, type OperationMode } from './data/fees';
+import { getMyAccountApi, signupTermsApi } from './lib/backendApi';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
@@ -294,6 +294,33 @@ export default function App() {
     prevUserIdRef.current = currentUserId;
   }, [authenticatedUser?.user_id, hydrateForUser]);
 
+  // activeMode는 이 브라우저에서 투자 시작/전략 변경을 실제로 거친 세션에만 로컬로 남는다. 새
+  // 브라우저나 localStorage가 초기화된 환경에서는 실제로는 이미 투자 중이어도 activeMode를 알 수
+  // 없어 Portfolio 화면 분기(자동/반자동)나 Strategy Detail CTA가 "미투자"로 잘못 판단한다. 그래서
+  // 로그인 후 로컬에 activeMode가 없으면 실제 계좌(반자동 → 자동 순으로)를 조회해 이미 선택된 전략이
+  // 있는 계좌를 찾으면 그 운용방식으로 activeMode를 맞춰준다. 둘 다 없으면(정말 미투자) 그대로 둔다.
+  useEffect(() => {
+    if (!accessToken || activeMode !== null) return;
+    let cancelled = false;
+    (async () => {
+      for (const probeMode of ['SEMI_AUTO', 'AUTO'] as const) {
+        try {
+          const account = await getMyAccountApi(accessToken, probeMode);
+          if (cancelled) return;
+          if (account.selected_strategy_id) {
+            setActiveMode(toOperationMode(probeMode));
+            return;
+          }
+        } catch {
+          // 해당 운용방식 계좌가 없으면(ACCOUNT_NOT_FOUND 등) 다음 운용방식을 계속 확인한다
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, activeMode, setActiveMode]);
+
   // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
   useEffect(() => {
     const nav: PersistedNav = {
@@ -380,13 +407,20 @@ export default function App() {
    * (ensureAccount 내부에서 selected_strategy_id가 다르면 selectStrategyApi 호출)를 거친 뒤에만
    * 로컬 activeStrategyId를 갱신한다. 로컬 state만 바꾸고 끝내면 새로고침/Portfolio 재조회 시
    * 실제 계좌의 전략으로 되돌아가 화면과 어긋날 수 있어, 반드시 API 성공을 먼저 확인한다.
+   *
+   * 로컬 activeMode가 비어있어도(새 브라우저 등) StrategyDetail이 실제 계좌(tradingStore.account)
+   * 기준으로 'change' CTA를 보여줄 수 있다 — 그 경우를 위해 activeMode가 없으면 이미 조회된 실제
+   * 계좌의 operation_mode로 대신 판단하고, 성공하면 로컬 activeMode도 함께 맞춰준다.
    */
   const confirmStrategyChange = async () => {
-    if (!accessToken || !activeMode) {
+    const realAccount = useTradingStore.getState().account;
+    const mode = activeMode ?? (realAccount ? toOperationMode(realAccount.operation_mode) : null);
+    if (!accessToken || !mode) {
       throw new Error('로그인이 필요합니다.');
     }
-    await ensureAccount(accessToken, strategyId, toAccountOperationMode(activeMode));
-    setAccountActiveStrategy(activeMode, strategyId);
+    await ensureAccount(accessToken, strategyId, toAccountOperationMode(mode));
+    setAccountActiveStrategy(mode, strategyId);
+    setActiveMode(mode);
     navigate('portfolio');
   };
 
