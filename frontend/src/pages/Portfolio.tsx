@@ -23,6 +23,10 @@ interface Props {
   onNavigate: (s: Screen) => void;
   /** "자세히" — 보유종목/AI 제안/거래내역 등 전체 관리 화면(PortfolioDetail)으로 이동한다 */
   onOpenDetail: () => void;
+  /** "더 알아보기" — AI 손절·리밸런싱 제안 전체 목록(rebalance-alerts)으로 이동한다. onNavigate 대신
+   *  별도 prop을 두는 이유는, 그 화면의 "돌아가기"가 진입 지점(여기 vs PortfolioDetail)에 따라 달라져야
+   *  해서 App.tsx가 이동과 함께 back target을 같이 기록해야 하기 때문이다. */
+  onOpenRebalanceAlerts: () => void;
   /** 미설정 유저 안내 모달의 "투자성향 진단하러 가기" — 투자자 정보 확인(risk) Flow로 보낸다.
    *  'strategy'/'start'(전략 둘러보기/계좌 연동·입금)는 이미 있는 onNavigate 로 충분해 별도 prop 을 두지 않았다. */
   onStartRiskProfile: () => void;
@@ -117,7 +121,7 @@ const MOCK_PRINCIPAL_TOTAL = MOCK_HOLDINGS.reduce((sum, h) => sum + (h.principal
  *  나머지 포트폴리오 관리 기능은 전부 "자세히" → PortfolioDetail.tsx(`/portfolio/detail`)로 분리했다.
  *  보유 비중 탭은 실 계좌(useTradingStore.portfolio)가 있으면 그 데이터를, 없으면
  *  MOCK_HOLDINGS 로 대체해 보여준다 — 이 대체 규칙은 PortfolioDetail.tsx 와 동일하게 맞춰뒀다. */
-export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartRiskProfile }: Props) {
+export default function Portfolio({ userName, onNavigate, onOpenDetail, onOpenRebalanceAlerts, onStartRiskProfile }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
@@ -577,9 +581,9 @@ export default function Portfolio({ userName, onNavigate, onOpenDetail, onStartR
                         ))}
                       </div>
                     )}
-                    {/* AI 제안 전체 목록은 rebalance-alerts 화면에 있다 — PortfolioDetail 의 같은 위젯과
-                        동일한 목적지(onNavigate('rebalance-alerts'))로 보낸다. */}
-                    <button onClick={() => onNavigate('rebalance-alerts')} className="self-end text-xs font-bold text-navy">
+                    {/* AI 제안 전체 목록은 rebalance-alerts 화면에 있다 — onOpenRebalanceAlerts 가 이동과 함께
+                        App.tsx에 back target(portfolio)을 기록해서, 그 화면 "돌아가기"가 여기로 돌아온다. */}
+                    <button onClick={onOpenRebalanceAlerts} className="self-end text-xs font-bold text-navy">
                       더 알아보기 →
                     </button>
                   </div>
