@@ -105,6 +105,18 @@ def _existing_keys(years: range, stock_codes: list[str]) -> set[tuple[str, str]]
         }
 
 
+def _clear_dividend_scope(*, stock_code: str, year: int) -> None:
+    """조회 결과가 없다고 확정된 refresh 범위의 stale 배당 행을 제거한다."""
+
+    with session_scope() as session:
+        OpenDartRepository(session).replace_dividends(
+            [],
+            stock_code=stock_code,
+            business_year=str(year),
+            report_code=ANNUAL_REPORT_CODE,
+        )
+
+
 def _sync_target(
     *,
     client: OpenDartClient,
@@ -125,13 +137,7 @@ def _sync_target(
             raise ValueError("OpenDART dividend list must be an array")
         if not items:
             if refresh:
-                with session_scope() as session:
-                    OpenDartRepository(session).replace_dividends(
-                        [],
-                        stock_code=stock_code,
-                        business_year=str(year),
-                        report_code=ANNUAL_REPORT_CODE,
-                    )
+                _clear_dividend_scope(stock_code=stock_code, year=year)
             totals["unavailable"] += 1
             return "unavailable"
         raw.upload_bytes(
@@ -174,6 +180,8 @@ def _sync_target(
         if exc.status in FATAL_API_STATUSES:
             raise
         if exc.status == "013":
+            if refresh:
+                _clear_dividend_scope(stock_code=stock_code, year=year)
             totals["unavailable"] += 1
             return "unavailable"
         totals["failed"] += 1

@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from types import SimpleNamespace
 
+from collectors.opendart_client import OpenDartApiError
 from scripts import sync_opendart_dividends as sync
 
 
@@ -104,6 +105,53 @@ def test_refresh_replaces_legacy_preferred_with_distinct_classes(monkeypatch) ->
     assert replacement_scopes == [("005930", "2025", "11011")]
     assert {row["stock_kind"] for row in stored_rows} == {"1우선주", "2우선주"}
     assert all(row["stock_kind"] != "PREFERRED" for row in stored_rows)
+
+
+def test_refresh_clears_stale_dividends_when_api_returns_013(monkeypatch) -> None:
+    class Client:
+        def dividends(self, _corp_code, _year, _report_code):
+            raise OpenDartApiError("013", "no data")
+
+    class RawWriter:
+        def upload_bytes(self, **_kwargs):
+            raise AssertionError("013 response must not be uploaded")
+
+    stored_rows = [{"stock_kind": "PREFERRED"}]
+    replacement_calls = []
+
+    class Repository:
+        def __init__(self, _session):
+            pass
+
+        def replace_dividends(self, rows, *, stock_code, business_year, report_code):
+            replacement_calls.append((rows, stock_code, business_year, report_code))
+            stored_rows[:] = rows
+            return len(rows)
+
+    monkeypatch.setattr(sync, "OpenDartRepository", Repository)
+    monkeypatch.setattr(sync, "session_scope", _session_scope)
+    totals = {
+        "requests": 0,
+        "unavailable": 0,
+        "failed": 0,
+        "rows": 0,
+        "upserted": 0,
+    }
+
+    result = sync._sync_target(
+        client=Client(),
+        raw=RawWriter(),
+        corp_code="00126380",
+        stock_code="005930",
+        year=2025,
+        totals=totals,
+        refresh=True,
+    )
+
+    assert result == "unavailable"
+    assert replacement_calls == [([], "005930", "2025", "11011")]
+    assert stored_rows == []
+    assert totals["unavailable"] == 1
 
 
 def test_preferred_only_latest_year_stores_then_falls_back_to_common(
