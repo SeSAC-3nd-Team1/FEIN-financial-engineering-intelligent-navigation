@@ -1,19 +1,19 @@
 # Model Raw Collection Summary
 
-- 테스트 기간: 2018-01-01 ~ 2026-08-26
-- 총 실행 시간: 3.465초
-- 전체 신규/검증 row: 0
-- 평균 처리량: 0.00 rows/s
-- 병목 source: opendart
+- 테스트 기간: 2026-08-19 ~ 2026-08-26
+- 총 실행 시간: 12.537초
+- 전체 신규/검증 row: 5,665
+- 평균 처리량: 451.85 rows/s
+- 병목 source: krx
 - OpenDART company limit: 없음(전체)
 
 ## Source별 성능
 
 | Source | Concurrency | API calls | Rows | Download(s) | Upload(s) | Rows/s | Upload MB/s | New blobs | Skipped |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| krx | 4 | 0 | 0 | 0.000 | 0.000 | 0.00 | 0.00 | 0 | 0 |
+| krx | 4 | 7 | 5,665 | 6.511 | 0.572 | 870.03 | 0.92 | 7 | 4 |
 | ecos-bok | 2 | 0 | 0 | 0.000 | 0.000 | 0.00 | 0.00 | 0 | 0 |
-| opendart | 1 | 7 | 0 | 1.602 | 0.000 | 0.00 | 0.00 | 0 | 1,596 |
+| opendart | 1 | 0 | 0 | 0.000 | 0.000 | 0.00 | 0.00 | 0 | 0 |
 
 ## 적용 방식
 

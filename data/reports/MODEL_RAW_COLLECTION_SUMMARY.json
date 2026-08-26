@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-08-26T00:48:57.876655+00:00",
+  "generated_at": "2026-08-26T01:06:28.924590+00:00",
   "range": {
-    "start": "2018-01-01",
+    "start": "2026-08-19",
     "end": "2026-08-26"
   },
   "selected_sources": [
-    "opendart"
+    "krx"
   ],
   "benchmark": false,
   "company_limit": null,
@@ -28,19 +28,19 @@
   "sources": {
     "krx": {
       "source": "krx",
-      "api_calls": 0,
-      "rows": 0,
-      "new_blobs": 0,
+      "api_calls": 7,
+      "rows": 5665,
+      "new_blobs": 7,
       "reused_blobs": 0,
-      "skipped_partitions": 0,
-      "completed_partitions": 0,
-      "download_seconds": 0.0,
-      "upload_seconds": 0.0,
-      "elapsed_seconds": 3.465,
-      "active_seconds": 0.0,
-      "rows_per_second": 0.0,
-      "upload_mb_per_second": 0.0,
-      "uploaded_bytes": 0
+      "skipped_partitions": 4,
+      "completed_partitions": 1,
+      "download_seconds": 6.511,
+      "upload_seconds": 0.572,
+      "elapsed_seconds": 12.537,
+      "active_seconds": 7.083,
+      "rows_per_second": 870.031,
+      "upload_mb_per_second": 0.92,
+      "uploaded_bytes": 551477
     },
     "ecos-bok": {
       "source": "ecos-bok",
@@ -52,7 +52,7 @@
       "completed_partitions": 0,
       "download_seconds": 0.0,
       "upload_seconds": 0.0,
-      "elapsed_seconds": 3.465,
+      "elapsed_seconds": 12.538,
       "active_seconds": 0.0,
       "rows_per_second": 0.0,
       "upload_mb_per_second": 0.0,
@@ -60,25 +60,25 @@
     },
     "opendart": {
       "source": "opendart",
-      "api_calls": 7,
+      "api_calls": 0,
       "rows": 0,
       "new_blobs": 0,
       "reused_blobs": 0,
-      "skipped_partitions": 1596,
+      "skipped_partitions": 0,
       "completed_partitions": 0,
-      "download_seconds": 1.602,
+      "download_seconds": 0.0,
       "upload_seconds": 0.0,
-      "elapsed_seconds": 3.465,
-      "active_seconds": 1.602,
+      "elapsed_seconds": 12.538,
+      "active_seconds": 0.0,
       "rows_per_second": 0.0,
       "upload_mb_per_second": 0.0,
       "uploaded_bytes": 0
     }
   },
-  "total_rows": 0,
-  "total_elapsed_seconds": 3.465,
-  "average_rows_per_second": 0.0,
-  "bottleneck": "opendart",
+  "total_rows": 5665,
+  "total_elapsed_seconds": 12.537,
+  "average_rows_per_second": 451.845,
+  "bottleneck": "krx",
   "additional_optimization": [
     "OpenDART quota가 상향된 환경에서만 OPENDART_MAX_CONCURRENCY를 2 이상으로 조정",
     "신규 Raw metadata에 partition_date를 기록해 legacy bootstrap 검증 비용 축소"

@@ -9,6 +9,7 @@ import json
 
 import pytest
 
+import scripts.collect_model_raw as collect_module
 from collectors.krx_config import OPERATIONS
 from collectors.opendart_client import OpenDartJsonResponse
 from scripts.audit_model_raw import audit
@@ -181,6 +182,62 @@ def test_krx_bootstrap_keeps_dates_missing_when_month_is_only_partially_loaded()
         not manifest.is_completed("krx", operation.dataset, operation.name, "2025-12-02")
         for operation in OPERATIONS
     )
+
+
+def test_recent_krx_completion_without_anchor_is_refetched(monkeypatch) -> None:
+    """최근 날짜는 manifest만 완료여도 실제 KOSPI Raw가 없으면 다시 확인한다."""
+
+    target = date(2026, 8, 25)
+    storage = FakeStorage()
+    manifest = CoverageManifest(storage, "raw")
+    for operation in OPERATIONS:
+        manifest.mark(
+            source="krx", dataset=operation.dataset, operation=operation.name,
+            partition=target.isoformat(), rows=0, blob_count=0,
+        )
+    collector = ModelRawCollector(
+        storage, container="raw", manifest=manifest,
+        start_date=target, end_date=target,
+    )
+    monkeypatch.setattr(collect_module, "_seoul_today", lambda: date(2026, 8, 26))
+    monkeypatch.setattr(collector, "_bootstrap_krx_dates", lambda: None)
+    monkeypatch.setattr(collector, "_krx_anchor_dates", lambda _month: set())
+    fetched: list[date] = []
+
+    def fetch(value: date) -> dict[str, tuple[int, int]]:
+        fetched.append(value)
+        return {operation.name: (0, 0) for operation in OPERATIONS}
+
+    monkeypatch.setattr(collector, "_krx_date", fetch)
+
+    collector.collect_krx()
+
+    assert fetched == [target]
+
+
+def test_krx_anchor_requires_all_dated_operations() -> None:
+    """최근 거래일은 가격·지수 5종이 실제 Blob에 모두 있어야 완성으로 본다."""
+
+    target = date(2026, 8, 25)
+    storage = FakeStorage()
+    dated_operations = [
+        operation for operation in OPERATIONS if operation.dataset != "stock_master"
+    ]
+    for operation in dated_operations[:-1]:
+        path = (
+            f"krx/{operation.dataset}/operation={operation.name}/"
+            "year=2026/month=08/a.jsonl.gz"
+        )
+        storage.paths.append(path)
+        storage.objects[path] = gzip.compress(json.dumps({
+            "payload": {"BAS_DD": "20260825"}
+        }).encode())
+    collector = ModelRawCollector(
+        storage, container="raw", manifest=CoverageManifest(storage, "raw"),
+        start_date=target, end_date=target,
+    )
+
+    assert collector._krx_anchor_dates(date(2026, 8, 1)) == set()
 
 
 def test_krx_validation_preserves_leading_zero_and_requires_ohlcv() -> None:

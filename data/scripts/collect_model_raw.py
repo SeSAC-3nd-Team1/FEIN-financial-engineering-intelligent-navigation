@@ -768,6 +768,27 @@ class ModelRawCollector:
                         blob_count=0,
                     )
 
+    def _krx_anchor_dates(self, month: date) -> set[date]:
+        """한 달의 5개 날짜형 KRX Raw에 공통으로 존재하는 거래일을 반환한다."""
+
+        dates_by_operation: list[set[date]] = []
+        for operation in OPERATIONS:
+            if operation.dataset == "stock_master":
+                continue
+            prefix = (
+                f"krx/{operation.dataset}/operation={operation.name}/"
+                f"year={month:%Y}/month={month:%m}/"
+            )
+            dates_by_operation.append({
+                value
+                for path in self.storage.list_paths(self.container, prefix=prefix)
+                if path.endswith(".jsonl.gz")
+                and (value := _raw_krx_date(
+                    self.storage.download_bytes(self.container, path)
+                )) is not None
+            })
+        return set.intersection(*dates_by_operation) if dates_by_operation else set()
+
     def collect_krx(self) -> None:
         """과거 완료 월을 Blob 경로로 복원하고 누락 평일만 날짜 병렬 수집한다."""
 
@@ -787,9 +808,15 @@ class ModelRawCollector:
             month_key = month.strftime("%Y-%m")
             start, end = _month_range(month, self.start_date, finalized_end)
             dates = _weekdays(start, end)
+            recent_cutoff = _seoul_today() - timedelta(days=7)
+            recent_anchor_dates = (
+                self._krx_anchor_dates(month) if end >= recent_cutoff else set()
+            )
             missing = [
                 value for value in dates
-                if not all(
+                if (
+                    value >= recent_cutoff and value not in recent_anchor_dates
+                ) or not all(
                     self.manifest.is_completed(
                         source, operation.dataset, operation.name, value.isoformat()
                     )
