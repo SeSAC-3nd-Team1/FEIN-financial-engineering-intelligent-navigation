@@ -377,6 +377,7 @@ docker compose --profile data run --rm --no-deps data python -m pytest tests -q
 - `data/docs/FINANCIAL_DATA_PIPELINE.md`
 - `data/docs/FINANCIAL_PIPELINE_RUNBOOK.md`
 - `data/docs/MODELING_DATASET_CARD.md`
+- `data/docs/ALGORITHM_OHLCV_DATASET_REPORT.md`
 - `data/docs/FEATURE_DICTIONARY.md`
 - `data/docs/RAW_DATA_CATALOG.md`
 - `docs/DATA_ARCHITECTURE.md`
