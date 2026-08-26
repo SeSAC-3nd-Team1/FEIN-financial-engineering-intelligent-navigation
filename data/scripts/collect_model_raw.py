@@ -17,6 +17,7 @@ import re
 import threading
 import time
 from typing import Any, Callable, Iterable
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -46,6 +47,12 @@ REPORT_PERIOD_END = {
     "11011": (12, 31),
 }
 OPENDART_FINANCIAL_LOOKBACK_DAYS = 120
+
+
+def _seoul_today() -> date:
+    """UTC Docker에서도 한국 시장 기준 오늘을 반환한다."""
+
+    return datetime.now(ZoneInfo("Asia/Seoul")).date()
 
 
 def _bounded_env(name: str, default: int, maximum: int) -> int:
@@ -108,6 +115,7 @@ class SourceMetrics:
     download_seconds: float = 0.0
     upload_seconds: float = 0.0
     started_at: float = field(default_factory=time.monotonic)
+    finished_at: float | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def add(self, **values: int | float) -> None:
@@ -119,9 +127,17 @@ class SourceMetrics:
         """source가 실제로 시작할 때 ETA와 wall time 기준점을 맞춘다."""
 
         self.started_at = time.monotonic()
+        self.finished_at = None
+
+    def stop_clock(self) -> None:
+        """후속 source 실행 시간이 이 source의 wall time에 섞이지 않게 고정한다."""
+
+        self.finished_at = time.monotonic()
 
     def as_dict(self) -> dict[str, Any]:
-        wall_elapsed = max(time.monotonic() - self.started_at, 0.000001)
+        wall_elapsed = max(
+            (self.finished_at or time.monotonic()) - self.started_at, 0.000001
+        )
         active_seconds = self.download_seconds + self.upload_seconds
         return {
             "source": self.source,
@@ -162,7 +178,7 @@ class CoverageManifest:
         previous_schema = int(self.data.get("schema_version", 1))
         # 과거 버전이 부분 실행을 YYYY-MM 전체 완료로 기록했을 수 있다. 진행 중인 달의
         # coarse key만 제거하고 날짜 범위 key는 유지해 최신일까지 다시 확인한다.
-        active_month = date.today().strftime("%Y-%m")
+        active_month = _seoul_today().strftime("%Y-%m")
         for entry in self.data.get("entries", {}).values():
             completed = entry.get("completed_partitions", [])
             entry["completed_partitions"] = [
@@ -182,7 +198,7 @@ class CoverageManifest:
     def _remove_recent_legacy_financial_checkpoints(self) -> None:
         """v1이 013을 완료로 기록했을 수 있는 최근 재무 partition을 재검증 대상으로 돌린다."""
 
-        cutoff = date.today() - timedelta(days=OPENDART_FINANCIAL_LOOKBACK_DAYS)
+        cutoff = _seoul_today() - timedelta(days=OPENDART_FINANCIAL_LOOKBACK_DAYS)
         for entry in self.data.get("entries", {}).values():
             if entry.get("source") != "opendart" or entry.get("dataset") != "financial_multi":
                 continue
@@ -311,6 +327,23 @@ class CoverageManifest:
         except (TypeError, ValueError):
             return 0, 0, 0
 
+    def partial_total_page(
+        self, source: str, dataset: str, operation: str, partition: str
+    ) -> int:
+        """부분 checkpoint에 기록된 provider 전체 page 수를 반환한다."""
+
+        entry = self.data.get("entries", {}).get(self.key(source, dataset, operation), {})
+        partial_pages = entry.get("partial_pages", {})
+        if not isinstance(partial_pages, dict):
+            return 0
+        progress = partial_pages.get(partition, {})
+        if not isinstance(progress, dict):
+            return 0
+        try:
+            return max(0, int(progress.get("total_page", 0)))
+        except (TypeError, ValueError):
+            return 0
+
     def mark_partial_page(
         self,
         *,
@@ -321,6 +354,7 @@ class CoverageManifest:
         page_no: int,
         rows: int,
         blob_count: int,
+        total_page: int | None = None,
     ) -> None:
         """Blob 업로드가 끝난 page와 누적 집계를 resume checkpoint로 기록한다."""
 
@@ -348,6 +382,59 @@ class CoverageManifest:
                     "record_count": rows,
                     "blob_count": blob_count,
                 }
+                if total_page is not None:
+                    partial_pages[partition]["total_page"] = max(1, total_page)
+
+    def mark_anomaly(
+        self,
+        *,
+        source: str,
+        dataset: str,
+        operation: str,
+        partition: str,
+        expected_year: str,
+        report_code: str,
+        corp_codes: set[str],
+        observed_years: set[str],
+        blob_path: str,
+    ) -> None:
+        """provider 이상 응답을 숨기지 않고 partition별 감사 정보로 누적한다."""
+
+        with self._lock:
+            entries = self.data.setdefault("entries", {})
+            key = self.key(source, dataset, operation)
+            entry = entries.setdefault(
+                key,
+                {
+                    "source": source,
+                    "dataset": dataset,
+                    "operation": operation,
+                    "completed_partitions": [],
+                    "record_count": 0,
+                    "blob_count": 0,
+                },
+            )
+            anomalies = entry.setdefault("anomalies", {})
+            current = anomalies.setdefault(
+                partition,
+                {
+                    "expected_year": expected_year,
+                    "report_code": report_code,
+                    "corp_codes": [],
+                    "observed_years": [],
+                    "blob_paths": [],
+                },
+            )
+            current["corp_codes"] = sorted(
+                set(current.get("corp_codes", [])) | corp_codes
+            )
+            current["observed_years"] = sorted(
+                set(current.get("observed_years", [])) | observed_years
+            )
+            current["blob_paths"] = sorted(
+                set(current.get("blob_paths", [])) | {blob_path}
+            )
+            current["last_seen_at"] = datetime.now(timezone.utc).isoformat()
 
     def save(self) -> None:
         """작은 manifest 하나만 overwrite해 중단 후 재개 지점을 원격에 보존한다."""
@@ -414,7 +501,7 @@ def _financial_checkpoint_allowed(
 ) -> bool:
     """최근 보고기간의 013은 늦은 공시가 도착할 수 있으므로 완료로 확정하지 않는다."""
 
-    reference = today or date.today()
+    reference = today or _seoul_today()
     return status != "013" or period_end < (
         reference - timedelta(days=OPENDART_FINANCIAL_LOOKBACK_DAYS)
     )
@@ -690,22 +777,56 @@ class ModelRawCollector:
                         blob_count=0,
                     )
 
+    def _krx_anchor_dates(self, month: date) -> set[date]:
+        """한 달의 5개 날짜형 KRX Raw에 공통으로 존재하는 거래일을 반환한다."""
+
+        dates_by_operation: list[set[date]] = []
+        for operation in OPERATIONS:
+            if operation.dataset == "stock_master":
+                continue
+            prefix = (
+                f"krx/{operation.dataset}/operation={operation.name}/"
+                f"year={month:%Y}/month={month:%m}/"
+            )
+            dates_by_operation.append({
+                value
+                for path in self.storage.list_paths(self.container, prefix=prefix)
+                if path.endswith(".jsonl.gz")
+                and (value := _raw_krx_date(
+                    self.storage.download_bytes(self.container, path)
+                )) is not None
+            })
+        return set.intersection(*dates_by_operation) if dates_by_operation else set()
+
     def collect_krx(self) -> None:
         """과거 완료 월을 Blob 경로로 복원하고 누락 평일만 날짜 병렬 수집한다."""
 
         source = "krx"
         self.metrics[source].reset_clock()
+        # 일봉은 장 종료 전 당일 값을 완료 처리하면 빈 응답 checkpoint가 남을 수 있다.
+        # 한국시간 기준 전일까지를 안정적으로 확정된 KRX 수집 범위로 사용한다.
+        finalized_end = min(self.end_date, _seoul_today() - timedelta(days=1))
+        if finalized_end < self.start_date:
+            print("[KRX] no finalized trading dates")
+            self.metrics[source].stop_clock()
+            return
         self._bootstrap_krx_dates()
         self.manifest.save()
-        months = _month_starts(self.start_date, self.end_date)
+        months = _month_starts(self.start_date, finalized_end)
         processed_months = 0
         for month in months:
             month_key = month.strftime("%Y-%m")
-            start, end = _month_range(month, self.start_date, self.end_date)
+            start, end = _month_range(month, self.start_date, finalized_end)
             dates = _weekdays(start, end)
+            recent_cutoff = _seoul_today() - timedelta(days=7)
+            recent_anchor_dates = (
+                self._krx_anchor_dates(month) if end >= recent_cutoff else set()
+            )
             missing = [
                 value for value in dates
-                if not all(
+                if (
+                    value >= recent_cutoff and value not in recent_anchor_dates
+                ) or not all(
                     self.manifest.is_completed(
                         source, operation.dataset, operation.name, value.isoformat()
                     )
@@ -739,6 +860,7 @@ class ModelRawCollector:
             self.manifest.save()
             processed_months += 1
             self._progress(source, processed_months, len(months), month_key)
+        self.metrics[source].stop_clock()
 
     def _ecos_partition(self, series_name: str, month: date) -> tuple[str, int, int]:
         series = ECOS_SERIES[series_name]
@@ -792,6 +914,7 @@ class ModelRawCollector:
         total = len(tasks)
         if not tasks:
             print("[ECOS-BOK] no missing partitions")
+            self.metrics[source].stop_clock()
             return
         with ThreadPoolExecutor(
             max_workers=self.concurrency[source], thread_name_prefix="ecos-fetch"
@@ -816,12 +939,13 @@ class ModelRawCollector:
                     self.manifest.save()
                 self._progress(source, index, total, f"{name}:{month:%Y-%m}")
         self.manifest.save()
+        self.metrics[source].stop_clock()
 
     def _corp_codes(self) -> list[str]:
         """당일 corpCode를 한 번만 수집하고 상장사 8자리 corp_code를 메모리에만 유지한다."""
 
         source = "opendart"
-        snapshot_date = date.today()
+        snapshot_date = _seoul_today()
         partition = snapshot_date.isoformat()
         prefix = f"opendart/corp_code/{snapshot_date:%Y/%m/%d}/"
         paths = sorted(self.storage.list_paths(self.container, prefix=prefix))
@@ -872,29 +996,148 @@ class ModelRawCollector:
         for start in range(0, len(values), size):
             yield values[start : start + size]
 
+    def _stable_financial_chunks(self, current_codes: list[str]) -> list[list[str]]:
+        """회사목록 재정렬에도 기존 100개 batch 해시를 유지하고 신규 회사만 덧붙인다."""
+
+        if self.company_limit is not None:
+            return list(self._chunks(current_codes, 100))
+        stored = self.manifest.data.get("opendart_financial_batches")
+        batches: list[list[str]] = []
+        if isinstance(stored, list):
+            for batch in stored:
+                if not isinstance(batch, list):
+                    batches = []
+                    break
+                values = [str(value) for value in batch]
+                if not values or len(values) > 100 or any(
+                    len(value) != 8 or not value.isdigit() for value in values
+                ):
+                    batches = []
+                    break
+                batches.append(values)
+        if not batches:
+            # 최초 migration은 가장 오래된 보존 snapshot 순서를 사용한다. 기존
+            # completed partition의 digest가 이 순서로 만들어졌으므로 재수집을 피한다.
+            snapshot_paths = sorted(
+                self.storage.list_paths(self.container, prefix="opendart/corp_code/")
+            )
+            base_codes = current_codes
+            if snapshot_paths:
+                records = parse_corp_code_zip(
+                    self.storage.download_bytes(self.container, snapshot_paths[0])
+                )
+                base_codes = [record.corp_code for record in records if record.stock_code]
+            batches = list(self._chunks(base_codes, 100))
+            self.manifest.data["opendart_financial_base_batch_count"] = len(batches)
+
+        known = {code for batch in batches for code in batch}
+        additions = [code for code in current_codes if code not in known]
+        base_count = int(
+            self.manifest.data.get("opendart_financial_base_batch_count", len(batches))
+        )
+        if additions and len(batches) > base_count and len(batches[-1]) < 100:
+            capacity = 100 - len(batches[-1])
+            batches[-1].extend(additions[:capacity])
+            additions = additions[capacity:]
+        batches.extend(self._chunks(additions, 100))
+        self.manifest.data["opendart_financial_batches"] = batches
+        self.manifest.save()
+        return batches
+
     def _dart_financial(
         self, codes: list[str], year: int, report_code: str
     ) -> tuple[int, int, bool]:
-        started = time.monotonic()
-        response = self._dart_client().financials_multi(codes, str(year), report_code)
-        self.metrics["opendart"].add(api_calls=1, download_seconds=time.monotonic() - started)
-        rows = response.payload.get("list", [])
-        if not isinstance(rows, list):
-            raise RuntimeError("OpenDART financial list must be an array")
-        for row in rows:
-            stock_code = str(row.get("stock_code", "")).strip()
-            if stock_code and (len(stock_code) != 6 or not stock_code.isdigit()):
-                raise RuntimeError("OpenDART financial stock_code is invalid")
-            if str(row.get("bsns_year", year)) != str(year):
-                raise RuntimeError("OpenDART financial business year mismatch")
-            if str(row.get("reprt_code", report_code)) != report_code:
-                raise RuntimeError("OpenDART financial report code mismatch")
         period_month, period_day = REPORT_PERIOD_END[report_code]
         period_end = date(year, period_month, period_day)
-        created = 0
-        if rows:
+        digest = hashlib.sha256(",".join(codes).encode()).hexdigest()[:16]
+        partition = f"{year}-{report_code}-{digest}"
+        pending_codes = list(codes)
+        writer = OpenDartRawWriter(self.storage, container=self.container)
+        created = total_rows = 0
+        checkpoint_allowed = True
+
+        while pending_codes:
+            started = time.monotonic()
+            response = self._dart_client().financials_multi(
+                pending_codes, str(year), report_code
+            )
+            self.metrics["opendart"].add(
+                api_calls=1, download_seconds=time.monotonic() - started
+            )
+            rows = response.payload.get("list", [])
+            if not isinstance(rows, list):
+                raise RuntimeError("OpenDART financial list must be an array")
+            for row in rows:
+                # OpenDART는 상장사 batch에서도 일부 행의 stock_code를 null로 반환한다.
+                # corp_code가 식별자이므로 null은 결측으로 허용하되 비어 있지 않은 값만 검증한다.
+                stock_code = str(row.get("stock_code") or "").strip()
+                if stock_code and not re.fullmatch(r"[0-9A-Z]{6}", stock_code):
+                    raise RuntimeError(
+                        "OpenDART financial stock_code is invalid "
+                        f"corp_code={str(row.get('corp_code') or '').strip()!r} "
+                        f"stock_code={stock_code!r}"
+                    )
+                if str(row.get("reprt_code", report_code)) != report_code:
+                    raise RuntimeError("OpenDART financial report code mismatch")
+
+            mismatched = [
+                row for row in rows
+                if str(row.get("bsns_year", year)) != str(year)
+            ]
+            if mismatched:
+                bad_codes = {
+                    str(row.get("corp_code", "")).strip() for row in mismatched
+                } & set(pending_codes)
+                if not bad_codes:
+                    raise RuntimeError(
+                        "OpenDART financial mismatch cannot be attributed to requested companies"
+                    )
+                upload_started = time.monotonic()
+                anomaly_blob = writer.upload_bytes(
+                    dataset="financial_multi_anomaly",
+                    content=response.content,
+                    partition_date=period_end,
+                    extension="json",
+                    content_type="application/json",
+                )
+                self.metrics["opendart"].add(
+                    upload_seconds=time.monotonic() - upload_started,
+                    uploaded_bytes=anomaly_blob.size if anomaly_blob.created else 0,
+                    new_blobs=int(anomaly_blob.created),
+                    reused_blobs=int(not anomaly_blob.created),
+                )
+                self.manifest.mark_anomaly(
+                    source="opendart",
+                    dataset="financial_multi",
+                    operation="financial_multi",
+                    partition=partition,
+                    expected_year=str(year),
+                    report_code=report_code,
+                    corp_codes=bad_codes,
+                    observed_years={
+                        str(row.get("bsns_year", "")) for row in mismatched
+                    },
+                    blob_path=anomaly_blob.path,
+                )
+                print(
+                    "[OPENDART] financial anomaly "
+                    f"partition={partition} expected_year={year} "
+                    f"observed_years={sorted({str(row.get('bsns_year', '')) for row in mismatched})} "
+                    f"excluded_corp_codes={sorted(bad_codes)}"
+                )
+                # provider 원문은 anomaly 경로에 보존하고, 정상 기업만 다시 요청해
+                # canonical financial_multi에 다른 사업연도가 섞이지 않게 한다.
+                pending_codes = [code for code in pending_codes if code not in bad_codes]
+                continue
+
+            checkpoint_allowed = _financial_checkpoint_allowed(
+                str(response.payload.get("status", "")), period_end
+            )
+            total_rows = len(rows)
+            if not rows:
+                break
             upload_started = time.monotonic()
-            blob = OpenDartRawWriter(self.storage, container=self.container).upload_bytes(
+            blob = writer.upload_bytes(
                 dataset="financial_multi",
                 content=response.content,
                 partition_date=period_end,
@@ -908,16 +1151,11 @@ class ModelRawCollector:
                 new_blobs=created,
                 reused_blobs=int(not blob.created),
             )
-        self.metrics["opendart"].add(rows=len(rows))
-        return (
-            len(rows),
-            created,
-            _financial_checkpoint_allowed(
-                str(response.payload.get("status", "")), period_end
-            ),
-        )
+            break
+        self.metrics["opendart"].add(rows=total_rows)
+        return total_rows, created, checkpoint_allowed
 
-    def _dart_disclosure(self, month: date, corp_cls: str) -> tuple[int, int, int]:
+    def _dart_disclosure(self, month: date, corp_cls: str) -> tuple[int, int, bool]:
         """공시 page를 한 장씩 검증·업로드하고 진행률과 resume page를 기록한다."""
 
         start, end = _month_range(month, self.start_date, self.end_date)
@@ -925,6 +1163,13 @@ class ModelRawCollector:
         resume_page, total_rows, new_blobs = self.manifest.partial_progress(
             "opendart", "disclosure_market", "disclosure_market", partition
         )
+        checkpoint_total_page = self.manifest.partial_total_page(
+            "opendart", "disclosure_market", "disclosure_market", partition
+        )
+        # 마지막 page까지 저장된 직후 다른 worker가 실패한 경우, 다음 실행에서
+        # total_page + 1을 호출하지 않고 이 partition을 완료 처리하도록 반환한다.
+        if checkpoint_total_page and resume_page >= checkpoint_total_page:
+            return total_rows, new_blobs, True
         responses = iter(self._dart_client().iter_disclosures_market(
             start_date=start.strftime("%Y%m%d"),
             end_date=end.strftime("%Y%m%d"),
@@ -969,6 +1214,10 @@ class ModelRawCollector:
                     new_blobs=int(blob.created),
                     reused_blobs=int(not blob.created),
                 )
+            try:
+                total_page = max(1, int(response.payload.get("total_page", page_no)))
+            except (TypeError, ValueError):
+                total_page = page_no
             self.manifest.mark_partial_page(
                 source="opendart",
                 dataset="disclosure_market",
@@ -977,13 +1226,10 @@ class ModelRawCollector:
                 page_no=page_no,
                 rows=total_rows,
                 blob_count=new_blobs,
+                total_page=total_page,
             )
             if page_no % self.checkpoint_every == 0:
                 self.manifest.save()
-            try:
-                total_page = max(1, int(response.payload.get("total_page", page_no)))
-            except (TypeError, ValueError):
-                total_page = page_no
             if page_count == 1 or page_no % 10 == 0 or page_no >= total_page:
                 print(
                     "[OPENDART] disclosure page "
@@ -992,7 +1238,7 @@ class ModelRawCollector:
                     f"new_blobs={new_blobs:,}"
                 )
         self.metrics["opendart"].add(rows=fetched_rows)
-        return total_rows, new_blobs, page_count
+        return total_rows, new_blobs, True
 
     def collect_opendart(self) -> None:
         """회사 100개 batch와 월별 공시 window를 제한된 worker로 수집한다."""
@@ -1000,6 +1246,7 @@ class ModelRawCollector:
         source = "opendart"
         self.metrics[source].reset_clock()
         codes = self._corp_codes()
+        code_chunks = self._stable_financial_chunks(codes)
         tasks: list[tuple[str, str, Callable[[], tuple[int, int, bool]]]] = []
         for year in range(self.start_date.year, self.end_date.year + 1):
             for report_code in REPORT_CODES:
@@ -1007,7 +1254,7 @@ class ModelRawCollector:
                 period_end = date(year, month, day)
                 if not self.start_date <= period_end <= self.end_date:
                     continue
-                for chunk in self._chunks(codes, 100):
+                for chunk in code_chunks:
                     digest = hashlib.sha256(",".join(chunk).encode()).hexdigest()[:16]
                     partition = f"{year}-{report_code}-{digest}"
                     if self.manifest.is_completed(
@@ -1045,7 +1292,9 @@ class ModelRawCollector:
                 )
         if not tasks:
             print("[OPENDART] no missing partitions")
+            self.metrics[source].stop_clock()
             return
+        failures: list[tuple[str, str, Exception]] = []
         with ThreadPoolExecutor(
             max_workers=self.concurrency[source], thread_name_prefix="opendart-fetch"
         ) as executor:
@@ -1055,7 +1304,18 @@ class ModelRawCollector:
             }
             for index, future in enumerate(as_completed(future_map), start=1):
                 dataset, partition = future_map[future]
-                rows, blobs, checkpoint_allowed = future.result()
+                try:
+                    rows, blobs, checkpoint_allowed = future.result()
+                except Exception as exc:  # noqa: BLE001 - 모든 partition 결과를 회수해야 한다.
+                    failures.append((dataset, partition, exc))
+                    print(
+                        "[OPENDART] failed "
+                        f"dataset={dataset} partition={partition} "
+                        f"error={type(exc).__name__}: {exc}"
+                    )
+                    if index % self.checkpoint_every == 0:
+                        self.manifest.save()
+                    continue
                 if checkpoint_allowed:
                     self.manifest.mark(
                         source=source,
@@ -1072,12 +1332,20 @@ class ModelRawCollector:
                     self.manifest.save()
                 self._progress(source, index, len(tasks), partition)
         self.manifest.save()
+        self.metrics[source].stop_clock()
+        if failures:
+            dataset, partition, first_error = failures[0]
+            raise RuntimeError(
+                "OpenDART collection failed "
+                f"partitions={len(failures)} first={dataset}:{partition} "
+                f"error={type(first_error).__name__}: {first_error}"
+            ) from first_error
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Collect resumable model Raw data to Azure Blob")
     parser.add_argument("--start-date", type=date.fromisoformat, default=DEFAULT_START_DATE)
-    parser.add_argument("--end-date", type=date.fromisoformat, default=date.today())
+    parser.add_argument("--end-date", type=date.fromisoformat, default=_seoul_today())
     parser.add_argument(
         "--source", action="append", choices=("krx", "ecos", "opendart"),
         help="특정 source만 수집한다. 여러 번 지정할 수 있다.",
@@ -1099,6 +1367,8 @@ def _write_reports(
     metrics = {name: value.as_dict() for name, value in collector.metrics.items()}
     total_rows = sum(int(value["rows"]) for value in metrics.values())
     total_seconds = max((finished_at - started_at).total_seconds(), 0.000001)
+    metric_names = {"krx": "krx", "ecos": "ecos-bok", "opendart": "opendart"}
+    selected_metrics = [metrics[metric_names[name]] for name in selected]
     payload = {
         "generated_at": finished_at.isoformat(),
         "range": {"start": collector.start_date.isoformat(), "end": collector.end_date.isoformat()},
@@ -1122,7 +1392,7 @@ def _write_reports(
         "total_elapsed_seconds": round(total_seconds, 3),
         "average_rows_per_second": round(total_rows / total_seconds, 3),
         "bottleneck": max(
-            metrics.values(), key=lambda value: float(value["active_seconds"])
+            selected_metrics, key=lambda value: float(value["elapsed_seconds"])
         )["source"],
         "additional_optimization": [
             "OpenDART quota가 상향된 환경에서만 OPENDART_MAX_CONCURRENCY를 2 이상으로 조정",
@@ -1130,7 +1400,9 @@ def _write_reports(
         ],
     }
     SUMMARY_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SUMMARY_JSON_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    SUMMARY_JSON_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     markdown = [
         "# Model Raw Collection Summary", "",
         f"- 테스트 기간: {collector.start_date} ~ {collector.end_date}",
@@ -1170,7 +1442,7 @@ def _write_reports(
 
 | Source | Blob prefix | 핵심 식별자/날짜 | 형식 | 모델 용도 |
 |---|---|---|---|---|
-| KRX | `krx/stock_price`, `krx/stock_master`, `krx/market_index` | `BAS_DD`, 6자리 종목코드 | JSONL.gz | OHLCV·거래대금·시총·시장지수 |
+| KRX | `krx/stock_price`, `krx/stock_master`, `krx/market_index` | `BAS_DD`, 6자리 영문·숫자 종목코드 | JSONL.gz | OHLCV·거래대금·시총·시장지수 |
 | ECOS | `ecos-bok/ecos/operation=<series>` | `TIME`, `DATA_VALUE` | JSONL.gz | 기준금리·USD/KRW·CPI·국고채 3Y/10Y |
 | OpenDART | `opendart/corp_code`, `financial_multi`, `disclosure_market` | `corp_code`, `rcept_no`, `rcept_dt` | ZIP/JSON 원문 | 기업 매핑·재무·공시 이벤트 |
 | data.go.kr | 기존 `data-go-kr/...` | dataset별 `basDt` | JSONL.gz | 기존 보조 금융 Raw(이번 수집기는 변경하지 않음) |
@@ -1178,6 +1450,7 @@ def _write_reports(
 ## Point-in-Time 주의사항
 
 - OpenDART 재무값은 결산일이 아니라 해당 보고서의 실제 `rcept_dt` 이후에만 Feature로 결합한다.
+- 공급자가 요청 사업연도와 다른 값을 반환한 원문은 `financial_multi_anomaly`에 격리하며 canonical 학습 입력에서 제외한다.
 - ECOS 월간 CPI는 공표 지연을 반영한 `available_at` 정책을 적용한 Processed/Feature를 사용한다.
 - 모든 종목·회사 코드는 숫자로 변환하지 말고 문자열로 읽어 선행 0을 보존한다.
 - 결측·휴장일을 0으로 채우지 않는다. 거래일 기준 KRX 시계열에 발표 시점이 지난 거시값만 결합한다.
@@ -1186,7 +1459,8 @@ def _write_reports(
 
 Raw 객체는 payload/content hash 경로라 같은 응답의 재실행이 새 객체를 만들지 않는다.
 수집 범위와 완료 partition은 `raw/_manifests/model_raw_coverage.json`, 실행 성능은
-`data/reports/MODEL_RAW_COLLECTION_SUMMARY.{json,md}`에서 확인한다.
+`data/reports/MODEL_RAW_COLLECTION_SUMMARY.{json,md}`, Blob 전수 감사 결과는
+`data/reports/MODEL_RAW_AUDIT.json`에서 확인한다.
 """
     INVENTORY_PATH.write_text(inventory, encoding="utf-8")
     return payload
