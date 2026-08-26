@@ -14,10 +14,6 @@ interface Props {
   strategyId: string;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
-  /** 자동매매 유저는 이 화면에 뜨는 제안이 전부 AI가 이미 실행을 마친 내역이라, 반자동의
-   *  "승인 대기" 톤(조정하기/보류 버튼, "조정하지 않으면?" 경고) 대신 PortfolioAuto.tsx가 이미 쓰고
-   *  있는 과거형/완료 표시로 맞춘다. */
-  isAutoMode?: boolean;
 }
 
 /** AI 제안 종류별 배지 색 — PortfolioDetail 의 요약 카드와 동일한 배색을 공유한다 */
@@ -28,11 +24,17 @@ const ALERT_BADGE: Record<'손절' | '리밸런싱', string> = {
 
 /** `/rebalance-alerts` — AI 손절·리밸런싱 제안 전체 목록. PortfolioDetail "AI의 리밸런싱 제안"의 "더보기"에서 진입한다.
  *  실 계좌에 리밸런싱 제안(규칙기반)이 있으면 그 값을, 없으면 AI_ALERTS(목업)를 그대로 쓴다 — lib/rebalancing.ts 참고. */
-export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBack, isAutoMode = false }: Props) {
+export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBack }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+  // displayAlerts는 실 계좌가 있으면(portfolio) portfolio.rebalancing_proposals(아직 실행 전인 "제안")를,
+  // 없으면 AI_ALERTS(이미 실행됐다는 설정의 스토리 목업)를 쓴다 — lib/rebalancing.ts 참고. 그래서 "완료됨"
+  // 톤을 결정하는 신호는 activeMode(자동/반자동)가 아니라 이 실데이터 여부다. PortfolioAuto.tsx의
+  // usingRealAlerts와 동일한 기준 — 자동매매 실계좌라도 제안은 아직 제안일 뿐이라, 실데이터면 반자동과
+  // 같은 "제안" 톤을 쓰고 mock일 때만 과거형/완료 톤을 쓴다.
+  const usingRealAlerts = portfolio !== null;
 
   // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — PortfolioDetail 과 동일한 대체 규칙.
   const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
@@ -77,10 +79,10 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
 
           <section className="flex flex-col gap-4">
             <span className="text-base font-semibold text-[#3F5222]">
-              {isAutoMode ? '✦ AI가 자동으로 처리했어요' : '✦ AI의 리밸런싱 제안'}
+              {!usingRealAlerts ? '✦ AI가 자동으로 처리했어요' : '✦ AI의 리밸런싱 제안'}
             </span>
             <h1 className="text-[38px] font-bold leading-[52px] tracking-[-0.03em]">
-              {isAutoMode ? 'AI가 자동으로 실행한 손절·리밸런싱 내역이에요' : '지금 확인해야 할 손절·리밸런싱 제안이 있어요'}
+              {!usingRealAlerts ? 'AI가 자동으로 실행한 손절·리밸런싱 내역이에요' : '지금 확인해야 할 손절·리밸런싱 제안이 있어요'}
             </h1>
             <span className="text-[17px] text-subtle">총 {displayAlerts.length}건</span>
           </section>
@@ -88,7 +90,7 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
           <section className="flex flex-col gap-4 rounded-card bg-surface p-6">
             {displayAlerts.length === 0 ? (
               <p className="px-6 py-10 text-center text-[17px] text-subtle">
-                {isAutoMode ? '최근 자동 실행 내역이 없어요.' : '확인할 제안이 없어요.'}
+                {!usingRealAlerts ? '최근 자동 실행 내역이 없어요.' : '확인할 제안이 없어요.'}
               </p>
             ) : (
               displayAlerts.map((a) => {
@@ -100,7 +102,7 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
                         <span className={`rounded-full px-3 py-1.5 text-sm font-bold ${ALERT_BADGE[a.kind]}`}>{a.badge}</span>
                         <span className="text-[19px] font-bold tracking-[-0.02em]">{a.stockName}</span>
                         {/* 자동매매는 이미 실행이 끝난 내역이라 승인/보류 결정 상태 대신 항상 완료 배지를 보여준다 */}
-                        {isAutoMode ? (
+                        {!usingRealAlerts ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-[#F8FCEE] px-2.5 py-1 text-xs font-bold text-[#3F5222]">
                             <Check size={12} /> 완료
                           </span>
@@ -117,10 +119,10 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
                     <button
                       onClick={() => setRebalanceSheetId(a.id)}
                       className={`shrink-0 rounded-field px-6 py-3.5 text-[15px] font-bold ${
-                        isAutoMode || decision ? 'bg-[#F4F6F1] text-[#3F4A43]' : 'bg-lime text-navy'
+                        !usingRealAlerts || decision ? 'bg-[#F4F6F1] text-[#3F4A43]' : 'bg-lime text-navy'
                       }`}
                     >
-                      {isAutoMode ? '실행 내역 보기' : decision ? '결정 다시 보기' : (a.kind === '리밸런싱' ? '조정 제안 확인하기' : '손절 조치 확인하기')}
+                      {!usingRealAlerts ? '실행 내역 보기' : decision ? '결정 다시 보기' : (a.kind === '리밸런싱' ? '조정 제안 확인하기' : '손절 조치 확인하기')}
                     </button>
                   </div>
                 );
@@ -139,7 +141,7 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
           <div className="flex w-[720px] flex-col gap-7 rounded-card bg-surface p-12" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-6">
               <h2 className="text-[28px] font-bold leading-10 tracking-[-0.03em]">
-                {isAutoMode
+                {!usingRealAlerts
                   ? (rebalanceAlert.kind === '리밸런싱' ? '왜 이렇게 조정했나요?' : '왜 이렇게 정리했나요?')
                   : (rebalanceAlert.kind === '리밸런싱' ? '왜 지금 비중을 조정하라고 하나요?' : '왜 지금 정리하는 게 좋을까요?')}
               </h2>
@@ -151,7 +153,7 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
             {rebalanceAlert.kind === '리밸런싱' ? (
               <div className="flex items-center gap-6 rounded-[18px] bg-canvas px-8 py-7">
                 <div className="flex flex-1 flex-col gap-2">
-                  <span className="text-[15px] text-muted">{isAutoMode ? '조정 전' : '현재'}</span>
+                  <span className="text-[15px] text-muted">{!usingRealAlerts ? '조정 전' : '현재'}</span>
                   <span className="text-[28px] font-bold tracking-[-0.03em] text-warn">{rebalanceCurrentPct.toFixed(1)}%</span>
                   <div className="h-2.5 rounded-full bg-[#E5E9E3]"><div className="h-2.5 rounded-full bg-warn" style={{ width: `${rebalanceCurrentPct}%` }} /></div>
                 </div>
@@ -164,11 +166,11 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
               </div>
             ) : (
               <div className="flex items-center gap-3 rounded-[18px] bg-canvas px-8 py-7">
-                <span className="shrink-0 text-[15px] font-semibold text-[#3F5222]">{isAutoMode ? 'AI 조치' : 'AI 제안'}</span>
+                <span className="shrink-0 text-[15px] font-semibold text-[#3F5222]">{!usingRealAlerts ? 'AI 조치' : 'AI 제안'}</span>
                 <span className="text-[17px] font-semibold text-ink">{rebalanceAlert.action}</span>
               </div>
             )}
-            {!isAutoMode && (
+            {usingRealAlerts && (
               <div className="flex flex-col gap-2.5 rounded-[18px] bg-[#F8FCEE] px-8 py-7">
                 <span className="text-lg font-bold tracking-[-0.02em]">
                   {rebalanceAlert.kind === '리밸런싱' ? '조정하지 않으면?' : '정리하지 않으면?'}
@@ -178,7 +180,7 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
                 </p>
               </div>
             )}
-            {isAutoMode ? (
+            {!usingRealAlerts ? (
               <div className="flex items-center gap-4 rounded-[18px] bg-[#F4F6F1] px-8 py-7">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-lime text-navy">
                   <Check size={18} />
