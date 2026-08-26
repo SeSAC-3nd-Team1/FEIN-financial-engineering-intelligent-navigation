@@ -6,11 +6,13 @@ import {
   HOLD_TOTAL as MOCK_HOLD_TOTAL, STOCK_INFO,
 } from '../data/holdings';
 import { toAccountOperationMode } from '../data/fees';
-import { STRATEGIES } from '../data/strategies';
 import { useTradingData } from '../hooks/useTradingData';
-import { ApiError, getPortfolioComparisonApi, type PortfolioComparisonResponse, type PortfolioHistoryPeriod } from '../lib/backendApi';
+import {
+  ApiError, getPortfolioComparisonApi, type PortfolioComparisonResponse, type PortfolioHistoryPeriod, type StrategyResponse,
+} from '../lib/backendApi';
 import { getDisplayDecisions, type DisplayDecisionSummary } from '../lib/decisions';
 import { getDisplayAlerts } from '../lib/rebalancing';
+import { strategyRebalanceLabel, strategyRiskLabel } from '../lib/strategyCatalog';
 import { getDisplayTransactions } from '../lib/transactions';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
@@ -20,8 +22,9 @@ import type { Screen, TransactionRecord } from '../types';
 
 interface Props {
   userName: string;
-  /** 모달에서 선택·표시되는 현재 전략 id — RiskResult/StrategyDetail 과 동일한 STRATEGIES.id 를 그대로 쓴다 */
-  strategyId: string;
+  /** App이 실제 GET /strategies에서 확인한 현재 전략과 전체 활성 카탈로그. */
+  strategy: StrategyResponse;
+  strategies: StrategyResponse[];
   onStrategyChange: (id: string) => void;
   onNavigate: (s: Screen) => void;
   onSelectStock: (stockCode: string) => void;
@@ -68,7 +71,7 @@ type ComparisonState =
  *  오늘의 스토리, 전략 설정, AI 손절·리밸런싱 제안(목업), 보유 종목, 거래 내역(실 체결), 자동매매 비교(실 API), 판단 회고(목업).
  *  매매 방식(반자동/전체자동) 토글은 백엔드에 그런 구분이 없어 넣지 않았다 — PR #57 에서도 같은 이유로 제거된 것으로 보인다. */
 export default function PortfolioDetail({
-  userName, strategyId, onStrategyChange, onNavigate, onSelectStock, onSelectTransaction, onOpenRebalanceAlerts,
+  userName, strategy, strategies, onStrategyChange, onNavigate, onSelectStock, onSelectTransaction, onOpenRebalanceAlerts,
   onRediagnose, onBack,
 }: Props) {
   const token = useTradingData();
@@ -105,10 +108,8 @@ export default function PortfolioDetail({
     return () => { cancelled = true; };
   }, [token]);
 
-  // 전략 변경 모달 상태
+  // 전략 변경 모달 상태 — 현재 전략과 선택지는 모두 App의 실제 카탈로그를 사용한다.
   const [isModalOpen, setModalOpen] = useState(false);
-  // strategyId 로부터 표시용 전략 객체(이름/나와 맞는 정도 등)를 파생시킨다 — STRATEGIES 가 유일한 출처
-  const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const setSelectedStrategy = async (nextStrategyId: string) => {
     if (!token) return;
     try {
@@ -244,8 +245,10 @@ export default function PortfolioDetail({
           <section className="flex items-center justify-between gap-8 rounded-card bg-surface px-12 py-11">
             <div className="flex flex-col gap-2.5">
               <span className="text-[15px] text-muted">현재 전략</span>
-              <span className="text-2xl font-bold tracking-[-0.025em]">{selectedStrategy.name}</span>
-              <span className="text-base text-muted">나와 {selectedStrategy.match}% 잘 맞아요</span>
+              <span className="text-2xl font-bold tracking-[-0.025em]">{strategy.name}</span>
+              <span className="text-base text-muted">
+                위험도 {strategyRiskLabel(strategy.risk_level)} · 리밸런싱 {strategyRebalanceLabel(strategy.rebalance_cycle)}
+              </span>
             </div>
             <button
               onClick={() => setModalOpen(true)}
@@ -483,8 +486,8 @@ export default function PortfolioDetail({
             </div>
 
             <div className="flex flex-col gap-3">
-              {STRATEGIES.map((s) => {
-                const active = s.id === selectedStrategy.id;
+              {strategies.map((s) => {
+                const active = s.id === strategy.id;
                 return (
                   <button
                     key={s.id}
@@ -575,7 +578,7 @@ export default function PortfolioDetail({
                 {rebalanceAlert.kind === '리밸런싱' ? '조정하지 않으면?' : '정리하지 않으면?'}
               </span>
               <p className="text-[17px] leading-7 text-[#3F4A43]">
-                특정 종목의 영향이 커져 {selectedStrategy.name}보다 포트폴리오가 더 많이 흔들릴 수 있어요.
+                특정 종목의 영향이 커져 {strategy.name}보다 포트폴리오가 더 많이 흔들릴 수 있어요.
               </p>
             </div>
             {alertDecisions[rebalanceAlert.id] ? (

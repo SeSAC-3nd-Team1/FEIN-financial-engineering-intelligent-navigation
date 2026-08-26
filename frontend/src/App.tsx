@@ -71,6 +71,7 @@ const INVEST_FLOW_SCREENS: Screen[] = ['invest-terms', 'invest-account', 'invest
 /** 실제 전략 카탈로그 객체가 있어야 내용을 안전하게 렌더링할 수 있는 화면들. */
 const STRATEGY_DATA_SCREENS: Screen[] = [
   'strategy', 'start', 'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm', 'dashboard',
+  'portfolio-detail', 'rebalance-alerts',
 ];
 
 /**
@@ -871,7 +872,7 @@ export default function App() {
       {screen === 'dashboard' && strategy && (
         <Dashboard
           userName={userName}
-          strategyName={strategy.name}
+          strategy={strategy}
           mode={activeMode}
           onNavigate={navigate}
           onOpenHoldings={() => navigate('portfolio-detail')}
@@ -900,10 +901,11 @@ export default function App() {
         )
       )}
 
-      {screen === 'portfolio-detail' && (
+      {screen === 'portfolio-detail' && strategy && (
         <PortfolioDetail
           userName={userName}
-          strategyId={strategyId}
+          strategy={strategy}
+          strategies={strategyCatalog}
           onStrategyChange={setStrategyId}
           onNavigate={navigate}
           onSelectStock={(code) => { setStockCode(code); setStockBackTarget('portfolio-detail'); setScreen('stock'); }}
@@ -918,10 +920,10 @@ export default function App() {
         />
       )}
 
-      {screen === 'rebalance-alerts' && (
+      {screen === 'rebalance-alerts' && strategy && (
         <RebalanceAlerts
           userName={userName}
-          strategyId={strategyId}
+          strategy={strategy}
           onNavigate={navigate}
           onBack={() => setScreen(rebalanceBackTarget)}
           isAutoMode={activeMode === 'auto'}
