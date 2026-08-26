@@ -3,13 +3,13 @@ import Header from '../components/Header';
 import TermsModal from '../components/TermsModal';
 import { estimateAnnualFee, type OperationMode } from '../data/fees';
 import { OPERATING_MODES } from '../data/operatingModes';
-import type { Strategy } from '../data/strategies';
+import type { StrategyResponse } from '../lib/backendApi';
 import { won } from '../lib/validation';
 import type { Screen } from '../types';
 
 interface Props {
   userName: string;
-  strategy: Strategy;
+  strategy: StrategyResponse;
   amount: number;
   mode: OperationMode;
   onNavigate: (s: Screen) => void;
@@ -25,6 +25,11 @@ const SERVICE_TERMS_BODY =
 
 const PRIVACY_TERMS_BODY =
   '수집·이용 목적: 투자 서비스 제공(포트폴리오 구성, 매매 실행, 리밸런싱), SeSAC증권 계좌 연계\n수집·이용 항목: 투자성향 진단 결과, 선택 전략, 투자 금액·운용 방식, SeSAC증권 계좌 정보, 거래내역\n보유 및 이용기간: 서비스 이용 종료 또는 회원 탈퇴 시까지\n\n동의를 거부할 권리가 있으나, 필수 동의 사항이므로 거부 시 투자 서비스 이용이 제한됩니다.';
+
+const RISK_LABEL: Record<string, string> = { LOW: '낮음', MEDIUM: '보통', HIGH: '높음' };
+const REBALANCE_LABEL: Record<string, string> = {
+  WEEKLY: '주 1회', MONTHLY: '월 1회', QUARTERLY: '분기 1회', YEARLY: '연 1회',
+};
 
 export default function InvestTerms({ userName, strategy, amount, mode, onNavigate, onBack, onComplete }: Props) {
   const [agreed, setAgreed] = useState<Record<RequiredKey, boolean>>({
@@ -42,10 +47,11 @@ export default function InvestTerms({ userName, strategy, amount, mode, onNaviga
   const feeRate = OPERATING_MODES[mode].feeRate;
   const feeAmount = estimateAnnualFee(amount, mode);
   const productBody =
-    `${strategy.name}은 ${strategy.tagline} 전략이에요.\n\n` +
-    `연 환산 수익률(참고): ${strategy.annual}\n최대 낙폭(MDD, 참고): ${strategy.mdd}\n변동성(참고): ${strategy.vol}\n리밸런싱 주기: ${strategy.rebalance}\n\n` +
+    `${strategy.name}은 ${strategy.description}\n\n` +
+    `위험도: ${RISK_LABEL[strategy.risk_level] ?? strategy.risk_level}\n` +
+    `리밸런싱 주기: ${REBALANCE_LABEL[strategy.rebalance_cycle] ?? strategy.rebalance_cycle}\n\n` +
     `이용 수수료: 연 ${(feeRate * 100).toFixed(1)}% (${OPERATING_MODES[mode].label} 기준, ${(amount / 10_000).toLocaleString('ko-KR')}만원 투자 시 연 약 ${won(feeAmount)})\n\n` +
-    '위 수치는 과거 백테스트 및 프로토타입 기준 참고 정보이며, 미래 수익을 보장하지 않습니다. 실제 수수료는 잔고와 이용 기간 등에 따라 달라질 수 있어요.';
+    '투자 전 상세 화면의 실제 백테스트 결과와 위험 안내를 확인해주세요. 실제 수수료는 잔고와 이용 기간 등에 따라 달라질 수 있어요.';
 
   return (
     <div className="min-h-screen bg-canvas">

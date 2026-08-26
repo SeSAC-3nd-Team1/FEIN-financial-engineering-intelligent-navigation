@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createStrategyRecommendationApi, type StrategyRecommendationResponse } from './backendApi';
+import { ApiError, createStrategyRecommendationApi, type StrategyRecommendationResponse } from './backendApi';
 
 const recommendation: StrategyRecommendationResponse = {
   recommendation_id: 'recommendation-1',
@@ -30,5 +30,17 @@ describe('strategy recommendation API', () => {
     }));
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect((init.headers as Headers).get('Authorization')).toBe('Bearer token-a');
+  });
+
+  it('선택 동의 오류의 backend code를 ApiError에 보존한다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: 'AI_PERSONALIZATION_CONSENT_REQUIRED',
+      message: 'AI 기반 맞춤형 서비스 이용 동의가 필요합니다.',
+    }), { status: 403 })));
+
+    const error = await createStrategyRecommendationApi('assessment-1', 'token-a').catch((reason) => reason);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ code: 'AI_PERSONALIZATION_CONSENT_REQUIRED', status: 403 });
   });
 });

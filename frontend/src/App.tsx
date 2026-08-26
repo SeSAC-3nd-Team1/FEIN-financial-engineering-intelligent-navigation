@@ -26,10 +26,10 @@ import StrategyDetail from './pages/StrategyDetail';
 import StrategyList from './pages/StrategyList';
 import TransactionDetail from './pages/TransactionDetail';
 import TransactionHistory from './pages/TransactionHistory';
-import { STRATEGIES } from './data/strategies';
 import { toAccountOperationMode, toOperationMode, type OperationMode } from './data/fees';
 import {
-  analyzeInvestorProfileApi, getMyAccountApi, sendEmailVerificationApi, signupTermsApi, verifyEmailVerificationApi,
+  analyzeInvestorProfileApi, ApiError, getMyAccountApi, getStrategiesApi, sendEmailVerificationApi, signupTermsApi,
+  verifyEmailVerificationApi, type StrategyRecommendationItemResponse, type StrategyResponse,
 } from './lib/backendApi';
 import { buildInvestorAnswerPayload, mapInvestorProfileResponse } from './lib/investorProfile';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
@@ -113,11 +113,37 @@ export default function App() {
     }
     setPersonal(next);
   };
-  // 전략 선택은 strategyId(=STRATEGIES 의 id) 하나만 상태로 두고, 화면별 표시 이름은 여기서 파생시킨다.
-  // (과거엔 strategyId 와 별도로 strategy 표시 이름을 따로 들고 있어, 전략 선택 후에도
-  //  StartInvesting/Portfolio 가 갱신되지 않는 불일치가 있었다.)
+  // 전략 선택은 실제 GET /strategies 카탈로그의 id 하나만 저장한다. 상세·투자 흐름에서 로컬 STRATEGIES
+  // 목업으로 되돌아가지 않도록 이름과 위험도 등 화면 데이터도 같은 실 카탈로그에서 파생한다.
   const [strategyId, setStrategyId] = useState<string>(persistedNav.strategyId ?? 'low');
-  const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
+  const [strategyCatalog, setStrategyCatalog] = useState<StrategyResponse[]>([]);
+  const [isStrategyCatalogLoading, setIsStrategyCatalogLoading] = useState(true);
+  const [strategyCatalogError, setStrategyCatalogError] = useState<string | null>(null);
+  const [strategyCatalogRetry, setStrategyCatalogRetry] = useState(0);
+  const [strategyRecommendation, setStrategyRecommendation] = useState<StrategyRecommendationItemResponse | null>(null);
+  const strategy = strategyCatalog.find((item) => item.id === strategyId) ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    setIsStrategyCatalogLoading(true);
+    setStrategyCatalogError(null);
+    getStrategiesApi()
+      .then((items) => {
+        if (cancelled) return;
+        if (items.length === 0) {
+          setStrategyCatalogError('현재 이용 가능한 전략이 없어요.');
+        } else {
+          setStrategyCatalog(items);
+        }
+        setIsStrategyCatalogLoading(false);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStrategyCatalogError(error instanceof Error ? error.message : '전략 목록을 불러오지 못했어요.');
+          setIsStrategyCatalogLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [strategyCatalogRetry]);
   const [stockCode, setStockCode] = useState(persistedNav.stockCode ?? '005930');
   // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio-detail로)
   const [stockBackTarget, setStockBackTarget] = useState<Screen>(persistedNav.stockBackTarget ?? 'portfolio-detail');
@@ -131,6 +157,7 @@ export default function App() {
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
+  const [riskErrorCode, setRiskErrorCode] = useState<string | null>(null);
   // 투자자 정보 확인(risk) 완료 버튼을 누른 뒤 백엔드 분석 응답을 기다리는 동안 true — 이 결과가
   // RiskResult/재로그인 복원의 Source of Truth이므로, 응답이 오기 전까지는 화면을 넘기지 않는다.
   const [isDiagnosisSubmitting, setIsDiagnosisSubmitting] = useState(false);
@@ -195,7 +222,7 @@ export default function App() {
     setInvestmentMode(ctxMode);
     setInFlightStep({ step, strategyId: ctxStrategyId, amount: ctxAmount, mode: ctxMode });
     if (step === 'invest-deposit' || step === 'invest-confirm') {
-      const ctxStrategyName = STRATEGIES.find((s) => s.id === ctxStrategyId)?.name ?? ctxStrategyId;
+      const ctxStrategyName = strategyCatalog.find((item) => item.id === ctxStrategyId)?.name ?? ctxStrategyId;
       deferDeposit({ strategyId: ctxStrategyId, strategyName: ctxStrategyName, amount: ctxAmount, mode: ctxMode });
     }
     setScreen(step);
@@ -397,6 +424,7 @@ export default function App() {
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
     setPostDiagnosisTarget(target);
     setRiskNotice(opts?.notice);
+    setRiskErrorCode(null);
     setScreen('risk');
   };
 
@@ -613,8 +641,16 @@ export default function App() {
           // postDiagnosisTarget이 'start'면 Strategy Detail "이 전략으로 시작하기"에서 온 것 —
           // 새 진입 state를 따로 만들지 않고 이미 있는 이 값을 그대로 재사용해 context를 판단한다.
           context={postDiagnosisTarget === 'start' ? 'strategy' : 'general'}
+          allowNonAiFallback={riskErrorCode === 'AI_PERSONALIZATION_CONSENT_REQUIRED'}
+          onContinueWithoutAi={() => {
+            setRiskNotice(undefined);
+            setRiskErrorCode(null);
+            setPostDiagnosisTarget('risk-result');
+            setScreen('strategy-list');
+          }}
           onComplete={async (answers) => {
             setIsDiagnosisSubmitting(true);
+            setRiskErrorCode(null);
             if (!accessToken) {
               setRiskNotice('로그인 상태를 확인할 수 없어요. 다시 로그인한 뒤 시도해주세요.');
               setIsDiagnosisSubmitting(false);
@@ -632,9 +668,11 @@ export default function App() {
                 response.assessment_id,
               );
               setRiskNotice(undefined);
+              setRiskErrorCode(null);
               setScreen(postDiagnosisTarget);
               setPostDiagnosisTarget('risk-result');
             } catch (error) {
+              setRiskErrorCode(error instanceof ApiError ? error.code : 'UNKNOWN_ERROR');
               setRiskNotice(error instanceof Error
                 ? error.message
                 : '투자성향을 분석하지 못했어요. 잠시 후 다시 시도해주세요.');
@@ -649,7 +687,17 @@ export default function App() {
         <RiskResult
           userName={userName}
           onNavigate={navigate}
-          onSelectStrategy={(id) => { setStrategyId(id); setScreen('strategy'); }}
+          onSelectStrategy={(selectedStrategy, selectedRecommendation) => {
+            setStrategyId(selectedStrategy.id);
+            // RiskResult가 방금 사용한 실제 카탈로그 객체를 그대로 이어받는다. App의 병렬 카탈로그
+            // 조회가 아직 끝나지 않았거나 일시 실패해도 상세 화면이 로컬 목업으로 되돌아가지 않는다.
+            setStrategyCatalog((current) => [
+              ...current.filter((item) => item.id !== selectedStrategy.id),
+              selectedStrategy,
+            ]);
+            setStrategyRecommendation(selectedRecommendation);
+            setScreen('strategy');
+          }}
         />
       )}
       {screen === 'investor-check' && (
@@ -665,12 +713,18 @@ export default function App() {
         <StrategyList
           userName={userName}
           onNavigate={navigate}
-          onSelectStrategy={(id) => { setStrategyId(id); setScreen('strategy'); }}
+          strategies={strategyCatalog}
+          isLoading={isStrategyCatalogLoading}
+          error={strategyCatalogError}
+          onRetry={() => setStrategyCatalogRetry((value) => value + 1)}
+          onSelectStrategy={(id) => { setStrategyId(id); setStrategyRecommendation(null); setScreen('strategy'); }}
         />
       )}
-      {screen === 'strategy' && (
+      {screen === 'strategy' && strategy && (
         <StrategyDetail
-          strategyId={strategyId}
+          strategy={strategy}
+          strategyCatalog={strategyCatalog}
+          recommendation={strategyRecommendation?.strategy_id === strategy.id ? strategyRecommendation : null}
           userName={userName}
           onNavigate={navigate}
           onStart={handleStartInvesting}
@@ -688,7 +742,20 @@ export default function App() {
           }}
         />
       )}
-      {screen === 'start' && (
+      {screen === 'strategy' && !strategy && (
+        <main className="flex min-h-screen flex-col items-center justify-center gap-5 bg-canvas px-8 text-center" role="alert">
+          <h1 className="text-[28px] font-bold">전략 정보를 불러오지 못했어요</h1>
+          <p className="text-base text-muted">
+            {isStrategyCatalogLoading ? '현재 전략 목록을 확인하고 있어요.' : (strategyCatalogError ?? '선택한 전략을 현재 목록에서 찾을 수 없어요.')}
+          </p>
+          {strategyCatalogError && (
+            <button onClick={() => setStrategyCatalogRetry((value) => value + 1)} className="rounded-field bg-lime px-8 py-4 text-base font-bold text-navy">
+              다시 시도하기
+            </button>
+          )}
+        </main>
+      )}
+      {screen === 'start' && strategy && (
         <StartInvesting
           userName={userName}
           strategyName={strategy.name}
@@ -697,7 +764,7 @@ export default function App() {
           onSelectStock={(code) => { setStockCode(code); setStockBackTarget('start'); setScreen('stock'); }}
         />
       )}
-      {screen === 'invest-terms' && (
+      {screen === 'invest-terms' && strategy && (
         <InvestTerms
           userName={userName}
           strategy={strategy}
@@ -717,7 +784,7 @@ export default function App() {
           }}
         />
       )}
-      {screen === 'invest-account' && (
+      {screen === 'invest-account' && strategy && (
         <InvestAccount
           userName={userName}
           strategyName={strategy.name}
@@ -738,7 +805,7 @@ export default function App() {
           }}
         />
       )}
-      {screen === 'invest-deposit' && sesacAccount && (
+      {screen === 'invest-deposit' && sesacAccount && strategy && (
         <InvestDeposit
           userName={userName}
           strategyName={strategy.name}
@@ -766,7 +833,7 @@ export default function App() {
           }}
         />
       )}
-      {screen === 'invest-confirm' && sesacAccount && (
+      {screen === 'invest-confirm' && sesacAccount && strategy && (
         <InvestConfirm
           userName={userName}
           strategyName={strategy.name}
@@ -794,7 +861,7 @@ export default function App() {
 
       {screen === 'information' && <InformationExam userName={userName} onNavigate={navigate} />}
 
-      {screen === 'dashboard' && (
+      {screen === 'dashboard' && strategy && (
         <Dashboard
           userName={userName}
           strategyName={strategy.name}
