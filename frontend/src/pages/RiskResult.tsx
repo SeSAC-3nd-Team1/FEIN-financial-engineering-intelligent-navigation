@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Info } from 'lucide-react';
 import Header from '../components/Header';
+import { getBacktestAvailableRange, runBacktest } from '../data/backtestApi';
+import { getRecommendedPeriods } from '../data/backtestPeriods';
 import {
   ApiError,
   createStrategyRecommendationApi,
@@ -9,7 +11,7 @@ import {
   type StrategyResponse,
 } from '../lib/backendApi';
 import { useAuthStore } from '../store/authStore';
-import type { Screen } from '../types';
+import type { BacktestResult, Screen } from '../types';
 
 interface Props {
   userName: string;
@@ -31,6 +33,7 @@ const REBALANCE_LABEL: Record<string, string> = {
 interface RecommendationView {
   recommendation: StrategyRecommendationItemResponse;
   strategy: StrategyResponse;
+  backtest: BacktestResult | null;
 }
 
 interface LoadError {
@@ -38,7 +41,8 @@ interface LoadError {
   message: string;
 }
 
-const fitPercent = (item: StrategyRecommendationItemResponse) => `${Math.round(item.score * 100)}%`;
+const signedPercent = (value: number) => `${value > 0 ? '+' : ''}${value}%`;
+const percent = (value: number) => `${value}%`;
 
 /** 02 결과 — develop의 카드 구조는 유지하고, 표시 값만 실제 추천·전략 카탈로그 응답으로 채운다. */
 export default function RiskResult({ userName, onNavigate, onSelectStrategy }: Props) {
@@ -62,16 +66,28 @@ export default function RiskResult({ userName, onNavigate, onSelectStrategy }: P
     setLoading(true);
     setError(null);
     try {
-      const [recommendation, catalog] = await Promise.all([
+      const [recommendation, catalog, availableRange] = await Promise.all([
         createStrategyRecommendationApi(assessmentId, accessToken),
         getStrategiesApi(),
+        getBacktestAvailableRange(),
       ]);
       const byId = new Map(catalog.map((item) => [item.id, item]));
-      const items = [recommendation.primary, ...recommendation.alternatives].map((item) => {
+      const recentFiveYears = getRecommendedPeriods(availableRange).find((period) => period.id === 'recent-5y');
+      if (!recentFiveYears) throw new ApiError('BACKTEST_PERIOD_UNAVAILABLE', '최근 5년 백테스트 기간을 확인할 수 없어요.', 500);
+      const catalogItems = [recommendation.primary, ...recommendation.alternatives].map((item) => {
         const strategy = byId.get(item.strategy_id);
         if (!strategy) throw new ApiError('STRATEGY_CATALOG_MISMATCH', '추천 결과와 현재 전략 목록이 일치하지 않아요.', 500);
         return { recommendation: item, strategy };
       });
+      // 일부 전략(현재 value)은 실제 백테스트 데이터 준비 전일 수 있다. 해당 전략 하나 때문에
+      // 추천 전체를 실패시키거나 목업 수치로 되돌리지 않고, 그 카드의 지표만 '-'로 표시한다.
+      const items = await Promise.all(catalogItems.map(async (item) => {
+        try {
+          return { ...item, backtest: await runBacktest(item.strategy.id, item.strategy.name, recentFiveYears) };
+        } catch {
+          return { ...item, backtest: null };
+        }
+      }));
       setHero(items[0]);
       setAlternatives(items.slice(1));
       setPicked(items[0].strategy.id);
@@ -132,7 +148,7 @@ export default function RiskResult({ userName, onNavigate, onSelectStrategy }: P
             <section className="flex flex-col gap-8">
               <div className="flex flex-col gap-3.5">
                 <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">이 성향을 바탕으로 전략을 찾아봤어요</h2>
-                <p className="text-lg leading-[30px] text-muted">AI가 답변과 전략의 위험 특성을 함께 비교했어요. 추천은 참고용이고, 최종 선택은 {userName}님이 해요.</p>
+                <p className="text-lg leading-[30px] text-muted">AI가 답변과 전략의 과거 위험 특성을 함께 비교했어요. 추천은 참고용이고, 최종 선택은 {userName}님이 해요.</p>
               </div>
 
               <button
@@ -147,16 +163,18 @@ export default function RiskResult({ userName, onNavigate, onSelectStrategy }: P
                     <span className="text-[22px] font-bold text-[#3F5222]">{MATCH_LABEL[hero.recommendation.match_level]}</span>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    <span className="text-[15px] text-muted">투자성향 기준</span>
-                    <span className="text-[40px] font-bold tracking-[-0.035em]">{fitPercent(hero.recommendation)}</span>
-                    <span className="text-base text-muted">적합도 · 위험도 {RISK_LABEL[hero.strategy.risk_level] ?? hero.strategy.risk_level}</span>
+                    <span className="text-[15px] text-muted">최근 5년 기준</span>
+                    <span className="text-[40px] font-bold tracking-[-0.035em]">{hero.backtest ? signedPercent(hero.backtest.metrics.cagr) : '-'}</span>
+                    <span className="text-base text-muted">
+                      {hero.backtest ? '연평균 수익률' : '백테스트 준비 중'} · 위험도 {RISK_LABEL[hero.strategy.risk_level] ?? hero.strategy.risk_level}
+                    </span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-4 gap-8 border-t border-[#F0F2ED] pb-1 pt-7">
-                  <Fact label="위험도" value={RISK_LABEL[hero.strategy.risk_level] ?? hero.strategy.risk_level} accent={hero.strategy.risk_level === 'HIGH'} />
-                  <Fact label="적합도" value={fitPercent(hero.recommendation)} />
-                  <Fact label="추천 순위" value={`${hero.recommendation.rank}순위`} />
+                  <Fact label="최대 손실(MDD)" value={hero.backtest ? percent(hero.backtest.metrics.mdd) : '-'} accent />
+                  <Fact label="변동성(연)" value={hero.backtest ? percent(hero.backtest.metrics.volatility) : '-'} />
+                  <Fact label="샤프 지수" value={hero.backtest?.metrics.sharpe == null ? '-' : String(hero.backtest.metrics.sharpe)} />
                   <Fact label="리밸런싱" value={REBALANCE_LABEL[hero.strategy.rebalance_cycle] ?? hero.strategy.rebalance_cycle} />
                 </div>
 
@@ -191,10 +209,12 @@ export default function RiskResult({ userName, onNavigate, onSelectStrategy }: P
                       <span className="text-[19px] font-bold text-[#3F4A43]">{MATCH_LABEL[item.recommendation.match_level]}</span>
                     </div>
                     <div className="flex items-baseline gap-3">
-                      <span className="text-[26px] font-bold tracking-[-0.03em]">{fitPercent(item.recommendation)}</span>
-                      <span className="text-base text-muted">적합도 · 위험도 {RISK_LABEL[item.strategy.risk_level] ?? item.strategy.risk_level}</span>
+                      <span className="text-[26px] font-bold tracking-[-0.03em]">{item.backtest ? signedPercent(item.backtest.metrics.cagr) : '-'}</span>
+                      <span className="text-base text-muted">{item.backtest ? '연평균' : '백테스트 준비 중'} · 위험도 {RISK_LABEL[item.strategy.risk_level] ?? item.strategy.risk_level}</span>
                     </div>
-                    <span className="text-base text-muted">추천 {item.recommendation.rank}순위 · 리밸런싱 {REBALANCE_LABEL[item.strategy.rebalance_cycle] ?? item.strategy.rebalance_cycle}</span>
+                    <span className="text-base text-muted">
+                      MDD {item.backtest ? percent(item.backtest.metrics.mdd) : '-'} · 변동성 {item.backtest ? percent(item.backtest.metrics.volatility) : '-'} · 샤프 {item.backtest?.metrics.sharpe == null ? '-' : item.backtest.metrics.sharpe}
+                    </span>
                     <span className="text-[17px] font-semibold text-navy">자세히 보기 →</span>
                   </button>
                 ))}
@@ -202,7 +222,7 @@ export default function RiskResult({ userName, onNavigate, onSelectStrategy }: P
             </section>
           )}
 
-          <p className="text-sm leading-[22px] text-subtle">※ 적합도는 예상수익률이나 성공확률이 아니며, 투자성향과 전략 특성의 일치 정도를 나타냅니다.</p>
+          <p className="text-sm leading-[22px] text-subtle">※ 백테스트 수익률은 과거 데이터 기반 예시이며 미래 수익을 보장하지 않습니다. 데이터 준비 중인 전략은 지표를 '-'로 표시합니다.</p>
         </div>
       </main>
     </div>

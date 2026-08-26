@@ -68,6 +68,11 @@ const PROTECTED_SCREENS: Screen[] = [
 /** 투자 시작 Flow(약관~최종확인) 화면 목록 — Header 등으로 이 밖으로 나가면 inFlight(새로고침 복원용 진행 상태)를 정리한다 */
 const INVEST_FLOW_SCREENS: Screen[] = ['invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm'];
 
+/** 실제 전략 카탈로그 객체가 있어야 내용을 안전하게 렌더링할 수 있는 화면들. */
+const STRATEGY_DATA_SCREENS: Screen[] = [
+  'strategy', 'start', 'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm', 'dashboard',
+];
+
 /**
  * 라우팅 상태 머신 — 전체 사용자 흐름
  *
@@ -742,13 +747,15 @@ export default function App() {
           }}
         />
       )}
-      {screen === 'strategy' && !strategy && (
+      {STRATEGY_DATA_SCREENS.includes(screen) && !strategy && (
         <main className="flex min-h-screen flex-col items-center justify-center gap-5 bg-canvas px-8 text-center" role="alert">
-          <h1 className="text-[28px] font-bold">전략 정보를 불러오지 못했어요</h1>
+          <h1 className="text-[28px] font-bold">
+            {isStrategyCatalogLoading ? '전략 정보를 불러오고 있어요' : '전략 정보를 불러오지 못했어요'}
+          </h1>
           <p className="text-base text-muted">
             {isStrategyCatalogLoading ? '현재 전략 목록을 확인하고 있어요.' : (strategyCatalogError ?? '선택한 전략을 현재 목록에서 찾을 수 없어요.')}
           </p>
-          {strategyCatalogError && (
+          {!isStrategyCatalogLoading && (
             <button onClick={() => setStrategyCatalogRetry((value) => value + 1)} className="rounded-field bg-lime px-8 py-4 text-base font-bold text-navy">
               다시 시도하기
             </button>
