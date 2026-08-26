@@ -28,7 +28,9 @@ import TransactionDetail from './pages/TransactionDetail';
 import TransactionHistory from './pages/TransactionHistory';
 import { STRATEGIES } from './data/strategies';
 import { toAccountOperationMode, toOperationMode, type OperationMode } from './data/fees';
-import { analyzeInvestorProfileApi, getMyAccountApi, signupTermsApi } from './lib/backendApi';
+import {
+  analyzeInvestorProfileApi, getMyAccountApi, sendEmailVerificationApi, signupTermsApi, verifyEmailVerificationApi,
+} from './lib/backendApi';
 import { buildInvestorAnswerPayload, computeInvestorProfile, mapInvestorProfileResponse } from './lib/investorProfile';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
@@ -90,9 +92,27 @@ export default function App() {
   const [persistedNav] = useState(loadPersistedNav);
   const [screen, setScreen] = useState<Screen>(persistedNav.screen ?? 'home');
   const [personal, setPersonal] = useState<SignupPersonal>({
-    name: '', birthdate: '', phone: '', aiPersonalizationConsent: false,
-    agreements: { a1: false, a2: false, a3: false, a4: false, b: false, c: false, ai: false },
+    name: '', birthdate: '', email: '', aiPersonalizationConsent: false,
+    agreements: { b: false, c: false, ai: false },
   });
+  /** 회원가입 Step 02(이메일 인증) 진행 상태 — 화면 전환과 무관하게 App.tsx가 들고 있어야
+   *  Step 02/03 사이를 오가도(뒤로가기) 인증 완료 상태가 유지된다. email이 바뀌면(Step 01 재수정)
+   *  반드시 초기화한다 — 아래 handlePersonalChange 참고. */
+  const [emailVerification, setEmailVerification] = useState<{
+    email: string;
+    verificationId: string;
+    expiresInSeconds: number;
+    resendAfterSeconds: number;
+    token: string | null;
+  } | null>(null);
+  /** SignupStep1에 onChange로 넘기는 wrapper — value.email이 실제로 바뀐 순간에만 기존 이메일
+   *  인증 상태를 reset한다(단순 리렌더/다른 필드 수정으로는 reset하지 않는다). */
+  const handlePersonalChange = (next: SignupPersonal) => {
+    if (emailVerification && next.email !== personal.email) {
+      setEmailVerification(null);
+    }
+    setPersonal(next);
+  };
   // 전략 선택은 strategyId(=STRATEGIES 의 id) 하나만 상태로 두고, 화면별 표시 이름은 여기서 파생시킨다.
   // (과거엔 strategyId 와 별도로 strategy 표시 이름을 따로 들고 있어, 전략 선택 후에도
   //  StartInvesting/Portfolio 가 갱신되지 않는 불일치가 있었다.)
@@ -486,16 +506,47 @@ export default function App() {
       {screen === 'signup-1' && (
         <SignupStep1
           value={personal}
-          onChange={setPersonal}
-          onNext={() => setScreen('signup-2')}
+          onChange={handlePersonalChange}
+          // 이메일로 인증번호 발송 성공 시에만 Step 02로 이동 — 실패하면 여기서 throw해 Step1이 에러를 보여준다.
+          onRequestEmailVerification={async (email) => {
+            const result = await sendEmailVerificationApi(email);
+            setEmailVerification({
+              email,
+              verificationId: result.verification_id,
+              expiresInSeconds: result.expires_in_seconds,
+              resendAfterSeconds: result.resend_after_seconds,
+              token: null,
+            });
+            setScreen('signup-2');
+          }}
           userName={userName}
           onNavigate={navigate}
         />
       )}
       {screen === 'signup-2' && (
         <SignupStep2
-          phone={personal.phone}
-          onNext={() => setScreen('signup-3')}
+          email={emailVerification?.email ?? personal.email}
+          verified={emailVerification?.token != null}
+          expiresInSeconds={emailVerification?.expiresInSeconds ?? 300}
+          resendAfterSeconds={emailVerification?.resendAfterSeconds ?? 60}
+          onResend={async () => {
+            if (!emailVerification) throw new Error('이메일 정보를 찾을 수 없어요. 처음부터 다시 시도해주세요.');
+            const result = await sendEmailVerificationApi(emailVerification.email);
+            setEmailVerification({
+              email: emailVerification.email,
+              verificationId: result.verification_id,
+              expiresInSeconds: result.expires_in_seconds,
+              resendAfterSeconds: result.resend_after_seconds,
+              token: null,
+            });
+          }}
+          onVerify={async (code) => {
+            if (!emailVerification) throw new Error('이메일 정보를 찾을 수 없어요. 처음부터 다시 시도해주세요.');
+            const result = await verifyEmailVerificationApi(emailVerification.verificationId, code);
+            setEmailVerification({ ...emailVerification, token: result.verification_token });
+            setScreen('signup-3');
+          }}
+          onContinue={() => setScreen('signup-3')}
           onBack={() => setScreen('signup-1')}
           userName={userName}
           onNavigate={navigate}
@@ -504,12 +555,11 @@ export default function App() {
       {screen === 'signup-3' && (
         <SignupStep3
           // 가입 API 성공 후 JWT 로그인까지 완료하고 투자자 정보 확인으로 이동한다.
-          onComplete={async (userId, password, email) => {
+          onComplete={async (userId, password, phone) => {
+            if (!emailVerification?.token) {
+              throw new Error('이메일 인증이 필요해요. 이메일 인증을 다시 진행해주세요.');
+            }
             const termCodeByAgreement = {
-              a1: 'A1_THIRD_PARTY',
-              a2: 'A2_UNIQUE_ID',
-              a3: 'A3_CARRIER',
-              a4: 'A4_KCB',
               b: 'B_PRIVACY',
               c: 'C_ASSOCIATE_TERMS',
               ai: 'AI_PERSONALIZATION',
@@ -526,16 +576,16 @@ export default function App() {
               password,
               name: personal.name.trim(),
               birthdate: personal.birthdate,
-              phone_number: personal.phone,
-              email,
-              phone_verified: true,
-              email_verified: true,
+              phone_number: phone,
+              email: personal.email,
+              email_verification_token: emailVerification.token,
               agreements: terms.map((term) => ({
                 term_code: term.term_code,
                 version: term.version,
                 agreed: agreementByTermCode[term.term_code] ?? false,
               })),
             });
+            setEmailVerification(null);
             startInvestorProfile('risk-result');
           }}
           onBack={() => setScreen('signup-2')}

@@ -16,9 +16,20 @@ export interface SignupPayload {
   birthdate: string;
   phone_number: string;
   email: string;
-  phone_verified: boolean;
-  email_verified: boolean;
+  /** 이메일 인증 완료 시 /auth/email-verifications/verify가 발급하는 1회용 증명 토큰 */
+  email_verification_token: string;
   agreements: { term_code: string; version: string; agreed: boolean }[];
+}
+
+export interface EmailVerificationSendResponse {
+  verification_id: string;
+  expires_in_seconds: number;
+  resend_after_seconds: number;
+}
+
+export interface EmailVerificationVerifyResponse {
+  verification_token: string;
+  expires_in_seconds: number;
 }
 
 export interface SignupTerm {
@@ -321,6 +332,18 @@ export function currentUserApi(token: string): Promise<AuthUser> {
 
 export function signupApi(payload: SignupPayload): Promise<AuthUser> {
   return request<AuthUser>('/auth/signup', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function sendEmailVerificationApi(email: string): Promise<EmailVerificationSendResponse> {
+  return request<EmailVerificationSendResponse>('/auth/email-verifications/send', {
+    method: 'POST', body: JSON.stringify({ email }),
+  });
+}
+
+export function verifyEmailVerificationApi(verificationId: string, code: string): Promise<EmailVerificationVerifyResponse> {
+  return request<EmailVerificationVerifyResponse>('/auth/email-verifications/verify', {
+    method: 'POST', body: JSON.stringify({ verification_id: verificationId, code }),
+  });
 }
 
 export function signupTermsApi(): Promise<SignupTerm[]> {

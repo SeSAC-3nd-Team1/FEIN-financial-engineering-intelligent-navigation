@@ -9,35 +9,30 @@ export type Screen =
   | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail'
   | 'rebalance-alerts' | 'all-holdings';
 
-/** 온보딩 Step 01 폼 값 */
+/** 온보딩 Step 01 폼 값 — 이메일 인증만 쓰는 정책으로, email도 여기서 함께 입력받는다(인증 자체는 Step 02) */
 export interface SignupPersonal {
   name: string;
   birthdate: string;   // YYMMDD 6자리
-  phone: string;       // 숫자만
+  email: string;
   /** [선택] AI 기반 맞춤형 서비스 제공을 위한 개인정보 이용 동의 — 회원가입 가능 여부에는 영향 없음 */
   aiPersonalizationConsent: boolean;
   agreements: Agreements;
 }
 
-/** 동의 항목 — a1~a4·b·c는 필수(모두 true 여야 인증번호 받기 활성화), ai는 선택(회원가입 가능 여부와 무관) */
+/** 동의 항목 — b·c는 필수(모두 true 여야 이메일 인증 진행 가능), ai는 선택(회원가입 가능 여부와 무관).
+ *  휴대폰 SMS/KCB/통신사 본인확인 관련 동의(구 a1~a4)는 더 이상 회원가입에서 요구하지 않아 제거했다. */
 export interface Agreements {
-  a1: boolean; // 제3자 개인정보 제공 (KT, LGU+, SKT 알뜰폰)
-  a2: boolean; // 고유식별정보 처리
-  a3: boolean; // 통신사 이용약관
-  a4: boolean; // KCB 휴대폰 본인확인 약관
-  b: boolean;  // 개인정보 수집·이용 (회원가입/본인인증)
-  c: boolean;  // 준회원 이용약관
+  b: boolean;  // 개인정보 수집·이용 동의
+  c: boolean;  // 준회원 이용약관 동의
   ai: boolean; // [선택] AI 기반 맞춤형 서비스 제공을 위한 개인정보 이용 동의
 }
 
-/** Step 03 계정 정보 */
+/** Step 03 계정 정보 — email은 Step 01/02에서 이미 입력·인증 완료된 상태라 여기서는 다루지 않는다 */
 export interface Credentials {
   userId: string;
   password: string;
   passwordConfirm: string;
-  email: string;
-  emailOtp: string;
-  emailVerified: boolean;
+  phone: string;
 }
 
 export interface Holding {
