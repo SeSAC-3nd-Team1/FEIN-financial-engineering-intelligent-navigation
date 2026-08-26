@@ -59,7 +59,11 @@ Azure Blob Features
 Model / Backtest
 ```
 
-KRX와 ECOS는 위 파생 흐름까지 자동화한다. OpenDART는 이 버전에서 원문 Raw와 PostgreSQL 정규화 원장을 먼저 구축한다. 재무정보를 가격 Feature와 결합하려면 실제 공시 접수시각을 이용한 Point-in-Time JOIN이 필요하므로, 미래정보 누출을 막기 위해 자동 학습 JOIN은 아직 수행하지 않는다.
+KRX와 ECOS는 위 파생 흐름까지 자동화한다. OpenDART는 공시 이벤트와 재무계정을
+월별 Processed Parquet으로 정규화한다. 공시 목록은 실제 `rcept_dt`를 가용일로 사용하지만,
+재무 API 응답에는 접수번호·접수일 연결 정보가 없으므로 재무계정은
+`point_in_time_join_ready=false`로 표시한다. 검증된 연결 전에는 가격 Feature와 자동
+JOIN하지 않는다.
 
 ## 저장소별 역할
 
@@ -78,6 +82,14 @@ KRX와 ECOS는 위 파생 흐름까지 자동화한다. OpenDART는 이 버전�
 - `model_stock_daily/version=v2`
 - `market_index_daily/version=v2`
 - ECOS macro feature `version=v2`
+
+OpenDART는 다음 Processed schema v2를 제공한다.
+
+- `opendart_disclosures/operation=disclosure_market/schema=v2`
+- `opendart_financial_accounts/operation=financial_multi/schema=v2`
+
+두 경로는 모델 담당자에게 같은 readiness를 의미하지 않는다. 공시는 `event_ready`, 재무는
+접수일 연결 전까지 `research_only_until_receipt_linkage`다.
 
 ### PostgreSQL
 
@@ -98,6 +110,16 @@ KRX와 ECOS는 위 파생 흐름까지 자동화한다. OpenDART는 이 버전�
 5. ECOS Raw → Processed v2 → Features v2 → Audit
 6. OpenDART corpCode → 재무 주요계정 → 공시 백필
 7. 실행 state 및 report 저장
+
+Raw 수집이 끝난 뒤 2018 coverage 보유 데이터만 전처리·감사하려면 다음 명령을 사용한다.
+
+```bash
+docker compose --profile data run --rm --no-deps data \
+  python -m scripts.preprocess_model_2018
+```
+
+이 명령은 KRX·ECOS Features와 OpenDART Processed를 생성한 뒤 실제 manifest 범위를
+검사하고 `_manifests/doyoung-2018/version=v2/manifest.json`에 모델 전달 상태를 기록한다.
 
 ## 재실행 / 복구
 

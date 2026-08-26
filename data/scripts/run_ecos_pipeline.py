@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
         "--stage", choices=("raw", "processed", "features", "audit", "all"), default="all",
     )
     parser.add_argument("--series", action="append", choices=sorted(ECOS_SERIES))
-    parser.add_argument("--start-date", type=date.fromisoformat, default=date(2021, 1, 1))
+    parser.add_argument("--start-date", type=date.fromisoformat, default=date(2018, 1, 1))
     parser.add_argument("--end-date", type=date.fromisoformat, default=date.today())
     parser.add_argument("--incremental", action="store_true")
     parser.add_argument("--validate-metadata", action="store_true")
