@@ -31,7 +31,7 @@ import { toAccountOperationMode, toOperationMode, type OperationMode } from './d
 import {
   analyzeInvestorProfileApi, getMyAccountApi, sendEmailVerificationApi, signupTermsApi, verifyEmailVerificationApi,
 } from './lib/backendApi';
-import { buildInvestorAnswerPayload, computeInvestorProfile, mapInvestorProfileResponse } from './lib/investorProfile';
+import { buildInvestorAnswerPayload, mapInvestorProfileResponse } from './lib/investorProfile';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
@@ -615,27 +615,32 @@ export default function App() {
           context={postDiagnosisTarget === 'start' ? 'strategy' : 'general'}
           onComplete={async (answers) => {
             setIsDiagnosisSubmitting(true);
-            // 백엔드 AI 분석(investor_profile_assessments)이 Source of Truth다 — RiskResult와 재로그인
-            // 복원(hydrateInvestorProfile)이 모두 이 결과를 그대로 쓴다. 로컬 computeInvestorProfile()은
-            // 토큰이 없거나(이 화면은 로그인 후에만 진입하므로 사실상 발생하지 않음) API 호출이 실패했을
-            // 때만 쓰는 fallback이다.
-            let profile = computeInvestorProfile(answers);
-            if (accessToken) {
-              try {
-                const response = await analyzeInvestorProfileApi(
-                  { questionnaire_version: 'v1', answers: buildInvestorAnswerPayload(answers) },
-                  accessToken,
-                );
-                profile = mapInvestorProfileResponse(response);
-              } catch {
-                // AI_PERSONALIZATION 약관 비동의/일시 오류 — 로컬 계산 결과로 흐름을 이어간다.
-              }
+            if (!accessToken) {
+              setRiskNotice('로그인 상태를 확인할 수 없어요. 다시 로그인한 뒤 시도해주세요.');
+              setIsDiagnosisSubmitting(false);
+              return;
             }
-            completeInvestorProfile(profile, answers, new Date().toISOString());
-            setIsDiagnosisSubmitting(false);
-            setRiskNotice(undefined);
-            setScreen(postDiagnosisTarget);
-            setPostDiagnosisTarget('risk-result');
+            try {
+              const response = await analyzeInvestorProfileApi(
+                { questionnaire_version: 'v1', answers: buildInvestorAnswerPayload(answers) },
+                accessToken,
+              );
+              completeInvestorProfile(
+                mapInvestorProfileResponse(response),
+                answers,
+                response.created_at,
+                response.assessment_id,
+              );
+              setRiskNotice(undefined);
+              setScreen(postDiagnosisTarget);
+              setPostDiagnosisTarget('risk-result');
+            } catch (error) {
+              setRiskNotice(error instanceof Error
+                ? error.message
+                : '투자성향을 분석하지 못했어요. 잠시 후 다시 시도해주세요.');
+            } finally {
+              setIsDiagnosisSubmitting(false);
+            }
           }}
           onExit={() => setScreen('home')}
         />

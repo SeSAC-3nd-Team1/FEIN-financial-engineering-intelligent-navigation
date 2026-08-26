@@ -208,6 +208,12 @@ export default function RiskProfile({ onComplete, onExit, notice, isSubmitting, 
             </p>
           </div>
 
+          {notice && (
+            <div role="alert" className="rounded-[16px] bg-[#FDF1E0] px-6 py-4 text-base font-semibold text-warn">
+              {notice}
+            </div>
+          )}
+
           <div className="flex flex-col gap-6">
             {REVIEW_GROUPS.map((group) => (
               <div key={group} className="flex flex-col gap-1 rounded-card bg-surface p-9">
