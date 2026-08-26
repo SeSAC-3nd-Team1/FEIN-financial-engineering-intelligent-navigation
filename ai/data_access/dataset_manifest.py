@@ -145,7 +145,11 @@ def validate_partition_schemas(frames: Sequence[pd.DataFrame]) -> str:
     if not frames:
         raise DatasetValidationError(["dataset has no Parquet partitions"])
     expected = schema_descriptor(frames[0])
-    mismatches = [index for index, frame in enumerate(frames[1:], start=1) if schema_descriptor(frame) != expected]
+    mismatches = [
+        index
+        for index, frame in enumerate(frames[1:], start=1)
+        if schema_descriptor(frame) != expected
+    ]
     if mismatches:
         raise DatasetValidationError([f"partition schema mismatch at indexes: {mismatches}"])
     return schema_fingerprint(frames[0])
@@ -155,7 +159,11 @@ def _missing_rates(frame: pd.DataFrame, columns: Iterable[str]) -> dict[str, flo
     return {column: float(frame[column].isna().mean()) for column in columns}
 
 
-def _validate_numeric_finite(frame: pd.DataFrame, columns: Iterable[str], issues: list[str]) -> None:
+def _validate_numeric_finite(
+    frame: pd.DataFrame,
+    columns: Iterable[str],
+    issues: list[str],
+) -> None:
     for column in columns:
         numeric = pd.to_numeric(frame[column], errors="coerce")
         original_non_null = frame[column].notna()
@@ -239,7 +247,11 @@ def validate_feature_dataset(
         eligible = data[eligible_column].fillna(False).astype(bool)
         eligible_counts[eligible_column] = int(eligible.sum())
 
-        invalid_observation = target_dates.notna() & trade_dates.notna() & target_dates.le(trade_dates)
+        invalid_observation = (
+            target_dates.notna()
+            & trade_dates.notna()
+            & target_dates.le(trade_dates)
+        )
         if invalid_observation.any():
             issues.append(f"{date_column} must be later than trade_date")
         incomplete = eligible & (target_dates.isna() | data[target_column].isna())
@@ -258,7 +270,11 @@ def validate_feature_dataset(
                 f"{int(inconsistent.sum())} rows"
             )
         for split, split_end in split_ends.items():
-            crosses_boundary = eligible & data[contract.split_column].eq(split) & target_dates.gt(split_end)
+            crosses_boundary = (
+                eligible
+                & data[contract.split_column].eq(split)
+                & target_dates.gt(split_end)
+            )
             if crosses_boundary.any():
                 issues.append(f"{eligible_column} crosses {split} split boundary")
 
@@ -293,7 +309,9 @@ def build_training_manifest(
         raise DatasetValidationError(["file identities must match Parquet partitions"])
     if len({file.path for file in files}) != len(files):
         raise DatasetValidationError(["feature file paths must be unique"])
-    partitions = tuple(sorted(zip(files, frames, strict=True), key=lambda item: item[0].path))
+    partitions = tuple(
+        sorted(zip(files, frames, strict=True), key=lambda item: item[0].path)
+    )
     normalized_files = tuple(file for file, _ in partitions)
     normalized_frames = tuple(frame for _, frame in partitions)
     fingerprint = validate_partition_schemas(normalized_frames)
@@ -317,5 +335,8 @@ def build_training_manifest(
         manifest_id=manifest_id,
         files=normalized_files,
         report=report,
-        **{key: identity[key] for key in ("manifest_version", "dataset", "version", "schema_fingerprint")},
+        **{
+            key: identity[key]
+            for key in ("manifest_version", "dataset", "version", "schema_fingerprint")
+        },
     )
