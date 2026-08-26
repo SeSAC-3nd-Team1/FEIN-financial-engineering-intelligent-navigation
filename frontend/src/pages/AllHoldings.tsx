@@ -34,9 +34,10 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
 
-  // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — PortfolioDetail 과 동일한 대체 규칙.
+  // 실 계좌가 있으면 포지션을 그대로(0개여도) 쓰고, 계좌 자체가 없을 때만 목업 20종목을 쓴다 —
+  // PortfolioDetail 과 동일한 대체 규칙.
   const ALL_HOLDINGS = useMemo(() => {
-    if (!portfolio || portfolio.positions.length === 0) return MOCK_HOLDINGS;
+    if (!portfolio) return MOCK_HOLDINGS;
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
@@ -107,6 +108,13 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
                   </tr>
                 </thead>
                 <tbody>
+                  {sortedHoldings.length === 0 && (
+                    <tr>
+                      <td colSpan={HOLDINGS_COLUMNS.length} className="py-10 text-center text-[15px] text-subtle">
+                        아직 보유 중인 종목이 없어요.
+                      </td>
+                    </tr>
+                  )}
                   {sortedHoldings.map((h) => {
                     const stockCode = STOCK_INFO[h.name]?.code;
                     const alert = AI_ALERTS.find((a) => a.stockName === h.name);

@@ -32,7 +32,8 @@ const BACK_LABEL: Partial<Record<Screen, string>> = {
 export default function TransactionDetail({ transactionId, backTarget, userName, onNavigate, onBack }: Props) {
   useTradingData();
   const executions = useTradingStore((state) => state.executions);
-  const transactions = useMemo(() => getDisplayTransactions(executions), [executions]);
+  const account = useTradingStore((state) => state.account);
+  const transactions = useMemo(() => getDisplayTransactions(executions, account !== null), [executions, account]);
   const t = transactions.find((item) => item.id === transactionId);
   const backLabel = BACK_LABEL[backTarget] ?? '이전으로 돌아가기';
 

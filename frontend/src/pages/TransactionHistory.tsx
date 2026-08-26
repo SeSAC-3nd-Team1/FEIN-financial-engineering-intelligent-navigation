@@ -23,7 +23,8 @@ const TX_BADGE: Record<TransactionRecord['type'], string> = {
 export default function TransactionHistory({ userName, onNavigate, onSelectTransaction, onBack }: Props) {
   useTradingData();
   const executions = useTradingStore((state) => state.executions);
-  const transactions = useMemo(() => getDisplayTransactions(executions), [executions]);
+  const account = useTradingStore((state) => state.account);
+  const transactions = useMemo(() => getDisplayTransactions(executions, account !== null), [executions, account]);
 
   return (
     <div className="min-h-screen bg-canvas">
