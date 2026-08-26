@@ -365,6 +365,14 @@ export default function App() {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(nav));
   }, [screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget]);
 
+  // react-router 없이 screen state 하나로 화면을 전환하는 구조라, 브라우저가 자동으로 해주는
+  // 스크롤 리셋이 없다 — 스크롤을 많이 내린 화면(예: PortfolioDetail)에서 다른 화면(예: StockDetail)으로
+  // 넘어가면 새 화면이 이전 스크롤 위치 그대로 렌더링되어 sticky Header가 화면 중간에 끼어 보인다.
+  // strategyId/stockCode 등 같은 화면 안에서 바뀌는 값에는 반응하지 않도록 screen만 의존성으로 둔다.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [screen]);
+
   // 로그인이 필요한 화면을 새로고침으로 복원했는데, 토큰 검증(initialize)이 끝난 뒤
   // 실제로는 로그인 상태가 아닌 것으로 확인되면(토큰 만료 등) 로그인 화면으로 돌려보낸다.
   useEffect(() => {
