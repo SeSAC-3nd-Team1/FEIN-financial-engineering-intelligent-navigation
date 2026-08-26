@@ -78,7 +78,6 @@ class AuthService:
                     agreed_at=now if item.agreed else None,
                 ))
             self.session.commit()
-            self.session.refresh(user)
         except Exception:
             self.session.rollback()
             self._release_email_reservation(reservation)

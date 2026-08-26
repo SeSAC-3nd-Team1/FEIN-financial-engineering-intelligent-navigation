@@ -76,7 +76,7 @@ class SignupSession:
         return None
 
     def refresh(self, _value) -> None:
-        return None
+        raise AssertionError("signup must not refresh after a successful commit")
 
 
 class SignupVerifier:
