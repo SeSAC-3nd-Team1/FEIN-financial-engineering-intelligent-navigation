@@ -148,6 +148,7 @@ export default function App() {
   const setInFlightStep = useInvestmentStore((s) => s.setInFlightStep);
   const clearInFlight = useInvestmentStore((s) => s.clearInFlight);
   const setActiveMode = useInvestmentStore((s) => s.setActiveMode);
+  const markActiveModeChecked = useInvestmentStore((s) => s.markActiveModeChecked);
   const setAccountActiveStrategy = useInvestmentStore((s) => s.setAccountActiveStrategy);
 
   /**
@@ -297,29 +298,40 @@ export default function App() {
   // activeMode는 이 브라우저에서 투자 시작/전략 변경을 실제로 거친 세션에만 로컬로 남는다. 새
   // 브라우저나 localStorage가 초기화된 환경에서는 실제로는 이미 투자 중이어도 activeMode를 알 수
   // 없어 Portfolio 화면 분기(자동/반자동)나 Strategy Detail CTA가 "미투자"로 잘못 판단한다. 그래서
-  // 로그인 후 로컬에 activeMode가 없으면 실제 계좌(반자동 → 자동 순으로)를 조회해 이미 선택된 전략이
-  // 있는 계좌를 찾으면 그 운용방식으로 activeMode를 맞춰준다. 둘 다 없으면(정말 미투자) 그대로 둔다.
+  // 로그인 후 로컬에 activeMode가 없으면 두 운용방식 계좌를 함께 조회해 이미 선택된 전략이 있는
+  // 계좌를 찾으면 그 운용방식으로 activeMode를 맞춰준다.
+  //
+  // 두 운용방식 모두 selected_strategy_id가 있는(동시에 활성인) 경우는 프론트만으로는 어느 쪽이
+  // "지금" 실제로 쓰이고 있는지 구분할 근거가 없다 — 백엔드에 마지막 활성 운용방식을 기록/복원하는
+  // 필드가 없어 조회 순서로 결정할 수밖에 없는데, 그건 임의적이라 근본 해결이 아니다. 이 프론트만의
+  // 범위에서는 이미 다른 화면들이 쓰는 것과 같은 기본값(반자동)으로 수렴시켜 최소한 일관되게라도
+  // 동작하게 해두고, 완전한 해결은 백엔드에 "마지막 활성 운용방식" 같은 필드가 추가돼야 한다.
   useEffect(() => {
     if (!accessToken || activeMode !== null) return;
     let cancelled = false;
     (async () => {
-      for (const probeMode of ['SEMI_AUTO', 'AUTO'] as const) {
-        try {
-          const account = await getMyAccountApi(accessToken, probeMode);
-          if (cancelled) return;
-          if (account.selected_strategy_id) {
-            setActiveMode(toOperationMode(probeMode));
-            return;
-          }
-        } catch {
-          // 해당 운용방식 계좌가 없으면(ACCOUNT_NOT_FOUND 등) 다음 운용방식을 계속 확인한다
-        }
+      const [semiAuto, auto] = await Promise.all(
+        (['SEMI_AUTO', 'AUTO'] as const).map((probeMode) =>
+          getMyAccountApi(accessToken, probeMode).catch(() => null),
+        ),
+      );
+      if (cancelled) return;
+      const semiAutoActive = Boolean(semiAuto?.selected_strategy_id);
+      const autoActive = Boolean(auto?.selected_strategy_id);
+      if (semiAutoActive && !autoActive) {
+        setActiveMode('manual');
+      } else if (autoActive && !semiAutoActive) {
+        setActiveMode('auto');
+      } else if (semiAutoActive && autoActive) {
+        setActiveMode('manual'); // 위 주석 참고 — 둘 다 활성이면 기존 앱 기본값(반자동)으로 수렴
+      } else {
+        markActiveModeChecked();
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [accessToken, activeMode, setActiveMode]);
+  }, [accessToken, activeMode, setActiveMode, markActiveModeChecked]);
 
   // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
   useEffect(() => {

@@ -120,6 +120,14 @@ function persist(userId: string | null, state: PersistedOnboarding) {
 interface InvestmentOnboardingState extends PersistedOnboarding {
   /** 현재 이 상태가 어느 사용자 것인지 — localStorage 키를 사용자별로 분리하기 위함 (persist 대상 아님) */
   currentUserId: string | null;
+  /**
+   * activeMode가 실제 계좌 상태를 기준으로 확정됐는지 — localStorage에 activeMode가 없는(새 브라우저
+   * 등) 로그인 사용자는 App.tsx가 실제 계좌를 조회해 이 값을 확정할 때까지 잠깐 알 수 없는 상태를
+   * 거친다. 그동안 activeMode만 보고 "미투자"로 단정하면 이미 투자 중인 사용자에게 "이 전략으로
+   * 시작하기"가 잘못 노출될 수 있어(false negative), 이 값으로 그 구간을 구분해 CTA 판단을 보류한다.
+   * persist 대상 아님(세션마다 다시 확인) — activeMode가 이미 있거나 비로그인이면 즉시 true다.
+   */
+  activeModeChecked: boolean;
   /** 로그인/로그아웃 시 호출 — 해당 사용자(또는 비로그인=null)의 저장된 상태로 교체한다 */
   hydrateForUser: (userId: string | null) => void;
   /** 선택 전략 상품설명/필수 약관 동의 완료 */
@@ -140,6 +148,8 @@ interface InvestmentOnboardingState extends PersistedOnboarding {
   clearInFlight: () => void;
   /** 실제 투자 시작(ensureAccount 성공) 시점에 호출 — 현재 활성 운용방식을 기록 */
   setActiveMode: (mode: OperationMode) => void;
+  /** App.tsx의 실제 계좌 조회(양쪽 운용방식 모두)가 끝났는데도 활성 투자가 없다고 확인됐을 때 호출 */
+  markActiveModeChecked: () => void;
   /**
    * "계좌 1개 = 활성 전략 1개" 정책의 실제 반영 지점 — 신규 투자 시작(ensureAccount 성공) 시점과,
    * 같은 계좌 안에서 전략을 변경(StrategyDetail "이 전략으로 변경하기" 확인)할 때 모두 이 액션 하나로
@@ -157,10 +167,14 @@ export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) =
 
   return {
     currentUserId: null,
+    activeModeChecked: true,
     ...EMPTY_ONBOARDING,
 
     hydrateForUser: (userId) => {
-      set({ currentUserId: userId, ...loadPersisted(userId) });
+      const persisted = loadPersisted(userId);
+      // activeMode를 이미 알고 있거나(로컬에 기록됨) 비로그인이면 더 확인할 게 없다 — 로그인
+      // 사용자인데 activeMode가 없을 때만 App.tsx가 실제 계좌 조회를 끝낼 때까지 보류 상태로 둔다.
+      set({ currentUserId: userId, ...persisted, activeModeChecked: !userId || persisted.activeMode !== null });
     },
 
     acceptStrategyTerms: (strategyId) => {
@@ -220,9 +234,11 @@ export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) =
     },
 
     setActiveMode: (mode) => {
-      set({ activeMode: mode });
+      set({ activeMode: mode, activeModeChecked: true });
       persistCurrent();
     },
+
+    markActiveModeChecked: () => set({ activeModeChecked: true }),
 
     setAccountActiveStrategy: (mode, strategyId) => {
       set((s) => {

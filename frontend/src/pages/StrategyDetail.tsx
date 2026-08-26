@@ -77,6 +77,10 @@ export default function StrategyDetail({
   useTradingData();
   const realAccount = useTradingStore((s) => s.account);
   const activeStrategyId = activeAccount?.activeStrategyId ?? realAccount?.selected_strategy_id ?? null;
+  // 로그인 사용자인데 App.tsx의 실제 계좌 조회(activeMode 복원)가 아직 끝나지 않았으면, 아직
+  // 확정되지 않은 activeStrategyId(=null)를 근거로 "미투자"로 단정하지 않고 CTA를 잠깐 보류한다.
+  const activeModeChecked = useInvestmentStore((s) => s.activeModeChecked);
+  const ctaPending = isLoggedIn && !activeModeChecked;
   const ctaState: 'start' | 'current' | 'change' =
     !activeStrategyId ? 'start' : activeStrategyId === strategyId ? 'current' : 'change';
   const activeStrategyName = activeStrategyId
@@ -482,7 +486,19 @@ export default function StrategyDetail({
             </>
           )}
 
-          {ctaState === 'start' && (
+          {ctaPending && (
+            // 로그인 사용자인데 activeMode/실제 계좌 조회가 아직 끝나지 않은 순간 — 이미 투자 중인
+            // 사용자에게 "이 전략으로 시작하기"가 잘못(일시적으로) 노출되지 않도록 판단을 보류한다.
+            <section className="flex animate-pulse items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+              <div className="flex flex-col gap-2.5">
+                <div className="h-7 w-56 rounded-md bg-white/10" />
+                <div className="h-5 w-40 rounded-md bg-white/10" />
+              </div>
+              <div className="h-14 w-40 shrink-0 rounded-field bg-white/10" />
+            </section>
+          )}
+
+          {!ctaPending && ctaState === 'start' && (
             <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
               <div className="flex flex-col gap-2.5">
                 <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략으로 시작해볼까요?</span>
@@ -494,7 +510,7 @@ export default function StrategyDetail({
             </section>
           )}
 
-          {ctaState === 'current' && (
+          {!ctaPending && ctaState === 'current' && (
             <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
               <div className="flex flex-col gap-2.5">
                 <span className="text-2xl font-bold tracking-[-0.025em] text-white">현재 이 전략으로 운용하고 있어요</span>
@@ -513,7 +529,7 @@ export default function StrategyDetail({
             </section>
           )}
 
-          {ctaState === 'change' && (
+          {!ctaPending && ctaState === 'change' && (
             <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
               <div className="flex flex-col gap-2.5">
                 <span className="text-2xl font-bold tracking-[-0.025em] text-white">다른 전략으로 바꿔볼까요?</span>
