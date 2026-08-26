@@ -88,6 +88,16 @@ export function recommendedStrategyId(type: string): string {
   return STRATEGY_BY_PROFILE_TYPE[type] ?? 'low';
 }
 
+/** answers(문항별로 고른 보기 인덱스) → 백엔드 POST /investor-profile/analyze 가 기대하는
+ *  { question_id, option_id } 배열로 변환한다. RISK_QUESTIONS 는 백엔드 설문 카탈로그
+ *  (app/domain/investor_profile/questionnaire.py, QUESTIONNAIRE_V1)와 문항 순서·id 가 1:1로 맞춰져 있다. */
+export function buildInvestorAnswerPayload(answers: number[]): { question_id: string; option_id: string }[] {
+  return RISK_QUESTIONS.map((question, i) => ({
+    question_id: question.id,
+    option_id: question.options[answers[i]].id,
+  }));
+}
+
 /** 결과·확인 화면에서 원문 보기를 다시 보여줄 때 쓰는 헬퍼 */
 export function answerLabel(questionIndex: number, optionIndex: number | null | undefined): string {
   if (optionIndex == null) return '-';

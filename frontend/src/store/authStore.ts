@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import {
-  currentUserApi, loginApi, logoutApi, signupApi, TOKEN_STORAGE_KEY,
+  currentUserApi, latestInvestorProfileApi, loginApi, logoutApi, signupApi, TOKEN_STORAGE_KEY,
   type AuthUser, type SignupPayload,
 } from '../lib/backendApi';
 
@@ -28,6 +28,24 @@ const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
  *  새로고침될 때 함께 지워야 다음에 로그인하는(같은 브라우저의 다른) 사용자가 이전 화면 상태를 이어받지 않는다. */
 const APP_SESSION_NAV_KEY = 'fein.session-nav';
 
+/** 로그인 직후/새로고침 복원 시 이미 저장된 투자성향 진단이 있으면 investorProfileCompleted 를 되살린다.
+ *  이 값은 완료 즉시(completeInvestorProfile) 로컬에서도 true 가 되지만, 백엔드에 저장은 되어도
+ *  로컬 상태 자체는 세션이 새로 시작되면 초기화되므로(새로고침·재로그인) 매번 다시 확인해야 한다.
+ *  진단 기록이 없으면(404) 또는 조회에 실패하면 조용히 무시하고 미완료 상태를 유지한다 — 로그인 자체를
+ *  막을 이유는 아니다. */
+async function hydrateInvestorProfile(token: string, set: (partial: Partial<AuthState>) => void) {
+  try {
+    const profile = await latestInvestorProfileApi(token);
+    set({
+      investorProfileCompleted: true,
+      investorProfileCompletedAt: profile.created_at,
+      investorType: profile.profile_type,
+    });
+  } catch {
+    // 진단 기록 없음(404) 또는 일시적 오류 — 미완료 상태를 그대로 둔다.
+  }
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   isLoggedIn: false,
   isHydrating: Boolean(savedToken),
@@ -44,6 +62,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const user = await currentUserApi(token);
       set({ user, isLoggedIn: true, isHydrating: false });
+      void hydrateInvestorProfile(token, set);
     } catch {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       sessionStorage.removeItem(APP_SESSION_NAV_KEY);
@@ -56,6 +75,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const user = await currentUserApi(token);
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
     set({ accessToken: token, user, isLoggedIn: true, isHydrating: false });
+    void hydrateInvestorProfile(token, set);
   },
 
   logout: async () => {

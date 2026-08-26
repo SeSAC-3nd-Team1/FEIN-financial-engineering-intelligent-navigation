@@ -253,6 +253,35 @@ export interface ExecutionResponse {
   executed_at: string;
 }
 
+export interface InvestorAnswerRequest {
+  question_id: string;
+  option_id: string;
+}
+
+export interface InvestorProfileAnalyzeRequest {
+  questionnaire_version: string;
+  answers: InvestorAnswerRequest[];
+}
+
+export interface InvestorTraitsResponse {
+  stability: number;
+  return_seeking: number;
+  horizon: number;
+}
+
+export interface InvestorProfileResponse {
+  assessment_id: string;
+  questionnaire_version: string;
+  analysis_version: 'v1';
+  profile_type: '안정추구형' | '안정투자형' | '중립투자형' | '성장추구형' | '공격투자형';
+  tendency_line: string;
+  description: string;
+  traits: InvestorTraitsResponse;
+  analysis_summary: string[];
+  model_version: string;
+  created_at: string;
+}
+
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status: number) {
     super(message);
@@ -412,4 +441,20 @@ export function getOrdersApi(accountId: string, token: string): Promise<OrderRes
 
 export function getExecutionsApi(accountId: string, token: string): Promise<ExecutionResponse[]> {
   return request<ExecutionResponse[]>(`/executions?account_id=${encodeURIComponent(accountId)}`, {}, token);
+}
+
+/** AI가 실제로 문항 응답을 분석해 투자성향을 산출·저장한다(investor_profile_assessments 테이블).
+ *  AI_PERSONALIZATION 약관에 동의하지 않은 사용자는 403(AI_PERSONALIZATION_CONSENT_REQUIRED)을 받는다 —
+ *  호출부에서 이 실패를 화면 흐름을 막지 않는 best-effort 로 다뤄야 한다. */
+export function analyzeInvestorProfileApi(
+  payload: InvestorProfileAnalyzeRequest,
+  token: string,
+): Promise<InvestorProfileResponse> {
+  return request<InvestorProfileResponse>('/investor-profile/analyze', {
+    method: 'POST', body: JSON.stringify(payload),
+  }, token);
+}
+
+export function latestInvestorProfileApi(token: string): Promise<InvestorProfileResponse> {
+  return request<InvestorProfileResponse>('/investor-profile/me/latest', {}, token);
 }

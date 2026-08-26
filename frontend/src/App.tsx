@@ -26,7 +26,8 @@ import TransactionDetail from './pages/TransactionDetail';
 import TransactionHistory from './pages/TransactionHistory';
 import { STRATEGIES } from './data/strategies';
 import { toAccountOperationMode, type OperationMode } from './data/fees';
-import { signupTermsApi } from './lib/backendApi';
+import { analyzeInvestorProfileApi, signupTermsApi } from './lib/backendApi';
+import { buildInvestorAnswerPayload } from './lib/investorProfile';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
@@ -368,6 +369,15 @@ export default function App() {
             setRiskNotice(undefined);
             setScreen(postDiagnosisTarget);
             setPostDiagnosisTarget('risk-result');
+            // 백엔드에도 실제로 저장을 시도한다(investor_profile_assessments) — AI 분석이라 시간이
+            // 걸리고, AI_PERSONALIZATION 약관 비동의/일시 오류로 실패할 수도 있다. 화면 전환은 이미
+            // 위에서 로컬 결과로 끝났으니, 실패해도 사용자 흐름을 막지 않는 best-effort 로 둔다.
+            if (accessToken) {
+              void analyzeInvestorProfileApi(
+                { questionnaire_version: 'v1', answers: buildInvestorAnswerPayload(answers) },
+                accessToken,
+              ).catch(() => undefined);
+            }
           }}
           onExit={() => setScreen('home')}
         />
@@ -534,6 +544,7 @@ export default function App() {
             userName={userName}
             onNavigate={setScreen}
             onOpenDetail={() => setScreen('portfolio-detail')}
+            onStartRiskProfile={() => startInvestorProfile('risk-result')}
           />
         )
       )}
