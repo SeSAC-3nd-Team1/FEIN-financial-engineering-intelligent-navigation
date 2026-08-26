@@ -9,6 +9,7 @@ export default defineConfig({
 
     allowedHosts: [
       "ca-frontend-fein.livelystone-0567c409.koreacentral.azurecontainerapps.io",
+      "ca-frontend-fein-vnet.lemonmushroom-480bc7ea.koreacentral.azurecontainerapps.io",
     ],
 
     watch: {
