@@ -353,6 +353,21 @@ export default function App() {
     setScreen('login');
   };
 
+  /**
+   * Strategy Detail "이 전략으로 변경하기" 확인 — InvestConfirm과 동일하게 실제 계좌 API
+   * (ensureAccount 내부에서 selected_strategy_id가 다르면 selectStrategyApi 호출)를 거친 뒤에만
+   * 로컬 activeStrategyId를 갱신한다. 로컬 state만 바꾸고 끝내면 새로고침/Portfolio 재조회 시
+   * 실제 계좌의 전략으로 되돌아가 화면과 어긋날 수 있어, 반드시 API 성공을 먼저 확인한다.
+   */
+  const confirmStrategyChange = async () => {
+    if (!accessToken || !activeMode) {
+      throw new Error('로그인이 필요합니다.');
+    }
+    await ensureAccount(accessToken, strategyId, toAccountOperationMode(activeMode));
+    setAccountActiveStrategy(activeMode, strategyId);
+    navigate('portfolio');
+  };
+
   return (
     <div className="min-h-screen bg-canvas">
       {screen === 'home' && <Home userName={userName} onNavigate={navigate} onRequestLogin={requestLoginFromHome} />}
@@ -488,6 +503,7 @@ export default function App() {
           onNavigate={navigate}
           onStart={handleStartInvesting}
           onRequestLoginForBacktest={requestLoginForBacktest}
+          onConfirmStrategyChange={confirmStrategyChange}
           pendingDeposit={
             pendingInvestment && pendingInvestment.strategyId === strategyId
               // InvestDeposit과 동일하게, 이미 보유한 잔액(대기 중인 투자와 같은 운용방식 계좌 기준)을 제외한 부족분만 안내한다

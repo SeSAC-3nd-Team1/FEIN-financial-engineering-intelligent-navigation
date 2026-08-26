@@ -20,6 +20,9 @@ interface Props {
   /** 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보낼 때 사용 —
    * 로그인 후 Portfolio가 아니라 이 화면으로 복귀시키기 위해 App.tsx가 별도로 처리한다 */
   onRequestLoginForBacktest: () => void;
+  /** "이 전략으로 변경하기" 확인 — 실제 계좌 전략 변경 API(ensureAccount/selectStrategyApi)를 거친 뒤
+   * App.tsx가 로컬 activeStrategyId 갱신과 Portfolio 이동까지 처리한다. 실패하면 reject된다. */
+  onConfirmStrategyChange: () => Promise<void>;
   /** 이 전략으로 계좌 연결까지는 끝냈지만 "나중에 입금할게요"로 미룬 투자가 있으면 전달된다 */
   pendingDeposit?: { amount: number } | null;
   /** 위 배너의 CTA — 약관/계좌 단계를 다시 거치지 않고 곧장 입금 화면으로 이동한다 */
@@ -49,7 +52,7 @@ const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 
 /** 03 전략 상세 — 추천 기간(또는 직접 설정한 기간)으로 전략을 직접 체험한 뒤 바로 투자 시작으로 이어진다 */
 export default function StrategyDetail({
-  strategyId, userName, onNavigate, onStart, onRequestLoginForBacktest, pendingDeposit, onResumeDeposit,
+  strategyId, userName, onNavigate, onStart, onRequestLoginForBacktest, onConfirmStrategyChange, pendingDeposit, onResumeDeposit,
 }: Props) {
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   // 비회원 공개 정책: 전략을 읽고 백테스트 기본 결과를 보는 것은 PUBLIC이지만, "나와 몇% 잘
@@ -63,7 +66,6 @@ export default function StrategyDetail({
   // 사용자는 accountsByMode·activeMode가 항상 비어있어 자연히 'start'가 된다.
   const accountsByMode = useInvestmentStore((s) => s.accountsByMode);
   const activeMode = useInvestmentStore((s) => s.activeMode);
-  const setAccountActiveStrategy = useInvestmentStore((s) => s.setAccountActiveStrategy);
   const activeAccount = activeMode ? accountsByMode[activeMode] : null;
   const activeStrategyId = activeAccount?.activeStrategyId ?? null;
   const ctaState: 'start' | 'current' | 'change' =
@@ -72,12 +74,23 @@ export default function StrategyDetail({
     ? (STRATEGIES.find((s) => s.id === activeStrategyId)?.name ?? activeStrategyId)
     : null;
   const [changeConfirmOpen, setChangeConfirmOpen] = useState(false);
+  const [changeSubmitting, setChangeSubmitting] = useState(false);
+  const [changeError, setChangeError] = useState('');
 
-  const confirmStrategyChange = () => {
-    if (!activeMode) return;
-    setAccountActiveStrategy(activeMode, strategyId);
-    setChangeConfirmOpen(false);
-    onNavigate('portfolio');
+  // 실제 계좌 전략 변경 API 호출까지 기다린 뒤에만 모달을 닫는다 — 성공 시 이동(Portfolio)은
+  // App.tsx의 onConfirmStrategyChange 구현이 처리하고, 실패하면 모달에 에러를 보여주고 계속 띄워둔다.
+  const confirmStrategyChange = async () => {
+    if (changeSubmitting) return;
+    setChangeSubmitting(true);
+    setChangeError('');
+    try {
+      await onConfirmStrategyChange();
+      setChangeConfirmOpen(false);
+    } catch (e) {
+      setChangeError(e instanceof Error ? e.message : '전략을 변경하지 못했어요. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setChangeSubmitting(false);
+    }
   };
   // 백테스트 "결과"는 공개, "다른 기간으로 바꿔보는" interaction만 로그인 필요 — 잠긴 상태에서
   // 다른 기간/직접 설정을 시도하면 즉시 로그인으로 보내지 않고 이 inline 안내를 먼저 보여준다.
@@ -500,7 +513,7 @@ export default function StrategyDetail({
                 </span>
               </div>
               <button
-                onClick={() => setChangeConfirmOpen(true)}
+                onClick={() => { setChangeError(''); setChangeConfirmOpen(true); }}
                 className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy"
               >
                 이 전략으로 변경하기 →
@@ -523,8 +536,10 @@ export default function StrategyDetail({
         <StrategyChangeModal
           currentStrategyName={activeStrategyName}
           nextStrategyName={strategy.name}
-          onCancel={() => setChangeConfirmOpen(false)}
-          onConfirm={confirmStrategyChange}
+          submitting={changeSubmitting}
+          error={changeError}
+          onCancel={() => { if (!changeSubmitting) setChangeConfirmOpen(false); }}
+          onConfirm={() => void confirmStrategyChange()}
         />
       )}
     </div>
@@ -532,10 +547,13 @@ export default function StrategyDetail({
 }
 
 /** "이 전략으로 변경하기" 확인 모달 — 계좌 하나에는 전략을 하나만 운용할 수 있다는 정책을 확인시키고,
- * 확인 시에만 실제로 activeStrategyId를 교체한다(TermsModal과 동일한 backdrop/카드 스타일 재사용). */
+ * 확인 시 실제 계좌 전략 변경 API가 끝날 때까지 기다린다(TermsModal과 동일한 backdrop/카드 스타일 재사용). */
 function StrategyChangeModal({
-  currentStrategyName, nextStrategyName, onCancel, onConfirm,
-}: { currentStrategyName: string; nextStrategyName: string; onCancel: () => void; onConfirm: () => void }) {
+  currentStrategyName, nextStrategyName, submitting, error, onCancel, onConfirm,
+}: {
+  currentStrategyName: string; nextStrategyName: string; submitting: boolean; error: string;
+  onCancel: () => void; onConfirm: () => void;
+}) {
   return (
     <div className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8" onClick={onCancel}>
       <div className="flex w-[560px] flex-col gap-7 rounded-card bg-surface p-12" onClick={(e) => e.stopPropagation()}>
@@ -560,12 +578,22 @@ function StrategyChangeModal({
           변경하면 {currentStrategyName} 대신 {nextStrategyName}으로 운용돼요.
         </p>
 
+        {error && <p className="text-sm text-up">{error}</p>}
+
         <div className="flex gap-3">
-          <button onClick={onCancel} className="flex-1 rounded-field bg-[#F4F6F1] py-4 text-base font-semibold text-[#3F4A43]">
+          <button
+            onClick={onCancel}
+            disabled={submitting}
+            className="flex-1 rounded-field bg-[#F4F6F1] py-4 text-base font-semibold text-[#3F4A43] disabled:opacity-60"
+          >
             현재 전략 유지하기
           </button>
-          <button onClick={onConfirm} className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy">
-            {nextStrategyName}으로 변경하기
+          <button
+            onClick={onConfirm}
+            disabled={submitting}
+            className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy disabled:opacity-60"
+          >
+            {submitting ? '변경하는 중...' : `${nextStrategyName}으로 변경하기`}
           </button>
         </div>
       </div>
