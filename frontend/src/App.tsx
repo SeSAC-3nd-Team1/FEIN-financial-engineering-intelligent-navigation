@@ -102,6 +102,7 @@ export default function App() {
     email: string;
     verificationId: string;
     expiresInSeconds: number;
+    resendAfterSeconds: number;
     token: string | null;
   } | null>(null);
   /** SignupStep1에 onChange로 넘기는 wrapper — value.email이 실제로 바뀐 순간에만 기존 이메일
@@ -513,6 +514,7 @@ export default function App() {
               email,
               verificationId: result.verification_id,
               expiresInSeconds: result.expires_in_seconds,
+              resendAfterSeconds: result.resend_after_seconds,
               token: null,
             });
             setScreen('signup-2');
@@ -526,6 +528,7 @@ export default function App() {
           email={emailVerification?.email ?? personal.email}
           verified={emailVerification?.token != null}
           expiresInSeconds={emailVerification?.expiresInSeconds ?? 300}
+          resendAfterSeconds={emailVerification?.resendAfterSeconds ?? 60}
           onResend={async () => {
             if (!emailVerification) throw new Error('이메일 정보를 찾을 수 없어요. 처음부터 다시 시도해주세요.');
             const result = await sendEmailVerificationApi(emailVerification.email);
@@ -533,6 +536,7 @@ export default function App() {
               email: emailVerification.email,
               verificationId: result.verification_id,
               expiresInSeconds: result.expires_in_seconds,
+              resendAfterSeconds: result.resend_after_seconds,
               token: null,
             });
           }}
