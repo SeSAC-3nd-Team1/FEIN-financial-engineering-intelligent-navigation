@@ -77,6 +77,14 @@ def test_all_loss_returns_have_zero_profit_factor_and_win_rate() -> None:
     assert metrics.max_drawdown < 0.0
 
 
+def test_rejects_metrics_that_overflow_during_calculation() -> None:
+    with pytest.warns(RuntimeWarning, match="overflow"):
+        with pytest.raises(ValueError, match="must be finite"):
+            calculate_performance_metrics(
+                daily_returns=pd.Series([100.0] * 252),
+            )
+
+
 def test_annual_risk_free_rate_is_applied_to_ratio_numerators() -> None:
     returns = pd.Series([0.01, 0.02, -0.01, 0.00])
     periods = 4

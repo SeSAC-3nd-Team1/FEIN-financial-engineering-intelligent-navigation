@@ -25,6 +25,21 @@ class PerformanceMetrics:
     observation_count: int
     periods_per_year: int
 
+    def __post_init__(self) -> None:
+        for name in (
+            "cumulative_return",
+            "cagr",
+            "annualized_volatility",
+            "sharpe_ratio",
+            "sortino_ratio",
+            "max_drawdown",
+            "win_rate",
+            "profit_factor",
+        ):
+            value = getattr(self, name)
+            if value is not None and not math.isfinite(value):
+                raise ValueError(f"calculated metric {name} must be finite")
+
     def to_dict(self) -> dict[str, Any]:
         """JSON encoder에 바로 전달할 수 있는 기본 타입 사전을 반환한다."""
 
