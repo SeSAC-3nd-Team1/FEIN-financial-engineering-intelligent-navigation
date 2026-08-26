@@ -97,6 +97,28 @@ def test_opendart_market_disclosures_follow_all_pages() -> None:
     assert all(call["page_count"] == 100 for call in session.calls)
 
 
+def test_opendart_market_disclosure_iterator_is_lazy() -> None:
+    """다음 page를 요청하기 전에는 후속 응답을 메모리에 가져오지 않는다."""
+
+    session = _Session([
+        {"status": "000", "total_page": 2, "list": [{"rcept_no": "1"}]},
+        {"status": "000", "total_page": 2, "list": [{"rcept_no": "2"}]},
+    ])
+    client = OpenDartClient("secret", session=session, min_interval_seconds=0)
+
+    pages = client.iter_disclosures_market(
+        start_date="20180101", end_date="20180131", corp_cls="Y"
+    )
+
+    assert session.calls == []
+    assert next(pages).payload["list"][0]["rcept_no"] == "1"
+    assert len(session.calls) == 1
+    assert next(pages).payload["list"][0]["rcept_no"] == "2"
+    assert len(session.calls) == 2
+    with pytest.raises(StopIteration):
+        next(pages)
+
+
 def test_quarter_windows_cover_range_without_gaps() -> None:
     windows = list(_quarter_windows(date(2018, 1, 1), date(2018, 8, 25)))
 

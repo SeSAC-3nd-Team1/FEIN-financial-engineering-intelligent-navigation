@@ -31,6 +31,8 @@ erDiagram
         varchar member_type
         varchar account_status
         timestamptz last_login_at
+        varchar active_operation_mode
+        timestamptz operation_mode_changed_at
         timestamptz created_at
         timestamptz updated_at
         timestamptz deleted_at

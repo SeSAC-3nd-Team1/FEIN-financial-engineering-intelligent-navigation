@@ -28,6 +28,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 가상계좌 생성 | POST | `/accounts` | 필요 | 201, 409 | StartInvesting |
 | 내 계좌 | GET | `/accounts/me?operation_mode=` | 필요 | 200, 404 | Portfolio |
 | 내 계좌 전체 | GET | `/accounts/me/all` | 필요 | 200 | Portfolio |
+| 활성 운용방식 전환 | PUT | `/accounts/me/active-operation-mode` | 필요/소유권 | 200, 409, 422 | Portfolio/Dashboard |
 | 전략 선택 | PUT | `/accounts/{account_id}/strategy` | 필요/소유권 | 200, 404 | StartInvesting |
 | 전략 목록 | GET | `/strategies` | 불필요 | 200 | RiskResult/StrategyDetail |
 | 실제 시세 백테스트 | POST | `/backtest/run` | 불필요 | 200, 404, 422 | StrategyDetail |
@@ -81,7 +82,11 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 
 비밀번호는 8~72자이며 영문·숫자·특수문자 조합 검증은 Frontend와 동일하게 적용한다.
 
-응답 `201`: `{"id":1,"user_id":"hong01","name":"홍길동","email":"hong@example.com","account_status":"ACTIVE"}`
+응답 `201`: `{"id":1,"user_id":"hong01","name":"홍길동","email":"hong@example.com","account_status":"ACTIVE","active_operation_mode":null,"operation_mode_changed_at":null}`
+
+`GET /auth/me`도 같은 사용자 필드로 현재 활성 운용방식을 반환한다. 투자 시작을 아직 완료하지 않은
+사용자는 `active_operation_mode=null`일 수 있으며, Frontend는 임의 계좌를 선택하지 않고 투자 시작
+상태를 확인한다.
 
 ### GET `/auth/terms`
 
@@ -120,6 +125,44 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 외부 증권사 계좌를 연동하지 않으며, 같은 운용방식의 가상계좌가 없으면 0원 계좌를 생성하고 있으면
 재사용한다. 투자 예정 금액의 부족분은 별도 `/deposit` API로 정확히 한 번 입금한다.
 상세 계약은 [가상투자 시작 Backend API 명세](INVESTMENT_ONBOARDING_API_SPECIFICATION.md)를 따른다.
+
+### PUT `/accounts/me/active-operation-mode`
+
+```json
+{"operation_mode":"AUTO"}
+```
+
+같은 계좌의 `operation_mode`를 수정하거나 자산·포지션·거래내역을 옮기지 않는다. 사용자가 해당
+운용방식의 투자 시작을 완료했고 `ACTIVE` 상태인 별도 계좌가 있을 때만 현재 활성 계좌 선택을
+변경한다. 대상 계좌나 완료된 온보딩이 없으면 `409 OPERATION_MODE_ACCOUNT_NOT_READY`, 계좌가
+비활성이면 `409 OPERATION_MODE_ACCOUNT_NOT_ACTIVE`다. 같은 방식을 재전송하면 변경 시각을 갱신하지
+않고 `changed=false`를 반환한다.
+
+응답의 `notice`는 별도 알림 저장 없이 전환 직후 팝업에 사용할 일회성 안내 계약이다.
+
+```json
+{
+  "previous_operation_mode":"SEMI_AUTO",
+  "operation_mode":"AUTO",
+  "changed":true,
+  "changed_at":"2026-08-25T15:30:00Z",
+  "account":{
+    "id":"92be9e3e-4364-4428-86c4-b730cc841847",
+    "account_name":"자동 운용 계좌",
+    "operation_mode":"AUTO",
+    "initial_cash":"1000000.00",
+    "cash_balance":"750000.00",
+    "status":"ACTIVE",
+    "selected_strategy_id":"low",
+    "created_at":"2026-08-25T12:00:00Z"
+  },
+  "notice":{
+    "code":"OPERATION_MODE_CHANGED",
+    "title":"운용방식이 변경됐어요",
+    "message":"확인하고 실행 계좌에서 자동으로 운용 계좌로 전환했어요. 각 계좌의 자산과 거래내역은 이동하지 않고 그대로 유지됩니다."
+  }
+}
+```
 
 ### POST `/orders`
 
@@ -187,11 +230,24 @@ snapshot 이력을 조합하는 읽기 전용 API이며 거래나 snapshot을 �
   "positions": [],
   "contributions": [],
   "strategy_targets_available": false,
+  "rebalancing_insight": {
+    "status": "UNAVAILABLE",
+    "summary": "적용 가능한 전략 목표 비중이 없습니다.",
+    "model_version": null,
+    "generated_at": null
+  },
   "rebalancing_proposals": [],
   "valuation_as_of": "2026-08-25T10:30:00+09:00",
   "price_sources": ["KIS"]
 }
 ```
+
+`rebalancing_proposals`는 Backend가 목표 비중으로 검증한 조정 후보 중 AI 모델이 선택한 항목만
+반환한다. 각 항목에는 기존 비중·금액 필드와 함께 `priority`, `reason`, `why_now`,
+`source="AI"`가 포함된다. 모델이 후보에 없는 종목이나 변경된 금액을 반환하면 그 결과는
+프론트에 전달하지 않는다. 모델 미설정·timeout·provider 오류·schema 오류는 홈 전체를 실패시키지
+않고 `rebalancing_insight.status="UNAVAILABLE"`, 빈 제안 목록으로 격리한다. 상세 계약은
+[AI 리밸런싱 제안 계약](AI_REBALANCING_API_SPECIFICATION.md)을 따른다.
 
 ### GET `/portfolio/transactions?account_id=...&limit=20&cursor=...`
 

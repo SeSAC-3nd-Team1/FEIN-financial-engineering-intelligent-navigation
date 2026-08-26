@@ -10,7 +10,31 @@ interface Props {
   notice?: string;
   /** onComplete 이후 백엔드 분석 응답을 기다리는 동안 true — 완료 버튼을 비활성화하고 로딩 문구를 보여준다 */
   isSubmitting?: boolean;
+  /**
+   * 'general': Home 등 일반 onboarding에서 진입 — "나에게 맞는 전략을 찾아볼까요?"
+   * 'strategy': Strategy Detail "이 전략으로 시작하기"에서 진입 — 이미 고른 전략이 나와 맞는지 확인하는 맥락.
+   * App.tsx가 이미 갖고 있던 postDiagnosisTarget(완료 후 목적지)을 그대로 재사용해 결정한다.
+   */
+  context?: 'general' | 'strategy';
 }
+
+const INTRO_COPY = {
+  general: { title: '나에게 맞는 투자전략을 찾아볼까요?' },
+  strategy: { title: '이 전략이 나에게 맞는지 확인해볼까요?' },
+};
+
+const DONE_COPY = {
+  general: {
+    title: '딱 맞는 전략을 찾았어요.',
+    body: '답변을 바탕으로 투자전략을 비교했어요.',
+    checklist: ['투자자 정보 확인 완료', '투자성향 분석 완료', '전략 추천 준비 완료'],
+  },
+  strategy: {
+    title: '선택한 전략과 잘 맞는지 확인했어요.',
+    body: '답변을 바탕으로 이 전략과의 적합도를 확인했어요.',
+    checklist: ['투자자 정보 확인 완료', '투자성향 분석 완료', '전략 적합도 확인 완료'],
+  },
+};
 
 type Phase = 'intro' | 'question' | 'done' | 'review';
 
@@ -18,8 +42,10 @@ type Phase = 'intro' | 'question' | 'done' | 'review';
 const REVIEW_GROUPS = Array.from(new Set(RISK_QUESTIONS.map((q) => q.reviewGroup)));
 
 /** 투자자 정보 확인 — 인트로 → 8문항(한 화면 한 질문) → 완료 → 답변 확인(Review) */
-export default function RiskProfile({ onComplete, onExit, notice, isSubmitting }: Props) {
+export default function RiskProfile({ onComplete, onExit, notice, isSubmitting, context = 'general' }: Props) {
   const [phase, setPhase] = useState<Phase>('intro');
+  const introCopy = INTRO_COPY[context];
+  const doneCopy = DONE_COPY[context];
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<(number | null)[]>(Array(RISK_QUESTIONS.length).fill(null));
   // null이 아니면 "Review 화면에서 수정하러 들어온 상태" — 답변 후 질문을 이어가지 않고 Review로 돌아간다
@@ -68,7 +94,7 @@ export default function RiskProfile({ onComplete, onExit, notice, isSubmitting }
     <div className="min-h-screen bg-canvas">
       <header className="flex h-20 items-center gap-6 px-16">
         <button onClick={onExit} className="flex shrink-0 items-center gap-2">
-          <img src="/main_logo.png" alt="FE!N" className="h-16 w-auto object-contain" />
+          <img src="/main_logo_2.png" alt="FE!N" className="h-16 w-auto object-contain" />
         </button>
 
         {phase === 'question' && (
@@ -97,7 +123,7 @@ export default function RiskProfile({ onComplete, onExit, notice, isSubmitting }
             </span>
           )}
           <h1 className="max-w-[620px] text-center text-[44px] font-bold leading-[62px] tracking-[-0.035em]">
-            나에게 맞는 투자전략을 찾아볼까요?
+            {introCopy.title}
           </h1>
           <p className="max-w-[560px] text-center text-[19px] leading-8 text-muted">
             몇 가지 질문으로 투자 경험과 목표, 감당할 수 있는 위험 수준을 확인할게요.<br />
@@ -157,10 +183,10 @@ export default function RiskProfile({ onComplete, onExit, notice, isSubmitting }
       {phase === 'done' && (
         <main className="flex flex-col items-center gap-8 py-32">
           <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[22px] bg-lime text-[32px] text-navy">✓</div>
-          <h1 className="text-center text-[44px] font-bold leading-[62px] tracking-[-0.035em]">딱 맞는 전략을 찾았어요.</h1>
-          <p className="text-[19px] leading-8 text-muted">답변을 바탕으로 투자전략을 비교했어요.</p>
+          <h1 className="text-center text-[44px] font-bold leading-[62px] tracking-[-0.035em]">{doneCopy.title}</h1>
+          <p className="text-[19px] leading-8 text-muted">{doneCopy.body}</p>
           <div className="flex flex-col gap-3.5 rounded-card bg-surface px-11 py-9 text-lg text-[#3F4A43]">
-            {['투자자 정보 확인 완료', '투자성향 분석 완료', '전략 추천 준비 완료'].map((t) => (
+            {doneCopy.checklist.map((t) => (
               <span key={t} className="flex items-center gap-3">
                 <span className="font-bold text-[#2E9B65]">✓</span>{t}
               </span>

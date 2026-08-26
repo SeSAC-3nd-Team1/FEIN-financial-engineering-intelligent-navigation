@@ -1,6 +1,6 @@
 """seeded PostgreSQL/Redis를 사용하는 회원→가상거래 E2E."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import json
 import os
@@ -14,7 +14,19 @@ from sqlalchemy import delete, select
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
-from app.models import AccountDeposit, CashLedger, Execution, InvestmentOnboarding, Order, Position, Term, User, UserAgreement, VirtualAccount
+from app.models import (
+    AccountDeposit,
+    CashLedger,
+    Execution,
+    InvestmentOnboarding,
+    Order,
+    PortfolioSnapshot,
+    Position,
+    Term,
+    User,
+    UserAgreement,
+    VirtualAccount,
+)
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_INTEGRATION") != "1", reason="RUN_INTEGRATION=1 required")
 
@@ -27,6 +39,7 @@ def _cleanup_test_user(user_id: str, cache: redis.Redis, stock_code: str) -> Non
             account_ids = list(session.scalars(select(VirtualAccount.id).where(VirtualAccount.user_id == user.id)))
             if account_ids:
                 session.execute(delete(AccountDeposit).where(AccountDeposit.account_id.in_(account_ids)))
+                session.execute(delete(PortfolioSnapshot).where(PortfolioSnapshot.account_id.in_(account_ids)))
                 session.execute(delete(Execution).where(Execution.account_id.in_(account_ids)))
                 session.execute(delete(CashLedger).where(CashLedger.account_id.in_(account_ids)))
                 session.execute(delete(Order).where(Order.account_id.in_(account_ids)))
@@ -61,7 +74,9 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
     missing_user_id = f"m{suffix}"
     declined_user_id = f"f{suffix}"
     invalid_user_id = f"i{suffix}"
-    test_user_ids = [user_id, missing_user_id, declined_user_id, invalid_user_id]
+    intruder_suffix = uuid4().hex[:8]
+    intruder_user_id = f"x{intruder_suffix}"
+    test_user_ids = [user_id, missing_user_id, declined_user_id, invalid_user_id, intruder_user_id]
     stock_code = f"E{suffix[:5]}".upper()
     cache = redis.from_url(settings.redis_url, decode_responses=True)
 
@@ -120,6 +135,20 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
 
             signup = client.post("/api/v1/auth/signup", json=_signup_payload(user_id, suffix, accepted))
             assert signup.status_code == 201, signup.text
+
+            intruder_signup = client.post(
+                "/api/v1/auth/signup",
+                json=_signup_payload(intruder_user_id, intruder_suffix, accepted),
+            )
+            assert intruder_signup.status_code == 201, intruder_signup.text
+            intruder_login = client.post(
+                "/api/v1/auth/login",
+                json={"user_id": intruder_user_id, "password": "Integration!51"},
+            )
+            assert intruder_login.status_code == 200, intruder_login.text
+            intruder_headers = {
+                "Authorization": f"Bearer {intruder_login.json()['access_token']}"
+            }
 
             with SessionLocal() as session:
                 user = session.scalar(select(User).where(User.user_id == user_id))
@@ -231,6 +260,9 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             )
             assert repeated_complete.status_code == 200, repeated_complete.text
             assert repeated_complete.json()["completed_at"] == completed.json()["completed_at"]
+            active_after_auto = client.get("/api/v1/auth/me", headers=headers)
+            assert active_after_auto.status_code == 200, active_after_auto.text
+            assert active_after_auto.json()["active_operation_mode"] == "AUTO"
 
             semi_onboarding = client.post(
                 "/api/v1/investment/onboardings",
@@ -252,6 +284,56 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             assert semi_prepared.status_code == 200, semi_prepared.text
             assert semi_prepared.json()["account"]["operation_mode"] == "SEMI_AUTO"
             assert semi_prepared.json()["account"]["id"] != account_id
+            semi_account_id = semi_prepared.json()["account"]["id"]
+            semi_deposited = client.post(
+                f"/api/v1/investment/onboardings/{semi_onboarding_id}/deposit",
+                headers=headers,
+                json={
+                    "amount": 500_000,
+                    "idempotency_key": f"semi-deposit-{suffix}",
+                },
+            )
+            assert semi_deposited.status_code == 200, semi_deposited.text
+            semi_completed = client.post(
+                f"/api/v1/investment/onboardings/{semi_onboarding_id}/complete",
+                headers=headers,
+            )
+            assert semi_completed.status_code == 200, semi_completed.text
+            assert semi_completed.json()["next_step"] == "PORTFOLIO"
+
+            switched_auto = client.put(
+                "/api/v1/accounts/me/active-operation-mode",
+                headers=headers,
+                json={"operation_mode": "AUTO"},
+            )
+            assert switched_auto.status_code == 200, switched_auto.text
+            assert switched_auto.json()["previous_operation_mode"] == "SEMI_AUTO"
+            assert switched_auto.json()["operation_mode"] == "AUTO"
+            assert switched_auto.json()["changed"] is True
+            assert switched_auto.json()["account"]["id"] == account_id
+            assert switched_auto.json()["notice"]["code"] == "OPERATION_MODE_CHANGED"
+
+            switch_retry = client.put(
+                "/api/v1/accounts/me/active-operation-mode",
+                headers=headers,
+                json={"operation_mode": "AUTO"},
+            )
+            assert switch_retry.status_code == 200, switch_retry.text
+            assert switch_retry.json()["changed"] is False
+            assert switch_retry.json()["notice"]["code"] == "OPERATION_MODE_UNCHANGED"
+
+            switched_semi = client.put(
+                "/api/v1/accounts/me/active-operation-mode",
+                headers=headers,
+                json={"operation_mode": "SEMI_AUTO"},
+            )
+            assert switched_semi.status_code == 200, switched_semi.text
+            assert switched_semi.json()["previous_operation_mode"] == "AUTO"
+            assert switched_semi.json()["operation_mode"] == "SEMI_AUTO"
+            assert switched_semi.json()["account"]["id"] == semi_account_id
+            assert "자산과 거래내역은 이동하지 않고 그대로 유지" in (
+                switched_semi.json()["notice"]["message"]
+            )
             all_accounts = client.get("/api/v1/accounts/me/all", headers=headers)
             assert all_accounts.status_code == 200, all_accounts.text
             assert {account["operation_mode"] for account in all_accounts.json()} == {
@@ -291,6 +373,122 @@ def test_seeded_terms_signup_and_virtual_trading_end_to_end() -> None:
             after = client.get(f"/api/v1/portfolio?account_id={account_id}", headers=headers).json()
             assert Decimal(after["positions"][0]["quantity"]) == Decimal("6")
             assert after["cash_balance"] == "580000.00"
+
+            snapshot_dates = [date.today() - timedelta(days=1), date.today()]
+            with SessionLocal() as session:
+                session.add_all(
+                    [
+                        PortfolioSnapshot(
+                            account_id=account_id,
+                            snapshot_date=snapshot_dates[0],
+                            cash_balance=Decimal("300000.00"),
+                            total_purchase_amount=Decimal("700000.00"),
+                            total_evaluation_amount=Decimal("700000.00"),
+                            total_assets=Decimal("1000000.00"),
+                            unrealized_profit=Decimal("0.00"),
+                            realized_profit=Decimal("0.00"),
+                            return_rate=Decimal("0.00"),
+                        ),
+                        PortfolioSnapshot(
+                            account_id=account_id,
+                            snapshot_date=snapshot_dates[1],
+                            cash_balance=Decimal("580000.00"),
+                            total_purchase_amount=Decimal("420000.00"),
+                            total_evaluation_amount=Decimal("440000.00"),
+                            total_assets=Decimal("1020000.00"),
+                            unrealized_profit=Decimal("20000.00"),
+                            realized_profit=Decimal("0.00"),
+                            return_rate=Decimal("4.76"),
+                        ),
+                    ]
+                )
+                session.commit()
+
+            home = client.get(
+                "/api/v1/portfolio/home",
+                headers=headers,
+                params={
+                    "account_id": account_id,
+                    "period": "1M",
+                    "sort": "return_rate",
+                    "order": "desc",
+                },
+            )
+            assert home.status_code == 200, home.text
+            home_payload = home.json()
+            assert home_payload["account"]["id"] == account_id
+            assert home_payload["account"]["operation_mode"] == "AUTO"
+            assert home_payload["summary"]["cash_balance"] == "580000.00"
+            assert home_payload["summary"]["total_assets"] == "1000000.00"
+            assert home_payload["positions"][0]["stock_code"] == stock_code
+            assert Decimal(home_payload["positions"][0]["quantity"]) == Decimal("6")
+            allocations = {item["type"]: item for item in home_payload["allocations"]}
+            assert allocations["STOCK"]["amount"] == "420000.00"
+            assert allocations["CASH"]["amount"] == "580000.00"
+            assert [item["total_assets"] for item in home_payload["trend"]["items"]] == [
+                "1000000.00",
+                "1020000.00",
+            ]
+            assert [item["portfolio_return_rate"] for item in home_payload["trend"]["items"]] == [
+                "0.00",
+                "2.00",
+            ]
+            # CI에는 아직 리밸런싱 모델 deployment를 연결하지 않는다. 홈의 나머지 데이터는
+            # 정상 제공하고 AI 영역만 명시적인 부분 실패로 내려가야 한다.
+            assert home_payload["rebalancing_insight"]["status"] == "UNAVAILABLE"
+            assert home_payload["rebalancing_insight"]["model_version"] is None
+            assert home_payload["rebalancing_proposals"] == []
+
+            first_transactions = client.get(
+                "/api/v1/portfolio/transactions",
+                headers=headers,
+                params={"account_id": account_id, "limit": 1},
+            )
+            assert first_transactions.status_code == 200, first_transactions.text
+            first_page = first_transactions.json()
+            assert first_page["has_more"] is True
+            assert first_page["next_cursor"]
+            assert first_page["items"][0]["side"] == "SELL"
+            assert first_page["items"][0]["transaction_amount"] == "280000.00"
+
+            second_transactions = client.get(
+                "/api/v1/portfolio/transactions",
+                headers=headers,
+                params={
+                    "account_id": account_id,
+                    "limit": 1,
+                    "cursor": first_page["next_cursor"],
+                },
+            )
+            assert second_transactions.status_code == 200, second_transactions.text
+            second_page = second_transactions.json()
+            assert second_page["has_more"] is False
+            assert second_page["next_cursor"] is None
+            assert second_page["items"][0]["side"] == "BUY"
+            assert second_page["items"][0]["transaction_amount"] == "700000.00"
+
+            invalid_cursor = client.get(
+                "/api/v1/portfolio/transactions",
+                headers=headers,
+                params={"account_id": account_id, "cursor": "not-a-cursor"},
+            )
+            assert invalid_cursor.status_code == 422, invalid_cursor.text
+            assert invalid_cursor.json()["code"] == "INVALID_TRANSACTION_CURSOR"
+
+            intruder_home = client.get(
+                "/api/v1/portfolio/home",
+                headers=intruder_headers,
+                params={"account_id": account_id},
+            )
+            assert intruder_home.status_code == 404, intruder_home.text
+            assert intruder_home.json()["code"] == "ACCOUNT_NOT_FOUND"
+            intruder_transactions = client.get(
+                "/api/v1/portfolio/transactions",
+                headers=intruder_headers,
+                params={"account_id": account_id},
+            )
+            assert intruder_transactions.status_code == 404, intruder_transactions.text
+            assert intruder_transactions.json()["code"] == "ACCOUNT_NOT_FOUND"
 
             with SessionLocal() as session:
                 account = session.get(VirtualAccount, account_id)

@@ -3,11 +3,15 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import type { TooltipProps } from 'recharts';
 import Header from '../components/Header';
 import TermTooltip from '../components/TermTooltip';
-import { fetchAiExplanation, getBacktestAvailableRange, runBacktest } from '../data/backtestApi';
+import { fetchAiExplanation, getBacktestAvailableRange, runBacktest, USE_MOCK_BACKTEST } from '../data/backtestApi';
 import type { BacktestAvailableRange } from '../data/backtestApi';
 import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
 import { STRATEGIES } from '../data/strategies';
 import { won } from '../lib/validation';
+import { useTradingData } from '../hooks/useTradingData';
+import { useAuthStore } from '../store/authStore';
+import { useInvestmentStore } from '../store/investmentStore';
+import { useTradingStore } from '../store/tradingStore';
 import type { BacktestAiContext, BacktestPeriod, BacktestResult, Screen } from '../types';
 
 interface Props {
@@ -15,6 +19,12 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   onStart: () => void;
+  /** 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보낼 때 사용 —
+   * 로그인 후 Portfolio가 아니라 이 화면으로 복귀시키기 위해 App.tsx가 별도로 처리한다 */
+  onRequestLoginForBacktest: () => void;
+  /** "이 전략으로 변경하기" 확인 — 실제 계좌 전략 변경 API(ensureAccount/selectStrategyApi)를 거친 뒤
+   * App.tsx가 로컬 activeStrategyId 갱신과 Portfolio 이동까지 처리한다. 실패하면 reject된다. */
+  onConfirmStrategyChange: () => Promise<void>;
   /** 이 전략으로 계좌 연결까지는 끝냈지만 "나중에 입금할게요"로 미룬 투자가 있으면 전달된다 */
   pendingDeposit?: { amount: number } | null;
   /** 위 배너의 CTA — 약관/계좌 단계를 다시 거치지 않고 곧장 입금 화면으로 이동한다 */
@@ -25,10 +35,15 @@ const PRINCIPAL = 10_000_000;
 
 const METRIC_TERMS: Record<string, string> = {
   cumulativeReturn: '투자 시작 시점부터 해당 기간 끝까지 누적된 수익률이에요.',
-  cagr: '연평균 성장률이에요. 기간 동안의 수익을 매년 일정하게 늘어난 것으로 환산한 값이에요.',
-  mdd: '투자 기간 중 고점에서 가장 크게 떨어졌던 폭이에요.',
-  volatility: '수익률이 오르내리는 정도예요. 클수록 등락이 심했다는 뜻이에요.',
-  sharpe: '위험 대비 수익이 얼마나 좋았는지 보여주는 지표예요. 높을수록 위험 대비 수익이 좋았다는 뜻이에요.',
+  cagr: '투자 기간의 전체 성과를 1년 평균 수익률로 환산한 값이에요.',
+  mdd: '투자 기간 중 가장 크게 떨어졌던 폭이에요. 숫자가 작을수록 하락 위험이 상대적으로 낮아요.',
+  volatility: '수익률이 얼마나 크게 오르내렸는지를 보여줘요. 낮을수록 움직임이 비교적 안정적이에요.',
+  sharpe: '감수한 위험에 비해 얼마나 효율적으로 수익을 냈는지 보여줘요. 일반적으로 높을수록 좋아요.',
+};
+
+const METRIC_LABELS: Record<string, string> = {
+  cagr: '연평균 수익률(CAGR)',
+  mdd: '최대 낙폭(MDD)',
 };
 
 const fmtDate = (iso: string) => iso.replaceAll('-', '.');
@@ -38,8 +53,61 @@ const fmtWon = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}
 const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 
 /** 03 전략 상세 — 추천 기간(또는 직접 설정한 기간)으로 전략을 직접 체험한 뒤 바로 투자 시작으로 이어진다 */
-export default function StrategyDetail({ strategyId, userName, onNavigate, onStart, pendingDeposit, onResumeDeposit }: Props) {
+export default function StrategyDetail({
+  strategyId, userName, onNavigate, onStart, onRequestLoginForBacktest, onConfirmStrategyChange, pendingDeposit, onResumeDeposit,
+}: Props) {
   const strategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
+  // 비회원 공개 정책: 전략을 읽고 백테스트 기본 결과를 보는 것은 PUBLIC이지만, "나와 몇% 잘
+  // 맞는지" 같은 개인화 적합도는 로그인 + 투자성향 진단 완료 사용자에게만 보여준다.
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
+  const showSuitability = isLoggedIn && investorProfileCompleted;
+
+  // "계좌 1개 = 운용방식 1개 = 활성 전략 1개" 정책 — 지금 활성 투자(activeMode)가 있으면 그 계좌의
+  // activeStrategyId와 이 화면의 strategyId를 비교해 CTA를 셋 중 하나로 분기한다. 비회원/미투자
+  // 사용자는 accountsByMode·activeMode가 항상 비어있어 자연히 'start'가 된다.
+  const accountsByMode = useInvestmentStore((s) => s.accountsByMode);
+  const activeMode = useInvestmentStore((s) => s.activeMode);
+  const activeAccount = activeMode ? accountsByMode[activeMode] : null;
+  // 위 로컬 기록은 이 브라우저에서 투자 시작/전략 변경을 실제로 거친 세션에만 채워진다. 새
+  // 브라우저나 localStorage가 초기화된 환경에서는 실제 계좌(백엔드)에 이미 선택된 전략이 있어도
+  // 로컬만 보면 없는 것처럼 보여 "이 전략으로 시작하기"가 잘못 다시 노출된다. 그래서 로컬에 없으면
+  // 이미 조회된 실제 계좌(useTradingData가 채우는 tradingStore.account)의 selected_strategy_id로
+  // 한 번 더 확인한다.
+  useTradingData();
+  const realAccount = useTradingStore((s) => s.account);
+  const activeStrategyId = activeAccount?.activeStrategyId ?? realAccount?.selected_strategy_id ?? null;
+  // 로그인 사용자인데 App.tsx의 실제 계좌 조회(activeMode 복원)가 아직 끝나지 않았으면, 아직
+  // 확정되지 않은 activeStrategyId(=null)를 근거로 "미투자"로 단정하지 않고 CTA를 잠깐 보류한다.
+  const activeModeChecked = useInvestmentStore((s) => s.activeModeChecked);
+  const ctaPending = isLoggedIn && !activeModeChecked;
+  const ctaState: 'start' | 'current' | 'change' =
+    !activeStrategyId ? 'start' : activeStrategyId === strategyId ? 'current' : 'change';
+  const activeStrategyName = activeStrategyId
+    ? (STRATEGIES.find((s) => s.id === activeStrategyId)?.name ?? activeStrategyId)
+    : null;
+  const [changeConfirmOpen, setChangeConfirmOpen] = useState(false);
+  const [changeSubmitting, setChangeSubmitting] = useState(false);
+  const [changeError, setChangeError] = useState('');
+
+  // 실제 계좌 전략 변경 API 호출까지 기다린 뒤에만 모달을 닫는다 — 성공 시 이동(Portfolio)은
+  // App.tsx의 onConfirmStrategyChange 구현이 처리하고, 실패하면 모달에 에러를 보여주고 계속 띄워둔다.
+  const confirmStrategyChange = async () => {
+    if (changeSubmitting) return;
+    setChangeSubmitting(true);
+    setChangeError('');
+    try {
+      await onConfirmStrategyChange();
+      setChangeConfirmOpen(false);
+    } catch (e) {
+      setChangeError(e instanceof Error ? e.message : '전략을 변경하지 못했어요. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setChangeSubmitting(false);
+    }
+  };
+  // 백테스트 "결과"는 공개, "다른 기간으로 바꿔보는" interaction만 로그인 필요 — 잠긴 상태에서
+  // 다른 기간/직접 설정을 시도하면 즉시 로그인으로 보내지 않고 이 inline 안내를 먼저 보여준다.
+  const [showBacktestLoginLock, setShowBacktestLoginLock] = useState(false);
   const [availableRange, setAvailableRange] = useState<BacktestAvailableRange | null>(null);
   const [periods, setPeriods] = useState<BacktestPeriod[]>([]);
 
@@ -102,6 +170,7 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
   }, [strategyId, periods]);
 
   const selectPreset = (id: string) => {
+    if (!isLoggedIn && id !== presetPeriodId) { setShowBacktestLoginLock(true); return; }
     setPeriodMode('preset');
     setPresetPeriodId(id);
     setCustomPanelOpen(false);
@@ -184,9 +253,20 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
       <main className="flex flex-col items-center px-16 pb-24 pt-6">
         <div className="flex w-[1040px] flex-col gap-10">
           <section className="flex flex-col gap-4">
-            <span className="text-base font-semibold text-[#3F5222]">✦ 나와 {strategy.match}% 잘 맞는 전략</span>
+            <button
+              onClick={() => onNavigate('strategy-list')}
+              className="self-start text-[15px] font-semibold text-muted transition-colors hover:text-navy"
+            >
+              ← 투자전략 목록
+            </button>
+            {showSuitability && (
+              <span className="text-base font-semibold text-[#3F5222]">✦ 나와 {strategy.match}% 잘 맞는 전략</span>
+            )}
             <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">{strategy.name}</h1>
             <p className="max-w-[820px] text-[19px] leading-8 text-muted">{strategy.why}</p>
+            {showSuitability && strategy.suitabilityNote && (
+              <p className="max-w-[820px] text-[17px] leading-7 text-[#3F5222]">✦ {strategy.suitabilityNote}</p>
+            )}
           </section>
 
           {pendingDeposit && (
@@ -213,17 +293,21 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
             </div>
 
             <div className="flex flex-wrap gap-3">
-              {periods.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => selectPreset(p.id)}
-                  className={`rounded-full px-6 py-3.5 text-[17px] font-semibold ${
-                    periodMode === 'preset' && p.id === presetPeriodId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+              {periods.map((p) => {
+                const isLocked = !isLoggedIn && p.id !== presetPeriodId;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => selectPreset(p.id)}
+                    className={`group relative flex items-center gap-1.5 rounded-full px-6 py-3.5 text-[17px] font-semibold ${
+                      periodMode === 'preset' && p.id === presetPeriodId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
+                    }`}
+                  >
+                    {p.label}
+                    {isLocked && <LoginLockBadge />}
+                  </button>
+                );
+              })}
             </div>
 
             <p className="text-[15px] leading-6 text-muted">
@@ -233,11 +317,32 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
               </>}
             </p>
 
+            {showBacktestLoginLock && (
+              <div className="flex items-center justify-between gap-6 rounded-[16px] bg-[#F8FCEE] px-7 py-6">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[15px] font-bold text-[#3F5222]">다른 시장에서도 확인해볼까요?</span>
+                  <p className="text-[15px] leading-6 text-[#3F4A43]">
+                    로그인하면 기간을 바꿔가며 이 전략을 직접 확인할 수 있어요.
+                  </p>
+                </div>
+                <button
+                  onClick={onRequestLoginForBacktest}
+                  className="shrink-0 rounded-field bg-lime px-6 py-3.5 text-[15px] font-bold text-navy"
+                >
+                  다른 기간도 직접 확인하기 →
+                </button>
+              </div>
+            )}
+
             <button
-              onClick={() => setCustomPanelOpen((o) => !o)}
-              className="self-start text-[15px] font-semibold text-navy underline"
+              onClick={() => {
+                if (!isLoggedIn) { setShowBacktestLoginLock(true); return; }
+                setCustomPanelOpen((o) => !o);
+              }}
+              className="group relative inline-flex w-fit items-center gap-1.5 self-start text-[15px] font-semibold text-navy underline"
             >
               원하는 기간이 있나요? 직접 설정 →
+              {!isLoggedIn && <LoginLockBadge />}
             </button>
 
             {customPanelOpen && (
@@ -343,8 +448,8 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
 
                 <div className="grid grid-cols-4 gap-8 border-t border-[#F0F2ED] pt-7">
                   <MetricTile label="누적 수익률" value={signed(result.metrics.cumulativeReturn)} termKey="cumulativeReturn" />
-                  <MetricTile label="CAGR" value={signed(result.metrics.cagr)} termKey="cagr" />
-                  <MetricTile label="MDD" value={`${result.metrics.mdd}%`} accent termKey="mdd" />
+                  <MetricTile label={METRIC_LABELS.cagr} value={signed(result.metrics.cagr)} termKey="cagr" />
+                  <MetricTile label={METRIC_LABELS.mdd} value={`${result.metrics.mdd}%`} accent termKey="mdd" />
                   <MetricTile label="변동성" value={`${result.metrics.volatility}%`} termKey="volatility" />
                   {result.metrics.sharpe != null && (
                     <MetricTile label="샤프 지수" value={`${result.metrics.sharpe}`} termKey="sharpe" />
@@ -381,22 +486,163 @@ export default function StrategyDetail({ strategyId, userName, onNavigate, onSta
             </>
           )}
 
-          <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
-            <div className="flex flex-col gap-2.5">
-              <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략으로 시작해볼까요?</span>
-              <span className="text-[17px] leading-7 text-[#B9C2BA]">10만원부터 시작할 수 있고, 전략은 언제든 바꿀 수 있어요.</span>
-            </div>
-            <button onClick={onStart} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
-              이 전략으로 시작하기 →
-            </button>
-          </section>
+          {ctaPending && (
+            // 로그인 사용자인데 activeMode/실제 계좌 조회가 아직 끝나지 않은 순간 — 이미 투자 중인
+            // 사용자에게 "이 전략으로 시작하기"가 잘못(일시적으로) 노출되지 않도록 판단을 보류한다.
+            <section className="flex animate-pulse items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+              <div className="flex flex-col gap-2.5">
+                <div className="h-7 w-56 rounded-md bg-white/10" />
+                <div className="h-5 w-40 rounded-md bg-white/10" />
+              </div>
+              <div className="h-14 w-40 shrink-0 rounded-field bg-white/10" />
+            </section>
+          )}
 
+          {!ctaPending && ctaState === 'start' && (
+            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+              <div className="flex flex-col gap-2.5">
+                <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략으로 시작해볼까요?</span>
+                <span className="text-[17px] leading-7 text-[#B9C2BA]">10만원부터 시작할 수 있어요.</span>
+              </div>
+              <button onClick={onStart} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
+                이 전략으로 시작하기 →
+              </button>
+            </section>
+          )}
+
+          {!ctaPending && ctaState === 'current' && (
+            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+              <div className="flex flex-col gap-2.5">
+                <span className="text-2xl font-bold tracking-[-0.025em] text-white">현재 이 전략으로 운용하고 있어요</span>
+                <span className="text-[17px] leading-7 text-[#B9C2BA]">
+                  투자 현황은{' '}
+                  <button onClick={() => onNavigate('portfolio')} className="inline font-semibold text-lime hover:underline">
+                    나의 포트폴리오 →
+                  </button>
+                  {' '}에서 확인할 수 있어요.
+                </span>
+              </div>
+              {/* 행동 버튼이 아니라 상태 표시이므로 lime(액션 색)을 쓰지 않고, 클릭도 불가능한 정보성 배지로 둔다 */}
+              <span className="shrink-0 flex items-center gap-2 rounded-full bg-white/10 px-7 py-4 text-base font-bold text-white">
+                <span className="text-lime">✓</span> 현재 운용 중
+              </span>
+            </section>
+          )}
+
+          {!ctaPending && ctaState === 'change' && (
+            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+              <div className="flex flex-col gap-2.5">
+                <span className="text-2xl font-bold tracking-[-0.025em] text-white">다른 전략으로 바꿔볼까요?</span>
+                <span className="text-[17px] leading-7 text-[#B9C2BA]">
+                  지금은 {activeStrategyName}으로 운용 중이에요. 한 계좌에서는 하나의 전략만 운용할 수 있어요.
+                </span>
+              </div>
+              <button
+                onClick={() => { setChangeError(''); setChangeConfirmOpen(true); }}
+                className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy"
+              >
+                이 전략으로 변경하기 →
+              </button>
+            </section>
+          )}
+
+          {USE_MOCK_BACKTEST && (
+            <p className="text-sm leading-[22px] text-subtle">
+              ※ 현재 백테스트 결과는 화면 구현을 위한 예시 데이터이며 실제 투자 성과를 나타내지 않습니다.
+            </p>
+          )}
           <p className="text-sm leading-[22px] text-subtle">
             ※ 백테스트 결과는 과거 데이터 기반 예시이며 미래 수익을 보장하지 않습니다.
           </p>
         </div>
       </main>
+
+      {changeConfirmOpen && activeStrategyName && (
+        <StrategyChangeModal
+          currentStrategyName={activeStrategyName}
+          nextStrategyName={strategy.name}
+          submitting={changeSubmitting}
+          error={changeError}
+          onCancel={() => { if (!changeSubmitting) setChangeConfirmOpen(false); }}
+          onConfirm={() => void confirmStrategyChange()}
+        />
+      )}
     </div>
+  );
+}
+
+/** "이 전략으로 변경하기" 확인 모달 — 계좌 하나에는 전략을 하나만 운용할 수 있다는 정책을 확인시키고,
+ * 확인 시 실제 계좌 전략 변경 API가 끝날 때까지 기다린다(TermsModal과 동일한 backdrop/카드 스타일 재사용). */
+function StrategyChangeModal({
+  currentStrategyName, nextStrategyName, submitting, error, onCancel, onConfirm,
+}: {
+  currentStrategyName: string; nextStrategyName: string; submitting: boolean; error: string;
+  onCancel: () => void; onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8" onClick={onCancel}>
+      <div className="flex w-[560px] flex-col gap-7 rounded-card bg-surface p-12" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-col gap-2">
+          <h2 className="text-[24px] font-bold tracking-[-0.025em]">{nextStrategyName}으로 변경할까요?</h2>
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-[16px] bg-canvas px-7 py-6">
+          <div className="flex items-center justify-between">
+            <span className="text-[15px] text-muted">현재 전략</span>
+            <span className="text-[17px] font-bold text-ink">{currentStrategyName}</span>
+          </div>
+          <div className="h-px bg-line" />
+          <div className="flex items-center justify-between">
+            <span className="text-[15px] text-muted">변경할 전략</span>
+            <span className="text-[17px] font-bold text-ink">{nextStrategyName}</span>
+          </div>
+        </div>
+
+        <p className="text-[15px] leading-[24px] text-muted">
+          한 계좌에서는 하나의 전략만 운용할 수 있어요.<br />
+          변경하면 {currentStrategyName} 대신 {nextStrategyName}으로 운용돼요.
+        </p>
+
+        {error && <p className="text-sm text-up">{error}</p>}
+
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            disabled={submitting}
+            className="flex-1 rounded-field bg-[#F4F6F1] py-4 text-base font-semibold text-[#3F4A43] disabled:opacity-60"
+          >
+            현재 전략 유지하기
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={submitting}
+            className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy disabled:opacity-60"
+          >
+            {submitting ? '변경하는 중...' : `${nextStrategyName}으로 변경하기`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 비회원 백테스트 interaction 잠금 표시 — 일반 🔒 emoji 대신 FE!N 물방개 얼굴 아이콘(button-pixel.png)을
+ * 쓴다. "로그인하면 쓸 수 있는 기능"이라는 뜻으로만 쓰고 에러/경고 의미로는 쓰지 않는다. 부모 버튼에
+ * hover가 걸리면(desktop) CSS group-hover로만 tooltip을 보여주는 순수 장식 요소라 자체 클릭 핸들러는
+ * 없다 — 실제 클릭 시 안내는 이미 구현된 Inline Login CTA(showBacktestLoginLock)가 담당한다.
+ */
+function LoginLockBadge() {
+  return (
+    <>
+      <img src="/button-pixel.png" alt="" className="h-4 w-4 shrink-0 object-contain" />
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-navy px-2.5 py-1.5 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100"
+      >
+        로그인 후 이용할 수 있어요
+      </span>
+    </>
   );
 }
 

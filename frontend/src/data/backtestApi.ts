@@ -1,3 +1,4 @@
+import { getMockBacktestResult, MOCK_AVAILABLE_RANGE } from './mockBacktest';
 import type {
   BacktestAiContext,
   BacktestAiExplanation,
@@ -6,6 +7,14 @@ import type {
 } from '../types';
 
 export const API_BASE = '/api/v1/backtest';
+
+/**
+ * 실제 백테스트 모델/KRX 데이터 연동 전까지, Frontend 개발·UX 검증용으로만 쓰는 명시적 Mock 모드.
+ * 절대 API 오류(404/422/500) 발생 시 자동으로 켜지는 fallback이 아니다 — .env에서 명시적으로
+ * VITE_USE_MOCK_BACKTEST=true를 켰을 때만 동작하고, 꺼져 있으면(기본값) 항상 실제 API를 호출해
+ * 기존 에러 처리(404/422 등)가 그대로 유지된다.
+ */
+export const USE_MOCK_BACKTEST = import.meta.env.VITE_USE_MOCK_BACKTEST === 'true';
 
 export interface BacktestAvailableRange {
   minDate: string;
@@ -43,9 +52,10 @@ async function request<T>(path: string, body: unknown): Promise<T> {
 
 export function runBacktest(
   strategyId: string,
-  _strategyName: string,
+  strategyName: string,
   period: BacktestPeriod,
 ): Promise<BacktestResult> {
+  if (USE_MOCK_BACKTEST) return getMockBacktestResult(strategyId, strategyName, period);
   return request<BacktestResult>('/run', {
     strategyId,
     periodId: period.id,
@@ -57,6 +67,7 @@ export function runBacktest(
 }
 
 export function getBacktestAvailableRange(): Promise<BacktestAvailableRange> {
+  if (USE_MOCK_BACKTEST) return Promise.resolve(MOCK_AVAILABLE_RANGE);
   return get<BacktestAvailableRange>('/available-range');
 }
 
@@ -84,7 +95,7 @@ export function fetchAiExplanation(ctx: BacktestAiContext): Promise<BacktestAiEx
   const sharpe = ctx.sharpe == null ? '' : ` 샤프 지수는 ${ctx.sharpe}였어요.`;
   return Promise.resolve({
     headline,
-    overview: `${opening} ${ctx.strategyName}은 실제 KRX 시세 기준 누적 ${ctx.cumulativeReturn}%를 기록했고, ${comparison}`,
+    overview: `${opening} ${ctx.strategyName}은 누적 ${ctx.cumulativeReturn}%를 기록했고, ${comparison}`,
     caution: `이 기간 최대 낙폭은 ${ctx.mdd}%, 연환산 변동성은 ${ctx.volatility}%였어요.${sharpe}`,
     generatedAt: new Date().toISOString(),
   });

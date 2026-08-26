@@ -9,7 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models import Execution, MarketStock, Order, PortfolioSnapshot, Position, RebalancingDecision, Strategy, StrategyTargetWeight, VirtualAccount
+from app.models import Execution, InvestmentOnboarding, MarketStock, Order, PortfolioSnapshot, Position, RebalancingDecision, Strategy, StrategyTargetWeight, User, VirtualAccount
 
 
 @dataclass(frozen=True)
@@ -28,13 +28,26 @@ class TradingRepository:
             query = query.with_for_update()
         return self.session.scalar(query)
 
-    def account_for_user(self, user_id: int, operation_mode: str) -> VirtualAccount | None:
-        return self.session.scalar(
-            select(VirtualAccount).where(
-                VirtualAccount.user_id == user_id,
-                VirtualAccount.operation_mode == operation_mode,
-            )
+    def user(self, user_id: int, *, lock: bool = False) -> User | None:
+        query = select(User).where(User.id == user_id)
+        if lock:
+            query = query.with_for_update()
+        return self.session.scalar(query)
+
+    def account_for_user(
+        self,
+        user_id: int,
+        operation_mode: str,
+        *,
+        lock: bool = False,
+    ) -> VirtualAccount | None:
+        query = select(VirtualAccount).where(
+            VirtualAccount.user_id == user_id,
+            VirtualAccount.operation_mode == operation_mode,
         )
+        if lock:
+            query = query.with_for_update()
+        return self.session.scalar(query)
 
     def accounts_for_user(self, user_id: int) -> list[VirtualAccount]:
         return list(self.session.scalars(
@@ -42,6 +55,19 @@ class TradingRepository:
             .where(VirtualAccount.user_id == user_id)
             .order_by(VirtualAccount.operation_mode)
         ))
+
+    def completed_onboarding_for_user_mode(
+        self,
+        user_id: int,
+        operation_mode: str,
+    ) -> InvestmentOnboarding | None:
+        return self.session.scalar(
+            select(InvestmentOnboarding).where(
+                InvestmentOnboarding.user_id == user_id,
+                InvestmentOnboarding.operation_mode == operation_mode,
+                InvestmentOnboarding.status == "COMPLETED",
+            )
+        )
 
     def position(self, account_id: UUID, stock_code: str, *, lock: bool = False) -> Position | None:
         query = select(Position).where(Position.account_id == account_id, Position.stock_code == stock_code)

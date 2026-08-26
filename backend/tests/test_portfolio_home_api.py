@@ -17,7 +17,7 @@ class FakePortfolioService:
     def __init__(self) -> None:
         self.calls = []
 
-    def home(self, user_id, account_id, period, sort_by, order):
+    async def home(self, user_id, account_id, period, sort_by, order):
         self.calls.append((user_id, account_id, period, sort_by, order))
         return {
             "account": {
@@ -50,6 +50,12 @@ class FakePortfolioService:
             "positions": [],
             "contributions": [],
             "strategy_targets_available": False,
+            "rebalancing_insight": {
+                "status": "UNAVAILABLE",
+                "summary": "적용 가능한 전략 목표 비중이 없습니다.",
+                "model_version": None,
+                "generated_at": None,
+            },
             "rebalancing_proposals": [],
             "valuation_as_of": None,
             "price_sources": [],

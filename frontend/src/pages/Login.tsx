@@ -1,17 +1,31 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
+
+export type LoginContext = 'header' | 'home' | 'strategy';
 
 interface Props {
   onLogin: () => void;
   onSignup: () => void;
   onHome: () => void;
   onNavigate: (s: Screen) => void;
+  /** 로그인 화면에 진입한 경로 — title/subtitle만 바뀌고 폼/버튼/레이아웃은 동일하다 */
+  context: LoginContext;
 }
 
+const LOGIN_COPY: Record<LoginContext, { title: ReactNode; subtitle: string }> = {
+  header: { title: '다시 오셨네요.', subtitle: '로그인하고 FE!N을 계속 이용해보세요.' },
+  home: { title: 'FE!N을 시작해볼까요?', subtitle: '로그인하거나 회원가입하고 내 투자성향을 알아보세요.' },
+  // 440px 고정폭에서 줄바꿈 없이 두면 "…시작해볼까 / 요?"처럼 어색하게 끊겨 자연스러운 어절 경계에서
+  // 줄을 바꾼다 — 문구/폭/font-size는 그대로다.
+  strategy: { title: <>이 전략으로<br />시작해볼까요?</>, subtitle: '로그인하거나 회원가입하고 투자 준비를 이어가세요.' },
+};
+
 /** 로그인 — 기존 회원은 포트폴리오로, "회원가입하기"는 가입 1단계로 */
-export default function Login({ onLogin, onSignup, onHome }: Props) {
+export default function Login({ onLogin, onSignup, onHome, context }: Props) {
+  const { title, subtitle } = LOGIN_COPY[context];
   const login = useAuthStore((s) => s.login);
   const [id, setId] = useState('');
   const [pw, setPw] = useState('');
@@ -41,12 +55,15 @@ export default function Login({ onLogin, onSignup, onHome }: Props) {
     <div className="min-h-screen bg-canvas">
       <header className="flex h-20 items-center px-16">
         <button onClick={onHome} className="flex items-center gap-2">
-          <img src="/main_logo.png" alt="FE!N" className="h-16 w-auto object-contain" />
+          <img src="/main_logo_2.png" alt="FE!N" className="h-16 w-auto object-contain" />
         </button>
       </header>
 
       <main className="mx-auto flex w-[440px] flex-col gap-8 py-16">
-        <h1 className="text-[40px] font-bold leading-[56px] tracking-[-0.035em]">다시 오셨네요.</h1>
+        <div className="flex flex-col gap-3">
+          <h1 className="text-[40px] font-bold leading-[56px] tracking-[-0.035em]">{title}</h1>
+          <p className="text-lg leading-7 text-muted">{subtitle}</p>
+        </div>
 
         <div className="flex flex-col gap-3.5">
           <input

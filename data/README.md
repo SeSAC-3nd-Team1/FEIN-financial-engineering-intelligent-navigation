@@ -284,12 +284,12 @@ Raw 경로와 테이블 명세는 각각 `data/docs/RAW_DATA_CATALOG.md`,
 
 ## 한국은행 ECOS 거시경제 데이터
 
-`.env`에 `ECOS_API_KEY`를 설정한 뒤 2021년부터 기준금리, 원/달러 환율, CPI,
+`.env`에 `ECOS_API_KEY`를 설정한 뒤 2018년부터 기준금리, 원/달러 환율, CPI,
 국고채 3년·10년을 수집한다. 백필과 증분 실행은 동일 CLI를 사용하며 Raw는 원문을
 content-addressed JSONL.gz로 보존한다.
 
 ```bash
-docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage raw --start-date 2021-01-01 --validate-metadata
+docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage raw --start-date 2018-01-01 --validate-metadata
 docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage all --incremental
 docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage raw --series base_rate --start-date 2026-01-01
 docker compose --profile data run --rm --no-deps data python -m scripts.run_ecos_pipeline --stage processed
@@ -322,6 +322,47 @@ docker compose --profile data run --rm data python -m scripts.collect_model_raw 
 결과는 `reports/MODEL_RAW_COLLECTION_SUMMARY.{json,md}`와
 `docs/DOYOUNG_MODEL_DATA_INVENTORY.md`에 기록된다. OpenDART 재무를 가격과 결합할 때는
 결산일이 아니라 실제 공시 `rcept_dt` 이후에만 사용할 수 있다.
+
+## 2018 모델 데이터 전처리
+
+2018-01-01부터 실제 Raw coverage가 확인된 KRX·ECOS·OpenDART만 schema/feature v2로
+전처리하고 범위를 감사한다. 외국인·기관 수급, VIX/VKOSPI, SOX처럼 2018 coverage가 없는
+데이터를 임의 생성하거나 섞지 않는다.
+
+```bash
+docker compose --profile data run --rm --no-deps data \
+  python -m scripts.preprocess_model_2018
+```
+
+KRX는 `model_stock_daily`, `market_index_daily`, ECOS는 point-in-time 지연 정책을 적용한
+`macro_daily` Features를 만든다. OpenDART 공시 목록은 실제 `rcept_dt` 기반 이벤트
+Processed를 만들지만, 재무 API에는 접수일 연결 정보가 없으므로
+`point_in_time_join_ready=false`로 유지하고 가격 학습 데이터와 자동 JOIN하지 않는다.
+월별 Raw 경로 fingerprint가 같으면 OpenDART Processed를 재생성하지 않는다.
+
+성공 결과는 Azure Features의
+`_manifests/doyoung-2018/version=v2/manifest.json`과 로컬
+`reports/DOYOUNG_2018_PREPROCESSING_SUMMARY.{json,md}`에서 확인한다.
+
+### 최종 모델 학습 Dataset 결합
+
+기존 v2 Feature를 월별로 읽어 `trade_date`에 exact left join하고,
+`stock_code + trade_date` 자연키를 유지하는 최종 Dataset은 별도 명령으로 만든다.
+시장지수는 `index_code`별 wide 컬럼으로 변환하며, ECOS `available_at` 정책이 반영된
+`macro_daily`만 사용한다. 보조 데이터가 없는 날짜의 값은 0으로 대체하거나 forward-fill하지
+않는다. OpenDART financial accounts는 `point_in_time_join_ready=false`이므로 이 Dataset에
+포함하지 않는다.
+
+```bash
+docker compose --profile data run --rm --no-deps data \
+  python -m scripts.build_final_model_dataset \
+  --source-version 2 --output-version 1 --overwrite
+```
+
+출력은 `features/model_training_daily/version=v1/year=YYYY/month=MM/part-00000.parquet`와
+`features/_manifests/model-training-daily/version=v1/manifest.json`이다. Manifest의
+`feature_columns`와 `target_columns`는 별도 목록이며 `target_*`은 모델 입력이 아니다.
+월별 입력·출력만 동시에 메모리에 올리므로 전체 5백만 행을 한 번에 적재하지 않는다.
 
 회원가입 상세 구현 가이드는 `data/REGISTRATION_DB.md`를 본다.
 

@@ -53,6 +53,10 @@ class User(TimestampMixin, Base):
             name="account_status_values",
         ),
         CheckConstraint(
+            "active_operation_mode IN ('AUTO', 'SEMI_AUTO')",
+            name="active_operation_mode_values",
+        ),
+        CheckConstraint(
             "(account_status = 'WITHDRAWN' AND deleted_at IS NOT NULL) OR "
             "(account_status <> 'WITHDRAWN')",
             name="withdrawn_has_deleted_at",
@@ -87,6 +91,10 @@ class User(TimestampMixin, Base):
         String(20), server_default=text("'ACTIVE'"), nullable=False
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    active_operation_mode: Mapped[str | None] = mapped_column(String(20))
+    operation_mode_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

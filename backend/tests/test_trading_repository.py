@@ -69,3 +69,23 @@ def test_execution_history_uses_stable_keyset_and_stock_name_join() -> None:
     assert "executions.id <" in sql
     assert "executions.executed_at DESC, executions.id DESC" in sql
     assert "LIMIT" in sql
+
+
+def test_completed_onboarding_lookup_requires_user_mode_and_completed_status() -> None:
+    onboarding = SimpleNamespace(account_id=uuid4(), status="COMPLETED")
+
+    class FakeSession:
+        def scalar(self, query):
+            self.query = query
+            return onboarding
+
+    session = FakeSession()
+    repository = TradingRepository(session)
+
+    result = repository.completed_onboarding_for_user_mode(7, "AUTO")
+
+    sql = str(session.query)
+    assert result is onboarding
+    assert "investment_onboardings.user_id" in sql
+    assert "investment_onboardings.operation_mode" in sql
+    assert "investment_onboardings.status" in sql

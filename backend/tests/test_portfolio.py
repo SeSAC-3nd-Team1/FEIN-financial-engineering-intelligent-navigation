@@ -1,5 +1,6 @@
-"""포트폴리오 평가 계산을 검증한다."""
+"""포트폴리오 평가 계산과 AI 리밸런싱 응답을 검증한다."""
 
+import asyncio
 from decimal import Decimal
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
@@ -9,7 +10,9 @@ import pytest
 
 from app.core.errors import ServiceError
 from app.integrations.kis.models import CurrentQuote
+from app.integrations.ai.rebalancing_client import AIRebalancingResult
 from app.schemas.api import PortfolioResponse, PositionResponse
+from app.services import portfolio as portfolio_service_module
 from app.services.portfolio import (
     PortfolioService,
     build_allocations,
@@ -220,7 +223,10 @@ def test_home_combines_account_evaluation_history_and_sorting_without_second_own
     service.market_repo = SimpleNamespace(kospi_since=lambda *_args: [])
     service._evaluate_account = lambda _account: portfolio
 
-    result = service.home(7, account_id, "3M", "return_rate", "desc")
+    service.rebalancing_client = None
+    service.rebalancing_model_version = "rebalancing-v1"
+
+    result = asyncio.run(service.home(7, account_id, "3M", "return_rate", "desc"))
 
     assert service.repo.owner_lookups == 1
     assert result.account.operation_mode == "SEMI_AUTO"
@@ -229,6 +235,147 @@ def test_home_combines_account_evaluation_history_and_sorting_without_second_own
     assert [item.stock_code for item in result.positions] == ["000660", "005930"]
     assert result.allocations[-1].type == "CASH"
     assert result.valuation_as_of == datetime(2026, 8, 25, tzinfo=UTC)
+    assert result.rebalancing_insight.status == "UNAVAILABLE"
+
+
+def test_home_offloads_sync_work_before_awaiting_ai_rebalancing(monkeypatch) -> None:
+    account_id = uuid4()
+    account = SimpleNamespace(
+        id=account_id,
+        account_name="나의 반자동 계좌",
+        operation_mode="SEMI_AUTO",
+        status="ACTIVE",
+        selected_strategy_id="low",
+    )
+    candidate = calculate_rebalancing(
+        Decimal("1000000"),
+        {"005930": Decimal("20.00")},
+        {"005930": Decimal("0.15")},
+        {"005930": "삼성전자"},
+    )[0]
+    portfolio = PortfolioResponse(
+        account_id=account_id,
+        cash_balance=Decimal("800000"),
+        total_purchase_amount=Decimal("200000"),
+        total_evaluation_amount=Decimal("200000"),
+        total_assets=Decimal("1000000"),
+        unrealized_profit=Decimal("0"),
+        realized_profit=Decimal("0"),
+        return_rate=Decimal("0"),
+        today_profit=None,
+        top_contributor=None,
+        contributions=[],
+        strategy_targets_available=True,
+        rebalancing_proposals=[candidate],
+        positions=[],
+    )
+
+    events = []
+
+    async def fake_run_in_threadpool(func, *args, **kwargs):
+        events.append("sync")
+        return func(*args, **kwargs)
+
+    class FakeClient:
+        async def analyze(self, context):
+            events.append("ai")
+            self.context = context
+            return AIRebalancingResult(
+                summary="목표 비중과 5%p 차이가 발생했습니다.",
+                proposals=[{
+                    "stock_code": "005930",
+                    "priority": 1,
+                    "current_weight": "20.00",
+                    "target_weight": "15.00",
+                    "weight_diff": "5.00",
+                    "action": "SELL",
+                    "recommended_amount": "50000.00",
+                    "reason": "전략 목표보다 보유 비중이 높습니다.",
+                    "why_now": "현재 목표 비중과의 차이가 5%p로 확대됐습니다.",
+                }],
+            )
+
+    class FakeRepo:
+        def owned_account(self, *_args):
+            return account
+
+        def snapshots_since(self, *_args):
+            return []
+
+    client = FakeClient()
+    service = PortfolioService.__new__(PortfolioService)
+    service.repo = FakeRepo()
+    service.market_repo = SimpleNamespace(kospi_since=lambda *_args: [])
+    service.rebalancing_client = client
+    service.rebalancing_model_version = "rebalancing-v1"
+    service._evaluate_account = lambda _account: portfolio
+    monkeypatch.setattr(portfolio_service_module, "run_in_threadpool", fake_run_in_threadpool)
+
+    result = asyncio.run(service.home(7, account_id, "3M", "weight", "desc"))
+
+    assert events == ["sync", "ai"]
+    assert result.rebalancing_insight.status == "AVAILABLE"
+    assert result.rebalancing_insight.model_version == "rebalancing-v1"
+    assert result.rebalancing_proposals[0].source == "AI"
+    assert result.rebalancing_proposals[0].why_now == "현재 목표 비중과의 차이가 5%p로 확대됐습니다."
+    assert client.context.validated_candidates[0].recommended_amount == Decimal("50000.00")
+
+
+def test_home_does_not_forward_fabricated_ai_rebalancing_values() -> None:
+    candidate = calculate_rebalancing(
+        Decimal("1000000"),
+        {"005930": Decimal("20.00")},
+        {"005930": Decimal("0.15")},
+        {"005930": "삼성전자"},
+    )[0]
+
+    portfolio = PortfolioResponse(
+        account_id=uuid4(),
+        cash_balance=Decimal("800000"),
+        total_purchase_amount=Decimal("200000"),
+        total_evaluation_amount=Decimal("200000"),
+        total_assets=Decimal("1000000"),
+        unrealized_profit=Decimal("0"),
+        realized_profit=Decimal("0"),
+        return_rate=Decimal("0"),
+        today_profit=None,
+        top_contributor=None,
+        contributions=[],
+        strategy_targets_available=True,
+        rebalancing_proposals=[candidate],
+        positions=[],
+    )
+
+    class FabricatingClient:
+        async def analyze(self, _context):
+            return AIRebalancingResult(
+                summary="잘못된 금액을 포함합니다.",
+                proposals=[{
+                    "stock_code": "005930",
+                    "priority": 1,
+                    "current_weight": "20.00",
+                    "target_weight": "15.00",
+                    "weight_diff": "5.00",
+                    "action": "SELL",
+                    "recommended_amount": "999999.00",
+                    "reason": "제안 이유",
+                    "why_now": "현재 제안 이유",
+                }],
+            )
+
+    service = PortfolioService.__new__(PortfolioService)
+    service.rebalancing_client = FabricatingClient()
+    service.rebalancing_model_version = "rebalancing-v1"
+    account = SimpleNamespace(operation_mode="SEMI_AUTO", selected_strategy_id="low")
+
+    insight, proposals = asyncio.run(service._ai_rebalancing(
+        account,
+        portfolio,
+        valuation_as_of=None,
+    ))
+
+    assert insight.status == "UNAVAILABLE"
+    assert proposals == []
 
 
 def test_evaluate_combines_real_metadata_quote_and_daily_contribution() -> None:
