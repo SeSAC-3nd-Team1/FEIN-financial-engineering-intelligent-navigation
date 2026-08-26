@@ -45,7 +45,7 @@ import type { Screen, SignupPersonal } from './types';
 const SESSION_KEY = 'fein.session-nav';
 interface PersistedNav {
   screen: Screen; strategyId: string; stockCode: string; stockBackTarget: Screen;
-  selectedTransactionId: string; transactionBackTarget: Screen;
+  selectedTransactionId: string; transactionBackTarget: Screen; rebalanceBackTarget: Screen;
 }
 function loadPersistedNav(): Partial<PersistedNav> {
   try {
@@ -124,6 +124,10 @@ export default function App() {
   // 거래 상세 진입 지점(포트폴리오 상세의 "최근 거래" 3건 vs 전체 거래 내역)에 따라 뒤로가기 목적지가 달라진다.
   const [selectedTransactionId, setSelectedTransactionId] = useState(persistedNav.selectedTransactionId ?? '');
   const [transactionBackTarget, setTransactionBackTarget] = useState<Screen>(persistedNav.transactionBackTarget ?? 'portfolio-detail');
+  // 리밸런싱 제안 상세 진입 지점(Portfolio/PortfolioAuto 요약 위젯 vs PortfolioDetail의 같은 위젯)에
+  // 따라 뒤로가기 목적지가 달라진다 — portfolio-detail로 고정해두면 Portfolio에서 들어온 유저가
+  // "돌아가기"를 눌렀을 때 원래 없던 PortfolioDetail을 거치게 된다.
+  const [rebalanceBackTarget, setRebalanceBackTarget] = useState<Screen>(persistedNav.rebalanceBackTarget ?? 'portfolio-detail');
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
@@ -360,10 +364,10 @@ export default function App() {
   // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
   useEffect(() => {
     const nav: PersistedNav = {
-      screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget,
+      screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget, rebalanceBackTarget,
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(nav));
-  }, [screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget]);
+  }, [screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget, rebalanceBackTarget]);
 
   // react-router 없이 screen state 하나로 화면을 전환하는 구조라, 브라우저가 자동으로 해주는
   // 스크롤 리셋이 없다 — 스크롤을 많이 내린 화면(예: PortfolioDetail)에서 다른 화면(예: StockDetail)으로
@@ -805,6 +809,7 @@ export default function App() {
             userName={userName}
             onNavigate={navigate}
             onOpenDetail={() => setScreen('portfolio-detail')}
+            onOpenRebalanceAlerts={() => { setRebalanceBackTarget('portfolio'); setScreen('rebalance-alerts'); }}
           />
         ) : (
           <Portfolio
@@ -828,6 +833,7 @@ export default function App() {
             setTransactionBackTarget('portfolio-detail');
             setScreen('transaction-detail');
           }}
+          onOpenRebalanceAlerts={() => { setRebalanceBackTarget('portfolio-detail'); setScreen('rebalance-alerts'); }}
           onRediagnose={() => startInvestorProfile('risk-result')}
           onBack={() => setScreen('portfolio')}
         />
@@ -838,7 +844,7 @@ export default function App() {
           userName={userName}
           strategyId={strategyId}
           onNavigate={navigate}
-          onBack={() => setScreen('portfolio-detail')}
+          onBack={() => setScreen(rebalanceBackTarget)}
         />
       )}
 

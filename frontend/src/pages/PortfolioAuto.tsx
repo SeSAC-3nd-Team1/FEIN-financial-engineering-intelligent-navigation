@@ -23,6 +23,10 @@ interface Props {
   onNavigate: (s: Screen) => void;
   /** "자세히" — 보유종목/AI제안/거래내역 등 전체 관리 화면(PortfolioDetail)으로 이동한다 */
   onOpenDetail: () => void;
+  /** "더 알아보기" — AI 손절·리밸런싱 제안 전체 목록(rebalance-alerts)으로 이동한다. onNavigate 대신
+   *  별도 prop을 두는 이유는, 그 화면의 "돌아가기"가 진입 지점(여기 vs PortfolioDetail)에 따라 달라져야
+   *  해서 App.tsx가 이동과 함께 back target을 같이 기록해야 하기 때문이다. */
+  onOpenRebalanceAlerts: () => void;
 }
 
 /** Power BI 임베드 그래프 변형 3종 — 탭 전환 대상 (위험 분석 탭은 미사용으로 제거됨) */
@@ -93,7 +97,7 @@ const MOCK_PRINCIPAL_TOTAL = MOCK_HOLDINGS.reduce((sum, h) => sum + (h.principal
  *  "AI의 리밸런싱 제안" 위젯만 다르다. 반자동은 사용자가 승인해야 하는 "제안"이지만, 자동매매는 AI가
  *  이미 실행을 마친 뒤라 확인·승인 액션이 필요 없다 — 그래서 카드에 완료 표시를 더하고, 클릭하면 여는
  *  팝업도 "왜 지금인가요?"(앞으로 할 일) 대신 "왜 실행했나요?"(이미 한 일)로 과거형 문구를 쓴다. */
-export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Props) {
+export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOpenRebalanceAlerts }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
@@ -546,9 +550,9 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
                         ))}
                       </div>
                     )}
-                    {/* AI 실행 내역 전체 목록은 rebalance-alerts 화면에 있다 — PortfolioDetail 의 같은 위젯과
-                        동일한 목적지(onNavigate('rebalance-alerts'))로 보낸다. */}
-                    <button onClick={() => onNavigate('rebalance-alerts')} className="self-end text-xs font-bold text-navy">
+                    {/* AI 실행 내역 전체 목록은 rebalance-alerts 화면에 있다 — onOpenRebalanceAlerts 가 이동과
+                        함께 App.tsx에 back target(portfolio)을 기록해서, 그 화면 "돌아가기"가 여기로 돌아온다. */}
+                    <button onClick={onOpenRebalanceAlerts} className="self-end text-xs font-bold text-navy">
                       더 알아보기 →
                     </button>
                   </div>
