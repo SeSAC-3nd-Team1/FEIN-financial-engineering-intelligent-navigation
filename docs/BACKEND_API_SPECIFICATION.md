@@ -101,8 +101,12 @@ Redis에서 예약 후 DB commit 시 소비되므로 재사용할 수 없다.
 ```
 
 클라이언트가 인증 여부 boolean을 선언할 수 없다. Backend는 `email_verification_token`의 대상 이메일,
-TTL, single-use 상태를 Redis에서 확인한다. 현재 휴대폰 인증은 범위에서 제외되어 번호만 저장하고
-`phone_verified_at`은 `NULL`로 둔다.
+TTL, single-use 상태를 Redis에서 확인한다. 휴대폰 번호는 일반 가입 정보로만 저장하며 휴대폰 인증
+API나 클라이언트 선언 인증 상태는 지원하지 않는다.
+
+이 계약은 기존 `phone_verified`/`email_verified` payload와 호환되지 않는다. Backend에서 이를 허용하면
+이메일 소유 검증을 우회할 수 있으므로 호환 모드를 제공하지 않는다. 따라서 이 API를 호출하는 배포
+단위가 `email-verifications/send` → `verify`에서 받은 token을 전달할 준비가 된 뒤에만 배포한다.
 
 `GET /auth/terms`가 `effective_at <= now()`인 row 중 각 약관 코드의 최신 버전을 반환한다. Frontend는 Step1의 실제 동의 상태와 이 code/version을 함께 가입 요청으로 전달한다. API에는 내부 `term_id` 대신 불변 자연키인 `term_code + version`을 사용하고, Backend가 현재 catalog의 `term_id`로 변환한다.
 

@@ -168,7 +168,7 @@ def test_new_account_starts_empty_and_requires_exact_deposit(monkeypatch) -> Non
         status="ACCOUNT_PENDING", account_id=None, completed_at=None,
         created_at=now, updated_at=now,
     )
-    user = SimpleNamespace(id=7, phone_verified_at=now, email_verified_at=now)
+    user = SimpleNamespace(id=7, email_verified_at=now)
     session = PrepareAccountSession()
     service = InvestmentOnboardingService(session)
     monkeypatch.setattr(service, "_owned_onboarding", lambda *_args, **_kwargs: onboarding)
@@ -198,7 +198,7 @@ def test_existing_account_keeps_balance_without_additional_deposit(monkeypatch) 
         status="ACCOUNT_PENDING", account_id=None, completed_at=None,
         created_at=now, updated_at=now,
     )
-    user = SimpleNamespace(id=7, phone_verified_at=now, email_verified_at=now)
+    user = SimpleNamespace(id=7, email_verified_at=now)
     account = VirtualAccount(
         id=uuid4(), user_id=7, account_name="기존 계좌",
         operation_mode="SEMI_AUTO",

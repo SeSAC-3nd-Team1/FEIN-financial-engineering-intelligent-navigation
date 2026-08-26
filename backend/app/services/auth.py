@@ -63,7 +63,6 @@ class AuthService:
                 name=request.name.strip(),
                 birthdate=request.birthdate,
                 phone_number=request.phone_number,
-                phone_verified_at=None,
                 email=request.email.lower(),
                 email_verified_at=now,
                 member_type="ASSOCIATE",

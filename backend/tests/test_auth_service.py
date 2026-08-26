@@ -45,6 +45,23 @@ def test_signup_request_rejects_client_declared_verification_flags() -> None:
     }
 
 
+def test_signup_request_requires_server_issued_email_verification_token() -> None:
+    with pytest.raises(ValidationError) as error:
+        SignupRequest(
+            user_id="tester01",
+            password="Password!1",
+            name="테스트",
+            birthdate="900101",
+            phone_number="01012345678",
+            email="user@example.com",
+            agreements=[],
+        )
+
+    assert ("email_verification_token",) in {
+        item["loc"] for item in error.value.errors()
+    }
+
+
 class SignupSession:
     def __init__(self) -> None:
         self.added = []
@@ -101,7 +118,7 @@ class FailingSignupSession(SignupSession):
         raise RuntimeError("database failure")
 
 
-def test_signup_uses_server_email_proof_and_leaves_phone_unverified() -> None:
+def test_signup_uses_server_email_proof() -> None:
     session = SignupSession()
     verifier = SignupVerifier()
     request = SignupRequest(
@@ -121,7 +138,6 @@ def test_signup_uses_server_email_proof_and_leaves_phone_unverified() -> None:
     assert verifier.finalized
     assert session.commits == 1
     assert user.email_verified_at is not None
-    assert user.phone_verified_at is None
 
 
 def test_signup_releases_reserved_email_proof_when_database_write_fails() -> None:
