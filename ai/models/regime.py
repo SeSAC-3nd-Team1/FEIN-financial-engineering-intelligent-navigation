@@ -45,14 +45,14 @@ class RuleBasedRegimeModel:
         for column in ("index_momentum_20d", "index_volatility_20d"):
             data[column] = pd.to_numeric(data[column], errors="coerce")
 
-        unavailable = data[["index_momentum_20d", "index_volatility_20d"]].isna().any(axis=1)
+        unavailable = data[["index_above_sma_20d", "index_momentum_20d", "index_volatility_20d"]].isna().any(axis=1)
         risk_off = (
-            ~data["index_above_sma_20d"].fillna(False).astype(bool)
+            ~data["index_above_sma_20d"].eq(True)
             | data["index_momentum_20d"].lt(self.config.positive_momentum)
             | data["index_volatility_20d"].ge(self.config.high_volatility)
         )
         risk_on = (
-            data["index_above_sma_20d"].fillna(False).astype(bool)
+            data["index_above_sma_20d"].eq(True)
             & data["index_momentum_20d"].ge(self.config.positive_momentum)
             & data["index_volatility_20d"].lt(self.config.high_volatility)
         )

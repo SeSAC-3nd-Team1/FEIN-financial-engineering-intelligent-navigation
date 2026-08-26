@@ -18,6 +18,17 @@ def test_rule_regime_covers_risk_on_off_and_warmup() -> None:
     ]
 
 
+def test_missing_trend_feature_is_neutral_during_warmup() -> None:
+    frame = pd.DataFrame({
+        "trade_date": ["2026-01-04"],
+        "index_above_sma_20d": [None],
+        "index_momentum_20d": [0.1],
+        "index_volatility_20d": [0.1],
+    })
+
+    assert RuleBasedRegimeModel().predict(frame).loc[0, "regime"] == "neutral"
+
+
 def test_stock_filter_keeps_rejection_reason_for_audit() -> None:
     frame = pd.DataFrame({
         "stock_code": ["A", "B"],
@@ -70,8 +81,11 @@ def test_portfolio_enforces_position_weight_and_turnover() -> None:
     aligned = portfolio.set_index("stock_code")["weight"].reindex(
         current.index.union(candidates["stock_code"]), fill_value=0.0
     )
-    turnover = (aligned - current.reindex(aligned.index, fill_value=0.0)).abs().sum() / 2
+    stock_delta = aligned - current.reindex(aligned.index, fill_value=0.0)
+    cash_delta = portfolio["cash_weight"].iloc[0] - (1.0 - current.sum())
+    turnover = (stock_delta.abs().sum() + abs(cash_delta)) / 2
     assert turnover == pytest.approx(0.30)
+    assert len(portfolio) <= constraints.max_positions
     assert portfolio["weight"].sum() + portfolio["cash_weight"].iloc[0] == pytest.approx(1.0)
 
 

@@ -70,6 +70,8 @@ def construct_portfolio(
         raise ValueError("current weights must be long-only and sum to at most one")
     if (current > constraints.max_weight + 1e-9).any():
         raise ValueError("current weights cannot exceed max_weight")
+    if int(current.gt(0).sum()) > constraints.max_positions:
+        raise ValueError("current holdings cannot exceed max_positions")
     all_codes = current.index.union(target.index)
     current = current.reindex(all_codes, fill_value=0.0)
     target = target.reindex(all_codes, fill_value=0.0)
@@ -91,11 +93,23 @@ def construct_portfolio(
         delta *= constraints.max_turnover / turnover
 
     final = current + delta
+    open_positions = final.gt(1e-12)
+    if int(open_positions.sum()) > constraints.max_positions:
+        # 회전율 제한으로 기존 종목이 남아 있으면 신규 편입을 취소해야 종목 수 상한과
+        # 회전율을 동시에 지킬 수 있다. 낮은 목표 비중의 신규 종목부터 제외한다.
+        new_positions = final.index[current.eq(0.0) & open_positions]
+        excess = int(open_positions.sum()) - constraints.max_positions
+        positions_to_cancel = target.loc[new_positions].sort_values().index[:excess]
+        delta.loc[positions_to_cancel] = 0.0
+        final = current + delta
+
     invested = float(final.sum())
     if (final < -1e-9).any() or (final > constraints.max_weight + 1e-9).any():
         raise RuntimeError("portfolio construction violated position constraints")
     if invested > 1.0 + 1e-9:
         raise RuntimeError("portfolio construction exceeded available capital")
+    if int(final.gt(1e-12).sum()) > constraints.max_positions:
+        raise RuntimeError("portfolio construction exceeded max_positions")
     final = final.clip(lower=0.0, upper=constraints.max_weight)
     cash_weight = 1.0 - float(final.sum())
     result = pd.DataFrame({"stock_code": final.index.astype(str), "weight": final.values})
