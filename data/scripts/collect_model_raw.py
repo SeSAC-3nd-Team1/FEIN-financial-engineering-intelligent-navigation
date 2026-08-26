@@ -115,6 +115,7 @@ class SourceMetrics:
     download_seconds: float = 0.0
     upload_seconds: float = 0.0
     started_at: float = field(default_factory=time.monotonic)
+    finished_at: float | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def add(self, **values: int | float) -> None:
@@ -126,9 +127,17 @@ class SourceMetrics:
         """source가 실제로 시작할 때 ETA와 wall time 기준점을 맞춘다."""
 
         self.started_at = time.monotonic()
+        self.finished_at = None
+
+    def stop_clock(self) -> None:
+        """후속 source 실행 시간이 이 source의 wall time에 섞이지 않게 고정한다."""
+
+        self.finished_at = time.monotonic()
 
     def as_dict(self) -> dict[str, Any]:
-        wall_elapsed = max(time.monotonic() - self.started_at, 0.000001)
+        wall_elapsed = max(
+            (self.finished_at or time.monotonic()) - self.started_at, 0.000001
+        )
         active_seconds = self.download_seconds + self.upload_seconds
         return {
             "source": self.source,
@@ -799,6 +808,7 @@ class ModelRawCollector:
         finalized_end = min(self.end_date, _seoul_today() - timedelta(days=1))
         if finalized_end < self.start_date:
             print("[KRX] no finalized trading dates")
+            self.metrics[source].stop_clock()
             return
         self._bootstrap_krx_dates()
         self.manifest.save()
@@ -850,6 +860,7 @@ class ModelRawCollector:
             self.manifest.save()
             processed_months += 1
             self._progress(source, processed_months, len(months), month_key)
+        self.metrics[source].stop_clock()
 
     def _ecos_partition(self, series_name: str, month: date) -> tuple[str, int, int]:
         series = ECOS_SERIES[series_name]
@@ -903,6 +914,7 @@ class ModelRawCollector:
         total = len(tasks)
         if not tasks:
             print("[ECOS-BOK] no missing partitions")
+            self.metrics[source].stop_clock()
             return
         with ThreadPoolExecutor(
             max_workers=self.concurrency[source], thread_name_prefix="ecos-fetch"
@@ -927,6 +939,7 @@ class ModelRawCollector:
                     self.manifest.save()
                 self._progress(source, index, total, f"{name}:{month:%Y-%m}")
         self.manifest.save()
+        self.metrics[source].stop_clock()
 
     def _corp_codes(self) -> list[str]:
         """당일 corpCode를 한 번만 수집하고 상장사 8자리 corp_code를 메모리에만 유지한다."""
@@ -1279,6 +1292,7 @@ class ModelRawCollector:
                 )
         if not tasks:
             print("[OPENDART] no missing partitions")
+            self.metrics[source].stop_clock()
             return
         failures: list[tuple[str, str, Exception]] = []
         with ThreadPoolExecutor(
@@ -1318,6 +1332,7 @@ class ModelRawCollector:
                     self.manifest.save()
                 self._progress(source, index, len(tasks), partition)
         self.manifest.save()
+        self.metrics[source].stop_clock()
         if failures:
             dataset, partition, first_error = failures[0]
             raise RuntimeError(
@@ -1352,6 +1367,8 @@ def _write_reports(
     metrics = {name: value.as_dict() for name, value in collector.metrics.items()}
     total_rows = sum(int(value["rows"]) for value in metrics.values())
     total_seconds = max((finished_at - started_at).total_seconds(), 0.000001)
+    metric_names = {"krx": "krx", "ecos": "ecos-bok", "opendart": "opendart"}
+    selected_metrics = [metrics[metric_names[name]] for name in selected]
     payload = {
         "generated_at": finished_at.isoformat(),
         "range": {"start": collector.start_date.isoformat(), "end": collector.end_date.isoformat()},
@@ -1375,7 +1392,7 @@ def _write_reports(
         "total_elapsed_seconds": round(total_seconds, 3),
         "average_rows_per_second": round(total_rows / total_seconds, 3),
         "bottleneck": max(
-            metrics.values(), key=lambda value: float(value["active_seconds"])
+            selected_metrics, key=lambda value: float(value["elapsed_seconds"])
         )["source"],
         "additional_optimization": [
             "OpenDART quota가 상향된 환경에서만 OPENDART_MAX_CONCURRENCY를 2 이상으로 조정",
