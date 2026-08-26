@@ -1,15 +1,11 @@
-import { useMemo, useState } from "react";
-import { ChevronDown, ChevronsUpDown, ChevronUp, X } from "lucide-react";
-import Header from "../components/Header";
-import {
-  AI_ALERTS,
-  ALL_HOLDINGS as MOCK_HOLDINGS,
-  STOCK_INFO,
-} from "../data/holdings";
-import { useTradingData } from "../hooks/useTradingData";
-import { won } from "../lib/validation";
-import { useTradingStore } from "../store/tradingStore";
-import type { Screen } from "../types";
+import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronsUpDown, ChevronUp, X } from 'lucide-react';
+import Header from '../components/Header';
+import { AI_ALERTS, ALL_HOLDINGS as MOCK_HOLDINGS, STOCK_INFO } from '../data/holdings';
+import { useTradingData } from '../hooks/useTradingData';
+import { won } from '../lib/validation';
+import { useTradingStore } from '../store/tradingStore';
+import type { Screen } from '../types';
 
 interface Props {
   userName: string;
@@ -19,73 +15,55 @@ interface Props {
 }
 
 /** AI 제안 종류별 배지 색 — PortfolioDetail 의 보유 종목 표와 동일한 배색을 공유한다 */
-const ALERT_BADGE: Record<"손절" | "리밸런싱", string> = {
-  손절: "bg-[#FBEAEA] text-up",
-  리밸런싱: "bg-[#FCF3E4] text-warn",
+const ALERT_BADGE: Record<'손절' | '리밸런싱', string> = {
+  '손절': 'bg-[#FBEAEA] text-up',
+  '리밸런싱': 'bg-[#FCF3E4] text-warn',
 };
 
 /** 보유 종목 표 — 클릭으로 오름/내림차순 토글되는 정렬 열 */
-type SortKey = "name" | "pct" | "principal" | "returnRate";
-const HOLDINGS_COLUMNS: {
-  key: SortKey;
-  label: string;
-  align: "left" | "right";
-}[] = [
-  { key: "name", label: "종목명", align: "left" },
-  { key: "pct", label: "비율", align: "right" },
-  { key: "principal", label: "투자 원금", align: "right" },
-  { key: "returnRate", label: "원금 대비 수익률", align: "right" },
+type SortKey = 'name' | 'pct' | 'principal' | 'returnRate';
+const HOLDINGS_COLUMNS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
+  { key: 'name', label: '종목명', align: 'left' },
+  { key: 'pct', label: '비율', align: 'right' },
+  { key: 'principal', label: '투자 원금', align: 'right' },
+  { key: 'returnRate', label: '원금 대비 수익률', align: 'right' },
 ];
 
 /** `/all-holdings` — 보유 종목 전체 목록. PortfolioDetail "보유 종목"의 "전체 종목 보기"에서 진입한다. */
-export default function AllHoldings({
-  userName,
-  onNavigate,
-  onSelectStock,
-  onBack,
-}: Props) {
+export default function AllHoldings({ userName, onNavigate, onSelectStock, onBack }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
-  const accountMissing = useTradingStore((state) => state.accountMissing);
 
-  // 실 계좌가 있으면 포지션을 그대로(0개여도) 쓴다. 조회 중·조회 실패로 portfolio가 아직 null인
-  // 상태에서는 빈 상태를 유지하고, ACCOUNT_NOT_FOUND가 확정된 경우에만 demo mock을 쓴다.
+  // 실 계좌가 있으면 포지션을 그대로(0개여도) 쓰고, 계좌 자체가 없을 때만 목업 20종목을 쓴다 —
+  // PortfolioDetail 과 동일한 대체 규칙.
   const ALL_HOLDINGS = useMemo(() => {
-    if (!portfolio) return accountMissing ? MOCK_HOLDINGS : [];
+    if (!portfolio) return MOCK_HOLDINGS;
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
-      const matched = MOCK_HOLDINGS.find(
-        (holding) => STOCK_INFO[holding.name]?.code === position.stock_code,
-      );
+      const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
       const metadata = matched ?? MOCK_HOLDINGS[0];
       return {
         ...metadata,
         name: matched?.name ?? position.stock_code,
-        pct:
-          assets > 0 ? (Number(position.evaluation_amount) / assets) * 100 : 0,
+        pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
         chg: Number(position.return_rate),
         principal: Number(position.purchase_amount),
         returnRate: Number(position.return_rate),
       };
     });
-  }, [accountMissing, portfolio]);
+  }, [portfolio]);
 
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('desc'); }
   };
   const sortedHoldings = useMemo(() => {
     if (!sortKey) return ALL_HOLDINGS;
-    const dir = sortDir === "asc" ? 1 : -1;
+    const dir = sortDir === 'asc' ? 1 : -1;
     return [...ALL_HOLDINGS].sort((a, b) =>
-      sortKey === "name"
-        ? a.name.localeCompare(b.name) * dir
-        : ((a[sortKey] ?? 0) - (b[sortKey] ?? 0)) * dir,
+      sortKey === 'name' ? a.name.localeCompare(b.name) * dir : ((a[sortKey] ?? 0) - (b[sortKey] ?? 0)) * dir
     );
   }, [ALL_HOLDINGS, sortKey, sortDir]);
 
@@ -99,23 +77,12 @@ export default function AllHoldings({
 
       <main className="flex flex-col items-center px-16 pb-24 pt-6">
         <div className="flex w-[1040px] flex-col gap-10">
-          <button
-            onClick={onBack}
-            className="self-start text-[15px] text-muted"
-          >
-            ← 돌아가기
-          </button>
+          <button onClick={onBack} className="self-start text-[15px] text-muted">← 돌아가기</button>
 
           <section className="flex flex-col gap-4">
-            <span className="text-base font-semibold text-muted">
-              보유 종목
-            </span>
-            <h1 className="text-[38px] font-bold leading-[52px] tracking-[-0.03em]">
-              전체 {ALL_HOLDINGS.length}개 종목
-            </h1>
-            <span className="text-[17px] text-subtle">
-              종목을 누르면 상세 정보를 볼 수 있어요
-            </span>
+            <span className="text-base font-semibold text-muted">보유 종목</span>
+            <h1 className="text-[38px] font-bold leading-[52px] tracking-[-0.03em]">전체 {ALL_HOLDINGS.length}개 종목</h1>
+            <span className="text-[17px] text-subtle">종목을 누르면 상세 정보를 볼 수 있어요</span>
           </section>
 
           <section className="rounded-card bg-surface p-12">
@@ -124,26 +91,17 @@ export default function AllHoldings({
                 <thead>
                   <tr className="border-b border-line">
                     {HOLDINGS_COLUMNS.map((c) => (
-                      <th
-                        key={c.key}
-                        className={`pb-3 ${c.align === "right" ? "text-right" : "text-left"}`}
-                      >
+                      <th key={c.key} className={`pb-3 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>
                         <button
                           onClick={() => toggleSort(c.key)}
                           className={`inline-flex items-center gap-1 text-[14px] font-semibold text-muted ${
-                            c.align === "right" ? "flex-row-reverse" : ""
+                            c.align === 'right' ? 'flex-row-reverse' : ''
                           }`}
                         >
                           {c.label}
-                          {sortKey === c.key ? (
-                            sortDir === "asc" ? (
-                              <ChevronUp size={13} />
-                            ) : (
-                              <ChevronDown size={13} />
-                            )
-                          ) : (
-                            <ChevronsUpDown size={13} className="text-subtle" />
-                          )}
+                          {sortKey === c.key
+                            ? (sortDir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />)
+                            : <ChevronsUpDown size={13} className="text-subtle" />}
                         </button>
                       </th>
                     ))}
@@ -152,10 +110,7 @@ export default function AllHoldings({
                 <tbody>
                   {sortedHoldings.length === 0 && (
                     <tr>
-                      <td
-                        colSpan={HOLDINGS_COLUMNS.length}
-                        className="py-10 text-center text-[15px] text-subtle"
-                      >
+                      <td colSpan={HOLDINGS_COLUMNS.length} className="py-10 text-center text-[15px] text-subtle">
                         아직 보유 중인 종목이 없어요.
                       </td>
                     </tr>
@@ -172,43 +127,25 @@ export default function AllHoldings({
                         <td className="py-4">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-2.5">
-                              <span className="text-[18px] font-semibold tracking-[-0.02em]">
-                                {h.name}
-                              </span>
+                              <span className="text-[18px] font-semibold tracking-[-0.02em]">{h.name}</span>
                               {alert && (
                                 <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setAlertModalId(alert.id);
-                                  }}
+                                  onClick={(e) => { e.stopPropagation(); setAlertModalId(alert.id); }}
                                   className={`rounded-full px-2.5 py-1 text-xs font-bold ${ALERT_BADGE[alert.kind]}`}
                                 >
                                   {alert.badge}
                                 </button>
                               )}
                             </div>
-                            <span className="text-[14px] text-subtle">
-                              {h.sector}
-                            </span>
+                            <span className="text-[14px] text-subtle">{h.sector}</span>
                           </div>
                         </td>
-                        <td className="py-4 text-right text-[17px] font-bold">
-                          {h.pct.toFixed(1)}%
-                        </td>
-                        <td className="py-4 text-right text-[16px] text-muted">
-                          {won(h.principal ?? 0)}
-                        </td>
-                        <td
-                          className={`py-4 text-right text-[16px] font-semibold ${
-                            (h.returnRate ?? 0) > 0
-                              ? "text-up"
-                              : (h.returnRate ?? 0) < 0
-                                ? "text-down"
-                                : "text-subtle"
-                          }`}
-                        >
-                          {(h.returnRate ?? 0) > 0 ? "+" : ""}
-                          {(h.returnRate ?? 0).toFixed(1)}%
+                        <td className="py-4 text-right text-[17px] font-bold">{h.pct.toFixed(1)}%</td>
+                        <td className="py-4 text-right text-[16px] text-muted">{won(h.principal ?? 0)}</td>
+                        <td className={`py-4 text-right text-[16px] font-semibold ${
+                          (h.returnRate ?? 0) > 0 ? 'text-up' : (h.returnRate ?? 0) < 0 ? 'text-down' : 'text-subtle'
+                        }`}>
+                          {(h.returnRate ?? 0) > 0 ? '+' : ''}{(h.returnRate ?? 0).toFixed(1)}%
                         </td>
                       </tr>
                     );
@@ -222,43 +159,23 @@ export default function AllHoldings({
 
       {/* AI 제안 사유 모달 — 표의 배지를 누르면 근거와 제안 조치를 보여준다 */}
       {alertModal && (
-        <div
-          className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8"
-          onClick={() => setAlertModalId(null)}
-        >
-          <div
-            className="flex w-[560px] flex-col gap-6 rounded-card bg-surface p-11"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8" onClick={() => setAlertModalId(null)}>
+          <div className="flex w-[560px] flex-col gap-6 rounded-card bg-surface p-11" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-6">
               <div className="flex flex-col gap-2.5">
-                <span
-                  className={`w-fit rounded-full px-3 py-1.5 text-sm font-bold ${ALERT_BADGE[alertModal.kind]}`}
-                >
+                <span className={`w-fit rounded-full px-3 py-1.5 text-sm font-bold ${ALERT_BADGE[alertModal.kind]}`}>
                   {alertModal.badge}
                 </span>
-                <h2 className="text-[24px] font-bold tracking-[-0.025em]">
-                  {alertModal.stockName} · 왜 지금인가요?
-                </h2>
+                <h2 className="text-[24px] font-bold tracking-[-0.025em]">{alertModal.stockName} · 왜 지금인가요?</h2>
               </div>
-              <button
-                aria-label="닫기"
-                onClick={() => setAlertModalId(null)}
-                className="rounded-[9px] bg-canvas p-2 text-muted"
-              >
+              <button aria-label="닫기" onClick={() => setAlertModalId(null)} className="rounded-[9px] bg-canvas p-2 text-muted">
                 <X size={18} />
               </button>
             </div>
-            <p className="text-[17px] leading-7 text-[#3F4A43]">
-              {alertModal.reason}
-            </p>
+            <p className="text-[17px] leading-7 text-[#3F4A43]">{alertModal.reason}</p>
             <div className="flex items-center gap-3 rounded-[16px] bg-[#F8FCEE] px-7 py-6">
-              <span className="shrink-0 text-[15px] font-semibold text-[#3F5222]">
-                AI 제안
-              </span>
-              <span className="text-[16px] font-semibold text-ink">
-                {alertModal.action}
-              </span>
+              <span className="shrink-0 text-[15px] font-semibold text-[#3F5222]">AI 제안</span>
+              <span className="text-[16px] font-semibold text-ink">{alertModal.action}</span>
             </div>
           </div>
         </div>
