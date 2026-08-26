@@ -96,6 +96,7 @@ def _existing_keys(years: range, stock_codes: list[str]) -> set[tuple[str, str]]
                 select(StockDividend.stock_code, StockDividend.business_year)
                 .where(
                     StockDividend.report_code == ANNUAL_REPORT_CODE,
+                    StockDividend.stock_kind == "COMMON",
                     StockDividend.business_year.in_([str(year) for year in years]),
                     StockDividend.stock_code.in_(stock_codes),
                 )
@@ -144,6 +145,9 @@ def _sync_target(
         with session_scope() as session:
             totals["upserted"] += OpenDartRepository(session).upsert_dividends(rows)
         totals["rows"] += len(rows)
+        if not any(row["stock_kind"] == "COMMON" for row in rows):
+            totals["unavailable"] += 1
+            return "unavailable"
         return "stored"
     except OpenDartApiError as exc:
         if exc.status in FATAL_API_STATUSES:
