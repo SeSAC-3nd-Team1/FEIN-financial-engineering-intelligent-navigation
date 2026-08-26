@@ -44,6 +44,68 @@ def test_existing_keys_only_treat_common_stock_as_complete(monkeypatch) -> None:
     assert "stock_dividends.stock_kind =" in sql
 
 
+def test_refresh_replaces_legacy_preferred_with_distinct_classes(monkeypatch) -> None:
+    payload = {
+        "list": [
+            {
+                "se": "현금배당수익률(%)",
+                "stock_knd": "1우선주",
+                "thstrm": "2.1",
+            },
+            {
+                "se": "현금배당수익률(%)",
+                "stock_knd": "2우선주",
+                "thstrm": "2.2",
+            },
+        ]
+    }
+
+    class Client:
+        def dividends(self, _corp_code, _year, _report_code):
+            return SimpleNamespace(payload=payload, content=b"response")
+
+    class RawWriter:
+        def upload_bytes(self, **_kwargs):
+            return None
+
+    stored_rows = [{"stock_kind": "PREFERRED"}]
+    replacement_scopes = []
+
+    class Repository:
+        def __init__(self, _session):
+            pass
+
+        def replace_dividends(self, rows, *, stock_code, business_year, report_code):
+            replacement_scopes.append((stock_code, business_year, report_code))
+            stored_rows[:] = rows
+            return len(rows)
+
+    monkeypatch.setattr(sync, "OpenDartRepository", Repository)
+    monkeypatch.setattr(sync, "session_scope", _session_scope)
+    totals = {
+        "requests": 0,
+        "unavailable": 0,
+        "failed": 0,
+        "rows": 0,
+        "upserted": 0,
+    }
+
+    result = sync._sync_target(
+        client=Client(),
+        raw=RawWriter(),
+        corp_code="00126380",
+        stock_code="005930",
+        year=2025,
+        totals=totals,
+        refresh=True,
+    )
+
+    assert result == "unavailable"
+    assert replacement_scopes == [("005930", "2025", "11011")]
+    assert {row["stock_kind"] for row in stored_rows} == {"1우선주", "2우선주"}
+    assert all(row["stock_kind"] != "PREFERRED" for row in stored_rows)
+
+
 def test_preferred_only_latest_year_stores_then_falls_back_to_common(
     monkeypatch,
 ) -> None:

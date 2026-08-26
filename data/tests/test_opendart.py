@@ -414,6 +414,71 @@ def test_repository_uses_domain_conflict_keys(monkeypatch) -> None:
     ]
 
 
+def test_repository_replaces_only_requested_dividend_scope(monkeypatch) -> None:
+    calls = []
+
+    class Session:
+        def execute(self, statement):
+            calls.append(("delete", str(statement)))
+
+    rows = [
+        {
+            "stock_code": "005930",
+            "business_year": "2025",
+            "report_code": "11011",
+            "stock_kind": "1우선주",
+        },
+        {
+            "stock_code": "005930",
+            "business_year": "2025",
+            "report_code": "11011",
+            "stock_kind": "2우선주",
+        },
+    ]
+    monkeypatch.setattr(
+        "loaders.opendart.upsert_rows",
+        lambda _session, _model, upserted, *, conflict_columns: calls.append(
+            ("upsert", [row["stock_kind"] for row in upserted])
+        )
+        or len(upserted),
+    )
+
+    affected = OpenDartRepository(Session()).replace_dividends(
+        rows,
+        stock_code="005930",
+        business_year="2025",
+        report_code="11011",
+    )
+
+    assert affected == 2
+    assert [call[0] for call in calls] == ["delete", "upsert"]
+    delete_sql = calls[0][1]
+    assert "stock_dividends.stock_code =" in delete_sql
+    assert "stock_dividends.business_year =" in delete_sql
+    assert "stock_dividends.report_code =" in delete_sql
+    assert calls[1] == ("upsert", ["1우선주", "2우선주"])
+
+
+def test_repository_rejects_dividend_rows_outside_replacement_scope() -> None:
+    class Session:
+        def execute(self, _statement):
+            raise AssertionError("scope validation must happen before delete")
+
+    with pytest.raises(ValueError, match="must match the requested scope"):
+        OpenDartRepository(Session()).replace_dividends(
+            [
+                {
+                    "stock_code": "005930",
+                    "business_year": "2024",
+                    "report_code": "11011",
+                }
+            ],
+            stock_code="005930",
+            business_year="2025",
+            report_code="11011",
+        )
+
+
 def test_opendart_raw_writer_keeps_original_bytes_and_daily_path() -> None:
     captured = {}
 

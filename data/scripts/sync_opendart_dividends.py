@@ -37,7 +37,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--refresh",
         action="store_true",
-        help="이미 적재된 종목-사업연도도 다시 요청해 UPSERT",
+        help="이미 적재된 종목-사업연도를 새 응답으로 교체",
     )
     parser.add_argument(
         "--stock-code",
@@ -113,6 +113,7 @@ def _sync_target(
     stock_code: str,
     year: int,
     totals: dict[str, int],
+    refresh: bool = False,
 ) -> str:
     """한 종목·연도를 적재하고 fallback 판단을 위한 결과 상태를 반환한다."""
 
@@ -120,7 +121,17 @@ def _sync_target(
         response = client.dividends(corp_code, str(year), ANNUAL_REPORT_CODE)
         totals["requests"] += 1
         items = response.payload.get("list", [])
-        if not isinstance(items, list) or not items:
+        if not isinstance(items, list):
+            raise ValueError("OpenDART dividend list must be an array")
+        if not items:
+            if refresh:
+                with session_scope() as session:
+                    OpenDartRepository(session).replace_dividends(
+                        [],
+                        stock_code=stock_code,
+                        business_year=str(year),
+                        report_code=ANNUAL_REPORT_CODE,
+                    )
             totals["unavailable"] += 1
             return "unavailable"
         raw.upload_bytes(
@@ -139,11 +150,21 @@ def _sync_target(
             report_code=ANNUAL_REPORT_CODE,
             collected_at=datetime.now().astimezone(),
         )
-        if not rows:
+        if not rows and not refresh:
             totals["unavailable"] += 1
             return "unavailable"
         with session_scope() as session:
-            totals["upserted"] += OpenDartRepository(session).upsert_dividends(rows)
+            repository = OpenDartRepository(session)
+            if refresh:
+                affected = repository.replace_dividends(
+                    rows,
+                    stock_code=stock_code,
+                    business_year=str(year),
+                    report_code=ANNUAL_REPORT_CODE,
+                )
+            else:
+                affected = repository.upsert_dividends(rows)
+            totals["upserted"] += affected
         totals["rows"] += len(rows)
         if not any(row["stock_kind"] == "COMMON" for row in rows):
             totals["unavailable"] += 1
@@ -214,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
                 stock_code=stock_code,
                 year=year,
                 totals=totals,
+                refresh=args.refresh,
             )
             if result != "unavailable" or args.fallback_year is None:
                 continue
@@ -228,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
                 stock_code=stock_code,
                 year=args.fallback_year,
                 totals=totals,
+                refresh=args.refresh,
             )
         print(
             "OPENDART DIVIDEND PROGRESS "
