@@ -84,9 +84,44 @@ def test_portfolio_enforces_position_weight_and_turnover() -> None:
     stock_delta = aligned - current.reindex(aligned.index, fill_value=0.0)
     cash_delta = portfolio["cash_weight"].iloc[0] - (1.0 - current.sum())
     turnover = (stock_delta.abs().sum() + abs(cash_delta)) / 2
-    assert turnover == pytest.approx(0.30)
+    target_codes = set(candidates["stock_code"])
+    assert turnover <= constraints.max_turnover
     assert len(portfolio) <= constraints.max_positions
+    assert set(portfolio["stock_code"]) & target_codes == {"S0", "S1", "S2"}
     assert portfolio["weight"].sum() + portfolio["cash_weight"].iloc[0] == pytest.approx(1.0)
+
+
+def test_portfolio_converges_to_disjoint_target_over_rebalances() -> None:
+    candidates = pd.DataFrame({
+        "stock_code": [f"S{i}" for i in range(10)],
+        "score": list(reversed(range(10))),
+        "risk_eligible": [True] * 10,
+    })
+    constraints = PortfolioConstraints(
+        max_positions=10,
+        max_weight=0.15,
+        cash_buffer=0.05,
+        max_turnover=0.30,
+    )
+    current = pd.Series({f"OLD{i}": 0.095 for i in range(10)})
+
+    for _ in range(4):
+        previous = current
+        portfolio = construct_portfolio(
+            candidates,
+            current_weights=previous,
+            constraints=constraints,
+        )
+        current = portfolio.set_index("stock_code")["weight"]
+        aligned = current.reindex(previous.index.union(current.index), fill_value=0.0)
+        previous_aligned = previous.reindex(aligned.index, fill_value=0.0)
+        stock_delta = (aligned - previous_aligned).abs().sum()
+        cash_delta = abs((1.0 - current.sum()) - (1.0 - previous.sum()))
+        assert (stock_delta + cash_delta) / 2 <= constraints.max_turnover
+        assert len(current) <= constraints.max_positions
+
+    assert set(current.index) == set(candidates["stock_code"])
+    assert current.sum() == pytest.approx(1.0 - constraints.cash_buffer)
 
 
 def test_minimum_trade_filter_cannot_create_unfunded_buys() -> None:

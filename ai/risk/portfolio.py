@@ -72,35 +72,56 @@ def construct_portfolio(
         raise ValueError("current weights cannot exceed max_weight")
     if int(current.gt(0).sum()) > constraints.max_positions:
         raise ValueError("current holdings cannot exceed max_positions")
+    ranked_target_codes = target.index.tolist()
     all_codes = current.index.union(target.index)
     current = current.reindex(all_codes, fill_value=0.0)
     target = target.reindex(all_codes, fill_value=0.0)
-    delta = target - current
-    delta = delta.where(delta.abs().ge(constraints.min_trade_weight), 0.0)
 
-    # 최소 거래 필터로 작은 매도만 제거되면 남은 매수가 보유 현금을 초과할 수 있다.
-    # 매수 총액을 현재 현금과 실행할 매도의 합으로 제한해 총 자산 비중을 보존한다.
-    sells = float(-delta.clip(upper=0.0).sum())
-    buys = float(delta.clip(lower=0.0).sum())
-    available_to_buy = 1.0 - float(current.sum()) + sells
-    if buys > available_to_buy and buys > 0:
-        delta.loc[delta > 0] *= max(0.0, available_to_buy) / buys
+    def turnover_to(weights: pd.Series) -> float:
+        stock_turnover = float((weights - current).abs().sum())
+        cash_turnover = abs((1.0 - float(weights.sum())) - (1.0 - float(current.sum())))
+        return (stock_turnover + cash_turnover) / 2.0
 
-    # 현금도 하나의 자산으로 포함해야 주식 순매수·순매도가 회전율에서 누락되지 않는다.
-    cash_delta = -float(delta.sum())
-    turnover = float((delta.abs().sum() + abs(cash_delta)) / 2.0)
-    if turnover > constraints.max_turnover and turnover > 0:
-        delta *= constraints.max_turnover / turnover
+    new_target_codes = [code for code in ranked_target_codes if current.loc[code] <= 1e-12]
+    position_conflict = int(current.gt(1e-12).sum()) + len(new_target_codes) > constraints.max_positions
+    if position_conflict:
+        # 슬롯이 가득 찬 상태에서는 비목표 종목을 완전히 청산한 뒤 신규 목표 종목을
+        # 편입한다. 부분 매도로 슬롯을 계속 점유하는 현금화 경로를 피하고 목표에 수렴한다.
+        final = current.copy()
+        exit_candidates = current.loc[
+            current.gt(1e-12) & target.eq(0.0)
+        ].sort_values(kind="stable").index.tolist()
+        for new_code in new_target_codes:
+            proposal = final.copy()
+            if int(final.gt(1e-12).sum()) >= constraints.max_positions:
+                available_exits = [code for code in exit_candidates if final.loc[code] > 1e-12]
+                if not available_exits:
+                    break
+                proposal.loc[available_exits[0]] = 0.0
+            available_cash = 1.0 - float(proposal.sum())
+            buy_weight = min(float(target.loc[new_code]), max(0.0, available_cash))
+            if buy_weight < constraints.min_trade_weight:
+                continue
+            proposal.loc[new_code] = buy_weight
+            if turnover_to(proposal) > constraints.max_turnover + 1e-12:
+                break
+            final = proposal
+    else:
+        delta = target - current
+        delta = delta.where(delta.abs().ge(constraints.min_trade_weight), 0.0)
 
-    final = current + delta
-    open_positions = final.gt(1e-12)
-    if int(open_positions.sum()) > constraints.max_positions:
-        # 회전율 제한으로 기존 종목이 남아 있으면 신규 편입을 취소해야 종목 수 상한과
-        # 회전율을 동시에 지킬 수 있다. 낮은 목표 비중의 신규 종목부터 제외한다.
-        new_positions = final.index[current.eq(0.0) & open_positions]
-        excess = int(open_positions.sum()) - constraints.max_positions
-        positions_to_cancel = target.loc[new_positions].sort_values().index[:excess]
-        delta.loc[positions_to_cancel] = 0.0
+        # 최소 거래 필터로 작은 매도만 제거되면 남은 매수가 보유 현금을 초과할 수 있다.
+        # 매수 총액을 현재 현금과 실행할 매도의 합으로 제한해 총 자산 비중을 보존한다.
+        sells = float(-delta.clip(upper=0.0).sum())
+        buys = float(delta.clip(lower=0.0).sum())
+        available_to_buy = 1.0 - float(current.sum()) + sells
+        if buys > available_to_buy and buys > 0:
+            delta.loc[delta > 0] *= max(0.0, available_to_buy) / buys
+
+        # 현금도 하나의 자산으로 포함해야 주식 순매수·순매도가 회전율에서 누락되지 않는다.
+        turnover = turnover_to(current + delta)
+        if turnover > constraints.max_turnover and turnover > 0:
+            delta *= constraints.max_turnover / turnover
         final = current + delta
 
     invested = float(final.sum())
@@ -110,6 +131,8 @@ def construct_portfolio(
         raise RuntimeError("portfolio construction exceeded available capital")
     if int(final.gt(1e-12).sum()) > constraints.max_positions:
         raise RuntimeError("portfolio construction exceeded max_positions")
+    if turnover_to(final) > constraints.max_turnover + 1e-9:
+        raise RuntimeError("portfolio construction exceeded max_turnover")
     final = final.clip(lower=0.0, upper=constraints.max_weight)
     cash_weight = 1.0 - float(final.sum())
     result = pd.DataFrame({"stock_code": final.index.astype(str), "weight": final.values})
