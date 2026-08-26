@@ -499,6 +499,16 @@ function buildFaqEntries(amount: number): FaqEntry[] {
       ),
     },
     {
+      id: 'one-strategy-per-account',
+      question: '한 계좌에서 여러 전략을 이용할 수 있나요?',
+      answer: (
+        <div className="flex flex-col gap-2">
+          <p>아니요. 한 계좌에서는 한 번에 하나의 전략만 운용할 수 있어요.</p>
+          <p>같은 운영방식 안에서는 기존 계좌를 그대로 사용하면서 다른 전략으로 변경할 수 있어요.</p>
+        </div>
+      ),
+    },
+    {
       id: 'stop',
       question: '투자를 중단하면 어떻게 되나요?',
       // 현재 실제 출금/해지 flow가 없고 정책도 확정 전이라, 임의의 정책을 서술하지 않는다.

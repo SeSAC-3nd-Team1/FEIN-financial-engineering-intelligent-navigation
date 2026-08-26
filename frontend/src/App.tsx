@@ -10,6 +10,7 @@ import InvestDeposit from './pages/InvestDeposit';
 import InvestorProfileCheck from './pages/InvestorProfileCheck';
 import InvestTerms from './pages/InvestTerms';
 import Login from './pages/Login';
+import type { LoginContext } from './pages/Login';
 import Portfolio from './pages/Portfolio';
 import PortfolioAuto from './pages/PortfolioAuto';
 import PortfolioDetail from './pages/PortfolioDetail';
@@ -22,11 +23,12 @@ import SignupStep3 from './pages/SignupStep3';
 import StartInvesting from './pages/StartInvesting';
 import StockDetail from './pages/StockDetail';
 import StrategyDetail from './pages/StrategyDetail';
+import StrategyList from './pages/StrategyList';
 import TransactionDetail from './pages/TransactionDetail';
 import TransactionHistory from './pages/TransactionHistory';
 import { STRATEGIES } from './data/strategies';
-import { toAccountOperationMode, type OperationMode } from './data/fees';
-import { signupTermsApi } from './lib/backendApi';
+import { toAccountOperationMode, toOperationMode, type OperationMode } from './data/fees';
+import { getMyAccountApi, signupTermsApi } from './lib/backendApi';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
@@ -51,9 +53,12 @@ function loadPersistedNav(): Partial<PersistedNav> {
   }
 }
 /** 로그인이 필요한 화면 — 새로고침 후 토큰이 없거나 만료된 걸로 확인되면 이 화면들에서는 로그인으로 돌려보낸다.
- *  투자 시작 Flow(invest-*) 화면들도 로그인 이후에만 진입 가능한 흐름이라 함께 포함한다. */
+ *  투자 시작 Flow(invest-*) 화면들도 로그인 이후에만 진입 가능한 흐름이라 함께 포함한다.
+ *  'strategy'(Strategy Detail)와 'strategy-list'는 의도적으로 제외한다 — 비회원 접근 정책상 전략을
+ *  읽고 기본 백테스트를 보는 것은 공개(PUBLIC)이고, 실제 조작/투자만 그 화면 내부에서 개별적으로
+ *  로그인을 요구한다(handleStartInvesting/requestLoginForBacktest 참고). */
 const PROTECTED_SCREENS: Screen[] = [
-  'dashboard', 'portfolio', 'portfolio-detail', 'stock', 'strategy', 'start', 'transactions', 'transaction-detail',
+  'dashboard', 'portfolio', 'portfolio-detail', 'stock', 'start', 'transactions', 'transaction-detail',
   'rebalance-alerts', 'all-holdings', 'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm',
 ];
 
@@ -101,6 +106,18 @@ export default function App() {
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
   const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
+  // 비회원이 Strategy Detail "이 전략으로 시작하기"를 눌러 로그인 화면으로 보내진 경우 true —
+  // 로그인 완료 후 Portfolio가 아니라 원래 하려던 투자 시작 절차로 이어간다(아래 Login onLogin 참고).
+  const [pendingStartAfterLogin, setPendingStartAfterLogin] = useState(false);
+  // 비회원이 백테스트 잠긴 기간(Inline Login CTA)에서 로그인 화면으로 보내진 경우 true — 로그인 후
+  // Portfolio가 아니라 보고 있던 Strategy Detail로만 복귀시킨다(그 기간을 자동 실행하지는 않는다).
+  const [pendingReturnToStrategy, setPendingReturnToStrategy] = useState(false);
+  // 비회원이 Home "내 투자성향 알아보기"/"무료로 시작하기"를 눌러 로그인 화면으로 보내진 경우 true —
+  // 로그인 완료 후 Portfolio가 아니라 투자성향 진단으로 이어간다(아래 Login onLogin 참고).
+  const [pendingRiskProfileAfterLogin, setPendingRiskProfileAfterLogin] = useState(false);
+  // 로그인 화면 title/subtitle을 결정하는 진입 경로 — Header의 일반 로그인은 기본값(header)을 쓰고,
+  // Home/Strategy Detail의 특정 CTA는 각자 진입 시점에 이 값을 명시적으로 세팅한다.
+  const [loginContext, setLoginContext] = useState<LoginContext>('header');
   // 투자 시작 Flow(약관 → 계좌 준비 → 입금 → 최종 확인) 동안 유지해야 하는 선택 금액/운용방식
   // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
   const [investmentAmount, setInvestmentAmount] = useState(1_000_000);
@@ -126,21 +143,33 @@ export default function App() {
   const connectSesacAccount = useInvestmentStore((s) => s.connectSesacAccount);
   const deposit = useInvestmentStore((s) => s.deposit);
   const deferDeposit = useInvestmentStore((s) => s.deferDeposit);
+  const clearPendingInvestment = useInvestmentStore((s) => s.clearPendingInvestment);
   const hydrateForUser = useInvestmentStore((s) => s.hydrateForUser);
   const setInFlightStep = useInvestmentStore((s) => s.setInFlightStep);
   const clearInFlight = useInvestmentStore((s) => s.clearInFlight);
   const setActiveMode = useInvestmentStore((s) => s.setActiveMode);
+  const markActiveModeChecked = useInvestmentStore((s) => s.markActiveModeChecked);
+  const setAccountActiveStrategy = useInvestmentStore((s) => s.setAccountActiveStrategy);
 
   /**
    * invest-terms~invest-confirm 중 한 화면으로 이동할 때 항상 이 함수를 거친다.
    * strategyId/금액/운용방식을 항상 함께 동기화해서 화면에 보이는 값과 새로고침 복원용
    * inFlight 기록이 어긋나지 않게 한다(호출부마다 따로 setStrategyId 등을 챙길 필요 없음).
+   *
+   * step이 invest-deposit/invest-confirm이면 — 즉 계좌 준비가 끝나 남은 건 입금·최종 확인뿐이면 —
+   * pendingInvestment를 함께 기록한다. "나중에 입금할게요" 버튼을 눌렀는지와 무관하게, 계좌 준비가
+   * 끝난 시점부터 DEPOSIT_PENDING으로 간주해야 Home/다른 메뉴로 이탈하거나 로그아웃해도 다시
+   * 돌아왔을 때 입금 단계부터 이어갈 수 있다. 실제 투자 시작(InvestConfirm 성공) 시에만 clear한다.
    */
   const enterInvestmentStep = (step: InvestmentEntryStep, ctxStrategyId: string, ctxAmount: number, ctxMode: OperationMode) => {
     setStrategyId(ctxStrategyId);
     setInvestmentAmount(ctxAmount);
     setInvestmentMode(ctxMode);
     setInFlightStep({ step, strategyId: ctxStrategyId, amount: ctxAmount, mode: ctxMode });
+    if (step === 'invest-deposit' || step === 'invest-confirm') {
+      const ctxStrategyName = STRATEGIES.find((s) => s.id === ctxStrategyId)?.name ?? ctxStrategyId;
+      deferDeposit({ strategyId: ctxStrategyId, strategyName: ctxStrategyName, amount: ctxAmount, mode: ctxMode });
+    }
     setScreen(step);
   };
 
@@ -172,22 +201,43 @@ export default function App() {
 
   /**
    * Header "나의 포트폴리오"/로그인 성공 등 Portfolio로 향하는 모든 경로가 거치는 관문.
-   * DEPOSIT_PENDING(계좌는 연결됐지만 입금이 남은) 상태라면 Portfolio 대신 입금 요청 화면으로 보낸다.
-   * 투자 Flow 화면에서 그 밖의 목적지(정보/전략 둘러보기 등)로 명시적으로 이동할 때는
-   * inFlight(새로고침 복원용 진행 상태)를 정리한다 — "나중에 입금할게요"의 pendingInvestment는 별개로 유지된다.
+   * DEPOSIT_PENDING(계좌는 연결됐지만 아직 투자가 시작되지 않은) 상태라면 Portfolio 대신 입금 요청
+   * 화면으로 보낸다. 투자 Flow 화면에서 그 밖의 목적지(인사이트/투자전략 등)로 명시적으로 이동할 때는
+   * inFlight(새로고침 복원용 진행 상태)만 정리한다 — pendingInvestment는 실제 투자가 시작되기 전까지
+   * 별도로 유지된다(enterInvestmentStep 참고).
    *
    * 로그인 직후에는 Login.tsx가 login() 완료와 동시에 이 함수를 동기적으로 호출하는데, 이 시점엔
    * "사용자별 hydrate" useEffect가 아직 커밋되지 않았을 수 있다(리액트 이펙트는 렌더 이후 실행).
-   * 그래서 반응형 클로저 값(pendingInvestment)을 믿는 대신, 여기서 현재 로그인된 사용자 기준으로
-   * 강제로 다시 hydrate한 뒤 스토어에서 바로 최신 값을 읽는다.
+   * 그래서 반응형 클로저 값(pendingInvestment/accountsByMode/termsAcceptedStrategyIds)을 믿는 대신,
+   * 여기서 현재 로그인된 사용자 기준으로 강제로 다시 hydrate한 뒤 스토어에서 바로 최신 값을 읽는다.
+   *
+   * DEPOSIT_PENDING 복귀 화면은 'invest-deposit'으로 고정하지 않는다 — pendingInvestment가 남아있어도
+   * 그 사이 다른 경로로 이미 입금이 끝나 잔액이 충분해졌을 수 있어(예: "이 전략으로 시작하기"를 다시
+   * 눌러 곧장 입금까지 마친 경우), resolveInvestmentEntryStep으로 현재 계좌 잔액 기준 필요한 단계를
+   * 다시 계산한다 — 잔액이 이미 충분하면 "0원 입금하기"가 뜨는 invest-deposit 대신 invest-confirm 등
+   * 실제로 필요한 단계로 보낸다.
    */
   const navigate = (target: Screen) => {
+    // 이 함수를 거쳐 로그인으로 가는 경로(Header 일반 로그인, "나의 포트폴리오" 등 guarded 메뉴 리다이렉트)는
+    // 모두 기본 context — Home/Strategy Detail의 특정 CTA는 이 함수를 거치지 않고 각자
+    // requestLoginFromHome/requestLoginForBacktest/handleStartInvesting에서 직접 context를 세팅한다.
+    if (target === 'login') {
+      setLoginContext('header');
+    }
     if (target === 'portfolio') {
       const userId = useAuthStore.getState().user?.user_id ?? null;
       hydrateForUser(userId);
-      const pending = useInvestmentStore.getState().pendingInvestment;
+      const freshState = useInvestmentStore.getState();
+      const pending = freshState.pendingInvestment;
       if (pending) {
-        enterInvestmentStep('invest-deposit', pending.strategyId, pending.amount, pending.mode);
+        const accountForPendingMode = freshState.accountsByMode[pending.mode] ?? null;
+        const step = resolveInvestmentEntryStep({
+          strategyId: pending.strategyId,
+          amount: pending.amount,
+          termsAcceptedStrategyIds: freshState.termsAcceptedStrategyIds,
+          sesacAccount: accountForPendingMode,
+        });
+        enterInvestmentStep(step, pending.strategyId, pending.amount, pending.mode);
         return;
       }
     }
@@ -245,6 +295,44 @@ export default function App() {
     prevUserIdRef.current = currentUserId;
   }, [authenticatedUser?.user_id, hydrateForUser]);
 
+  // activeMode는 이 브라우저에서 투자 시작/전략 변경을 실제로 거친 세션에만 로컬로 남는다. 새
+  // 브라우저나 localStorage가 초기화된 환경에서는 실제로는 이미 투자 중이어도 activeMode를 알 수
+  // 없어 Portfolio 화면 분기(자동/반자동)나 Strategy Detail CTA가 "미투자"로 잘못 판단한다. 그래서
+  // 로그인 후 로컬에 activeMode가 없으면 두 운용방식 계좌를 함께 조회해 이미 선택된 전략이 있는
+  // 계좌를 찾으면 그 운용방식으로 activeMode를 맞춰준다.
+  //
+  // 두 운용방식 모두 selected_strategy_id가 있는(동시에 활성인) 경우는 프론트만으로는 어느 쪽이
+  // "지금" 실제로 쓰이고 있는지 구분할 근거가 없다 — 백엔드에 마지막 활성 운용방식을 기록/복원하는
+  // 필드가 없어 조회 순서로 결정할 수밖에 없는데, 그건 임의적이라 근본 해결이 아니다. 이 프론트만의
+  // 범위에서는 이미 다른 화면들이 쓰는 것과 같은 기본값(반자동)으로 수렴시켜 최소한 일관되게라도
+  // 동작하게 해두고, 완전한 해결은 백엔드에 "마지막 활성 운용방식" 같은 필드가 추가돼야 한다.
+  useEffect(() => {
+    if (!accessToken || activeMode !== null) return;
+    let cancelled = false;
+    (async () => {
+      const [semiAuto, auto] = await Promise.all(
+        (['SEMI_AUTO', 'AUTO'] as const).map((probeMode) =>
+          getMyAccountApi(accessToken, probeMode).catch(() => null),
+        ),
+      );
+      if (cancelled) return;
+      const semiAutoActive = Boolean(semiAuto?.selected_strategy_id);
+      const autoActive = Boolean(auto?.selected_strategy_id);
+      if (semiAutoActive && !autoActive) {
+        setActiveMode('manual');
+      } else if (autoActive && !semiAutoActive) {
+        setActiveMode('auto');
+      } else if (semiAutoActive && autoActive) {
+        setActiveMode('manual'); // 위 주석 참고 — 둘 다 활성이면 기존 앱 기본값(반자동)으로 수렴
+      } else {
+        markActiveModeChecked();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, activeMode, setActiveMode, markActiveModeChecked]);
+
   // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
   useEffect(() => {
     const nav: PersistedNav = {
@@ -276,26 +364,118 @@ export default function App() {
     setScreen('risk');
   };
 
-  /** StrategyDetail "이 전략으로 시작하기" — 실제 투자 실행 전 투자자 정보 확인 가드 */
-  const handleStartInvesting = () => {
-    if (investorProfileCompleted) {
+  /**
+   * investorProfileCompleted 분기만 담당 — 로그인은 이미 됐다고 가정한다.
+   * getState()로 최신값을 직접 읽는 이유: 로그인 직후 onLogin 콜백에서도 이 로직을 그대로 타는데,
+   * 그 시점엔 아직 리렌더가 안 끝나 이 컴포넌트의 investorProfileCompleted 클로저가 낡은 값일 수 있다.
+   */
+  const proceedToStartInvesting = () => {
+    if (useAuthStore.getState().investorProfileCompleted) {
       setScreen('investor-check');
     } else {
       startInvestorProfile('start', { notice: '투자를 시작하기 전에 투자자 정보를 확인해주세요.' });
     }
   };
 
+  /**
+   * StrategyDetail "이 전략으로 시작하기" — 실제 투자 실행의 시작점이라 로그인이 먼저 필요하다.
+   * 비회원이면 로그인 화면으로 보내고, 로그인 완료 후 Portfolio가 아니라 여기로 다시 이어가도록
+   * pendingStartAfterLogin을 세워둔다(strategyId는 이미 상태로 유지되고 있어 따로 안 챙겨도 된다).
+   */
+  const handleStartInvesting = () => {
+    if (!isLoggedIn) {
+      setLoginContext('strategy');
+      setPendingStartAfterLogin(true);
+      setScreen('login');
+      return;
+    }
+    proceedToStartInvesting();
+  };
+
+  /**
+   * Home "내 투자성향 알아보기 →"/"무료로 시작하기" — 로그인 화면에 context="home"으로 진입시킨다.
+   * 두 CTA 모두 "FE!N을 시작해보려는" 같은 의도라 로그인 완료 후 Portfolio로 바로 보내지 않고
+   * pendingRiskProfileAfterLogin으로 투자성향 진단까지 이어가도록 목적지를 보존한다.
+   */
+  const requestLoginFromHome = () => {
+    setLoginContext('home');
+    setPendingRiskProfileAfterLogin(true);
+    setScreen('login');
+  };
+
+  /**
+   * Strategy Detail 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보내진 경우 —
+   * 로그인 완료 후 Portfolio가 아니라 보고 있던 Strategy Detail로만 복귀한다(그 기간을 자동 실행하지는
+   * 않는다). strategyId는 이미 상태로 유지되고 있어 따로 안 챙겨도 된다.
+   */
+  const requestLoginForBacktest = () => {
+    setLoginContext('strategy');
+    setPendingReturnToStrategy(true);
+    setScreen('login');
+  };
+
+  /**
+   * Strategy Detail "이 전략으로 변경하기" 확인 — InvestConfirm과 동일하게 실제 계좌 API
+   * (ensureAccount 내부에서 selected_strategy_id가 다르면 selectStrategyApi 호출)를 거친 뒤에만
+   * 로컬 activeStrategyId를 갱신한다. 로컬 state만 바꾸고 끝내면 새로고침/Portfolio 재조회 시
+   * 실제 계좌의 전략으로 되돌아가 화면과 어긋날 수 있어, 반드시 API 성공을 먼저 확인한다.
+   *
+   * 로컬 activeMode가 비어있어도(새 브라우저 등) StrategyDetail이 실제 계좌(tradingStore.account)
+   * 기준으로 'change' CTA를 보여줄 수 있다 — 그 경우를 위해 activeMode가 없으면 이미 조회된 실제
+   * 계좌의 operation_mode로 대신 판단하고, 성공하면 로컬 activeMode도 함께 맞춰준다.
+   */
+  const confirmStrategyChange = async () => {
+    const realAccount = useTradingStore.getState().account;
+    const mode = activeMode ?? (realAccount ? toOperationMode(realAccount.operation_mode) : null);
+    if (!accessToken || !mode) {
+      throw new Error('로그인이 필요합니다.');
+    }
+    await ensureAccount(accessToken, strategyId, toAccountOperationMode(mode));
+    setAccountActiveStrategy(mode, strategyId);
+    setActiveMode(mode);
+    navigate('portfolio');
+  };
+
   return (
     <div className="min-h-screen bg-canvas">
-      {screen === 'home' && <Home onNavigate={navigate} />}
+      {screen === 'home' && <Home userName={userName} onNavigate={navigate} onRequestLogin={requestLoginFromHome} />}
 
       {screen === 'login' && (
         <Login
-          // 로그인 성공 → 인증 state를 켜고, 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
-          onLogin={() => navigate('portfolio')}
-          onSignup={() => setScreen('signup-1')}
-          onHome={() => setScreen('home')}
-          onNavigate={navigate}
+          context={loginContext}
+          // 로그인 성공 — "이 전략으로 시작하기"를 거쳐 왔으면 그 절차로 이어가고, 잠긴 백테스트에서
+          // 왔으면 보고 있던 Strategy Detail로 복귀하고, Home "내 투자성향 알아보기"/"무료로 시작하기"에서
+          // 왔으면 투자성향 진단으로 이어가며, 그 외에는 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
+          onLogin={() => {
+            if (pendingStartAfterLogin) {
+              setPendingStartAfterLogin(false);
+              proceedToStartInvesting();
+              return;
+            }
+            if (pendingReturnToStrategy) {
+              setPendingReturnToStrategy(false);
+              setScreen('strategy');
+              return;
+            }
+            if (pendingRiskProfileAfterLogin) {
+              setPendingRiskProfileAfterLogin(false);
+              startInvestorProfile('risk-result');
+              return;
+            }
+            navigate('portfolio');
+          }}
+          onSignup={() => {
+            setPendingStartAfterLogin(false); setPendingReturnToStrategy(false); setPendingRiskProfileAfterLogin(false);
+            setScreen('signup-1');
+          }}
+          onHome={() => {
+            setPendingStartAfterLogin(false); setPendingReturnToStrategy(false); setPendingRiskProfileAfterLogin(false);
+            setScreen('home');
+          }}
+          onNavigate={(s) => {
+            setPendingStartAfterLogin(false); setPendingReturnToStrategy(false); setPendingRiskProfileAfterLogin(false);
+            navigate(s);
+          }}
         />
       )}
 
@@ -363,6 +543,9 @@ export default function App() {
       {screen === 'risk' && (
         <RiskProfile
           notice={riskNotice}
+          // postDiagnosisTarget이 'start'면 Strategy Detail "이 전략으로 시작하기"에서 온 것 —
+          // 새 진입 state를 따로 만들지 않고 이미 있는 이 값을 그대로 재사용해 context를 판단한다.
+          context={postDiagnosisTarget === 'start' ? 'strategy' : 'general'}
           onComplete={({ investorType, answers }) => {
             completeInvestorProfile(investorType, answers, new Date().toISOString());
             setRiskNotice(undefined);
@@ -388,12 +571,21 @@ export default function App() {
         />
       )}
 
+      {screen === 'strategy-list' && (
+        <StrategyList
+          userName={userName}
+          onNavigate={navigate}
+          onSelectStrategy={(id) => { setStrategyId(id); setScreen('strategy'); }}
+        />
+      )}
       {screen === 'strategy' && (
         <StrategyDetail
           strategyId={strategyId}
           userName={userName}
           onNavigate={navigate}
           onStart={handleStartInvesting}
+          onRequestLoginForBacktest={requestLoginForBacktest}
+          onConfirmStrategyChange={confirmStrategyChange}
           pendingDeposit={
             pendingInvestment && pendingInvestment.strategyId === strategyId
               // InvestDeposit과 동일하게, 이미 보유한 잔액(대기 중인 투자와 같은 운용방식 계좌 기준)을 제외한 부족분만 안내한다
@@ -500,6 +692,10 @@ export default function App() {
             }
             await ensureAccount(accessToken, strategyId, toAccountOperationMode(investmentMode));
             setActiveMode(investmentMode);
+            // "계좌 1개 = 활성 전략 1개" — 실제 투자가 시작된 이 시점에만 계좌의 활성 전략을 기록한다
+            setAccountActiveStrategy(investmentMode, strategyId);
+            // 실제 투자가 시작된 시점 — 여기서만 DEPOSIT_PENDING을 해소한다
+            clearPendingInvestment();
             clearInFlight();
             setScreen('portfolio');
           }}
@@ -526,13 +722,13 @@ export default function App() {
         activeMode === 'auto' ? (
           <PortfolioAuto
             userName={userName}
-            onNavigate={setScreen}
+            onNavigate={navigate}
             onOpenDetail={() => setScreen('portfolio-detail')}
           />
         ) : (
           <Portfolio
             userName={userName}
-            onNavigate={setScreen}
+            onNavigate={navigate}
             onOpenDetail={() => setScreen('portfolio-detail')}
           />
         )
@@ -576,7 +772,7 @@ export default function App() {
       {screen === 'transactions' && (
         <TransactionHistory
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onSelectTransaction={(id) => {
             setSelectedTransactionId(id);
             setTransactionBackTarget('transactions');
@@ -591,7 +787,7 @@ export default function App() {
           transactionId={selectedTransactionId}
           backTarget={transactionBackTarget}
           userName={userName}
-          onNavigate={setScreen}
+          onNavigate={navigate}
           onBack={() => setScreen(transactionBackTarget)}
         />
       )}

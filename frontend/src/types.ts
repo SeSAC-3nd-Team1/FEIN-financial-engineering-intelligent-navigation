@@ -3,7 +3,7 @@ export type Screen =
   | 'home' | 'login'
   | 'signup-1' | 'signup-2' | 'signup-3'
   | 'risk' | 'risk-result' | 'investor-check'
-  | 'strategy' | 'start'
+  | 'strategy-list' | 'strategy' | 'start'
   // 투자 시작 Flow — "이 전략으로 시작하기" 이후, 사용자 준비 상태에 따라 필요한 화면으로만 분기
   | 'invest-terms' | 'invest-account' | 'invest-deposit' | 'invest-confirm'
   | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail'
