@@ -1,8 +1,10 @@
 import json
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -26,20 +28,22 @@ class AssetType(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
-ASSET_TYPE_POLICY: dict[AssetType, bool] = {
-    AssetType.KOSPI200_STOCK: True,
-    AssetType.ETF: True,
-    AssetType.ALLOWED_ETF: True,
-    AssetType.CASH: True,
-    AssetType.RP: True,
-    AssetType.DOMESTIC_SHORT_TERM_BOND: True,
-    AssetType.FOREIGN_STOCK: False,
-    AssetType.CRYPTO: False,
-    AssetType.DERIVATIVE: False,
-    AssetType.LEVERAGED_INVERSE_ETF: False,
-    AssetType.OTC: False,
-    AssetType.UNKNOWN: False,
-}
+ASSET_TYPE_POLICY: Mapping[AssetType, bool] = MappingProxyType(
+    {
+        AssetType.KOSPI200_STOCK: True,
+        AssetType.ETF: True,
+        AssetType.ALLOWED_ETF: True,
+        AssetType.CASH: True,
+        AssetType.RP: True,
+        AssetType.DOMESTIC_SHORT_TERM_BOND: True,
+        AssetType.FOREIGN_STOCK: False,
+        AssetType.CRYPTO: False,
+        AssetType.DERIVATIVE: False,
+        AssetType.LEVERAGED_INVERSE_ETF: False,
+        AssetType.OTC: False,
+        AssetType.UNKNOWN: False,
+    }
+)
 
 _SECURITY_ASSET_TYPES = frozenset(
     {AssetType.KOSPI200_STOCK, AssetType.ETF, AssetType.ALLOWED_ETF}
@@ -128,7 +132,7 @@ class UniverseSnapshot(BaseModel):
         le=MAX_UNIVERSE_AGE_DAYS,
         description="Maximum permitted snapshot age in days.",
     )
-    instruments: dict[str, AssetType]
+    instruments: Mapping[str, AssetType]
 
     @field_validator("as_of")
     @classmethod
@@ -140,7 +144,7 @@ class UniverseSnapshot(BaseModel):
     @field_validator("instruments", mode="before")
     @classmethod
     def normalize_instruments(cls, value: Any) -> dict[str, AssetType]:
-        if not isinstance(value, dict):
+        if not isinstance(value, Mapping):
             raise ValueError("instruments must be an object")
         normalized: dict[str, AssetType] = {}
         for ticker, raw_asset_type in value.items():
@@ -150,6 +154,21 @@ class UniverseSnapshot(BaseModel):
                 raise ValueError("instruments contain ambiguous duplicate tickers")
             normalized[canonical_ticker] = asset_type
         return normalized
+
+    @field_validator("instruments")
+    @classmethod
+    def freeze_instruments(cls, value: Mapping[str, AssetType]) -> Mapping[str, AssetType]:
+        return MappingProxyType(dict(value))
+
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False):
+        payload = {
+            "as_of": self.as_of,
+            "max_age_days": self.max_age_days,
+            "instruments": dict(self.instruments),
+        }
+        if update:
+            payload.update(update)
+        return type(self).model_validate(payload)
 
     @property
     def stale(self) -> bool:

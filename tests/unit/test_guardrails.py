@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
+import agent_orchestration.guardrails as guardrails_module
 from agent_orchestration.guardrails import GuardrailResult, evaluate_guardrails
 from agent_orchestration.universe import (
     AssetType,
@@ -231,6 +232,71 @@ def test_guardrail_no_trading_fields_cannot_be_mutated():
 
     with pytest.raises((ValidationError, TypeError)):
         result.execution_allowed = True
+
+
+def test_guardrail_model_copy_revalidates_no_trading_invariants():
+    with pytest.raises(ValidationError):
+        GuardrailResult().model_copy(
+            update={"trade_blocked": False, "execution_allowed": True}
+        )
+
+
+def test_snapshot_model_copy_revalidates_age_bounds():
+    snapshot = UniverseSnapshot(
+        as_of=datetime.now(UTC),
+        max_age_days=7,
+        instruments={"005930": "KOSPI200_STOCK"},
+    )
+
+    with pytest.raises(ValidationError):
+        snapshot.model_copy(update={"max_age_days": 1_000_000})
+
+
+def test_policy_and_nested_boundary_state_are_immutable():
+    snapshot = UniverseSnapshot(
+        as_of=datetime.now(UTC),
+        max_age_days=7,
+        instruments={"005930": "KOSPI200_STOCK"},
+    )
+    result = GuardrailResult(block_reasons=["TEST_REASON"])
+
+    with pytest.raises(TypeError):
+        guardrails_module.ASSET_TYPE_POLICY[AssetType.CRYPTO] = True
+    with pytest.raises(TypeError):
+        snapshot.instruments["005930"] = AssetType.CASH
+    with pytest.raises(AttributeError):
+        result.block_reasons.append("ANOTHER_REASON")
+
+
+def test_unexpected_instrument_state_fails_closed_without_key_error():
+    snapshot = UniverseSnapshot.model_construct(
+        as_of=datetime.now(UTC),
+        max_age_days=7,
+        instruments={"005930": "MYSTERY_ASSET"},
+    )
+
+    result = evaluate_guardrails("005930", snapshot, analysis_mode="paper_trading")
+
+    assert result.trade_blocked is True
+    assert "UNKNOWN_ASSET_TYPE" in result.block_reasons
+
+
+def test_unexpected_policy_state_fails_closed_without_key_error(monkeypatch):
+    snapshot = UniverseSnapshot(
+        as_of=datetime.now(UTC),
+        max_age_days=7,
+        instruments={"005930": "KOSPI200_STOCK"},
+    )
+    monkeypatch.setattr(
+        guardrails_module,
+        "ASSET_TYPE_POLICY",
+        {AssetType.KOSPI200_STOCK: "unexpected"},
+    )
+
+    result = evaluate_guardrails("005930", snapshot, analysis_mode="paper_trading")
+
+    assert result.trade_blocked is True
+    assert "UNKNOWN_ASSET_POLICY" in result.block_reasons
 
 
 @pytest.mark.asyncio

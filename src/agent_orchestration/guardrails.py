@@ -1,6 +1,8 @@
+from collections.abc import Mapping
 from typing import Literal
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from agent_orchestration.universe import (
     ASSET_TYPE_POLICY,
@@ -18,7 +20,13 @@ class GuardrailResult(BaseModel):
 
     trade_blocked: Literal[True] = True
     execution_allowed: Literal[False] = False
-    block_reasons: list[str] = Field(default_factory=list)
+    block_reasons: tuple[str, ...] = ()
+
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False):
+        payload = self.model_dump(mode="python")
+        if update:
+            payload.update(update)
+        return type(self).model_validate(payload)
 
 
 def evaluate_guardrails(
@@ -63,22 +71,41 @@ def evaluate_guardrails(
         reasons.append("INVALID_IDENTIFIER")
         return GuardrailResult(block_reasons=reasons)
 
-    configured_asset_type = snapshot.instruments.get(canonical_ticker)
-    if configured_asset_type is None:
+    if not isinstance(snapshot.instruments, Mapping):
+        reasons.append("UNIVERSE_UNAVAILABLE")
+        return GuardrailResult(block_reasons=reasons)
+
+    missing = object()
+    try:
+        configured_asset_type = snapshot.instruments.get(canonical_ticker, missing)
+    except Exception:
+        reasons.append("UNIVERSE_UNAVAILABLE")
+        return GuardrailResult(block_reasons=reasons)
+    if configured_asset_type is missing:
         reasons.append("OUTSIDE_OR_UNKNOWN_UNIVERSE")
         if requested_asset_type is AssetType.UNKNOWN:
             reasons.append("UNKNOWN_ASSET_TYPE")
         return GuardrailResult(block_reasons=reasons)
 
+    configured_asset_type = coerce_asset_type(configured_asset_type)
     effective_asset_type = requested_asset_type or configured_asset_type
     if requested_asset_type is not None and requested_asset_type != configured_asset_type:
         reasons.append("ASSET_TYPE_MISMATCH")
 
     if effective_asset_type is AssetType.UNKNOWN:
         reasons.append("UNKNOWN_ASSET_TYPE")
-    elif not ASSET_TYPE_POLICY[effective_asset_type]:
-        reasons.append("UNSUPPORTED_ASSET_TYPE")
-    elif not is_valid_identifier(canonical_ticker, effective_asset_type):
-        reasons.append("INVALID_IDENTIFIER")
+    else:
+        try:
+            policy_allowed = ASSET_TYPE_POLICY.get(effective_asset_type)
+        except Exception:
+            policy_allowed = None
+        if policy_allowed is None:
+            reasons.append("UNKNOWN_ASSET_POLICY")
+        elif policy_allowed is False:
+            reasons.append("UNSUPPORTED_ASSET_TYPE")
+        elif policy_allowed is not True:
+            reasons.append("UNKNOWN_ASSET_POLICY")
+        elif not is_valid_identifier(canonical_ticker, effective_asset_type):
+            reasons.append("INVALID_IDENTIFIER")
 
     return GuardrailResult(block_reasons=reasons)
