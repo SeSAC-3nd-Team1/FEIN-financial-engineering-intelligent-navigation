@@ -50,7 +50,12 @@ class Settings:
     azure_openai_comparison_deployment: str = os.getenv("AZURE_OPENAI_COMPARISON_DEPLOYMENT", "")
     ai_comparison_timeout_seconds: float = float(os.getenv("AI_COMPARISON_TIMEOUT_SECONDS", "15"))
     ai_comparison_model_version: str = os.getenv("AI_COMPARISON_MODEL_VERSION", "portfolio-comparison-v1")
+    azure_openai_chatbot_endpoint: str = os.getenv("AZURE_OPENAI_CHATBOT_ENDPOINT", "")
+    azure_openai_chatbot_api_key: str = os.getenv("AZURE_OPENAI_CHATBOT_API_KEY", "")
     azure_openai_chatbot_deployment: str = os.getenv("AZURE_OPENAI_CHATBOT_DEPLOYMENT", "")
+    azure_openai_chatbot_api_version: str = os.getenv(
+        "AZURE_OPENAI_CHATBOT_API_VERSION", "2024-10-21"
+    )
     ai_chatbot_timeout_seconds: float = float(os.getenv("AI_CHATBOT_TIMEOUT_SECONDS", "30"))
     ai_chatbot_model_version: str = os.getenv("AI_CHATBOT_MODEL_VERSION", "chatbot-v1")
     ai_chatbot_prompt_version: str = os.getenv("AI_CHATBOT_PROMPT_VERSION", "v1")
