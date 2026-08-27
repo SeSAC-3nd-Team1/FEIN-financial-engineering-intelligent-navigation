@@ -152,7 +152,7 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
   // 도넛 위에 마우스를 올린 조각 — 호버 중에는 고정된 선택보다 우선해서 도넛 중앙 라벨을 잠깐 바꿔 보여준다
   const [hoverHoldingIdx, setHoverHoldingIdx] = useState<number | null>(null);
   // 실 계좌에 리밸런싱 제안이 있으면 그 값을, 없으면 목업을 쓴다 — lib/rebalancing.ts 참고
-  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio, accountMissing), [portfolio, accountMissing]);
   // rebalancing_proposals는 "제안"이지 "실행 완료된 조치"가 아니다 — 실 계좌 데이터를 쓸 때는(portfolio가
   // 있을 때) 이 화면 특유의 "이미 실행했어요" 과거형 문구/완료 체크를 쓰면 안 되고, 반자동(Portfolio.tsx)과
   // 같은 "제안" 문구를 써야 한다. mock(AI_ALERTS)은 여전히 "완료된 자동 실행"이라는 스토리 데이터라 기존

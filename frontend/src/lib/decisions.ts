@@ -19,6 +19,11 @@ export interface DisplayDecisionSummary {
   items: DisplayDecision[];
 }
 
+/** 실 계좌인데 아직 이력을 못 받은 상태(로딩 중/조회 실패)에서 쓰는 기간 라벨 — mock(DECISION_SUMMARY)의
+ *  값과 우연히 같지만, mock 상수에 기대지 않도록 별도로 둔다. Dashboard.tsx의 "최근 6개월 수락/보류"
+ *  라벨과 동일한 관측 기간을 가리킨다. */
+const DEFAULT_PERIOD_LABEL = '최근 6개월';
+
 function toDisplayDecision(item: RebalancingDecisionHistoryResponse['items'][number]): DisplayDecision {
   const name = item.stock_name ?? item.stock_code;
   const diff = Math.abs(Number(item.weight_diff)).toFixed(1);
@@ -35,24 +40,32 @@ function toDisplayDecision(item: RebalancingDecisionHistoryResponse['items'][num
   };
 }
 
-/** 실 계좌 조회가 성공했으면(decisions가 있으면) 판단 이력이 0건이어도 그 실제 결과를 그대로 보여준다 —
- *  "이력 없음"과 "계좌 조회 자체가 안 돼 mock을 보여줘야 하는 상황"은 다르다. mock은 조회 자체가 안 된
- *  경우(비로그인·신규 계좌·조회 실패 등, decisions === null)에만 쓴다. */
-export function getDisplayDecisions(decisions: RebalancingDecisionHistoryResponse | null): DisplayDecisionSummary {
-  if (decisions) {
+/** 계좌가 없다고 "확인된" 경우(accountMissing)에만 mock을 쓴다. 그 외에는 실 계좌 조회 결과를 그대로
+ *  보여준다 — decisions가 있으면(판단 이력이 0건이어도) 그 실제 결과를, 아직 로딩 중/조회 실패로
+ *  decisions를 못 받았으면(decisions === null이지만 accountMissing은 아님) 빈 이력을 쓴다.
+ *  decisions === null만으로 mock을 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회 실패"를
+ *  구분하지 못해, 실계좌 사용자에게 지어낸 판단 이력이 실제 이력인 것처럼 노출될 수 있다. */
+export function getDisplayDecisions(
+  decisions: RebalancingDecisionHistoryResponse | null,
+  accountMissing: boolean,
+): DisplayDecisionSummary {
+  if (accountMissing) {
     return {
-      periodLabel: decisions.period_label,
-      proposed: decisions.proposed,
-      accepted: decisions.accepted,
-      held: decisions.held,
-      items: decisions.items.map(toDisplayDecision),
+      periodLabel: DECISION_SUMMARY.periodLabel,
+      proposed: DECISION_SUMMARY.proposed,
+      accepted: DECISION_SUMMARY.accepted,
+      held: DECISION_SUMMARY.held,
+      items: PAST_DECISIONS.map((d, i) => ({ id: `mock-${i}`, date: d.date, action: d.action, choice: d.choice, result: d.result })),
     };
   }
+  if (!decisions) {
+    return { periodLabel: DEFAULT_PERIOD_LABEL, proposed: 0, accepted: 0, held: 0, items: [] };
+  }
   return {
-    periodLabel: DECISION_SUMMARY.periodLabel,
-    proposed: DECISION_SUMMARY.proposed,
-    accepted: DECISION_SUMMARY.accepted,
-    held: DECISION_SUMMARY.held,
-    items: PAST_DECISIONS.map((d, i) => ({ id: `mock-${i}`, date: d.date, action: d.action, choice: d.choice, result: d.result })),
+    periodLabel: decisions.period_label,
+    proposed: decisions.proposed,
+    accepted: decisions.accepted,
+    held: decisions.held,
+    items: decisions.items.map(toDisplayDecision),
   };
 }

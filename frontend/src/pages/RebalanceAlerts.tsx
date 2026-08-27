@@ -32,7 +32,10 @@ const ALERT_BADGE: Record<'손절' | '리밸런싱', string> = {
 export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack, isAutoMode }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
-  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+  // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
+  // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
+  const accountMissing = useTradingStore((state) => state.accountMissing);
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio, accountMissing), [portfolio, accountMissing]);
   // displayAlerts는 실 계좌가 있으면(portfolio) portfolio.rebalancing_proposals(아직 실행 전인 "제안")를,
   // 없으면 AI_ALERTS(이미 실행됐다는 설정의 스토리 목업)를 쓴다 — lib/rebalancing.ts 참고. 그래서 자동매매
   // 실계좌라도 제안은 아직 제안일 뿐이라, 실데이터면 반자동과 같은 "제안" 톤을 쓰고 mock일 때만 과거형/완료
@@ -41,10 +44,12 @@ export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack
   // 무관하게 항상 "제안" 톤을 쓰도록 activeMode를 우선 확인한다.
   const usingRealAlerts = !isAutoMode || portfolio !== null;
 
-  // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — PortfolioDetail 과 동일한 대체 규칙.
-  const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
+  // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는
+  // 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 빈 배열/0원을 써서 실제 빈 상태로 보여준다.
+  const HOLD_TOTAL = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
   const ALL_HOLDINGS = useMemo(() => {
-    if (!portfolio || portfolio.positions.length === 0) return MOCK_HOLDINGS;
+    if (accountMissing) return MOCK_HOLDINGS;
+    if (!portfolio) return [];
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
@@ -58,7 +63,7 @@ export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack
         returnRate: Number(position.return_rate),
       };
     });
-  }, [portfolio]);
+  }, [portfolio, accountMissing]);
 
   // 리밸런싱 "조정 전/후" 상세 시트
   const [rebalanceSheetId, setRebalanceSheetId] = useState<string | null>(null);
