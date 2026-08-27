@@ -24,15 +24,17 @@ from app.models import (
     PortfolioSnapshot,
     Position,
     Strategy,
+    StrategyTargetWeight,
     Term,
     User,
     UserAgreement,
     VirtualAccount,
 )
+from app.services.model_recommendation import ModelRecommendationService
 from scripts.demo_history import SimulationResult, simulate_history
 
 
-DEMO_VERSION = "minjun-1y-v1"
+DEMO_VERSION = "minjun-1y-v2"
 DEMO_LOGIN_ID = "demomin32"
 DEMO_EMAIL = "demo.minjun@example.invalid"
 INITIAL_CASH = Decimal("3000000.00")
@@ -48,17 +50,21 @@ INITIAL_TARGET_WEIGHTS = {
     "005490": Decimal("0.13"),  # POSCO홀딩스
     "051900": Decimal("0.12"),  # LG생활건강
 }
-TARGET_WEIGHTS = {
-    # 최근 분기 모멘텀 신호에서 국내 대표 반도체주를 핵심 비중으로 편입한다.
-    "005930": Decimal("0.20"),  # 삼성전자
-    "000660": Decimal("0.20"),  # SK하이닉스
-    "033780": Decimal("0.15"),  # KT&G
-    "068270": Decimal("0.15"),  # 셀트리온
-    "000270": Decimal("0.15"),  # 기아
-    "271560": Decimal("0.10"),  # 오리온
-}
-MOMENTUM_ROTATION_DAY = 189
-DEMO_STOCK_CODES = tuple(sorted(set(INITIAL_TARGET_WEIGHTS) | set(TARGET_WEIGHTS)))
+
+
+def model_target_weights(snapshot) -> dict[str, Decimal]:
+    """실제 최신 모멘텀 산출물만 95% 주식 목표 비중으로 변환한다."""
+
+    if snapshot.source != "generated" or snapshot.is_stale:
+        raise RuntimeError("최신 generated 모멘텀 모델 추천이 필요합니다.")
+    weights = {
+        item.symbol: Decimal(str(item.target_weight))
+        for item in snapshot.recommendations
+        if item.target_weight > 0
+    }
+    if not weights or sum(weights.values(), Decimal("0")) != Decimal("0.95"):
+        raise RuntimeError("모멘텀 모델 목표 주식 비중 합계는 0.95여야 합니다.")
+    return weights
 
 
 def ensure_demo_environment(enabled: str, environment: str) -> None:
@@ -70,6 +76,7 @@ def ensure_demo_environment(enabled: str, environment: str) -> None:
 
 def _common_market_history(
     session: Session,
+    stock_codes: tuple[str, ...],
 ) -> tuple[list[date], dict[str, dict[date, Decimal]]]:
     latest_dates = [
         session.scalar(
@@ -77,7 +84,7 @@ def _common_market_history(
                 MarketStockPrice.stock_code == stock_code
             )
         )
-        for stock_code in DEMO_STOCK_CODES
+        for stock_code in stock_codes
     ]
     latest_index_date = session.scalar(
         select(func.max(MarketIndex.trade_date)).where(
@@ -92,7 +99,7 @@ def _common_market_history(
 
     closes: dict[str, dict[date, Decimal]] = {}
     common_dates: set[date] | None = None
-    for stock_code in DEMO_STOCK_CODES:
+    for stock_code in stock_codes:
         rows = session.execute(
             select(MarketStockPrice.trade_date, MarketStockPrice.close_price).where(
                 MarketStockPrice.stock_code == stock_code,
@@ -122,6 +129,37 @@ def _common_market_history(
         )
     trading_dates = trading_dates[-HISTORY_TRADING_DAYS:]
     return trading_dates, closes
+
+
+def _publish_model_targets(
+    session: Session,
+    effective_from: date,
+    target_weights: dict[str, Decimal],
+) -> None:
+    existing = list(
+        session.scalars(
+            select(StrategyTargetWeight).where(
+                StrategyTargetWeight.strategy_id == "momentum",
+                StrategyTargetWeight.effective_from == effective_from,
+            )
+        )
+    )
+    if existing:
+        current = {row.stock_code: Decimal(row.target_weight) for row in existing}
+        if current != target_weights:
+            raise RuntimeError("같은 기준일의 모멘텀 목표 비중이 다르게 저장돼 있습니다.")
+        return
+    session.add_all(
+        [
+            StrategyTargetWeight(
+                strategy_id="momentum",
+                stock_code=stock_code,
+                target_weight=weight,
+                effective_from=effective_from,
+            )
+            for stock_code, weight in target_weights.items()
+        ]
+    )
 
 
 def _latest_terms(session: Session, effective_at: datetime) -> list[Term]:
@@ -252,15 +290,27 @@ def seed_demo_account(
     strategy = session.get(Strategy, "momentum")
     if strategy is None or not strategy.is_active:
         raise RuntimeError("활성 momentum 전략이 없습니다. DB migration/seed를 먼저 실행해주세요.")
-    trading_dates, closes = _common_market_history(session)
+    model_snapshot = ModelRecommendationService().latest()
+    final_target_weights = model_target_weights(model_snapshot)
+    stock_codes = tuple(
+        sorted(set(INITIAL_TARGET_WEIGHTS) | set(final_target_weights))
+    )
+    trading_dates, closes = _common_market_history(session, stock_codes)
+    model_dates = [
+        index
+        for index, trading_date in enumerate(trading_dates)
+        if trading_date <= model_snapshot.as_of
+    ]
+    if not model_dates:
+        raise RuntimeError("모델 기준일이 데모 투자 기간보다 이전입니다.")
+    model_rotation_index = model_dates[-1]
     simulation = simulate_history(
         trading_dates,
         closes,
-        TARGET_WEIGHTS,
+        INITIAL_TARGET_WEIGHTS,
         initial_cash=INITIAL_CASH,
         target_weight_schedule={
-            0: INITIAL_TARGET_WEIGHTS,
-            MOMENTUM_ROTATION_DAY: TARGET_WEIGHTS,
+            model_rotation_index: final_target_weights,
         },
     )
     started_at = datetime.combine(trading_dates[0], time(9), tzinfo=KST)
@@ -365,6 +415,11 @@ def seed_demo_account(
                 reference_id=str(deposit.id),
                 created_at=started_at,
             )
+        )
+        _publish_model_targets(
+            session,
+            model_snapshot.as_of,
+            final_target_weights,
         )
         _persist_simulation(session, account, simulation)
         session.commit()

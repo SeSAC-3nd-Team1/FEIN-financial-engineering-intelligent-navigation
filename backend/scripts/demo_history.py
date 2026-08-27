@@ -144,7 +144,8 @@ def simulate_history(
         )
 
     for day_index, day in enumerate(trading_dates):
-        if day_index > 0 and day_index % rebalance_every == 0:
+        schedule_changed = day_index > 0 and day_index in schedules
+        if day_index > 0 and (day_index % rebalance_every == 0 or schedule_changed):
             active_weights = weights_for(day_index)
             evaluations = {
                 code: money(holding.quantity * closes[code][day])

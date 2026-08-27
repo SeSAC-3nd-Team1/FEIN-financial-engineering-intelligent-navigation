@@ -1,10 +1,11 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.demo_history import simulate_history
-from scripts.seed_demo_account import TARGET_WEIGHTS, ensure_demo_environment
+from scripts.seed_demo_account import ensure_demo_environment, model_target_weights
 
 
 def market(days: int = 253):
@@ -73,11 +74,11 @@ def test_simulation_rotates_into_new_momentum_stocks() -> None:
         {"AAA": Decimal("0.95")},
         initial_cash=Decimal("3000000"),
         target_weight_schedule={
-            21: {"BBB": Decimal("0.45"), "CCC": Decimal("0.50")}
+            20: {"BBB": Decimal("0.45"), "CCC": Decimal("0.50")}
         },
     )
 
-    rotation_trades = [trade for trade in result.trades if trade.trade_date == dates[21]]
+    rotation_trades = [trade for trade in result.trades if trade.trade_date == dates[20]]
     assert any(trade.stock_code == "AAA" and trade.side == "SELL" for trade in rotation_trades)
     assert any(trade.stock_code == "BBB" and trade.side == "BUY" for trade in rotation_trades)
     assert any(trade.stock_code == "CCC" and trade.side == "BUY" for trade in rotation_trades)
@@ -95,8 +96,31 @@ def test_demo_seed_requires_explicit_opt_in_and_rejects_production() -> None:
     ensure_demo_environment("true", "demo")
 
 
-def test_momentum_demo_keeps_five_percent_cash_target() -> None:
-    assert len(TARGET_WEIGHTS) == 6
-    assert sum(TARGET_WEIGHTS.values(), Decimal("0")) == Decimal("0.95")
-    assert TARGET_WEIGHTS["005930"] == Decimal("0.20")
-    assert TARGET_WEIGHTS["000660"] == Decimal("0.20")
+def test_momentum_demo_uses_generated_model_weights_without_symbol_override() -> None:
+    snapshot = SimpleNamespace(
+        source="generated",
+        is_stale=False,
+        recommendations=[
+            SimpleNamespace(symbol="MODEL1", target_weight=0.55),
+            SimpleNamespace(symbol="MODEL2", target_weight=0.40),
+        ],
+    )
+
+    assert model_target_weights(snapshot) == {
+        "MODEL1": Decimal("0.55"),
+        "MODEL2": Decimal("0.4"),
+    }
+
+
+def test_momentum_demo_rejects_fallback_or_invalid_model_weights() -> None:
+    fallback = SimpleNamespace(source="fallback", is_stale=False, recommendations=[])
+    invalid = SimpleNamespace(
+        source="generated",
+        is_stale=False,
+        recommendations=[SimpleNamespace(symbol="005930", target_weight=0.20)],
+    )
+
+    with pytest.raises(RuntimeError, match="generated"):
+        model_target_weights(fallback)
+    with pytest.raises(RuntimeError, match="0.95"):
+        model_target_weights(invalid)
