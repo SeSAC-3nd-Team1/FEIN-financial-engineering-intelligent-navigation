@@ -618,6 +618,21 @@ export default function App() {
     }
   }, [screen, selectedTransactionId]);
 
+  // 추가 투자/출금 확인 화면(screen)은 sessionStorage로 복원되지만 금액(fundAddAmount/
+  // fundWithdrawAmount)은 새로고침 유지가 필요 없는 일반 state라 복원되지 않는다(0으로 초기화됨).
+  // 그대로 두면 확인 화면이 0원인 채로 뜨고 실행 버튼이 금액을 재검증하지 않아 다음 단계로 넘어갈 수
+  // 있어, 금액을 복원할 수 없는 채로 확인 화면을 새로고침한 경우 STEP 1(금액 입력)으로 돌려보낸다.
+  useEffect(() => {
+    if (screen === "fund-add-confirm" && fundAddAmount <= 0) {
+      setScreen("fund-add");
+    }
+  }, [screen, fundAddAmount]);
+  useEffect(() => {
+    if (screen === "fund-withdraw-confirm" && fundWithdrawAmount <= 0) {
+      setScreen("fund-withdraw");
+    }
+  }, [screen, fundWithdrawAmount]);
+
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
     setPostDiagnosisTarget(target);
