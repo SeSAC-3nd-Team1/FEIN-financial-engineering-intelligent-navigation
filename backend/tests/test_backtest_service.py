@@ -1,4 +1,4 @@
-"""실제 시계열 기반 백테스트 지표·전략·KOSPI 비교 규칙을 검증한다."""
+"""실제 시계열 기반 백테스트 지표·전략·KOSPI·PIT 가치 규칙을 검증한다."""
 
 from datetime import date, timedelta
 from decimal import Decimal
@@ -6,8 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.core.errors import ServiceError
-from app.repositories.backtest import IndexPricePoint, StockPricePoint
+from app.repositories.backtest import (
+    IndexPricePoint,
+    PointInTimeFinancial,
+    StockPricePoint,
+    disclosure_matches_financial_period,
+    financial_period_end,
+)
 from app.schemas.api import BacktestRunRequest
 from app.services.backtest import BacktestService, calculate_metrics
 
@@ -21,7 +26,12 @@ class FakeRepository:
     def strategy(self, strategy_id: str):
         if strategy_id not in {"low", "value", "momentum"}:
             return None
-        return SimpleNamespace(id=strategy_id, name="테스트 전략", rule_config={"factor": self.factor})
+        return SimpleNamespace(
+            id=strategy_id,
+            name="테스트 전략",
+            rule_config={"factor": self.factor},
+            rebalance_cycle="QUARTERLY" if self.factor == "value" else "MONTHLY",
+        )
 
     def universe_codes(self, _as_of: date, *, limit: int = 100) -> list[str]:
         return self.codes[:limit]
@@ -38,10 +48,35 @@ class FakeRepository:
         while day <= end_date:
             for index, code in enumerate(stock_codes):
                 price = Decimal("100") * (Decimal("1") + Decimal("0.0002") * (index + 1)) ** offset
-                points.append(StockPricePoint(code, day, price))
+                points.append(
+                    StockPricePoint(
+                        code,
+                        day,
+                        price,
+                        market_cap=Decimal("1000000") + Decimal(index * 10000),
+                    )
+                )
             day += timedelta(days=1)
             offset += 1
         return points
+
+    def point_in_time_financials(
+        self,
+        stock_codes: list[str],
+        _end_date: date,
+    ) -> list[PointInTimeFinancial]:
+        return [
+            PointInTimeFinancial(
+                stock_code=code,
+                available_at=self.start - timedelta(days=30),
+                business_year="2025",
+                report_code="11014",
+                fs_div="CFS",
+                total_equity=Decimal("100000") + Decimal(index * 10000),
+                net_income=Decimal("10000") + Decimal(index * 1000),
+            )
+            for index, code in enumerate(stock_codes)
+        ]
 
     def kospi_prices(self, start_date: date, end_date: date) -> list[IndexPricePoint]:
         points: list[IndexPricePoint] = []
@@ -98,6 +133,14 @@ def test_backtest_uses_historical_strategy_prices_and_real_kospi() -> None:
     assert result.model_dump(by_alias=True)["strategyId"] == "momentum"
 
 
+def test_value_backtest_uses_point_in_time_financials() -> None:
+    result = BacktestService(FakeRepository(factor="value")).run(request("value"))
+
+    assert result.strategy_id == "value"
+    assert len(result.series) == 10
+    assert result.metrics.cumulative_return > 0
+
+
 def test_factor_selection_does_not_use_prices_after_rebalance_date() -> None:
     as_of = date(2026, 1, 1)
     history = {
@@ -109,8 +152,61 @@ def test_factor_selection_does_not_use_prices_after_rebalance_date() -> None:
             as_of: 100.0 + index,
         }
 
-    # 관측치가 짧아 실제 momentum 후보는 없지만 미래 급등값을 넣어도 선택 결과에 들어가면 안 된다.
     assert BacktestService._select("momentum", history, as_of) == []
+
+
+def test_value_selection_never_uses_financials_before_disclosure_date() -> None:
+    as_of = date(2026, 1, 1)
+    prices = {f"{index:06d}": {as_of: 100.0} for index in range(11)}
+    market_caps = {f"{index:06d}": {as_of: 1000.0} for index in range(11)}
+    financials: dict[str, list[PointInTimeFinancial]] = {}
+    for index in range(10):
+        code = f"{index:06d}"
+        financials[code] = [
+            PointInTimeFinancial(
+                stock_code=code,
+                available_at=as_of - timedelta(days=1),
+                business_year="2025",
+                report_code="11014",
+                fs_div="CFS",
+                total_equity=Decimal(100 + index),
+            )
+        ]
+    financials["000010"] = [
+        PointInTimeFinancial(
+            stock_code="000010",
+            available_at=as_of + timedelta(days=1),
+            business_year="2025",
+            report_code="11014",
+            fs_div="CFS",
+            total_equity=Decimal("999999"),
+        )
+    ]
+
+    selected = BacktestService._select(
+        "value",
+        prices,
+        as_of,
+        market_caps=market_caps,
+        financials=financials,
+    )
+
+    assert len(selected) == 10
+    assert "000010" not in selected
+
+
+def test_financial_period_end_supports_quarter_and_non_december_fiscal_year() -> None:
+    assert financial_period_end("2024", "11013", "12") == date(2024, 3, 31)
+    assert financial_period_end("2024", "11011", "12") == date(2024, 12, 31)
+    assert financial_period_end("2024", "11013", "03") == date(2023, 6, 30)
+
+
+def test_disclosure_period_match_rejects_other_quarter() -> None:
+    q1_end = date(2024, 3, 31)
+
+    assert disclosure_matches_financial_period("분기보고서 (2024.03)", "11013", q1_end)
+    assert not disclosure_matches_financial_period("분기보고서 (2024.09)", "11013", q1_end)
+    assert not disclosure_matches_financial_period("반기보고서 (2024.06)", "11013", q1_end)
 
 
 def test_suspended_holding_applies_full_return_when_trading_resumes() -> None:
@@ -167,11 +263,3 @@ def test_unadjusted_corporate_action_resets_price_without_false_return() -> None
     )
 
     assert values == pytest.approx([1.0, 1.0, 1.1])
-
-
-def test_value_strategy_is_unavailable_without_point_in_time_financials() -> None:
-    with pytest.raises(ServiceError) as exc_info:
-        BacktestService(FakeRepository(factor="value")).run(request("value"))
-
-    assert exc_info.value.code == "BACKTEST_STRATEGY_UNAVAILABLE"
-    assert exc_info.value.status_code == 422
