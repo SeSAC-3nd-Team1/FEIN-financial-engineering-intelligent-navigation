@@ -11,7 +11,7 @@ interface Props {
   onNavigate: (s: Screen) => void;
   /** STEP 1(금액 입력)로 돌아간다 — 입력했던 금액은 App.tsx가 그대로 들고 있어 유지된다 */
     onBack: () => void;
-  /** 출금 API 호출을 시작한다 */
+    /** 출금 API 호출을 시작한다 */
   onConfirm: () => void;
   isSubmitting?: boolean;
 
@@ -65,7 +65,7 @@ export default function FundWithdrawConfirm({ strategy, amount, userName, onNavi
               이전
             </button>
                         <button
-              onClick={onConfirm}
+                          onClick={onConfirm}
               disabled={isSubmitting}
               className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy disabled:cursor-wait disabled:opacity-60"
             >

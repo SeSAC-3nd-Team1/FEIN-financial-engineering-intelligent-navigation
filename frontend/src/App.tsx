@@ -635,11 +635,19 @@ export default function App() {
       setScreen("fund-add");
     }
   }, [screen, fundAddAmount]);
-  useEffect(() => {
+    useEffect(() => {
     if (screen === "fund-withdraw-confirm" && fundWithdrawAmount <= 0) {
       setScreen("fund-withdraw");
     }
   }, [screen, fundWithdrawAmount]);
+
+  // 성공 결과 데이터는 일회성 React state이므로 pending 화면을 새로고침하면 안전한 화면으로 돌아간다.
+  useEffect(() => {
+    if ((screen === "fund-add-pending" || screen === "fund-withdraw-pending") && !fundOperation) {
+      setScreen("portfolio");
+    }
+  }, [screen, fundOperation]);
+
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
