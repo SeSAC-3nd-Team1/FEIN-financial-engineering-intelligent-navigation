@@ -4,6 +4,8 @@ from db.models import (
     MarketStockPrice,
     AccountDeposit,
     CashLedger,
+    FundOperation,
+    FundOperationOrder,
     InvestmentOnboarding,
     RegistrationAgreement,
     RegistrationSession,
@@ -145,3 +147,23 @@ def test_account_deposit_is_append_only_idempotent_history() -> None:
         ("investment_onboardings.id",),
     }
     assert "ck_cash_ledger_type_values" in _constraint_names(CashLedger)
+
+
+def test_virtual_fund_operations_are_idempotent_and_link_orders() -> None:
+    assert not VirtualAccount.__table__.columns.invested_principal.nullable
+    assert "ck_virtual_accounts_invested_principal_nonnegative" in _constraint_names(
+        VirtualAccount
+    )
+    assert {
+        "uq_fund_operations_account_idempotency",
+        "ck_fund_operations_operation_type_values",
+        "ck_fund_operations_requested_amount_positive",
+    } <= _constraint_names(FundOperation)
+    assert ("account_id", "created_at") in _index_columns(FundOperation)
+    assert _foreign_key_targets(FundOperationOrder) == {
+        ("fund_operations.id",),
+        ("orders.id",),
+    }
+    assert "uq_fund_operation_orders_order_id" in _constraint_names(
+        FundOperationOrder
+    )
