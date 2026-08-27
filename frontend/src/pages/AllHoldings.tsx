@@ -33,11 +33,16 @@ const HOLDINGS_COLUMNS: { key: SortKey; label: string; align: 'left' | 'right' }
 export default function AllHoldings({ userName, onNavigate, onSelectStock, onBack }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
+  // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
+  // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
+  const accountMissing = useTradingStore((state) => state.accountMissing);
 
-  // 실 계좌가 있으면 포지션을 그대로(0개여도) 쓰고, 계좌 자체가 없을 때만 목업 20종목을 쓴다 —
-  // PortfolioDetail 과 동일한 대체 규칙.
+  // 계좌가 없다고 확인된 경우에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는 아직 로딩 중/
+  // 조회 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 — PortfolioDetail
+  // 과 동일한 대체 규칙.
   const ALL_HOLDINGS = useMemo(() => {
-    if (!portfolio) return MOCK_HOLDINGS;
+    if (accountMissing) return MOCK_HOLDINGS;
+    if (!portfolio) return [];
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
@@ -51,7 +56,7 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
         returnRate: Number(position.return_rate),
       };
     });
-  }, [portfolio]);
+  }, [portfolio, accountMissing]);
 
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');

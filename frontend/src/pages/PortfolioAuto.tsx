@@ -98,12 +98,17 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
   const account = useTradingStore((state) => state.account);
+  // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
+  // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
+  const accountMissing = useTradingStore((state) => state.accountMissing);
   const accessToken = useAuthStore((state) => state.accessToken);
 
-  // 실 계좌가 있으면 포지션을 그대로(0개여도) 쓰고, 계좌 자체가 없을 때만 목업 20종목으로 대체한다 —
-  // 계좌는 있는데 포지션이 0건인 걸 목업으로 가리면 "0원인데 도넛엔 20종목이 꽉 차있는" 모순이 생긴다.
+  // 계좌가 없다고 확인된 경우에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는 아직 로딩 중/조회
+  // 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 — 로딩/오류 중에 실계좌
+  // 사용자에게 목업 20종목이 노출되면 안 된다.
   const ALL_HOLDINGS = useMemo(() => {
-    if (!portfolio) return MOCK_HOLDINGS;
+    if (accountMissing) return MOCK_HOLDINGS;
+    if (!portfolio) return [];
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
@@ -115,7 +120,7 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
         chg: Number(position.return_rate),
       };
     });
-  }, [portfolio]);
+  }, [portfolio, accountMissing]);
 
   // 자산 증감 요약 — 실 계좌가 있으면 백엔드가 이미 계산해 둔 계좌 손익(unrealized_profit + realized_profit, return_rate)을
   // 그대로 쓴다. total_assets - total_purchase_amount 로 직접 빼면 total_assets 에 포함된 미투자 현금(cash_balance)이
@@ -150,11 +155,11 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail }: Pr
   // 클릭 시 현재 tab 이 가리키는 차트를 그대로 훨씬 큰 크기의 팝업으로 다시 그린다.
   const [isChartZoomOpen, setIsChartZoomOpen] = useState(false);
 
-  // 우측 하단 "최근 거래" 위젯 — 실 계좌가 있으면 체결 내역을 그대로(0건이어도), 계좌 자체가 없을 때만
-  // 목업으로 대체한다. 가로 3칸 레이아웃이라 항상 최신 3건만 보여준다.
+  // 우측 하단 "최근 거래" 위젯 — 계좌가 없다고 확인된 경우에만 목업으로 대체하고, 그 외(체결 0건,
+  // 로딩 중/조회 실패)에는 실 체결 내역(빈 배열이어도)을 그대로 쓴다. 가로 3칸 레이아웃이라 항상 최신 3건만 보여준다.
   const recentTransactions = useMemo(
-    () => getDisplayTransactions(executions, account !== null).slice(0, 3),
-    [executions, account],
+    () => getDisplayTransactions(executions, !accountMissing).slice(0, 3),
+    [executions, accountMissing],
   );
 
   // 자산 변화 탭: 실 계좌가 있으면 GET /portfolio/history 를 선택된 기간으로 다시 조회한다(서버가 기간별로
