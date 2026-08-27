@@ -2,28 +2,31 @@
 
 ## Scope
 
-Implemented the universe provider and fail-closed financial guardrails from the approved Task 4 brief.
+Implemented the universe provider and fail-closed financial guardrails from the approved Task 4 brief, including all required review remediations.
 
-- Added `UniverseSnapshot`, `UniverseProvider`, and `FileUniverseProvider`.
-- Added `GuardrailResult` and `evaluate_guardrails`.
+- Added precise, UTC-normalized freshness checks with future timestamps treated as stale and `max_age_days` bounded to 1–365.
+- Added `AssetType`, an explicit allow/deny policy, `UniverseTarget`, canonical identifier handling, and identifier validation.
+- Added typed `UniverseProviderError` failures and `UNIVERSE_UNAVAILABLE` fail-closed evaluation.
+- Made `GuardrailResult` immutable with schema-level `trade_blocked=True` and `execution_allowed=False` invariants.
+- Added runtime analysis-mode validation and explicit paper-trading no-execution reasoning.
 - Added a non-sensitive example universe configuration.
-- Added unit coverage for stale data, unknown tickers, analysis-only mode, paper-trading execution denial, and file loading.
+- Added unit coverage for freshness boundaries, timestamp/configuration validation, target canonicalization, asset policy, malformed targets, provider failures, runtime modes, and immutable guardrail results.
 - No order execution path was added.
 
-## TDD evidence
+## Review remediation TDD evidence
 
-1. Added the failing guardrail tests before production modules existed.
-2. Confirmed the RED state with the supplied Python interpreter: test collection failed with missing `agent_orchestration.guardrails`.
-3. Added the minimal implementation.
-4. Confirmed the GREEN state: `5 passed` for `tests/unit/test_guardrails.py`.
+1. Added review regression tests before changing the implementation.
+2. Confirmed RED with the supplied Python interpreter: focused collection failed because the new enum/provider symbols were absent.
+3. Added the minimal implementation and confirmed GREEN: `19 passed` for `tests/unit/test_guardrails.py`.
+4. Added the direct canonical-target regression test; confirmed it failed against the old evaluator and passed after the compatibility fix: `20 passed`.
 
 ## Verification
 
-- Focused tests: `5 passed`.
-- Full test suite: `25 passed`.
+- Focused tests: `20 passed`.
+- Full test suite: `40 passed` within the 60-second verification bound.
 - `git diff --check`: passed.
 - Sensitive-value scan of Task 4 files: no matches.
 
 ## Safety
 
-`execution_allowed` remains `false` and `trade_blocked` remains `true` for every guardrail result, including `paper_trading`. Stale or unknown universe candidates receive explicit block reasons. The example configuration contains no operational identifiers or credentials.
+`execution_allowed` remains `false` and `trade_blocked` remains `true` for every guardrail result, including `paper_trading`. Stale, unavailable, unsupported, unknown, mismatched, or malformed universe candidates receive explicit block reasons. The example configuration contains no operational identifiers or credentials.
