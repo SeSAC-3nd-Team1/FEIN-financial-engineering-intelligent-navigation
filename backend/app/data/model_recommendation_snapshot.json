@@ -1,0 +1,41 @@
+{
+  "as_of": "2026-08-26",
+  "model_version": "price-momentum-v1",
+  "data_version": "model_stock_daily-v2+algorithm_ohlcv-v2+risk-filter-v1",
+  "status": "ready",
+  "market_regime": "neutral",
+  "recommendations": [
+    {
+      "symbol": "005930",
+      "stock_name": "삼성전자",
+      "score": 0.82,
+      "rank": 1,
+      "target_weight": 0.2375,
+      "reason": "120일 가격 모멘텀 상위 종목"
+    },
+    {
+      "symbol": "000660",
+      "stock_name": "SK하이닉스",
+      "score": 0.76,
+      "rank": 2,
+      "target_weight": 0.2375,
+      "reason": "120일 가격 모멘텀 상위 종목"
+    },
+    {
+      "symbol": "035420",
+      "stock_name": "NAVER",
+      "score": 0.71,
+      "rank": 3,
+      "target_weight": 0.2375,
+      "reason": "120일 가격 모멘텀 상위 종목"
+    },
+    {
+      "symbol": "035720",
+      "stock_name": "카카오",
+      "score": 0.67,
+      "rank": 4,
+      "target_weight": 0.2375,
+      "reason": "120일 가격 모멘텀 상위 종목"
+    }
+  ]
+}
