@@ -27,10 +27,13 @@ const recommendation: StrategyRecommendationResponse = {
 
 const modelSnapshot: ModelRecommendationSnapshotResponse = {
   as_of: "2026-08-26",
+  generated_at: "2026-08-26T09:00:00Z",
   model_version: "price-momentum-v1",
   data_version: "algorithm-ohlcv-v2",
   status: "ready",
   market_regime: "neutral",
+  source: "generated",
+  is_stale: false,
   recommendations: [
     {
       symbol: "005930",

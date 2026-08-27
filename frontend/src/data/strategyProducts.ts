@@ -2,8 +2,8 @@
  * 물·방·개 전략 체계 — Strategy Main(구 Strategy List)/F4 선택 화면/Coming Soon 화면 전용 정적 카피.
  *
  * 이 파일의 id/이름/설명은 모두 프론트엔드 전용 UI 식별자이며, 백엔드 `strategies` 테이블의 canonical
- * strategy id(`low`/`value`/`momentum`)와 무관하다. 실제 Model/Backend contract가 확정되기 전까지는
- * 어떤 API 호출에도 이 값을 사용하지 않는다 — "저변동성 = 물림방지" 같은 임의 매핑을 하지 않기 위함이다.
+ * strategy id(`low`/`value`/`momentum`)와 기본적으로 무관하다. 단, `f4-momentum`은 실제 Model/Backend
+ * contract가 확정된 canonical `momentum` 전략으로 명시적으로 연결한다.
  */
 
 export interface StrategyProductCard {
@@ -63,9 +63,7 @@ export interface F4SubStrategy {
 }
 
 /**
- * 방탄 F4 전략집 하위 4개 — 이벤트 드리븐만 MVP에서 실제 연결 대상(상세는 StrategyComingSoon 참고).
- * 2차 디자인 QA: 실제 이용 가능한 전략을 먼저 보여주는 게 자연스럽다는 피드백에 따라 이벤트
- * 드리븐을 배열 맨 앞으로 이동했다 — canonical id/데이터 구조는 그대로, display order만 변경.
+ * 방탄 F4 전략집 하위 4개 — 모멘텀 전략을 canonical `momentum` 모델/백테스트/추천 API에 연결한다.
  */
 export const F4_SUB_STRATEGIES: F4SubStrategy[] = [
   {
@@ -77,7 +75,7 @@ export const F4_SUB_STRATEGIES: F4SubStrategy[] = [
     description: '기업의 가치에 비해 상대적으로 저평가된 종목을 찾는 전략이에요.',
   },
   {
-    id: 'f4-momentum', name: '모멘텀 전략', status: 'testing',
+    id: 'f4-momentum', name: '모멘텀 전략', status: 'available',
     description: '최근 가격 흐름이 강한 종목의 움직임을 활용하는 전략이에요.',
   },
   {
@@ -88,7 +86,7 @@ export const F4_SUB_STRATEGIES: F4SubStrategy[] = [
 
 export const F4_COLLECTION_INTRO = {
   name: '방탄 F4 전략집',
-  description: '시장에서 활용되는 대표적인 투자 전략 4가지를 살펴보세요. 이벤트 드리븐 전략은 MVP에서 실제로 이용할 수 있어요.',
+  description: '시장에서 활용되는 대표적인 투자 전략 4가지를 살펴보세요. 이벤트 드리븐과 모멘텀 전략을 자세히 확인할 수 있어요.',
 };
 
 /**

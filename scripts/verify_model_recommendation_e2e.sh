@@ -11,4 +11,4 @@ docker compose --profile ai run --rm --no-deps ai \
   --top-n 4
 
 docker compose run --rm --no-deps backend python -c \
-  'from app.services.model_recommendation import ModelRecommendationService; snapshot = ModelRecommendationService().latest(); assert len(snapshot.recommendations) == 4; assert abs(sum(item.target_weight for item in snapshot.recommendations) - 0.95) < 1e-8; print(f"verified {snapshot.model_version} for {snapshot.as_of}")'
+  'from app.services.model_recommendation import ModelRecommendationService; snapshot = ModelRecommendationService().latest(); assert snapshot.source == "generated"; assert not snapshot.is_stale; assert len(snapshot.recommendations) == 4; assert abs(sum(item.target_weight for item in snapshot.recommendations) - 0.95) < 1e-8; print(f"verified {snapshot.model_version} for {snapshot.as_of} from {snapshot.source}")'

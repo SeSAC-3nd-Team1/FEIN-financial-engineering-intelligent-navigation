@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -19,15 +20,25 @@ DEFAULT_SNAPSHOT_PATH = (
 class ModelRecommendationService:
     def __init__(self, snapshot_path: Path | None = None) -> None:
         configured_path = os.getenv("MODEL_RECOMMENDATION_SNAPSHOT_PATH", "").strip()
+        allow_fallback = os.getenv(
+            "MODEL_RECOMMENDATION_ALLOW_FALLBACK", "true"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self.stale_after_days = int(
+            os.getenv("MODEL_RECOMMENDATION_STALE_AFTER_DAYS", "3")
+        )
+        if self.stale_after_days < 0:
+            raise ValueError("MODEL_RECOMMENDATION_STALE_AFTER_DAYS cannot be negative")
         if snapshot_path is not None:
             self.snapshot_paths = (snapshot_path,)
         elif configured_path:
             configured = Path(configured_path)
             self.snapshot_paths = (
                 (configured, DEFAULT_SNAPSHOT_PATH)
-                if configured != DEFAULT_SNAPSHOT_PATH
+                if allow_fallback and configured != DEFAULT_SNAPSHOT_PATH
                 else (configured,)
             )
+        elif not allow_fallback:
+            self.snapshot_paths = ()
         else:
             self.snapshot_paths = (DEFAULT_SNAPSHOT_PATH,)
 
@@ -37,7 +48,19 @@ class ModelRecommendationService:
         for snapshot_path in self.snapshot_paths:
             try:
                 payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
-                snapshot = ModelRecommendationSnapshotResponse.model_validate(payload)
+                validated = ModelRecommendationSnapshotResponse.model_validate(payload)
+                source = (
+                    "fallback"
+                    if snapshot_path == DEFAULT_SNAPSHOT_PATH
+                    else "generated"
+                )
+                age = datetime.now(UTC).date() - validated.as_of
+                snapshot = validated.model_copy(
+                    update={
+                        "source": source,
+                        "is_stale": age.days > self.stale_after_days,
+                    }
+                )
                 break
             except (OSError, json.JSONDecodeError, ValidationError) as exc:
                 last_error = exc

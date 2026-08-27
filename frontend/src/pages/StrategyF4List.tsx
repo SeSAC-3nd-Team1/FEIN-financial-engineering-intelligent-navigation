@@ -7,17 +7,21 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
-  /** 이벤트 드리븐 전략만 실제 상세(Coming Soon)로 이동한다 — 나머지 3개는 테스트 중 상태만 안내 */
+  /** 실제 canonical momentum 전략 상세로 이동한다. */
+  onSelectMomentum: () => void;
+  /** 기존 이벤트 드리븐 Coming Soon 상세로 이동한다. */
   onSelectEventDriven: () => void;
 }
 
 /**
  * 방탄 F4 전략집 — Strategy Main "방탄 F4 전략집" 카드에서 진입. Strategy Main/Detail과 같은
- * 레이아웃(Header, w-[1040px] container, 카드 스타일)을 재사용한다. 4개 중 이벤트 드리븐만
+ * 레이아웃(Header, w-[1040px] container, 카드 스타일)을 재사용한다. 4개 중 모멘텀만
  * "이용 가능" 배지 + CTA를 갖고, 나머지 3개는 muted "테스트 중" 배지 + TermTooltip 안내 +
  * 비활성 버튼으로 처리한다(새 modal/복잡한 interaction 없음).
  */
-export default function StrategyF4List({ userName, onNavigate, onBack, onSelectEventDriven }: Props) {
+export default function StrategyF4List({
+  userName, onNavigate, onBack, onSelectMomentum, onSelectEventDriven,
+}: Props) {
   return (
     <div className="min-h-screen bg-canvas">
       <Header active="strategy" userName={userName} onNavigate={onNavigate} />
@@ -66,7 +70,10 @@ export default function StrategyF4List({ userName, onNavigate, onBack, onSelectE
                   </div>
                   {available ? (
                     <button
-                      onClick={onSelectEventDriven}
+                      onClick={() => {
+                        if (s.id === 'f4-momentum') onSelectMomentum();
+                        if (s.id === 'f4-event-driven') onSelectEventDriven();
+                      }}
                       className="group self-start text-[15px] font-bold text-status-green-text transition-colors hover:text-navy"
                     >
                       자세히 보기 →

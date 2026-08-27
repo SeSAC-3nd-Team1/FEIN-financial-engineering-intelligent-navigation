@@ -44,7 +44,13 @@ class FeatureStore:
     """Load immutable feature partitions through Entra ID authentication."""
 
     APPROVED_DATASETS = frozenset(
-        {"model_stock_daily", "algorithm_ohlcv", "market_index_daily", "macro_daily"}
+        {
+            "model_stock_daily",
+            "algorithm_ohlcv",
+            "market_index_daily",
+            "macro_daily",
+            "security_master_latest",
+        }
     )
 
     def __init__(self, config: FeatureStoreConfig, client: BlobServiceClient | None = None) -> None:
