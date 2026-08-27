@@ -78,6 +78,9 @@ export default function PortfolioDetail({
   const logout = useAuthStore((state) => state.logout);
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
+  // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
+  // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
+  const accountMissing = useTradingStore((state) => state.accountMissing);
   const decisions = useTradingStore((state) => state.decisions);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
   const activeMode = useInvestmentStore((state) => state.activeMode);
@@ -130,11 +133,15 @@ export default function PortfolioDetail({
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
   const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
 
-  // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — Portfolio.tsx(PowerBI)와 동일한 대체 규칙.
+  // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는
+  // 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 —
+  // portfolio===null 하나만으로 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회 실패"를 구분하지
+  // 못해, 로딩/오류 중에 실계좌 사용자에게 목업 20종목이 노출될 수 있다.
   // 실 포지션에는 investor-facing 메타(섹터/AI 편입 사유 등)가 없어 STOCK_INFO 코드로 목업과 매칭해 보완한다.
   const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
   const ALL_HOLDINGS = useMemo(() => {
-    if (!portfolio || portfolio.positions.length === 0) return MOCK_HOLDINGS;
+    if (accountMissing) return MOCK_HOLDINGS;
+    if (!portfolio) return [];
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
@@ -148,7 +155,7 @@ export default function PortfolioDetail({
         returnRate: Number(position.return_rate),
       };
     });
-  }, [portfolio]);
+  }, [portfolio, accountMissing]);
 
   /** 오늘 손익 = 실 포지션이 있으면 평가손익(unrealized_profit), 없으면 평가금액×등락률(목업 근사) */
   const gains = useMemo(
@@ -187,8 +194,9 @@ export default function PortfolioDetail({
   // 보유 종목 미리보기 — 비중이 큰 상위 5개만 보여주고, 전체 목록은 별도 페이지(/all-holdings)로 뺀다.
   const previewHoldings = useMemo(() => [...gains].sort((a, b) => b.pct - a.pct).slice(0, 5), [gains]);
 
-  // 최근 거래 — 실 체결 내역(executions)이 있으면 그걸, 없으면 목업을 쓴다
-  const displayTransactions = useMemo(() => getDisplayTransactions(executions), [executions]);
+  // 최근 거래 — 계좌가 없다고 확인된 경우에만 목업을 쓰고, 그 외(체결 0건, 로딩 중/조회 실패)에는
+  // 실 체결 내역(빈 배열이어도)을 그대로 쓴다
+  const displayTransactions = useMemo(() => getDisplayTransactions(executions, !accountMissing), [executions, accountMissing]);
 
   if (view === 'review') {
     return (
@@ -227,17 +235,28 @@ export default function PortfolioDetail({
           <section className="flex flex-col gap-6">
             <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">오늘 내 투자에는 무슨 일이 있었나요?</h2>
             <div className="flex flex-col gap-4">
-              <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
-                <div className="flex items-baseline gap-4">
-                  <span className="text-2xl font-bold text-up">+{Math.round(top.gain).toLocaleString('ko-KR')}원</span>
-                  <span className="text-[17px] text-muted">
-                    오늘 전체 수익의 {todayTotal !== 0 ? Math.round((top.gain / todayTotal) * 100) : 0}%
-                  </span>
-                </div>
-              </Story>
-              <Story title="KT&G는 포트폴리오의 흔들림을 줄여줬어요">
-                <span className="text-[17px] leading-7 text-muted">오늘 시장보다 변동성이 낮았어요.</span>
-              </Story>
+              {top ? (
+                <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
+                  <div className="flex items-baseline gap-4">
+                    <span className="text-2xl font-bold text-up">+{Math.round(top.gain).toLocaleString('ko-KR')}원</span>
+                    <span className="text-[17px] text-muted">
+                      오늘 전체 수익의 {todayTotal !== 0 ? Math.round((top.gain / todayTotal) * 100) : 0}%
+                    </span>
+                  </div>
+                </Story>
+              ) : (
+                <Story title="아직 보유 중인 종목이 없어요">
+                  <span className="text-[17px] leading-7 text-muted">계좌에 입금하고 투자를 시작하면 여기에 오늘의 이야기가 채워져요.</span>
+                </Story>
+              )}
+              {/* 보유 종목이 없으면(top === undefined) 이 카드도 고정 mock 스토리를 보여주지 않는다 —
+                  바로 위 카드가 이미 "아직 보유 중인 종목이 없어요"로 빈 상태를 알려주는데, 그 아래에
+                  실제로는 없는 KT&G 보유를 전제한 문구가 이어지면 모순된다. */}
+              {top && (
+                <Story title="KT&G는 포트폴리오의 흔들림을 줄여줬어요">
+                  <span className="text-[17px] leading-7 text-muted">오늘 시장보다 변동성이 낮았어요.</span>
+                </Story>
+              )}
             </div>
           </section>
 
@@ -311,6 +330,9 @@ export default function PortfolioDetail({
               <button onClick={() => onNavigate('all-holdings')} className="text-base font-semibold text-navy">전체 종목 보기 →</button>
             </div>
             <div className="flex flex-col">
+              {previewHoldings.length === 0 && (
+                <p className="py-6 text-center text-[15px] text-subtle">아직 보유 중인 종목이 없어요.</p>
+              )}
               {previewHoldings.map((h) => {
                 const stockCode = STOCK_INFO[h.name]?.code;
                 const alert = displayAlerts.find((a) => a.stockName === h.name);
@@ -353,6 +375,9 @@ export default function PortfolioDetail({
               <button onClick={() => onNavigate('transactions')} className="text-base font-semibold text-navy">더보기 →</button>
             </div>
             <div className="flex flex-col">
+              {displayTransactions.length === 0 && (
+                <p className="py-10 text-center text-[15px] text-subtle">아직 거래 내역이 없어요.</p>
+              )}
               {displayTransactions.slice(0, 3).map((t) => (
                 <button
                   key={t.id}
