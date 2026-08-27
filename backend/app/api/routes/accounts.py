@@ -29,7 +29,7 @@ def create_account(
     user: User = Depends(current_user),
     service: AccountService = Depends(get_account_service),
 ) -> VirtualAccount:
-    return service.create(user.id, payload.account_name, payload.operation_mode)
+    return service.create(user.id, payload.account_name, payload.operation_mode, payload.initial_deposit)
 
 
 @router.get("/me/all", response_model=list[AccountResponse])

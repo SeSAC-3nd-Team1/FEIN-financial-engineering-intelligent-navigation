@@ -36,7 +36,12 @@ interface TradingState {
   error: ApiError | null;
   orderMessage: string | null;
   refresh: (token: string, mode: AccountOperationMode) => Promise<void>;
-  ensureAccount: (token: string, strategyId: string, mode: AccountOperationMode) => Promise<AccountResponse>;
+  ensureAccount: (
+    token: string,
+    strategyId: string,
+    mode: AccountOperationMode,
+    initialDeposit?: number,
+  ) => Promise<AccountResponse>;
   placeOrder: (token: string, payload: OrderCreateRequest) => Promise<OrderResponse>;
   recordDecision: (token: string, payload: RebalancingDecisionCreateRequest) => Promise<void>;
   clearError: () => void;
@@ -122,7 +127,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
   },
 
-  ensureAccount: async (token, strategyId, mode) => {
+  ensureAccount: async (token, strategyId, mode, initialDeposit) => {
     set({ isSubmitting: true, error: null, orderMessage: null });
     try {
       let account: AccountResponse;
@@ -131,7 +136,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       } catch (error) {
         const apiError = asApiError(error);
         if (apiError.code !== 'ACCOUNT_NOT_FOUND') throw apiError;
-        account = await createAccountApi('나의 가상 투자계좌', mode, token);
+        account = await createAccountApi('나의 가상 투자계좌', mode, token, initialDeposit);
       }
       if (account.selected_strategy_id !== strategyId) {
         account = await selectStrategyApi(account.id, strategyId, token);

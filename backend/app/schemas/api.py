@@ -162,6 +162,7 @@ class AccountCreateRequest(BaseModel):
         default="나의 가상 투자계좌", min_length=1, max_length=100
     )
     operation_mode: OperationMode = "SEMI_AUTO"
+    initial_deposit: Decimal = Field(default=Decimal("0"), ge=0)
 
 
 class AccountResponse(BaseModel):
