@@ -138,8 +138,13 @@ export default function PortfolioDetail({
   // 총자산도 계좌가 없다고 확인된 경우(accountMissing)에만 목업 금액을 쓴다 — portfolio===null만으로
   // 판단하면 로딩 중/조회 실패 상태에서 보유종목은 빈 상태인데 총자산은 mock 금액이 보이는 모순이 생긴다.
   const HOLD_TOTAL = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
+  // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는
+  // 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 —
+  // portfolio===null 하나만으로 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회 실패"를 구분하지
+  // 못해, 로딩/오류 중에 실계좌 사용자에게 목업 20종목이 노출될 수 있다.
   const ALL_HOLDINGS = useMemo(() => {
-    if (!portfolio || portfolio.positions.length === 0) return MOCK_HOLDINGS;
+    if (accountMissing) return MOCK_HOLDINGS;
+    if (!portfolio) return [];
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
@@ -153,7 +158,7 @@ export default function PortfolioDetail({
         returnRate: Number(position.return_rate),
       };
     });
-  }, [portfolio]);
+  }, [portfolio, accountMissing]);
 
   /** 오늘 손익 = 실 포지션이 있으면 평가손익(unrealized_profit), 없으면 평가금액×등락률(목업 근사) */
   const gains = useMemo(
@@ -232,17 +237,30 @@ export default function PortfolioDetail({
           <section className="flex flex-col gap-6">
             <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">오늘 내 투자에는 무슨 일이 있었나요?</h2>
             <div className="flex flex-col gap-4">
-              <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
-                <div className="flex items-baseline gap-4">
-                  <span className="text-2xl font-bold text-up">+{Math.round(top.gain).toLocaleString('ko-KR')}원</span>
-                  <span className="text-[17px] text-muted">
-                    오늘 전체 수익의 {todayTotal !== 0 ? Math.round((top.gain / todayTotal) * 100) : 0}%
-                  </span>
-                </div>
-              </Story>
-              <Story title="KT&G는 포트폴리오의 흔들림을 줄여줬어요">
-                <span className="text-[17px] leading-7 text-muted">오늘 시장보다 변동성이 낮았어요.</span>
-              </Story>
+              {/* ALL_HOLDINGS가 accountMissing 기준으로 바뀌면서 실계좌 0건/로딩 중/조회 실패 상태에서는
+                  gains가 빈 배열이 되어 top이 undefined일 수 있다 — top.name/top.gain을 그대로 쓰면
+                  크래시가 나므로 보유 종목이 없을 때는 빈 상태 문구로 대체한다. */}
+              {top ? (
+                <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
+                  <div className="flex items-baseline gap-4">
+                    <span className="text-2xl font-bold text-up">+{Math.round(top.gain).toLocaleString('ko-KR')}원</span>
+                    <span className="text-[17px] text-muted">
+                      오늘 전체 수익의 {todayTotal !== 0 ? Math.round((top.gain / todayTotal) * 100) : 0}%
+                    </span>
+                  </div>
+                </Story>
+              ) : (
+                <Story title="아직 보유 중인 종목이 없어요">
+                  <span className="text-[17px] leading-7 text-muted">계좌에 입금하고 투자를 시작하면 여기에 오늘의 이야기가 채워져요.</span>
+                </Story>
+              )}
+              {/* 보유 종목이 없으면 이 카드도 고정 mock 스토리를 보여주지 않는다 — 바로 위 카드가 이미
+                  빈 상태를 알려주는데, 그 아래에 실제로는 없는 KT&G 보유를 전제한 문구가 이어지면 모순된다. */}
+              {top && (
+                <Story title="KT&G는 포트폴리오의 흔들림을 줄여줬어요">
+                  <span className="text-[17px] leading-7 text-muted">오늘 시장보다 변동성이 낮았어요.</span>
+                </Story>
+              )}
             </div>
           </section>
 
@@ -316,6 +334,9 @@ export default function PortfolioDetail({
               <button onClick={() => onNavigate('all-holdings')} className="text-base font-semibold text-navy">전체 종목 보기 →</button>
             </div>
             <div className="flex flex-col">
+              {previewHoldings.length === 0 && (
+                <p className="py-10 text-center text-[15px] text-subtle">아직 보유 중인 종목이 없어요.</p>
+              )}
               {previewHoldings.map((h) => {
                 const stockCode = STOCK_INFO[h.name]?.code;
                 const alert = displayAlerts.find((a) => a.stockName === h.name);
