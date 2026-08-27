@@ -184,6 +184,9 @@ def _persist_simulation(
             requested_at=executed_at,
         )
         session.add(order)
+        # ORM relationship을 사용하지 않고 UUID FK만 직접 지정하므로 주문을 먼저
+        # 확정해 executions의 FK insert 순서를 명시적으로 보장한다.
+        session.flush()
         session.add(
             Execution(
                 order_id=order.id,
