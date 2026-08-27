@@ -78,6 +78,9 @@ export default function PortfolioDetail({
   const logout = useAuthStore((state) => state.logout);
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
+  // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
+  // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
+  const accountMissing = useTradingStore((state) => state.accountMissing);
   const decisions = useTradingStore((state) => state.decisions);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
   const activeMode = useInvestmentStore((state) => state.activeMode);
@@ -132,7 +135,9 @@ export default function PortfolioDetail({
 
   // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — Portfolio.tsx(PowerBI)와 동일한 대체 규칙.
   // 실 포지션에는 investor-facing 메타(섹터/AI 편입 사유 등)가 없어 STOCK_INFO 코드로 목업과 매칭해 보완한다.
-  const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
+  // 총자산도 계좌가 없다고 확인된 경우(accountMissing)에만 목업 금액을 쓴다 — portfolio===null만으로
+  // 판단하면 로딩 중/조회 실패 상태에서 보유종목은 빈 상태인데 총자산은 mock 금액이 보이는 모순이 생긴다.
+  const HOLD_TOTAL = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
   const ALL_HOLDINGS = useMemo(() => {
     if (!portfolio || portfolio.positions.length === 0) return MOCK_HOLDINGS;
     const assets = Number(portfolio.total_assets);
