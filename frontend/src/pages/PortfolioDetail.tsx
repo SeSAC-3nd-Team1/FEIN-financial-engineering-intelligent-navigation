@@ -84,8 +84,11 @@ export default function PortfolioDetail({
   const decisions = useTradingStore((state) => state.decisions);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
   const activeMode = useInvestmentStore((state) => state.activeMode);
-  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
-  const displayDecisions: DisplayDecisionSummary = useMemo(() => getDisplayDecisions(decisions), [decisions]);
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio, accountMissing), [portfolio, accountMissing]);
+  const displayDecisions: DisplayDecisionSummary = useMemo(
+    () => getDisplayDecisions(decisions, accountMissing),
+    [decisions, accountMissing],
+  );
 
   // AI 자동투자 vs 내 투자 비교 — AUTO/SEMI_AUTO 두 계좌가 모두 있어야 하는 별도 API라 account_id가
   // 필요 없다(로그인 사용자 기준으로 백엔드가 알아서 두 계좌를 찾는다). 계좌가 하나뿐이면 409

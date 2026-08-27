@@ -27,12 +27,12 @@ function toDisplayAlert(p: RebalancingProposalResponse): AiAlert {
   };
 }
 
-/** 실 계좌 조회가 성공했으면(portfolio가 있으면) 제안이 0건이어도 그 실제 결과(빈 배열)를 그대로
- *  보여준다 — "제안 없음"과 "계좌 자체가 없어 mock을 보여줘야 하는 상황"은 다르다. mock(AI_ALERTS)은
- *  계좌 조회 자체가 안 된 경우(비로그인·신규 계좌·조회 실패 등, portfolio === null)에만 쓴다. */
-export function getDisplayAlerts(portfolio: PortfolioResponse | null): AiAlert[] {
-  if (portfolio) {
-    return portfolio.rebalancing_proposals.map(toDisplayAlert);
-  }
-  return AI_ALERTS;
+/** 계좌가 없다고 "확인된" 경우(accountMissing)에만 mock(AI_ALERTS)을 쓴다. 그 외에는 실 계좌 조회
+ *  결과를 그대로 보여준다 — portfolio가 있으면(제안이 0건이어도) 그 실제 결과(빈 배열)를, 아직
+ *  로딩 중/조회 실패로 portfolio를 못 받았으면(portfolio === null이지만 accountMissing은 아님)
+ *  빈 배열을 쓴다. portfolio === null만으로 mock을 판단하면 "계좌 없음"과 "계좌는 있는데 로딩
+ *  중/조회 실패"를 구분하지 못해, 실계좌 사용자에게 지어낸 제안이 실제 제안인 것처럼 노출될 수 있다. */
+export function getDisplayAlerts(portfolio: PortfolioResponse | null, accountMissing: boolean): AiAlert[] {
+  if (accountMissing) return AI_ALERTS;
+  return portfolio ? portfolio.rebalancing_proposals.map(toDisplayAlert) : [];
 }

@@ -261,7 +261,7 @@ export default function Portfolio({
   // 도넛 위에 마우스를 올린 조각 — 호버 중에는 고정된 선택보다 우선해서 도넛 중앙 라벨을 잠깐 바꿔 보여준다
   const [hoverHoldingIdx, setHoverHoldingIdx] = useState<number | null>(null);
   // 실 계좌에 리밸런싱 제안이 있으면 그 값을, 없으면 목업을 쓴다 — lib/rebalancing.ts 참고
-  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio, accountMissing), [portfolio, accountMissing]);
   // 우측 하단 "AI 제안" 위젯에서 카드를 클릭하면 여는 사유 팝업 — id 로 열림 상태를 관리한다
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
   const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
