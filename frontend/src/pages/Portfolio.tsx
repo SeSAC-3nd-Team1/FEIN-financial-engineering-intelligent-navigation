@@ -50,6 +50,9 @@ interface Props {
   /** 미설정 유저 안내 모달의 "투자성향 진단하러 가기" — 투자자 정보 확인(risk) Flow로 보낸다.
    *  'strategy'/'start'(전략 둘러보기/계좌 연동·입금)는 이미 있는 onNavigate 로 충분해 별도 prop 을 두지 않았다. */
   onStartRiskProfile: () => void;
+  /** "+ 추가 투자" / "투자금 출금" — 현재는 placeholder 화면(FundManagementComingSoon)으로만 이동한다.
+   *  실제 금액 입력~실행 Flow는 Backend/Model contract 확정 후 별도 작업. */
+  onOpenFundManagement: (kind: 'deposit' | 'withdraw') => void;
 }
 
 /** 미설정 유저 안내 모달 — 어떤 항목이 비어있는지에 따라 문구/버튼이 달라진다.
@@ -168,6 +171,7 @@ export default function Portfolio({
   onOpenDetail,
   onOpenRebalanceAlerts,
   onStartRiskProfile,
+  onOpenFundManagement,
 }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
@@ -757,6 +761,24 @@ export default function Portfolio({
                         {gainPct >= 0 ? "+" : ""}
                         {gainPct.toFixed(1)}%)
                       </span>
+                    </div>
+                    {/* 자금관리 진입점 — "내 투자 상태 확인 → 돈을 더 넣거나 빼기"로 자연스럽게 이어지도록
+                      총 자산 금액 바로 아래에 둔다. 추가 투자는 navy(기존 bottom-sheet 확인 버튼과 동일
+                      패턴)로 primary에 가깝게, 출금은 danger로 보이면 안 돼 secondary 뉴트럴 톤(surface-soft)을
+                      쓴다 — 둘 다 실제 처리 로직은 없고 placeholder 화면(FundManagementComingSoon)으로만 이동한다. */}
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => onOpenFundManagement('deposit')}
+                        className="flex-1 rounded-field bg-navy px-4 py-2 text-xs font-bold text-white"
+                      >
+                        + 추가 투자
+                      </button>
+                      <button
+                        onClick={() => onOpenFundManagement('withdraw')}
+                        className="flex-1 rounded-field bg-surface-soft px-4 py-2 text-xs font-bold text-ink-soft"
+                      >
+                        투자금 출금
+                      </button>
                     </div>
                   </div>
 

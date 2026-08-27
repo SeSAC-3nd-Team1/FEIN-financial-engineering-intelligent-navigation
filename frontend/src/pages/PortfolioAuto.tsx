@@ -27,6 +27,9 @@ interface Props {
    *  별도 prop을 두는 이유는, 그 화면의 "돌아가기"가 진입 지점(여기 vs PortfolioDetail)에 따라 달라져야
    *  해서 App.tsx가 이동과 함께 back target을 같이 기록해야 하기 때문이다. */
   onOpenRebalanceAlerts: () => void;
+  /** "+ 추가 투자" / "투자금 출금" — 현재는 placeholder 화면(FundManagementComingSoon)으로만 이동한다.
+   *  실제 금액 입력~실행 Flow는 Backend/Model contract 확정 후 별도 작업. */
+  onOpenFundManagement: (kind: 'deposit' | 'withdraw') => void;
 }
 
 /** Power BI 임베드 그래프 변형 3종 — 탭 전환 대상 (위험 분석 탭은 미사용으로 제거됨) */
@@ -97,7 +100,7 @@ const MOCK_PRINCIPAL_TOTAL = MOCK_HOLDINGS.reduce((sum, h) => sum + (h.principal
  *  "AI의 리밸런싱 제안" 위젯만 다르다. 반자동은 사용자가 승인해야 하는 "제안"이지만, 자동매매는 AI가
  *  이미 실행을 마친 뒤라 확인·승인 액션이 필요 없다 — 그래서 카드에 완료 표시를 더하고, 클릭하면 여는
  *  팝업도 "왜 지금인가요?"(앞으로 할 일) 대신 "왜 실행했나요?"(이미 한 일)로 과거형 문구를 쓴다. */
-export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOpenRebalanceAlerts }: Props) {
+export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOpenRebalanceAlerts, onOpenFundManagement }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
@@ -535,6 +538,22 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
                       {gainAmount >= 0 ? '+' : ''}{gainAmount.toLocaleString('ko-KR')}원
                       ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%)
                     </span>
+                  </div>
+                  {/* 자금관리 진입점 — Portfolio.tsx(반자동)와 동일한 위치/스타일. 실제 처리 로직은 없고
+                    placeholder 화면(FundManagementComingSoon)으로만 이동한다. */}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => onOpenFundManagement('deposit')}
+                      className="flex-1 rounded-field bg-navy px-4 py-2 text-xs font-bold text-white"
+                    >
+                      + 추가 투자
+                    </button>
+                    <button
+                      onClick={() => onOpenFundManagement('withdraw')}
+                      className="flex-1 rounded-field bg-surface-soft px-4 py-2 text-xs font-bold text-ink-soft"
+                    >
+                      투자금 출금
+                    </button>
                   </div>
                 </div>
 
