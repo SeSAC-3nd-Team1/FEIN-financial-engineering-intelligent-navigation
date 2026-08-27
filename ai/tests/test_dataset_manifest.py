@@ -29,10 +29,11 @@ def valid_frame() -> pd.DataFrame:
             "trade_date": dates,
             "stock_code": ["A", "B", "A", "B"],
             "signal": [1.0, 2.0, 3.0, 4.0],
+            "momentum_120d": [0.1, 0.2, 0.3, 0.4],
             "target_return_5d": [0.01, -0.01, 0.02, 0.03],
             "target_date_5d": dates + pd.Timedelta(days=1),
-            "eligible_target_5d": pd.Series([True, False, True, False], dtype="bool"),
-            "split": ["train", "train", "validation", "validation"],
+            "eligible_target_5d": pd.Series([True, False, False, False], dtype="bool"),
+            "split": ["train", "train", "validation", "test"],
             "history_120d_ready": pd.Series([True, True, True, True], dtype="bool"),
         }
     )
@@ -46,7 +47,7 @@ def test_valid_dataset_report_contains_quality_summary() -> None:
     assert report.min_trade_date == "2026-01-02"
     assert report.max_trade_date == "2026-02-03"
     assert report.feature_missing_rates == {"signal": 0.0}
-    assert report.eligible_target_counts == {"eligible_target_5d": 2}
+    assert report.eligible_target_counts == {"eligible_target_5d": 1}
 
 
 @pytest.mark.parametrize(
@@ -86,7 +87,7 @@ def test_valid_dataset_report_contains_quality_summary() -> None:
         ),
         (
             lambda frame: frame.assign(
-                eligible_target_5d=pd.Series([False, False, True, False], dtype="bool")
+                eligible_target_5d=pd.Series([False, False, False, False], dtype="bool")
             ),
             "is inconsistent",
         ),
@@ -102,6 +103,50 @@ def test_boolean_contract_columns_require_boolean_dtype() -> None:
     frame["eligible_target_5d"] = ["false", "false", "false", "false"]
 
     with pytest.raises(DatasetValidationError, match="boolean contract"):
+        validate_feature_dataset(frame, CONTRACT)
+
+
+def test_split_requires_train_validation_and_test() -> None:
+    frame = valid_frame()
+    frame["split"] = ["train", "train", "validation", "validation"]
+
+    with pytest.raises(DatasetValidationError, match="missing required values"):
+        validate_feature_dataset(frame, CONTRACT)
+
+
+def test_split_must_match_chronological_70_15_15_assignment() -> None:
+    frame = valid_frame()
+    frame["split"] = ["train", "validation", "train", "test"]
+
+    with pytest.raises(DatasetValidationError, match="chronological 70/15/15 contract"):
+        validate_feature_dataset(frame, CONTRACT)
+
+
+def test_warmup_flag_must_match_momentum_120d_availability() -> None:
+    frame = valid_frame()
+    frame["history_120d_ready"] = pd.Series([False] * 4, dtype="bool")
+
+    with pytest.raises(DatasetValidationError, match="momentum_120d availability"):
+        validate_feature_dataset(frame, CONTRACT)
+
+
+def test_boolean_contract_columns_reject_nulls() -> None:
+    frame = valid_frame()
+    frame["history_120d_ready"] = pd.Series(
+        [True, pd.NA, True, True], dtype="boolean"
+    )
+
+    with pytest.raises(DatasetValidationError, match="contain null values"):
+        validate_feature_dataset(frame, CONTRACT)
+
+
+def test_eligible_target_columns_reject_nulls() -> None:
+    frame = valid_frame()
+    frame["eligible_target_5d"] = pd.Series(
+        [True, pd.NA, False, False], dtype="boolean"
+    )
+
+    with pytest.raises(DatasetValidationError, match="contain null values"):
         validate_feature_dataset(frame, CONTRACT)
 
 
