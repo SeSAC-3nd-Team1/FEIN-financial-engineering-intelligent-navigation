@@ -63,6 +63,13 @@ class KrxClient:
             )
             response.raise_for_status()
             payload = response.json()
+        except requests.HTTPError as exc:
+            # 인증키나 응답 본문은 로그에 남기지 않고 운영 진단에 필요한 상태 코드만 공개한다.
+            status_code = getattr(exc.response, "status_code", "unknown")
+            raise KrxApiError(
+                "KRX request failed "
+                f"operation={operation.name} error=HTTPError status={status_code}"
+            ) from None
         except (requests.RequestException, ValueError) as exc:
             raise KrxApiError(
                 f"KRX request failed operation={operation.name} error={type(exc).__name__}"

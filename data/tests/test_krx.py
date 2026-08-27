@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+import requests
 
 from collectors.krx_client import KrxApiError, KrxClient
 from collectors.krx_config import OPERATIONS
@@ -14,13 +15,20 @@ from scripts.verify_krx_backfill import Coverage, _is_complete
 
 
 class FakeResponse:
-    def __init__(self, payload: object, *, status_error: bool = False) -> None:
+    def __init__(
+        self,
+        payload: object,
+        *,
+        status_error: bool = False,
+        status_code: int = 200,
+    ) -> None:
         self.payload = payload
         self.status_error = status_error
+        self.status_code = status_code
 
     def raise_for_status(self) -> None:
         if self.status_error:
-            raise RuntimeError("HTTP details must not leak")
+            raise requests.HTTPError(response=self)
 
     def json(self) -> object:
         return self.payload
@@ -60,6 +68,23 @@ def test_krx_client_rejects_invalid_response_shape() -> None:
 
     with pytest.raises(KrxApiError, match="response rows are invalid"):
         client.fetch(OPERATIONS[0], "20260821")
+
+
+def test_krx_client_reports_status_without_leaking_auth_or_body() -> None:
+    client = KrxClient("secret-value")
+    client.session = FakeSession(FakeResponse(
+        {"message": "sensitive-provider-body"},
+        status_error=True,
+        status_code=403,
+    ))
+
+    with pytest.raises(KrxApiError) as raised:
+        client.fetch(OPERATIONS[0], "20260821")
+
+    message = str(raised.value)
+    assert "status=403" in message
+    assert "secret-value" not in message
+    assert "sensitive-provider-body" not in message
 
 
 def test_stock_master_mapping_preserves_six_digit_code() -> None:
