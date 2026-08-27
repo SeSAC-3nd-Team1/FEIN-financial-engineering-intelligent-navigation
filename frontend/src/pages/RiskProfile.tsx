@@ -55,6 +55,9 @@ export default function RiskProfile({
   const [answers, setAnswers] = useState<(number | null)[]>(Array(RISK_QUESTIONS.length).fill(null));
   // null이 아니면 "Review 화면에서 수정하러 들어온 상태" — 답변 후 질문을 이어가지 않고 Review로 돌아간다
   const [reviewEditIndex, setReviewEditIndex] = useState<number | null>(null);
+  // 수정 진입 시점의 원래 답변 — "이전"(수정 취소)을 누르면 그 사이 새로 고른 답변을 버리고 이 값으로 되돌린다.
+  // answer()가 옵션 클릭 즉시 answers를 바꿔버리기 때문에, 되돌릴 원래 값을 별도로 기억해둬야 한다.
+  const [reviewEditOriginalAnswer, setReviewEditOriginalAnswer] = useState<number | null>(null);
 
   const total = RISK_QUESTIONS.length;
   const q = RISK_QUESTIONS[step];
@@ -79,13 +82,20 @@ export default function RiskProfile({
   };
 
   const prev = () => {
-    if (isEditingFromReview) { backToReview(); return; }
+    if (isEditingFromReview) {
+      // "이전"은 수정 취소 의도 — 이 편집 세션 중 새로 고른 답변이 있어도 버리고 원래 값으로 되돌린다.
+      const originalAnswer = reviewEditOriginalAnswer;
+      setAnswers((prevAnswers) => prevAnswers.map((v, idx) => (idx === reviewEditIndex ? originalAnswer : v)));
+      backToReview();
+      return;
+    }
     if (step === 0) setPhase('intro');
     else setStep((s) => s - 1);
   };
 
   const editFromReview = (index: number) => {
     setReviewEditIndex(index);
+    setReviewEditOriginalAnswer(answers[index]);
     setStep(index);
     setPhase('question');
   };
