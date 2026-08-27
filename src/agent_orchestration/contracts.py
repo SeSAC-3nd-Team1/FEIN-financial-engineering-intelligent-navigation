@@ -77,23 +77,45 @@ class OrchestrationResult(BaseModel):
 
 
 def extract_json_object(text: str) -> dict[str, Any]:
-    candidates = [text]
-    candidates.extend(re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL))
-    decoder = json.JSONDecoder()
-    for candidate in candidates:
-        stripped = candidate.strip()
+    fenced_payloads = re.findall(
+        r"```[ \t]*(?:json[ \t]*)?(?:\r?\n)(?P<payload>.*?)```",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if fenced_payloads:
+        if len(fenced_payloads) > 1:
+            raise ValueError("response contains multiple fenced JSON payloads")
         try:
-            value = json.loads(stripped)
-            if isinstance(value, dict):
-                return value
+            value = json.loads(fenced_payloads[0].strip())
+        except json.JSONDecodeError as error:
+            raise ValueError("fenced JSON payload is invalid") from error
+        if isinstance(value, dict):
+            return value
+        raise ValueError("fenced JSON payload must be a JSON object")
+
+    if re.search(r"```[ \t]*(?:json[ \t]*)?(?:\r?\n|$)", text, flags=re.IGNORECASE):
+        raise ValueError("response contains an incomplete fenced JSON payload")
+
+    decoder = json.JSONDecoder()
+    objects: list[dict[str, Any]] = []
+    cursor = 0
+    while cursor < len(text):
+        start = text.find("{", cursor)
+        if start == -1:
+            break
+        try:
+            value, end = decoder.raw_decode(text[start:])
         except json.JSONDecodeError:
-            for index, character in enumerate(stripped):
-                if character != "{":
-                    continue
-                try:
-                    value, _ = decoder.raw_decode(stripped[index:])
-                    if isinstance(value, dict):
-                        return value
-                except json.JSONDecodeError:
-                    continue
+            cursor = start + 1
+            continue
+        if isinstance(value, dict):
+            objects.append(value)
+            if len(objects) > 1:
+                raise ValueError("response contains multiple JSON objects")
+            cursor = start + end
+        else:
+            cursor = start + 1
+
+    if len(objects) == 1:
+        return objects[0]
     raise ValueError("response does not contain a valid JSON object")

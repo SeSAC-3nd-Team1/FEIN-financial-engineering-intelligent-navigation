@@ -16,6 +16,26 @@ def test_extract_json_object_from_surrounding_prose():
     assert extract_json_object(raw)["facts"] == ["verified"]
 
 
+def test_extract_json_object_prefers_complete_fenced_payload():
+    raw = '{"agent":"Schema"}\n```json\n{"agent":"News"}\n```\n{"agent":"Other"}'
+
+    assert extract_json_object(raw)["agent"] == "News"
+
+
+def test_extract_json_object_rejects_multiple_objects():
+    raw = '{"agent":"News","status":"OK"} final {"agent":"News","status":"TOOL_ERROR"}'
+
+    with pytest.raises(ValueError):
+        extract_json_object(raw)
+
+
+def test_extract_json_object_rejects_malformed_fenced_payload_before_object():
+    raw = '```json\n{"agent":\n```\n{"agent":"News","status":"OK"}'
+
+    with pytest.raises(ValueError):
+        extract_json_object(raw)
+
+
 def test_extract_json_object_rejects_missing_object():
     with pytest.raises(ValueError, match="valid JSON object"):
         extract_json_object("응답에 JSON이 없습니다.")
