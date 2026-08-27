@@ -34,7 +34,6 @@ docker compose exec ai pytest
 docker compose exec ai python --version
 ```
 
-
 ## VS Code Dev Container
 
 Host Python 없이 VS Code에서 AI Container의 Python 3.13으로 Training, Inference 및 Notebook 코드를 실행할 수 있습니다.
@@ -51,6 +50,7 @@ Host Python 없이 VS Code에서 AI Container의 Python 3.13으로 Training, Inf
    ```
 
    Python 3.13.x와 `/usr/local/bin/python`이 출력되어야 합니다.
+
 6. `training/` 또는 `inference/`의 `.py` 파일은 Microsoft Python Extension의 **Run Python File** 버튼으로 실행합니다. Code Runner의 **Run Code**는 사용하지 않습니다.
 7. `.ipynb` 파일은 셀의 Run 버튼으로 실행합니다. 필요하면 `Select Kernel` → `Python Environments`에서 Container Python 3.13을 선택합니다.
 
@@ -105,7 +105,6 @@ Azure 접근은 `DefaultAzureCredential` 기반 읽기 전용이며 Shared Key�
 
 ## 성과 지표 평가
 
-
 `evaluation.calculate_performance_metrics`는 일별 수익률 또는 자산 곡선 중 하나를 입력받아 다음 지표를 계산한다.
 
 - 누적 수익률
@@ -134,9 +133,18 @@ print(metrics.to_dict())
 
 0 변동성, 하락 관측 없음, 손실 없음처럼 비율의 분모가 0인 경우 JSON 비호환 무한대 대신 `None`을 반환한다. NaN, 무한대, `-100%` 이하의 일별 수익률, 0 이하의 자산 값은 명시적으로 거부한다.
 
+## 가격 기반 추천 Snapshot MVP
+
+`inference.recommendation_snapshot.build_recommendation_snapshot`은 최신 거래일의 `is_tradable` 및
+`risk_eligible` 종목만 대상으로 120일 모멘텀 순위를 계산하고 목표 비중을 생성한다. 결과 계약은
+`as_of`, 모델·데이터 버전, 시장 국면과 종목별 점수·순위·목표 비중·선정 사유를 포함한다.
+
+현재 Backend는 시연 안정성을 위해 이 계약으로 검증된
+`backend/app/data/model_recommendation_snapshot.json`을 `GET /api/v1/model-recommendations/latest`에서
+제공한다. 운영 배치가 준비되면 같은 JSON 계약으로 파일만 교체할 수 있다. 이 MVP는 가격 데이터 기반
+가상투자 참고용이며 수급·재무 Feature, 성능 보장, 실제 주문은 범위에 포함하지 않는다.
+
 ## Dependency 추가
-
-
 
 `ai/requirements.txt`에 필요한 패키지와 버전을 추가한 뒤 이미지를 다시 빌드합니다.
 

@@ -6,7 +6,14 @@ import re
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.core.config import settings
 
@@ -38,7 +45,9 @@ class SignupRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password_composition(cls, value: str) -> str:
-        if not any(char.isalpha() for char in value) or not any(char.isdigit() for char in value):
+        if not any(char.isalpha() for char in value) or not any(
+            char.isdigit() for char in value
+        ):
             raise ValueError("password must include letters and digits")
         if not any(char in "@$!%*#?&" for char in value):
             raise ValueError("password must include a special character")
@@ -119,7 +128,9 @@ class InvestmentAgreementSubmitRequest(BaseModel):
 class InvestmentAccountPrepareRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    account_name: str = Field(default="나의 가상 투자계좌", min_length=1, max_length=100)
+    account_name: str = Field(
+        default="나의 가상 투자계좌", min_length=1, max_length=100
+    )
 
 
 class InvestmentDepositRequest(BaseModel):
@@ -134,7 +145,9 @@ class InvestmentOnboardingResponse(BaseModel):
     strategy_id: str
     investment_amount: Decimal
     operation_mode: OperationMode
-    status: Literal["TERMS_PENDING", "ACCOUNT_PENDING", "DEPOSIT_PENDING", "READY", "COMPLETED"]
+    status: Literal[
+        "TERMS_PENDING", "ACCOUNT_PENDING", "DEPOSIT_PENDING", "READY", "COMPLETED"
+    ]
     account_id: UUID | None
     terms_completed: bool
     account_exists: bool
@@ -145,7 +158,9 @@ class InvestmentOnboardingResponse(BaseModel):
 
 
 class AccountCreateRequest(BaseModel):
-    account_name: str = Field(default="나의 가상 투자계좌", min_length=1, max_length=100)
+    account_name: str = Field(
+        default="나의 가상 투자계좌", min_length=1, max_length=100
+    )
     operation_mode: OperationMode = "SEMI_AUTO"
 
 
@@ -274,7 +289,9 @@ class BacktestRunResponse(BaseModel):
     series: list[BacktestSeriesPointResponse]
     metrics: BacktestMetricsResponse
     benchmark_name: str = Field(alias="benchmarkName")
-    benchmark_metrics: BacktestBenchmarkMetricsResponse = Field(alias="benchmarkMetrics")
+    benchmark_metrics: BacktestBenchmarkMetricsResponse = Field(
+        alias="benchmarkMetrics"
+    )
 
 
 class StrategySelectRequest(BaseModel):
@@ -602,7 +619,9 @@ class PortfolioHomeResponse(BaseModel):
 
 
 class StockEvaluationAxisResponse(BaseModel):
-    key: Literal["stability", "financial_health", "growth", "defense", "diversification"]
+    key: Literal[
+        "stability", "financial_health", "growth", "defense", "diversification"
+    ]
     label: str
     score: int | None = Field(ge=0, le=100)
     status: Literal["AVAILABLE", "UNAVAILABLE"]
@@ -728,7 +747,9 @@ class StrategyRecommendationAnalysisItem(BaseModel):
 class StrategyRecommendationAnalysisResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    recommendations: list[StrategyRecommendationAnalysisItem] = Field(min_length=1, max_length=3)
+    recommendations: list[StrategyRecommendationAnalysisItem] = Field(
+        min_length=1, max_length=3
+    )
 
 
 class StrategyRecommendationResponse(BaseModel):
@@ -742,6 +763,28 @@ class StrategyRecommendationResponse(BaseModel):
     dataset_version: str
     recommendation_version: Literal["v1"] = "v1"
     created_at: datetime
+
+
+class ModelRecommendationItemResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(pattern=r"^[0-9A-Z]{6,12}$")
+    stock_name: str | None = Field(default=None, max_length=200)
+    score: float
+    rank: int = Field(ge=1)
+    target_weight: float = Field(ge=0, le=1)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class ModelRecommendationSnapshotResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    as_of: date
+    model_version: str = Field(min_length=1, max_length=100)
+    data_version: str = Field(min_length=1, max_length=100)
+    status: Literal["ready", "unavailable"]
+    market_regime: Literal["risk_on", "neutral", "risk_off"]
+    recommendations: list[ModelRecommendationItemResponse] = Field(max_length=20)
 
 
 class NewsArticleResponse(BaseModel):
