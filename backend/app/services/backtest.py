@@ -1,4 +1,4 @@
-"""시점별 실제 KRX 가격만 사용하는 전략 백테스트 엔진."""
+"""시점별 실제 KRX 가격과 공시 가능 재무정보를 사용하는 전략 백테스트 엔진."""
 
 from collections import defaultdict
 from datetime import date, timedelta
@@ -6,7 +6,12 @@ import math
 from statistics import fmean, pstdev
 
 from app.core.errors import NotFoundError, ServiceError
-from app.repositories.backtest import BacktestRepository, IndexPricePoint, StockPricePoint
+from app.repositories.backtest import (
+    BacktestRepository,
+    IndexPricePoint,
+    PointInTimeFinancial,
+    StockPricePoint,
+)
 from app.schemas.api import BacktestAvailableRangeResponse, BacktestRunRequest, BacktestRunResponse
 
 
@@ -64,13 +69,7 @@ class BacktestService:
         if strategy is None:
             raise NotFoundError("STRATEGY_NOT_FOUND", "활성 투자 전략을 찾을 수 없습니다.")
         factor = str((strategy.rule_config or {}).get("factor", ""))
-        if factor == "value":
-            raise ServiceError(
-                "BACKTEST_STRATEGY_UNAVAILABLE",
-                "가치 전략은 공시 가능일 기준 재무 데이터가 준비된 뒤 제공됩니다.",
-                422,
-            )
-        if factor not in {"low_volatility", "momentum"}:
+        if factor not in {"low_volatility", "momentum", "value"}:
             raise ServiceError("BACKTEST_STRATEGY_UNAVAILABLE", "지원하지 않는 전략 규칙입니다.", 422)
 
         universe = self.repository.universe_codes(request.start_date)
@@ -82,10 +81,29 @@ class BacktestService:
         if len(benchmark) < 2:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "KOSPI 기준지수 데이터가 부족합니다.")
 
+        financial_points: list[PointInTimeFinancial] = []
+        if factor == "value":
+            financial_points = self.repository.point_in_time_financials(universe, request.end_date)
+            if len({point.stock_code for point in financial_points}) < PORTFOLIO_SIZE:
+                raise NotFoundError(
+                    "BACKTEST_DATA_UNAVAILABLE",
+                    "가치 전략에 필요한 공시 시점 기준 재무 데이터가 부족합니다.",
+                )
+
         prices = self._price_map(price_points)
+        market_caps = self._market_cap_map(price_points)
+        financials = self._financial_map(financial_points)
         corporate_actions = self._corporate_action_dates(price_points)
         dates = [point.trade_date for point in benchmark]
-        strategy_values = self._simulate(factor, prices, dates, corporate_actions)
+        strategy_values = self._simulate(
+            factor,
+            prices,
+            dates,
+            corporate_actions,
+            market_caps=market_caps,
+            financials=financials,
+            rebalance_cycle=strategy.rebalance_cycle,
+        )
         benchmark_values = self._benchmark_values(benchmark)
         metrics = calculate_metrics(strategy_values, dates)
         benchmark_metrics = calculate_metrics(benchmark_values, dates)
@@ -126,6 +144,24 @@ class BacktestService:
         return prices
 
     @staticmethod
+    def _market_cap_map(points: list[StockPricePoint]) -> dict[str, dict[date, float]]:
+        market_caps: dict[str, dict[date, float]] = defaultdict(dict)
+        for point in points:
+            if point.market_cap is None:
+                continue
+            market_cap = float(point.market_cap)
+            if market_cap > 0:
+                market_caps[point.stock_code][point.trade_date] = market_cap
+        return market_caps
+
+    @staticmethod
+    def _financial_map(points: list[PointInTimeFinancial]) -> dict[str, list[PointInTimeFinancial]]:
+        financials: dict[str, list[PointInTimeFinancial]] = defaultdict(list)
+        for point in sorted(points, key=lambda item: (item.stock_code, item.period_end, item.available_at)):
+            financials[point.stock_code].append(point)
+        return financials
+
+    @staticmethod
     def _corporate_action_dates(points: list[StockPricePoint]) -> set[tuple[str, date]]:
         actions: set[tuple[str, date]] = set()
         previous_shares: dict[str, int] = {}
@@ -145,42 +181,66 @@ class BacktestService:
         prices: dict[str, dict[date, float]],
         dates: list[date],
         corporate_actions: set[tuple[str, date]] | None = None,
+        *,
+        market_caps: dict[str, dict[date, float]] | None = None,
+        financials: dict[str, list[PointInTimeFinancial]] | None = None,
+        rebalance_cycle: str = "MONTHLY",
     ) -> list[float]:
         action_dates = corporate_actions or set()
-        holdings = self._select(factor, prices, dates[0], action_dates)
+        cap_history = market_caps or {}
+        financial_history = financials or {}
+        holdings = self._select(
+            factor,
+            prices,
+            dates[0],
+            action_dates,
+            market_caps=cap_history,
+            financials=financial_history,
+        )
         if len(holdings) < PORTFOLIO_SIZE:
-            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "전략 산출에 필요한 과거 시세가 부족합니다.")
+            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "전략 산출에 필요한 과거 데이터가 부족합니다.")
         allocations = {code: 1.0 / len(holdings) for code in holdings}
         values = [1.0]
         last_observed = {
             code: self._last_observed_price(prices.get(code, {}), dates[0])
             for code in holdings
         }
-        previous_month = (dates[0].year, dates[0].month)
+        previous_bucket = self._rebalance_bucket(dates[0], rebalance_cycle)
 
         for trade_date in dates[1:]:
             for code in list(allocations):
                 current_close = prices.get(code, {}).get(trade_date)
                 previous_close = last_observed.get(code)
                 if current_close:
-                    # 원천 KRX 종가는 수정주가가 아니므로 상장주식수 변동일은
-                    # 수익률을 계산하지 않고 새 기준가로만 연결해 분할·병합 왜곡을 막는다.
                     if previous_close and (code, trade_date) not in action_dates:
                         allocations[code] *= current_close / previous_close
                     last_observed[code] = current_close
             total = sum(allocations.values())
             values.append(total)
-            month = (trade_date.year, trade_date.month)
-            if month != previous_month:
-                selected = self._select(factor, prices, trade_date, action_dates)
+            bucket = self._rebalance_bucket(trade_date, rebalance_cycle)
+            if bucket != previous_bucket:
+                selected = self._select(
+                    factor,
+                    prices,
+                    trade_date,
+                    action_dates,
+                    market_caps=cap_history,
+                    financials=financial_history,
+                )
                 if len(selected) >= PORTFOLIO_SIZE:
                     allocations = {code: total / len(selected) for code in selected}
                     last_observed = {
                         code: self._last_observed_price(prices.get(code, {}), trade_date)
                         for code in selected
                     }
-                previous_month = month
+                previous_bucket = bucket
         return values
+
+    @staticmethod
+    def _rebalance_bucket(trade_date: date, rebalance_cycle: str) -> tuple[int, int]:
+        if rebalance_cycle == "QUARTERLY":
+            return trade_date.year, (trade_date.month - 1) // 3 + 1
+        return trade_date.year, trade_date.month
 
     @staticmethod
     def _last_observed_price(history: dict[date, float], as_of: date) -> float | None:
@@ -192,14 +252,37 @@ class BacktestService:
         prices: dict[str, dict[date, float]],
         as_of: date,
         corporate_actions: set[tuple[str, date]] | None = None,
+        *,
+        market_caps: dict[str, dict[date, float]] | None = None,
+        financials: dict[str, list[PointInTimeFinancial]] | None = None,
     ) -> list[str]:
         action_dates = corporate_actions or set()
+        cap_history = market_caps or {}
+        financial_history = financials or {}
         scores: list[tuple[float, str]] = []
         for code, history in prices.items():
-            # 신규 편입은 리밸런싱일에 실제 매수 가능한 종목으로 제한한다.
-            # 기존 보유종목의 거래정지 평가는 _simulate()의 last_observed가 담당한다.
             if as_of not in history:
                 continue
+
+            if factor == "value":
+                market_cap = cap_history.get(code, {}).get(as_of)
+                if market_cap is None or market_cap <= 0:
+                    continue
+                available_financials = [
+                    point for point in financial_history.get(code, [])
+                    if point.available_at <= as_of
+                ]
+                latest_financial = max(
+                    available_financials,
+                    key=lambda point: (point.period_end, point.available_at),
+                    default=None,
+                )
+                if latest_financial is None or latest_financial.total_equity <= 0:
+                    continue
+                book_to_price = float(latest_financial.total_equity) / market_cap
+                scores.append((-book_to_price, code))
+                continue
+
             observations = [(trade_date, close) for trade_date, close in sorted(history.items()) if trade_date <= as_of]
             if factor == "low_volatility":
                 recent = observations[-(LOW_VOL_WINDOW + 1):]
@@ -211,7 +294,7 @@ class BacktestService:
                 if len(returns) < MIN_LOW_VOL_OBSERVATIONS:
                     continue
                 scores.append((pstdev(returns), code))
-            else:
+            elif factor == "momentum":
                 recent = observations[-(MOMENTUM_WINDOW + 1):]
                 if (
                     len(recent) - 1 < MIN_MOMENTUM_OBSERVATIONS
