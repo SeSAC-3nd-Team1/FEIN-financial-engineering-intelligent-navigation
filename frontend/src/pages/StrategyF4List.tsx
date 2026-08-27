@@ -16,6 +16,10 @@ interface Props {
  * 레이아웃(Header, w-[1040px] container, 카드 스타일)을 재사용한다. 4개 중 이벤트 드리븐만
  * "이용 가능" 배지 + CTA를 갖고, 나머지 3개는 muted "테스트 중" 배지 + TermTooltip 안내 +
  * 비활성 버튼으로 처리한다(새 modal/복잡한 interaction 없음).
+ *
+ * 3차 디자인 QA: "이용 가능" 강조는 FE!N lime accent 하나로 통일한다(카드 테두리 색 구분은 걷어냄) —
+ * badge를 lime으로, CTA를 Strategy Main과 동일한 lime circular arrow로 맞춰 색을 여러 개
+ * 쓰지 않으면서도 "지금 쓸 수 있는 전략"이라는 신호가 명확하게 남도록 했다.
  */
 export default function StrategyF4List({ userName, onNavigate, onBack, onSelectEventDriven }: Props) {
   return (
@@ -41,19 +45,14 @@ export default function StrategyF4List({ userName, onNavigate, onBack, onSelectE
               return (
                 <div
                   key={s.id}
-                  className={`flex flex-col justify-between gap-8 rounded-card bg-surface p-9 ${
-                    // 상태 hierarchy: "이용 가능" 카드만 테두리를 살짝 진하고 두껍게(status-green 톤)
-                    // 해서 눈에 먼저 들어오게 한다. 배경 tint/gradient 등 다른 효과는 더 얹지 않는다
-                    // ("추천 카드"처럼 보이지 않도록 1~2개 효과로 제한).
-                    available ? 'shadow-[0_0_0_1.5px_#2E9B65_inset]' : 'shadow-[0_0_0_1px_#E5E9E3_inset]'
-                  }`}
+                  className="flex flex-col justify-between gap-8 rounded-card bg-surface p-9 shadow-[0_0_0_1px_#E5E9E3_inset]"
                 >
                   <div className="flex flex-col gap-3">
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-[21px] font-bold tracking-[-0.02em] text-ink">{s.name}</span>
                       {available ? (
-                        <span className="shrink-0 rounded-full bg-status-green-bg px-3 py-1.5 text-xs font-bold text-status-green-text">
-                          ● 이용 가능
+                        <span className="shrink-0 rounded-full bg-lime px-3 py-1.5 text-xs font-bold text-navy">
+                          이용 가능
                         </span>
                       ) : (
                         <div className="flex shrink-0 items-center gap-1.5">
@@ -65,11 +64,11 @@ export default function StrategyF4List({ userName, onNavigate, onBack, onSelectE
                     <p className="text-[16px] leading-[26px] text-muted">{s.description}</p>
                   </div>
                   {available ? (
-                    <button
-                      onClick={onSelectEventDriven}
-                      className="group self-start text-[15px] font-bold text-status-green-text transition-colors hover:text-navy"
-                    >
-                      자세히 보기 →
+                    <button onClick={onSelectEventDriven} className="group flex items-center justify-between gap-4">
+                      <span className="text-[15px] font-semibold text-muted">자세히 보기</span>
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-lime text-navy transition-transform group-hover:translate-x-0.5">
+                        →
+                      </span>
                     </button>
                   ) : (
                     <button

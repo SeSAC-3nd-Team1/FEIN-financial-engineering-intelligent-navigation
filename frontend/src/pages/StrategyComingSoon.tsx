@@ -46,10 +46,8 @@ export default function StrategyComingSoon({ strategyKey, userName, onNavigate, 
             <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-surface-soft text-muted">
               <Clock size={26} />
             </div>
-            <h2 className="text-2xl font-bold tracking-[-0.025em]">백테스트를 준비하고 있어요</h2>
-            <p className="max-w-[520px] text-[17px] leading-7 text-muted">
-              실제 모델이 연결되면 기간별 성과와 지표를 여기서 확인할 수 있어요.
-            </p>
+            <h2 className="text-2xl font-bold tracking-[-0.025em]">{copy.panelHeading}</h2>
+            <p className="max-w-[520px] text-[17px] leading-7 text-muted">{copy.panelBody}</p>
           </section>
 
           {/* 기존 AI 설명 카드와 같은 위치/스타일 — 캐릭터는 기존 것을 그대로 재사용 */}
@@ -59,26 +57,22 @@ export default function StrategyComingSoon({ strategyKey, userName, onNavigate, 
               <span className="text-[22px] font-bold leading-[34px] tracking-[-0.025em]">
                 모델이 준비되면 물방개가 결과를 설명해드릴게요
               </span>
-              <p className="max-w-[760px] text-lg leading-[30px] text-ink-soft">
-                지금은 이 전략의 정보구조만 먼저 볼 수 있어요.
-              </p>
+              <p className="max-w-[760px] text-lg leading-[30px] text-ink-soft">{copy.aiBody}</p>
             </div>
           </section>
 
           {/* 기존 투자 시작 CTA와 같은 위치 — 실제 CTA는 아직 연결하지 않는다 */}
           <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
             <div className="flex flex-col gap-2.5">
-              <span className="text-2xl font-bold tracking-[-0.025em] text-white">투자 시작은 아직 준비 중이에요</span>
-              <span className="text-[17px] leading-7 text-neutral-muted">모델이 연결되면 이 전략으로 투자를 시작할 수 있어요.</span>
+              <span className="text-2xl font-bold tracking-[-0.025em] text-white">{copy.ctaHeading}</span>
+              <span className="text-[17px] leading-7 text-neutral-muted">{copy.ctaBody}</span>
             </div>
             <span className="shrink-0 rounded-full bg-white/10 px-7 py-4 text-base font-bold text-white">
-              준비 중
+              {copy.ctaBadge}
             </span>
           </section>
 
-          <p className="text-sm leading-[22px] text-subtle">
-            ※ 이 전략은 아직 실제 모델과 연결되지 않았어요. 위 화면은 정보구조 확인을 위한 준비 화면입니다.
-          </p>
+          <p className="text-sm leading-[22px] text-subtle">{copy.disclaimer}</p>
         </div>
       </main>
     </div>
