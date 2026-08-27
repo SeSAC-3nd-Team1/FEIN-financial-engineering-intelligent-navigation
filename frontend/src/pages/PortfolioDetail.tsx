@@ -238,7 +238,7 @@ export default function PortfolioDetail({
             {/* Dashboard.tsx 병합 — "오늘 무슨 일이 있었나요" 스토리 카드. 짧은 인사이트 2장이라
                 세로로 쌓지 않고 나란히 둬서 한눈에 훑을 수 있게 한다. */}
             <div className="flex flex-col gap-3.5">
-              <span className="text-[15px] font-semibold text-muted">오늘 내 투자에는 무슨 일이 있었나요</span>
+              <h2 className="text-[15px] font-semibold text-muted">오늘 내 투자에는 무슨 일이 있었나요</h2>
               <div className="grid grid-cols-2 gap-4">
                 {top ? (
                   <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
@@ -285,7 +285,7 @@ export default function PortfolioDetail({
 
           {/* ============ 내 자산: 보유 종목 + 최근 거래 — 둘 다 "무엇을 갖고 있는지" 리스트라 나란히 둔다 ============ */}
           <section className="mt-14 flex flex-col gap-4">
-            <span className="text-[15px] font-semibold text-muted">내 자산</span>
+            <h2 className="text-[15px] font-semibold text-muted">내 자산</h2>
             <div className="grid grid-cols-2 gap-5">
               {/* 보유 종목 미리보기 — 비중 상위 5종목만 보여주고 전체 목록은 /all-holdings 로 뺀다.
                   투자 원금/수익률은 실 계좌 포지션(purchase_amount/return_rate)이 있으면 그 값을, 없으면 목업 값을 쓴다. */}
@@ -367,7 +367,7 @@ export default function PortfolioDetail({
           {/* ============ AI 인사이트: 리밸런싱 제안 + AI vs 나 비교 + 판단 회고 — 전부 "AI가 내 투자를
               어떻게 보고 있는지"라 하나의 구역으로 묶는다 ============ */}
           <section className="mt-14 flex flex-col gap-4">
-            <span className="text-[15px] font-bold text-[#3F5222]">✦ AI 인사이트</span>
+            <h2 className="text-[15px] font-bold text-[#3F5222]">✦ AI 인사이트</h2>
 
             {/* AI 손절/리밸런싱 제안 — 실 계좌에 제안이 있으면 그 값을, 없으면 목업을 쓴다(lib/rebalancing.ts).
                 "조정 제안/손절 조치 확인하기"를 누르면 사유+조치 시트가 열린다 */}
