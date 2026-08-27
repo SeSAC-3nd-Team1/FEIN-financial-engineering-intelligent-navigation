@@ -13,13 +13,27 @@ docker compose exec ai bash
 
 컨테이너는 개발 중 계속 Running 상태를 유지합니다. 로컬 `ai/`가 컨테이너 `/app`에 bind mount되므로 코드 변경이 바로 반영됩니다.
 
+## 디렉터리 계약
+
+- `models/`: Ridge, LightGBM 등 모델 정의
+- `training/`: 전처리, 시간 분할, Walk-forward 학습
+- `evaluation/`: 예측 및 포트폴리오 평가
+- `inference/`: 검증된 Artifact 로딩과 종목 점수 산출
+- `data_access/`: 버전이 고정된 Azure Feature의 읽기 전용 접근
+- `tests/`: 모델·데이터 계약 단위 테스트
+- `artifacts/`, `checkpoints/`: 로컬 산출물이며 Git에 포함하지 않음
+
+정식 학습 입력은 PostgreSQL 서빙 테이블이 아니라 Azure `features` 컨테이너의 버전별 Parquet이다.
+
 ## Training / Inference 실행
 
 ```bash
 docker compose exec ai python training/example.py
 docker compose exec ai python inference/example.py
+docker compose exec ai pytest
 docker compose exec ai python --version
 ```
+
 
 ## VS Code Dev Container
 
@@ -50,7 +64,61 @@ python -c "import ipykernel; print(ipykernel.__version__)"
 
 Dev Container는 VS Code Window 단위로 연결됩니다. Data도 함께 작업한다면 저장소를 별도 창에서 열고 `SeSAC Data Dev`에 연결합니다.
 
+## Azure Feature 접근
+
+AI 컨테이너는 `DefaultAzureCredential`과 Azure CLI 로그인 캐시를 사용해 Feature를 읽는다. 실제 Azure Shared Key를 소스나 이미지에 넣지 않는다.
+
+최초 한 번 다음 명령으로 로그인한다.
+
+```bash
+docker compose --profile ai run --rm ai az login
+```
+
+이후 `AZURE_STORAGE_ACCOUNT_NAME`과 선택적인 `AZURE_STORAGE_CONTAINER_FEATURES`를 환경에 설정한다. Compose의 `azure_cli_data` 볼륨이 로그인 캐시를 보존한다.
+
+코드에서는 다음 계약을 사용한다.
+
+```python ai/example_feature_access.py
+from data_access import FeatureStore, FeatureStoreConfig
+
+store = FeatureStore(FeatureStoreConfig.from_env())
+paths = store.parquet_paths("model_stock_daily", "2")
+frame = store.read_partition(paths[0], columns=["stock_code", "trade_date"])
+```
+
+## 성과 지표 평가
+
+`evaluation.calculate_performance_metrics`는 일별 수익률 또는 자산 곡선 중 하나를 입력받아 다음 지표를 계산한다.
+
+- 누적 수익률
+- 연환산 수익률(CAGR)
+- 연환산 변동성
+- Sharpe Ratio
+- Sortino Ratio
+- 최대 낙폭(MDD)
+- 승률
+- Profit Factor
+
+```python ai/example_performance_evaluation.py
+import pandas as pd
+
+from evaluation import calculate_performance_metrics
+
+metrics = calculate_performance_metrics(
+    daily_returns=pd.Series([0.01, -0.02, 0.015]),
+    periods_per_year=252,
+    annual_risk_free_rate=0.0,
+)
+print(metrics.to_dict())
+```
+
+입력과 결과의 수익률 단위는 퍼센트가 아닌 소수 비율이다. 예를 들어 1%는 `0.01`로 전달한다. `daily_returns`와 `equity_curve`는 동시에 전달할 수 없으며, 날짜 index는 중복 없이 오름차순이어야 한다. CAGR은 관측 구간 수를 연환산 기준으로 나눠 계산하고, 변동성과 Sharpe Ratio는 표본 표준편차를 사용한다. Sortino Ratio는 0 미만 초과수익률의 하방 편차를 사용한다.
+
+0 변동성, 하락 관측 없음, 손실 없음처럼 비율의 분모가 0인 경우 JSON 비호환 무한대 대신 `None`을 반환한다. NaN, 무한대, `-100%` 이하의 일별 수익률, 0 이하의 자산 값은 명시적으로 거부한다.
+
 ## Dependency 추가
+
+
 
 `ai/requirements.txt`에 필요한 패키지와 버전을 추가한 뒤 이미지를 다시 빌드합니다.
 

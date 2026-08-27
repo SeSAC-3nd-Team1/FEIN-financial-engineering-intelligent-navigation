@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run check:colors && tsc -b && vite build",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:colors": "node scripts/check-raw-colors.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",

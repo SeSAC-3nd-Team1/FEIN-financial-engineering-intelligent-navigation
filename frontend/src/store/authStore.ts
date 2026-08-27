@@ -12,6 +12,7 @@ interface AuthState {
   accessToken: string | null;
   investorProfileCompleted: boolean;
   investorProfileCompletedAt: string | null;
+  investorAssessmentId: string | null;
   investorType: string | null;
   investorTendencyLine: string | null;
   investorDescription: string | null;
@@ -26,7 +27,12 @@ interface AuthState {
   login: (userId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   register: (payload: SignupPayload) => Promise<void>;
-  completeInvestorProfile: (profile: InvestorProfileResult, answers: number[], completedAt: string) => void;
+  completeInvestorProfile: (
+    profile: InvestorProfileResult,
+    answers: number[],
+    completedAt: string,
+    assessmentId: string,
+  ) => void;
   resetInvestorProfile: () => void;
 }
 
@@ -42,6 +48,7 @@ const APP_SESSION_NAV_KEY = 'fein.session-nav';
 const INVESTOR_PROFILE_RESET = {
   investorProfileCompleted: false,
   investorProfileCompletedAt: null,
+  investorAssessmentId: null,
   investorType: null,
   investorTendencyLine: null,
   investorDescription: null,
@@ -80,6 +87,7 @@ async function hydrateInvestorProfile(
     set({
       investorProfileCompleted: true,
       investorProfileCompletedAt: profile.created_at,
+      investorAssessmentId: profile.assessment_id,
       ...toInvestorProfileFields(mapInvestorProfileResponse(profile)),
       isInvestorProfileHydrating: false,
     });
@@ -138,11 +146,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await get().login(payload.user_id, payload.password);
   },
 
-  completeInvestorProfile: (profile, answers, completedAt) => set({
+  completeInvestorProfile: (profile, answers, completedAt, assessmentId) => set({
     investorProfileCompleted: true,
     investorProfileCompletedAt: completedAt,
+    investorAssessmentId: assessmentId,
     ...toInvestorProfileFields(profile),
     investorAnswers: answers,
   }),
-  resetInvestorProfile: () => set({ investorProfileCompleted: false }),
+  resetInvestorProfile: () => set({ ...INVESTOR_PROFILE_RESET }),
 }));
