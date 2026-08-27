@@ -10,7 +10,21 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.routes import accounts, auth, backtest, companies, information, investment, investor_profile, market, orders, portfolio, strategies, strategy_recommendations
+from app.api.routes import (
+    accounts,
+    auth,
+    backtest,
+    companies,
+    information,
+    investment,
+    investor_profile,
+    market,
+    model_recommendations,
+    orders,
+    portfolio,
+    strategies,
+    strategy_recommendations,
+)
 from app.core.errors import ServiceError
 from app.db.session import engine
 from app.integrations.kis.hub import realtime_hub
@@ -24,6 +38,7 @@ async def lifespan(_: FastAPI):
     finally:
         await realtime_hub.stop()
 
+
 app = FastAPI(
     title="SeSAC Team 1 Virtual Trading API",
     version="1.0.0",
@@ -32,7 +47,10 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")],
+    allow_origins=[
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,7 +59,9 @@ app.add_middleware(
 
 @app.exception_handler(ServiceError)
 async def service_error_handler(_: Request, exc: ServiceError) -> JSONResponse:
-    return JSONResponse(status_code=exc.status_code, content={"code": exc.code, "message": exc.message})
+    return JSONResponse(
+        status_code=exc.status_code, content={"code": exc.code, "message": exc.message}
+    )
 
 
 @app.get("/health", tags=["health"])
@@ -54,10 +74,18 @@ def dependency_health():
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-        cache = redis.from_url(os.environ["REDIS_URL"], socket_connect_timeout=3, decode_responses=True)
+        cache = redis.from_url(
+            os.environ["REDIS_URL"], socket_connect_timeout=3, decode_responses=True
+        )
         cache.ping()
     except (KeyError, SQLAlchemyError, redis.RedisError):
-        return JSONResponse(status_code=503, content={"code": "DEPENDENCY_UNAVAILABLE", "message": "PostgreSQL 또는 Redis를 사용할 수 없습니다."})
+        return JSONResponse(
+            status_code=503,
+            content={
+                "code": "DEPENDENCY_UNAVAILABLE",
+                "message": "PostgreSQL 또는 Redis를 사용할 수 없습니다.",
+            },
+        )
     return {"postgres": "ok", "redis": "ok"}
 
 
@@ -73,6 +101,7 @@ for router in (
     investment.router,
     investor_profile.router,
     strategy_recommendations.router,
+    model_recommendations.router,
     companies.router,
 ):
     app.include_router(router, prefix="/api/v1")

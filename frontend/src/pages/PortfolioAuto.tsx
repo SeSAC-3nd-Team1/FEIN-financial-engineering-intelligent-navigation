@@ -102,10 +102,17 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
   const account = useTradingStore((state) => state.account);
+  // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
+  // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
+  const accountMissing = useTradingStore((state) => state.accountMissing);
   const accessToken = useAuthStore((state) => state.accessToken);
 
+  // 계좌가 없다고 확인된 경우에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는 아직 로딩 중/조회
+  // 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 — 로딩/오류 중에 실계좌
+  // 사용자에게 목업 20종목이 노출되면 안 된다.
   const ALL_HOLDINGS = useMemo(() => {
-    if (!portfolio || portfolio.positions.length === 0) return MOCK_HOLDINGS;
+    if (accountMissing) return MOCK_HOLDINGS;
+    if (!portfolio) return [];
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
@@ -117,16 +124,22 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
         chg: Number(position.return_rate),
       };
     });
-  }, [portfolio]);
+  }, [portfolio, accountMissing]);
 
-  // 자산 증감 요약 — 실 계좌가 있으면 백엔드가 이미 계산해 둔 계좌 손익(unrealized_profit + realized_profit, return_rate)을
-  // 그대로 쓴다. total_assets - total_purchase_amount 로 직접 빼면 total_assets 에 포함된 미투자 현금(cash_balance)이
+  // 자산 증감 요약 — 계좌가 없다고 확인된 경우(accountMissing)에만 목업 값을 쓰고, 그 외(로딩 중/조회
+  // 실패로 portfolio를 못 받은 경우 포함)에는 실 계좌 값(아직 없으면 0)을 쓴다. 실 계좌가 있으면
+  // 백엔드가 이미 계산해 둔 계좌 손익(unrealized_profit + realized_profit, return_rate)을 그대로 쓴다.
+  // total_assets - total_purchase_amount 로 직접 빼면 total_assets 에 포함된 미투자 현금(cash_balance)이
   // 수익으로 잡히는 문제가 있어(예: 매수 전 예치금만 있어도 +100% 로 표시됨) 이 방식은 쓰지 않는다.
-  const principalTotal = portfolio ? Number(portfolio.total_purchase_amount) : MOCK_PRINCIPAL_TOTAL;
-  const holdTotal = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
+  const principalTotal = accountMissing ? MOCK_PRINCIPAL_TOTAL : Number(portfolio?.total_purchase_amount ?? 0);
+  const holdTotal = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
   const mockGainAmount = holdTotal - principalTotal;
-  const gainAmount = portfolio ? Number(portfolio.unrealized_profit) + Number(portfolio.realized_profit) : mockGainAmount;
-  const gainPct = portfolio ? Number(portfolio.return_rate) : (principalTotal > 0 ? (mockGainAmount / principalTotal) * 100 : 0);
+  const gainAmount = accountMissing
+    ? mockGainAmount
+    : portfolio ? Number(portfolio.unrealized_profit) + Number(portfolio.realized_profit) : 0;
+  const gainPct = accountMissing
+    ? (principalTotal > 0 ? (mockGainAmount / principalTotal) * 100 : 0)
+    : (portfolio ? Number(portfolio.return_rate) : 0);
 
   // ── Power BI 스타일 분석 섹션 상태 ───────────────────────────────
   const [tab, setTab] = useState<AnalyticsTab>('weight');
@@ -152,9 +165,12 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
   // 클릭 시 현재 tab 이 가리키는 차트를 그대로 훨씬 큰 크기의 팝업으로 다시 그린다.
   const [isChartZoomOpen, setIsChartZoomOpen] = useState(false);
 
-  // 우측 하단 "최근 거래" 위젯 — 실 체결 내역(executions)이 있으면 그걸, 없으면 목업으로 대체한다.
-  // 가로 3칸 레이아웃이라 항상 최신 3건만 보여준다.
-  const recentTransactions = useMemo(() => getDisplayTransactions(executions).slice(0, 3), [executions]);
+  // 우측 하단 "최근 거래" 위젯 — 계좌가 없다고 확인된 경우에만 목업으로 대체하고, 그 외(체결 0건,
+  // 로딩 중/조회 실패)에는 실 체결 내역(빈 배열이어도)을 그대로 쓴다. 가로 3칸 레이아웃이라 항상 최신 3건만 보여준다.
+  const recentTransactions = useMemo(
+    () => getDisplayTransactions(executions, !accountMissing).slice(0, 3),
+    [executions, accountMissing],
+  );
 
   // 자산 변화 탭: 실 계좌가 있으면 GET /portfolio/history 를 선택된 기간으로 다시 조회한다(서버가 기간별로
   // 필터링해 내려주므로 클라이언트에서 자를 필요가 없다). 계좌가 없거나 그 계좌에 아직 쌓인 이력이 없으면
@@ -168,11 +184,10 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
     return () => { cancelled = true; };
   }, [account, accessToken, historyPeriod]);
 
-  // 실 계좌가 있으면(account) 이력이 0건이어도 그 실제 결과를 그대로 쓴다 — history가 아직 응답을
-  // 못 받았을 때(요청 중)만 잠깐 빈 배열로 보이고, 없는 데이터를 mock으로 대신 채우지는 않는다.
-  // mock은 애초에 실 계좌 자체가 없을 때(account === null)만 쓴다.
+  // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 추이를 쓴다. 그 외(로딩 중/history 조회 전·실패)에는
+  // 이력이 0건이어도 그 실제 결과(빈 배열)를 그대로 쓴다 — 없는 데이터를 mock으로 대신 채우지는 않는다.
   const trendData = useMemo(() => {
-    if (account) {
+    if (!accountMissing) {
       return (history?.items ?? []).map((item) => ({
         label: item.date.slice(5).replace('-', '.'),
         port: Number(item.portfolio_return_rate),
@@ -183,26 +198,27 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
     }
     const mockN = TREND_PERIODS.find((p) => p.value === historyPeriod)?.mockN ?? PORTFOLIO_TREND.length;
     return PORTFOLIO_TREND.slice(-mockN);
-  }, [account, history, historyPeriod]);
+  }, [accountMissing, history, historyPeriod]);
   const benchmarkName = history?.benchmark_name ?? 'KOSPI';
 
-  // 종목별 기여 탭: 실 계좌가 있으면(portfolio) 기여도가 0건이어도 그 실제 결과를 그대로 쓴다.
-  // mock은 실 계좌 자체가 없을 때(portfolio === null)만 쓴다.
+  // 종목별 기여 탭: 계좌가 없다고 확인된 경우(accountMissing)에만 목업을 쓴다. 그 외(로딩 중/조회
+  // 실패로 portfolio를 못 받은 경우 포함)에는 기여도가 0건이어도 그 실제 결과(빈 배열)를 그대로 쓴다.
   const contributionData = useMemo(() => {
-    if (portfolio) {
-      return [...portfolio.contributions]
-        .map((c) => ({ name: c.stock_name ?? c.stock_code, amount: Number(c.amount) }))
-        .sort((a, b) => b.amount - a.amount);
-    }
-    return [...STOCK_CONTRIBUTION].sort((a, b) => b.amount - a.amount);
-  }, [portfolio]);
+    if (accountMissing) return [...STOCK_CONTRIBUTION].sort((a, b) => b.amount - a.amount);
+    if (!portfolio) return [];
+    return [...portfolio.contributions]
+      .map((c) => ({ name: c.stock_name ?? c.stock_code, amount: Number(c.amount) }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [portfolio, accountMissing]);
   const topContributor = contributionData[0];
 
-  // 보유 비중 탭: 선택된 종목의 현재 비중 vs 전략 목표 비중
+  // 보유 비중 탭: 선택된 종목의 현재 비중 vs 전략 목표 비중 — 실 계좌가 있는데 포지션이 0건이면
+  // ALL_HOLDINGS가 빈 배열이라 선택할 종목 자체가 없다.
+  const hasHoldings = ALL_HOLDINGS.length > 0;
   const safeSelectedIndex = Math.min(selectedHoldingIdx, Math.max(ALL_HOLDINGS.length - 1, 0));
-  const selectedHolding = ALL_HOLDINGS[safeSelectedIndex];
-  const targetPct = selectedHolding.target ?? selectedHolding.pct;
-  const weightDiff = Math.round((selectedHolding.pct - targetPct) * 10) / 10;
+  const selectedHolding = hasHoldings ? ALL_HOLDINGS[safeSelectedIndex] : null;
+  const targetPct = selectedHolding ? (selectedHolding.target ?? selectedHolding.pct) : 0;
+  const weightDiff = selectedHolding ? Math.round((selectedHolding.pct - targetPct) * 10) / 10 : 0;
 
   // 도넛 차트 + 중앙 라벨 — 컬럼 안의 작은 버전과 "크게 보기" 팝업의 확대 버전이 이 렌더 함수를 그대로 공유한다.
   // sizeClass 만 다르게 넘겨서 같은 인터랙션(호버 라벨/클릭 선택/activeShape 확대)을 두 크기에서 동일하게 쓴다.
@@ -228,6 +244,10 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
           outline: none;
         }
       `}</style>
+      {!hasHoldings && (
+        // 실 계좌가 있는데 포지션이 0건일 때 — 색이 채워진 도넛(=가짜 배분) 대신 빈 회색 링만 보여준다.
+        <div className="absolute inset-[8%] rounded-full border-[18px] border-[#F0F2ED]" />
+      )}
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           {/* 확대된 도넛 — outerRadius 를 컨테이너 가장자리(100%)가 아니라 85%로 살짝 안쪽에 둬서
@@ -267,10 +287,13 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
       </ResponsiveContainer>
       {/* 도넛 중앙 라벨 — 커서를 따라다니는 기본 Tooltip 대신, 호버(또는 클릭으로 고정된) 조각의 "종목명 : n%"를
           도넛 링 한가운데에 직접 렌더링한다(activeShape 대신 상태 기반 커스텀 라벨).
-          우선순위: 지금 호버 중인 조각 > 클릭으로 고정된 조각 > 기본값(총 자산 100%). */}
+          우선순위: 지금 호버 중인 조각 > 클릭으로 고정된 조각 > 기본값(총 자산 100%, 보유 종목이 있을 때만). */}
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 px-6 text-center">
         {(() => {
           const centerIdx = hoverHoldingIdx ?? (hasSelectedHolding ? selectedHoldingIdx : null);
+          if (!hasHoldings) {
+            return <span className="text-sm text-muted">보유 종목 없음</span>;
+          }
           if (centerIdx === null) {
             return (
               <>
@@ -474,11 +497,13 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
                     {/* 선택/호버 시 종목명·비중·수익률은 도넛 중앙 라벨(위)이 이미 보여주므로 여기서는 중복 표시하지 않는다.
                         비워진 자리는 아래 Insight 와, 컬럼 하단 중앙에 고정된 "자세히" 버튼이 채운다. */}
                     <Insight compact>
-                      {weightDiff > 0
-                        ? `${selectedHolding.name} 비중이 목표보다 높아요.`
-                        : weightDiff < 0
-                          ? `${selectedHolding.name} 비중이 목표보다 낮아요.`
-                          : `${selectedHolding.name} 비중이 목표와 일치해요.`}
+                      {!selectedHolding
+                        ? '아직 보유 중인 종목이 없어요. 계좌에 입금하면 여기에 배분이 채워져요.'
+                        : weightDiff > 0
+                          ? `${selectedHolding.name} 비중이 목표보다 높아요.`
+                          : weightDiff < 0
+                            ? `${selectedHolding.name} 비중이 목표보다 낮아요.`
+                            : `${selectedHolding.name} 비중이 목표와 일치해요.`}
                     </Insight>
                   </div>
                 )}

@@ -133,15 +133,12 @@ export default function PortfolioDetail({
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
   const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
 
-  // 실 계좌가 있으면 포지션을, 없으면 목업 20종목을 쓴다 — Portfolio.tsx(PowerBI)와 동일한 대체 규칙.
+  // 총자산/보유종목 모두 계좌가 없다고 확인된 경우(accountMissing)에만 목업 값을 쓰고, 그 외(실 계좌
+  // 포지션이 0개, 또는 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 0원/빈 배열로 실제 빈
+  // 상태를 보여준다 — portfolio===null 하나만으로 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회
+  // 실패"를 구분하지 못해, 로딩/오류 중에 실계좌 사용자에게 목업 데이터가 노출될 수 있다.
   // 실 포지션에는 investor-facing 메타(섹터/AI 편입 사유 등)가 없어 STOCK_INFO 코드로 목업과 매칭해 보완한다.
-  // 총자산도 계좌가 없다고 확인된 경우(accountMissing)에만 목업 금액을 쓴다 — portfolio===null만으로
-  // 판단하면 로딩 중/조회 실패 상태에서 보유종목은 빈 상태인데 총자산은 mock 금액이 보이는 모순이 생긴다.
   const HOLD_TOTAL = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
-  // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는
-  // 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 —
-  // portfolio===null 하나만으로 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회 실패"를 구분하지
-  // 못해, 로딩/오류 중에 실계좌 사용자에게 목업 20종목이 노출될 수 있다.
   const ALL_HOLDINGS = useMemo(() => {
     if (accountMissing) return MOCK_HOLDINGS;
     if (!portfolio) return [];
@@ -197,8 +194,9 @@ export default function PortfolioDetail({
   // 보유 종목 미리보기 — 비중이 큰 상위 5개만 보여주고, 전체 목록은 별도 페이지(/all-holdings)로 뺀다.
   const previewHoldings = useMemo(() => [...gains].sort((a, b) => b.pct - a.pct).slice(0, 5), [gains]);
 
-  // 최근 거래 — 실 체결 내역(executions)이 있으면 그걸, 없으면 목업을 쓴다
-  const displayTransactions = useMemo(() => getDisplayTransactions(executions), [executions]);
+  // 최근 거래 — 계좌가 없다고 확인된 경우에만 목업을 쓰고, 그 외(체결 0건, 로딩 중/조회 실패)에는
+  // 실 체결 내역(빈 배열이어도)을 그대로 쓴다
+  const displayTransactions = useMemo(() => getDisplayTransactions(executions, !accountMissing), [executions, accountMissing]);
 
   if (view === 'review') {
     return (
@@ -237,9 +235,6 @@ export default function PortfolioDetail({
           <section className="flex flex-col gap-6">
             <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">오늘 내 투자에는 무슨 일이 있었나요?</h2>
             <div className="flex flex-col gap-4">
-              {/* ALL_HOLDINGS가 accountMissing 기준으로 바뀌면서 실계좌 0건/로딩 중/조회 실패 상태에서는
-                  gains가 빈 배열이 되어 top이 undefined일 수 있다 — top.name/top.gain을 그대로 쓰면
-                  크래시가 나므로 보유 종목이 없을 때는 빈 상태 문구로 대체한다. */}
               {top ? (
                 <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
                   <div className="flex items-baseline gap-4">
@@ -254,8 +249,9 @@ export default function PortfolioDetail({
                   <span className="text-[17px] leading-7 text-muted">계좌에 입금하고 투자를 시작하면 여기에 오늘의 이야기가 채워져요.</span>
                 </Story>
               )}
-              {/* 보유 종목이 없으면 이 카드도 고정 mock 스토리를 보여주지 않는다 — 바로 위 카드가 이미
-                  빈 상태를 알려주는데, 그 아래에 실제로는 없는 KT&G 보유를 전제한 문구가 이어지면 모순된다. */}
+              {/* 보유 종목이 없으면(top === undefined) 이 카드도 고정 mock 스토리를 보여주지 않는다 —
+                  바로 위 카드가 이미 "아직 보유 중인 종목이 없어요"로 빈 상태를 알려주는데, 그 아래에
+                  실제로는 없는 KT&G 보유를 전제한 문구가 이어지면 모순된다. */}
               {top && (
                 <Story title="KT&G는 포트폴리오의 흔들림을 줄여줬어요">
                   <span className="text-[17px] leading-7 text-muted">오늘 시장보다 변동성이 낮았어요.</span>
@@ -335,7 +331,7 @@ export default function PortfolioDetail({
             </div>
             <div className="flex flex-col">
               {previewHoldings.length === 0 && (
-                <p className="py-10 text-center text-[15px] text-subtle">아직 보유 중인 종목이 없어요.</p>
+                <p className="py-6 text-center text-[15px] text-subtle">아직 보유 중인 종목이 없어요.</p>
               )}
               {previewHoldings.map((h) => {
                 const stockCode = STOCK_INFO[h.name]?.code;
@@ -379,6 +375,9 @@ export default function PortfolioDetail({
               <button onClick={() => onNavigate('transactions')} className="text-base font-semibold text-navy">더보기 →</button>
             </div>
             <div className="flex flex-col">
+              {displayTransactions.length === 0 && (
+                <p className="py-10 text-center text-[15px] text-subtle">아직 거래 내역이 없어요.</p>
+              )}
               {displayTransactions.slice(0, 3).map((t) => (
                 <button
                   key={t.id}

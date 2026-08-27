@@ -25,9 +25,12 @@ function toDisplayTransaction(execution: ExecutionResponse): TransactionRecord {
   };
 }
 
-/** 거래 내역 목록 — 실 체결 기록이 있으면 그걸 최신순으로, 없으면(계좌 없음/체결 없음) 목업으로 대체한다. */
-export function getDisplayTransactions(executions: ExecutionResponse[]): TransactionRecord[] {
-  if (executions.length === 0) return RECENT_TRANSACTIONS;
+/** 거래 내역 목록 — 실 계좌가 있으면 체결 기록을 최신순으로 그대로 쓴다(0건이어도 실제 빈 상태).
+ *  실 계좌 자체가 없을 때(hasAccount=false)만 목업으로 대체한다 — "계좌 없음"과 "계좌는 있는데
+ *  체결이 0건"은 다른 상태라, executions.length만으로 판단하면 신규 계좌의 진짜 빈 내역이
+ *  목업으로 가려진다. */
+export function getDisplayTransactions(executions: ExecutionResponse[], hasAccount: boolean): TransactionRecord[] {
+  if (!hasAccount) return RECENT_TRANSACTIONS;
   return [...executions]
     .sort((a, b) => b.executed_at.localeCompare(a.executed_at))
     .map(toDisplayTransaction);
