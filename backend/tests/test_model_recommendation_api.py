@@ -9,7 +9,10 @@ from app.api.deps import current_user
 from app.api.routes.model_recommendations import get_model_recommendation_service
 from app.core.errors import ServiceError
 from app.main import app
-from app.services.model_recommendation import ModelRecommendationService
+from app.services.model_recommendation import (
+    DEFAULT_SNAPSHOT_PATH,
+    ModelRecommendationService,
+)
 
 
 class FakeService:
@@ -28,12 +31,42 @@ def test_latest_model_recommendation_returns_snapshot_for_authenticated_user() -
     assert response.status_code == 200
     assert response.json()["model_version"] == "price-momentum-v1"
     assert response.json()["recommendations"][0]["symbol"] == "005930"
+    assert sum(
+        item["target_weight"] for item in response.json()["recommendations"]
+    ) == pytest.approx(0.95)
 
 
 def test_latest_model_recommendation_requires_authentication() -> None:
     response = TestClient(app).get("/api/v1/model-recommendations/latest")
     assert response.status_code == 401
     assert response.json()["code"] == "AUTHENTICATION_REQUIRED"
+
+
+def test_service_prefers_generated_artifact_from_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    generated = json.loads(DEFAULT_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    generated["as_of"] = "2026-08-27"
+    path = tmp_path / "generated.json"
+    path.write_text(json.dumps(generated), encoding="utf-8")
+    monkeypatch.setenv("MODEL_RECOMMENDATION_SNAPSHOT_PATH", str(path))
+
+    snapshot = ModelRecommendationService().latest()
+
+    assert snapshot.as_of.isoformat() == "2026-08-27"
+    assert ModelRecommendationService().snapshot_paths[0] == path
+
+
+def test_service_uses_packaged_fallback_when_generated_artifact_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "MODEL_RECOMMENDATION_SNAPSHOT_PATH", str(tmp_path / "missing.json")
+    )
+
+    snapshot = ModelRecommendationService().latest()
+
+    assert snapshot.as_of.isoformat() == "2026-08-26"
 
 
 def test_invalid_snapshot_fails_safely(tmp_path: Path) -> None:

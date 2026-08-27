@@ -139,9 +139,30 @@ print(metrics.to_dict())
 `risk_eligible` 종목만 대상으로 120일 모멘텀 순위를 계산하고 목표 비중을 생성한다. 결과 계약은
 `as_of`, 모델·데이터 버전, 시장 국면과 종목별 점수·순위·목표 비중·선정 사유를 포함한다.
 
-현재 Backend는 시연 안정성을 위해 이 계약으로 검증된
-`backend/app/data/model_recommendation_snapshot.json`을 `GET /api/v1/model-recommendations/latest`에서
-제공한다. 운영 배치가 준비되면 같은 JSON 계약으로 파일만 교체할 수 있다. 이 MVP는 가격 데이터 기반
+`inference.export_recommendation_snapshot` CLI는 CSV 또는 Parquet Feature를 읽어 실제 모델 함수를
+실행한 뒤 JSON을 임시 파일에 먼저 쓰고 원자적으로 교체한다. Compose에서는 AI의
+`/model-artifacts/model_recommendation_snapshot.json`과 Backend의 동일 경로가 전용 볼륨으로 연결된다.
+
+```bash
+docker compose --profile ai run --rm ai python -m inference.export_recommendation_snapshot \
+  --input /app/path/to/model_stock_daily.parquet \
+  --output /model-artifacts/model_recommendation_snapshot.json \
+  --data-version algorithm-ohlcv-v2 \
+  --top-n 5
+```
+
+입력에는 `trade_date`, `stock_code`, `market_cap`, `momentum_120d`, `is_tradable`,
+`risk_eligible`이 필요하며 `stock_name`은 선택 사항이다. 생성 결과는 Backend의
+`GET /api/v1/model-recommendations/latest`에서 계약 검증 후 제공된다. 로컬 E2E 경로는 고정 Feature
+fixture로 다음과 같이 재현할 수 있다.
+
+```bash
+./scripts/verify_model_recommendation_e2e.sh
+```
+
+공유 artifact가 아직 없거나 손상된 경우 Backend는 시연 안정성을 위해 동일 generator 제약(주식 95%,
+현금 5%)에 맞춘 `backend/app/data/model_recommendation_snapshot.json`을 fallback으로 읽는다. 운영에서는
+`MODEL_RECOMMENDATION_SNAPSHOT_PATH`로 artifact 위치를 바꿀 수 있다. 이 MVP는 가격 데이터 기반
 가상투자 참고용이며 수급·재무 Feature, 성능 보장, 실제 주문은 범위에 포함하지 않는다.
 
 ## Dependency 추가
