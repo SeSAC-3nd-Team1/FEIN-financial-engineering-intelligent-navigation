@@ -1,17 +1,7 @@
+import { Clock } from 'lucide-react';
 import Header from '../components/Header';
 import { STRATEGY_PRODUCT_CARDS } from '../data/strategyProducts';
 import type { Screen } from '../types';
-
-/**
- * 2차 디자인 QA — 카드별 subtle color point. 전부 tailwind.config.ts에 이미 등록된 토큰만 쓴다
- * (새 palette 없음). anchor 글자 뒤 매우 연한 tint + CTA hover 색만 바꾸고, 카드 배경/테두리는
- * 손대지 않는다("카드 전체를 강한 색으로 칠하지 않는다" 지침).
- */
-const TINT_STYLES: Record<'lime' | 'warm' | 'neutral', { anchorBg: string; anchorText: string; ctaHover: string }> = {
-  lime: { anchorBg: 'bg-accent-soft', anchorText: 'text-accent-ink', ctaHover: 'group-hover:text-accent-ink' },
-  warm: { anchorBg: 'bg-warn-soft', anchorText: 'text-status-amber-text', ctaHover: 'group-hover:text-status-amber-text' },
-  neutral: { anchorBg: 'bg-neutral-100', anchorText: 'text-ink', ctaHover: 'group-hover:text-navy' },
-};
 
 interface Props {
   userName: string;
@@ -60,38 +50,50 @@ export default function StrategyList({
           </section>
 
           <div className="grid grid-cols-3 gap-6">
-            {STRATEGY_PRODUCT_CARDS.map((card) => {
-              const tint = TINT_STYLES[card.tint];
-              return (
-                <button
-                  key={card.key}
-                  onClick={() => handleSelect(card.key)}
-                  className="group flex flex-col justify-between gap-10 rounded-card bg-surface p-9 text-left shadow-[0_0_0_1px_#E5E9E3_inset] transition-shadow hover:shadow-[0_0_0_1px_#C9D1C4_inset,0_12px_28px_rgba(24,36,58,0.06)]"
-                >
-                  <div className="flex flex-col gap-3">
-                    {/* Visual Anchor: 기존과 동일하게 font-size 차이(28px/21px)로만 첫 글자를 강조하고,
-                       추가로 그 글자 뒤에만 카드별로 매우 연한 tint를 얹는다 — 나머지 글자와 같은 줄,
-                       같은 굵기 흐름이라 "물림방지 전략"이 분리된 단어처럼 보이지 않는다. */}
-                    <h3 className="tracking-[-0.02em] text-ink">
-                      <span className={`mr-0.5 inline-block rounded-md px-1.5 py-0.5 text-[28px] font-extrabold ${tint.anchorBg} ${tint.anchorText}`}>
-                        {card.anchor}
+            {STRATEGY_PRODUCT_CARDS.map((card) => (
+              <button
+                key={card.key}
+                onClick={() => handleSelect(card.key)}
+                className="group flex flex-col justify-between gap-10 rounded-card bg-surface p-9 text-left shadow-[0_0_0_1px_#E5E9E3_inset] transition-shadow hover:shadow-[0_0_0_1px_#C9D1C4_inset,0_12px_28px_rgba(24,36,58,0.06)]"
+              >
+                <div className="flex flex-col gap-3">
+                  {/* Visual Anchor: 배경/색 없이 font-size(24px/21px)·font-weight 차이만으로 첫 글자를
+                     살짝 강조한다 — 같은 줄, 같은 ink 색으로 이어 써서 "물림방지 전략"이 분리된
+                     단어처럼 보이지 않는다. 3장 모두 동일한 처리라 카드별로 다른 색이 생기지 않는다. */}
+                  <h3 className="tracking-[-0.02em] text-ink">
+                    <span className="text-[24px] font-extrabold">{card.anchor}</span>
+                    <span className="text-[21px] font-bold">{card.restOfName}</span>
+                  </h3>
+                  {/* Secondary info: 전부 compact pill이되 역할별로 hierarchy를 나눈다 — metadata
+                     3개(물림방지/F4/개인맞춤)는 전부 동일한 neutral로 통일한다(lime은 "이용 가능"
+                     같은 active 신호와 겹치지 않도록 CTA 화살표에만 남겨둔다). "테스트 중"은
+                     metadata와 구분되는 status라 아이콘 + 한 단계 더 진한 neutral을 써서 한눈에
+                     상태로 읽히게 한다. 카드 배경이 흰색(surface)이라 배경색 차이만으로는 pill
+                     윤곽이 잘 안 보여, 기존 카드 테두리와 같은 hairline border(line 토큰)를 모든
+                     배지에 둘러 윤곽을 확실히 잡아준다. */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-muted shadow-[0_0_0_1px_#E5E9E3_inset]">
+                      {card.meta}
+                    </span>
+                    {card.status === 'testing' && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-neutral-150 px-3 py-1 text-xs font-bold text-ink-soft shadow-[0_0_0_1px_#E5E9E3_inset]">
+                        <Clock size={11} />
+                        테스트 중
                       </span>
-                      <span className="text-[21px] font-bold">{card.restOfName}</span>
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-muted">{card.meta}</span>
-                      {card.status === 'testing' && (
-                        <span className="rounded-full bg-surface-soft px-3 py-1 text-xs font-semibold text-muted">테스트 중</span>
-                      )}
-                    </div>
-                    <p className="text-[16px] leading-[26px] text-muted">{card.description}</p>
+                    )}
                   </div>
-                  <span className={`text-[15px] font-semibold text-muted transition-colors ${tint.ctaHover}`}>
-                    {card.ctaLabel}
+                  <p className="text-[16px] leading-[26px] text-muted">{card.description}</p>
+                </div>
+                {/* CTA: 텍스트 라벨은 그대로, 화살표만 FE!N lime accent(선택/CTA 전용 색)를 쓰는
+                   작은 원형으로 분리 — 카드 전체를 lime으로 칠하지 않고 발견성만 살짝 높인다. */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[15px] font-semibold text-muted">{card.ctaLabel}</span>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-lime text-navy transition-transform group-hover:translate-x-0.5">
+                    →
                   </span>
-                </button>
-              );
-            })}
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       </main>

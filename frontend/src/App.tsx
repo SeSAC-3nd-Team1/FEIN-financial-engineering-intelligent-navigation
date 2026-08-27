@@ -745,13 +745,12 @@ export default function App() {
           userName={userName}
           onNavigate={navigate}
           onBack={() => setScreen('strategy-list')}
-          onSelectMomentum={() => {
+          onSelectAvailableStrategy={() => {
             setStrategyId('momentum');
             setStrategyDetailBackTarget('strategy-f4');
             setStrategyRecommendation(null);
             setScreen('strategy');
           }}
-          onSelectEventDriven={() => setScreen('strategy-coming-soon-event-driven')}
         />
       )}
       {screen === 'strategy-coming-soon-loss-avoidance' && (
@@ -760,14 +759,6 @@ export default function App() {
           userName={userName}
           onNavigate={navigate}
           onBack={() => setScreen('strategy-list')}
-        />
-      )}
-      {screen === 'strategy-coming-soon-event-driven' && (
-        <StrategyComingSoon
-          strategyKey="event-driven"
-          userName={userName}
-          onNavigate={navigate}
-          onBack={() => setScreen('strategy-f4')}
         />
       )}
       {screen === 'strategy-preview' && (

@@ -4,8 +4,10 @@ export type Screen =
   | 'signup-1' | 'signup-2' | 'signup-3'
   | 'risk' | 'risk-result' | 'investor-check'
   | 'strategy-list' | 'strategy' | 'start'
-  // 물·방·개 전략 체계(UI/IA 1차 개편) — 실제 Model/API 미연결, strategy-list 카드에서만 진입
-  | 'strategy-f4' | 'strategy-coming-soon-loss-avoidance' | 'strategy-coming-soon-event-driven' | 'strategy-preview'
+  // 물·방·개 전략 체계(UI/IA 개편) — strategy-list 카드에서만 진입. 모멘텀은 실제 canonical
+  // 전략에 연결돼 있어 'strategy' 화면(StrategyDetail)을 그대로 쓰고, 물림방지만 아직 실 Model/API
+  // 미연결이라 별도 placeholder 화면(strategy-coming-soon-loss-avoidance)이 필요하다.
+  | 'strategy-f4' | 'strategy-coming-soon-loss-avoidance' | 'strategy-preview'
   // 투자 시작 Flow — "이 전략으로 시작하기" 이후, 사용자 준비 상태에 따라 필요한 화면으로만 분기
   | 'invest-terms' | 'invest-account' | 'invest-deposit' | 'invest-confirm'
   | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail'
