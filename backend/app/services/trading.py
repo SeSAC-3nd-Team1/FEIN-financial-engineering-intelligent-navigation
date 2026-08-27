@@ -40,72 +40,112 @@ class TradingService:
             if account.status != "ACTIVE":
                 raise ServiceError("ACCOUNT_INACTIVE", "거래할 수 없는 계좌입니다.", 409)
 
-            existing = self.repo.order_by_idempotency(account.id, request.idempotency_key)
-            if existing:
-                self._validate_idempotent_order(existing, request)
-                self.session.rollback()
-                return existing
-
-            total = (price * request.quantity).quantize(Decimal("0.01"))
-            if total < MIN_ORDER_AMOUNT:
-                raise ServiceError(
-                    "ORDER_AMOUNT_TOO_SMALL",
-                    "최소 주문금액은 1원입니다.",
-                    409,
-                )
-            position = self.repo.position(account.id, request.stock_code, lock=True)
-            if request.side == "BUY" and account.cash_balance < total:
-                raise ServiceError("INSUFFICIENT_CASH", "주문 가능한 현금이 부족합니다.", 409)
-            if request.side == "SELL" and (not position or position.quantity < request.quantity):
-                raise ServiceError("INSUFFICIENT_POSITION", "매도 가능한 보유수량이 부족합니다.", 409)
-
-            order = Order(
-                account_id=account.id,
-                stock_code=request.stock_code,
-                side=request.side,
-                order_type="MARKET",
-                quantity=request.quantity,
-                requested_price=price,
-                status="FILLED",
-                idempotency_key=request.idempotency_key,
-            )
-            self.session.add(order)
-            self.session.flush()
-
-            if request.side == "BUY":
-                old_quantity = position.quantity if position else Decimal("0")
-                old_cost = (position.average_price * old_quantity) if position else Decimal("0")
-                if not position:
-                    position = Position(
-                        account_id=account.id,
-                        stock_code=request.stock_code,
-                        quantity=Decimal("0"),
-                        average_price=price,
-                        realized_profit=0,
-                    )
-                    self.session.add(position)
-                position.quantity = old_quantity + request.quantity
-                position.average_price = ((old_cost + total) / position.quantity).quantize(Decimal("0.0001"))
-                account.cash_balance -= total
-                cash_amount = -total
-            else:
-                assert position is not None
-                realized = ((price - position.average_price) * request.quantity).quantize(Decimal("0.01"))
-                position.quantity -= request.quantity
-                position.realized_profit += realized
-                account.cash_balance += total
-                cash_amount = total
-
-            self.session.add(
-                Execution(order_id=order.id, account_id=account.id, stock_code=request.stock_code, side=request.side, quantity=request.quantity, execution_price=price)
-            )
-            self.session.add(
-                CashLedger(account_id=account.id, transaction_type=request.side, amount=cash_amount, balance_after=account.cash_balance, reference_type="ORDER", reference_id=str(order.id))
-            )
+            order = self.execute_locked_market_order(account, request, price)
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
+        return order
+
+    def execute_locked_market_order(
+        self,
+        account,
+        request: OrderCreateRequest,
+        price: Decimal,
+    ) -> Order:
+        """이미 잠긴 계좌에서 commit 없이 한 건을 체결한다.
+
+        추가투자·출금은 여러 종목이 모두 성공해야 하나의 사용자 작업이 되므로, 상위
+        service가 transaction 경계를 소유할 수 있게 기존 체결 규칙만 분리한다.
+        """
+
+        if account.status != "ACTIVE":
+            raise ServiceError("ACCOUNT_INACTIVE", "거래할 수 없는 계좌입니다.", 409)
+        existing = self.repo.order_by_idempotency(account.id, request.idempotency_key)
+        if existing:
+            self._validate_idempotent_order(existing, request)
+            return existing
+
+        total = (Decimal(price) * request.quantity).quantize(Decimal("0.01"))
+        if total < MIN_ORDER_AMOUNT:
+            raise ServiceError(
+                "ORDER_AMOUNT_TOO_SMALL",
+                "최소 주문금액은 1원입니다.",
+                409,
+            )
+        position = self.repo.position(account.id, request.stock_code, lock=True)
+        if request.side == "BUY" and account.cash_balance < total:
+            raise ServiceError("INSUFFICIENT_CASH", "주문 가능한 현금이 부족합니다.", 409)
+        if request.side == "SELL" and (
+            not position or position.quantity < request.quantity
+        ):
+            raise ServiceError(
+                "INSUFFICIENT_POSITION", "매도 가능한 보유수량이 부족합니다.", 409
+            )
+
+        order = Order(
+            account_id=account.id,
+            stock_code=request.stock_code,
+            side=request.side,
+            order_type="MARKET",
+            quantity=request.quantity,
+            requested_price=price,
+            status="FILLED",
+            idempotency_key=request.idempotency_key,
+        )
+        self.session.add(order)
+        self.session.flush()
+
+        if request.side == "BUY":
+            old_quantity = position.quantity if position else Decimal("0")
+            old_cost = (
+                position.average_price * old_quantity if position else Decimal("0")
+            )
+            if not position:
+                position = Position(
+                    account_id=account.id,
+                    stock_code=request.stock_code,
+                    quantity=Decimal("0"),
+                    average_price=price,
+                    realized_profit=0,
+                )
+                self.session.add(position)
+            position.quantity = old_quantity + request.quantity
+            position.average_price = ((old_cost + total) / position.quantity).quantize(
+                Decimal("0.0001")
+            )
+            account.cash_balance -= total
+            cash_amount = -total
+        else:
+            assert position is not None
+            realized = ((price - position.average_price) * request.quantity).quantize(
+                Decimal("0.01")
+            )
+            position.quantity -= request.quantity
+            position.realized_profit += realized
+            account.cash_balance += total
+            cash_amount = total
+
+        self.session.add(
+            Execution(
+                order_id=order.id,
+                account_id=account.id,
+                stock_code=request.stock_code,
+                side=request.side,
+                quantity=request.quantity,
+                execution_price=price,
+            )
+        )
+        self.session.add(
+            CashLedger(
+                account_id=account.id,
+                transaction_type=request.side,
+                amount=cash_amount,
+                balance_after=account.cash_balance,
+                reference_type="ORDER",
+                reference_id=str(order.id),
+            )
+        )
         return order
 
     @staticmethod
