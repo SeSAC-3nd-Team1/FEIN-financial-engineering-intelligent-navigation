@@ -1116,10 +1116,10 @@ Expected: all unit and mock integration tests pass, with live tests deselected.
 Run from project root:
 
 ```powershell
-rg -n -i "api[_ -]?key|resource[_ -]?key|access[_ -]?token|client[_ -]?secret|8VYh|d1f6eceb|ded6ba71|780ce627|b76cb11c|9baff970|ef862cea|54ee147f|8d933428|f27225d5|839d126e|c65470b3|0ddb040a|fein-sy\.services\.ai\.azure\.com" . -g "!*.md" -g "!.venv/**"
+rg -n -i "api[_ -]?key|resource[_ -]?key|access[_ -]?token|client[_ -]?secret|<SUPPLIED_AGENT_IDENTIFIER>|<OPERATING_ENDPOINT_HOST>" . -g "!*.md" -g "!.venv/**"
 ```
 
-Expected: no matches in source, configuration examples, tests, or logs. Documentation may mention forbidden field names as policy text but must not contain real values.
+Expected: no matches in source, configuration examples, tests, or logs. Replace the two angle-bracket placeholders only in a terminal command when performing a local manual scan; never store supplied identifiers or operating endpoints in this repository. Documentation may mention forbidden field names as policy text but must not contain real values.
 
 - [ ] **Step 5: Run actual Foundry connectivity test**
 
