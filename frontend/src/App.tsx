@@ -1256,7 +1256,17 @@ export default function App() {
               setRebalanceBackTarget("portfolio");
               setScreen("rebalance-alerts");
             }}
-            onOpenFundManagement={(kind) => setScreen(kind === "deposit" ? "fund-add" : "fund-withdraw")}
+            onOpenFundManagement={(kind) => {
+              // STEP1↔STEP2 사이에서만 쓰는 일회성 draft 금액 — 이전에 종료한 Flow에서 남은 값이
+              // 새 Flow 진입 시 그대로 미리 채워져 보이지 않도록 매번 새로 시작할 때 0으로 되돌린다.
+              if (kind === "deposit") {
+                setFundAddAmount(0);
+                setScreen("fund-add");
+              } else {
+                setFundWithdrawAmount(0);
+                setScreen("fund-withdraw");
+              }
+            }}
           />
         ) : (
           <Portfolio
@@ -1268,7 +1278,17 @@ export default function App() {
               setScreen("rebalance-alerts");
             }}
             onStartRiskProfile={() => startInvestorProfile("risk-result")}
-            onOpenFundManagement={(kind) => setScreen(kind === "deposit" ? "fund-add" : "fund-withdraw")}
+            onOpenFundManagement={(kind) => {
+              // STEP1↔STEP2 사이에서만 쓰는 일회성 draft 금액 — 이전에 종료한 Flow에서 남은 값이
+              // 새 Flow 진입 시 그대로 미리 채워져 보이지 않도록 매번 새로 시작할 때 0으로 되돌린다.
+              if (kind === "deposit") {
+                setFundAddAmount(0);
+                setScreen("fund-add");
+              } else {
+                setFundWithdrawAmount(0);
+                setScreen("fund-withdraw");
+              }
+            }}
           />
         ))}
 
