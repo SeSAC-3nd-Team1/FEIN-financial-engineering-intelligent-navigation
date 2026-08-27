@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from app.api.deps import optional_current_user
+from app.api.deps import current_user
 from app.api.routes.chat import get_chat_agent_client
 from app.main import app
 from app.schemas.chat import ChatAgentResult
@@ -22,9 +22,29 @@ class FakeClient:
         )
 
 
-def test_chat_allows_public_request_and_passes_context() -> None:
+def test_chat_requires_login() -> None:
     client = FakeClient()
     app.dependency_overrides[get_chat_agent_client] = lambda: client
+    try:
+        response = TestClient(app).post(
+            "/api/v1/chat/messages",
+            json={
+                "message": "이 화면을 설명해줘",
+                "history": [],
+                "context": {"screen": "stock", "stock_code": "005930"},
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+    assert client.calls == []
+
+
+def test_chat_passes_context_for_authenticated_user() -> None:
+    client = FakeClient()
+    app.dependency_overrides[get_chat_agent_client] = lambda: client
+    app.dependency_overrides[current_user] = lambda: SimpleNamespace(id=7)
     try:
         response = TestClient(app).post(
             "/api/v1/chat/messages",
@@ -42,10 +62,17 @@ def test_chat_allows_public_request_and_passes_context() -> None:
     assert client.calls[0][2].stock_code == "005930"
 
 
+
+
+
+
+
+
+
 def test_chat_accepts_authenticated_request_without_exposing_user_to_client() -> None:
     client = FakeClient()
     app.dependency_overrides[get_chat_agent_client] = lambda: client
-    app.dependency_overrides[optional_current_user] = lambda: SimpleNamespace(id=7)
+    app.dependency_overrides[current_user] = lambda: SimpleNamespace(id=7)
     try:
         response = TestClient(app).post(
             "/api/v1/chat/messages",
@@ -66,6 +93,8 @@ def test_chat_accepts_authenticated_request_without_exposing_user_to_client() ->
 def test_chat_rejects_unknown_context_fields() -> None:
     client = FakeClient()
     app.dependency_overrides[get_chat_agent_client] = lambda: client
+    app.dependency_overrides[current_user] = lambda: SimpleNamespace(id=7)
+
     try:
         response = TestClient(app).post(
             "/api/v1/chat/messages",

@@ -70,12 +70,18 @@ def test_client_sends_recent_history_and_screen_context() -> None:
     assert "account_id" not in body["messages"][0]["content"]
     response_format = body["response_format"]["json_schema"]
     assert response_format["strict"] is True
-    assert set(response_format["schema"]["required"]) == {
+    schema = response_format["schema"]
+    assert set(schema["required"]) == {
         "status",
         "text",
         "caution",
         "suggested_questions",
     }
+    schema_json = json.dumps(schema)
+    assert "minLength" not in schema_json
+    assert "maxLength" not in schema_json
+    assert "minItems" not in schema_json
+    assert "maxItems" not in schema_json
     assert result.text.startswith("PER은")
 
 
@@ -159,8 +165,8 @@ def test_client_answers_more_local_financial_terms_without_provider_call(
 
 
 def test_client_answers_screen_help_without_provider_call() -> None:
-
     called = False
+
 
     def handler(_: httpx.Request) -> httpx.Response:
         nonlocal called

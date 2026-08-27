@@ -1,10 +1,12 @@
 """Azure OpenAI 기반 물방개 읽기 전용 금융 설명 Agent."""
 
+import copy
 import json
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.parse import quote
 
 import httpx
+
 from pydantic import ValidationError
 
 from app.core.errors import ServiceError
@@ -120,6 +122,24 @@ class ChatAgentClient(Protocol):
         history: list[ChatHistoryMessage],
         context: ChatScreenContext,
     ) -> ChatAgentResult: ...
+
+
+def _azure_response_schema() -> dict[str, Any]:
+    """Return a provider-compatible schema; length checks stay in Pydantic."""
+    schema = copy.deepcopy(ChatAgentResult.model_json_schema())
+
+    def remove_unsupported_constraints(value: Any) -> None:
+        if isinstance(value, dict):
+            for key in ("minLength", "maxLength", "minItems", "maxItems"):
+                value.pop(key, None)
+            for child in value.values():
+                remove_unsupported_constraints(child)
+        elif isinstance(value, list):
+            for child in value:
+                remove_unsupported_constraints(child)
+
+    remove_unsupported_constraints(schema)
+    return schema
 
 
 class AzureOpenAIChatAgentClient:
@@ -241,9 +261,9 @@ class AzureOpenAIChatAgentClient:
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "mulbanggae_answer",
+                                        "name": "mulbanggae_answer",
                     "strict": True,
-                    "schema": ChatAgentResult.model_json_schema(),
+                    "schema": _azure_response_schema(),
                 },
             },
         }
