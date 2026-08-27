@@ -9,18 +9,28 @@ from app.models import User, VirtualAccount
 from app.schemas.api import (
     AccountCreateRequest,
     AccountResponse,
+    FundOperationRequest,
+    FundOperationResponse,
+    FundSummaryResponse,
     OperationMode,
     OperationModeSwitchRequest,
     OperationModeSwitchResponse,
     StrategySelectRequest,
 )
 from app.services.accounts import AccountService
+from app.services.funds import FundOperationService
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 
 def get_account_service(session: Session = Depends(get_session)) -> AccountService:
     return AccountService(session)
+
+
+def get_fund_operation_service(
+    session: Session = Depends(get_session),
+) -> FundOperationService:
+    return FundOperationService(session)
 
 
 @router.post("", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
@@ -66,3 +76,40 @@ def select_strategy(
     service: AccountService = Depends(get_account_service),
 ) -> VirtualAccount:
     return service.select_strategy(user.id, account_id, payload.strategy_id)
+
+
+@router.get("/{account_id}/funds", response_model=FundSummaryResponse)
+def virtual_fund_summary(
+    account_id: UUID,
+    user: User = Depends(current_user),
+    service: FundOperationService = Depends(get_fund_operation_service),
+) -> FundSummaryResponse:
+    return service.summary(user.id, account_id)
+
+
+@router.post(
+    "/{account_id}/additional-investments",
+    response_model=FundOperationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_virtual_investment(
+    account_id: UUID,
+    payload: FundOperationRequest,
+    user: User = Depends(current_user),
+    service: FundOperationService = Depends(get_fund_operation_service),
+) -> FundOperationResponse:
+    return service.add_investment(user.id, account_id, payload)
+
+
+@router.post(
+    "/{account_id}/withdrawals",
+    response_model=FundOperationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def withdraw_virtual_funds(
+    account_id: UUID,
+    payload: FundOperationRequest,
+    user: User = Depends(current_user),
+    service: FundOperationService = Depends(get_fund_operation_service),
+) -> FundOperationResponse:
+    return service.withdraw(user.id, account_id, payload)

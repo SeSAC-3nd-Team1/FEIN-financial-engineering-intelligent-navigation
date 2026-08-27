@@ -272,6 +272,9 @@ class PortfolioService:
                 return_rate=data.portfolio.return_rate,
                 today_profit=data.portfolio.today_profit,
                 top_contributor=data.portfolio.top_contributor,
+                invested_principal=data.portfolio.invested_principal,
+                valuation_profit=data.portfolio.valuation_profit,
+                withdrawable_amount=data.portfolio.withdrawable_amount,
             ),
             trend=data.history,
             allocations=data.allocations,
@@ -509,6 +512,24 @@ class PortfolioService:
         total_assets = (account.cash_balance + evaluation_total).quantize(
             Decimal("0.01")
         )
+        principal_value = getattr(account, "invested_principal", None)
+        if principal_value is None:
+            principal_value = getattr(account, "initial_cash", Decimal("0"))
+        invested_principal = Decimal(principal_value).quantize(Decimal("0.01"))
+        valuation_profit = (total_assets - invested_principal).quantize(
+            Decimal("0.01")
+        )
+        withdrawable_amount = (
+            Decimal(account.cash_balance)
+            + sum(
+                (
+                    item["evaluation"]
+                    for item in evaluated
+                    if item["evaluation"] >= Decimal("1")
+                ),
+                Decimal("0"),
+            )
+        ).quantize(Decimal("0.01"))
         unrealized = evaluation_total - purchase_total
         rows: list[PositionResponse] = []
         current_weights: dict[str, Decimal] = {}
@@ -597,13 +618,16 @@ class PortfolioService:
             total_assets=total_assets,
             unrealized_profit=unrealized,
             realized_profit=realized_total,
-            return_rate=calculate_return(unrealized, purchase_total),
+            return_rate=calculate_return(valuation_profit, invested_principal),
             today_profit=today_profit,
             top_contributor=contributions[0] if contributions else None,
             contributions=contributions,
             strategy_targets_available=bool(targets),
             rebalancing_proposals=proposals,
             positions=rows,
+            invested_principal=invested_principal,
+            valuation_profit=valuation_profit,
+            withdrawable_amount=withdrawable_amount,
         )
 
     def _current_quote(self, stock_code: str) -> CurrentQuote:

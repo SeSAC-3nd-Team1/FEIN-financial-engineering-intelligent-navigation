@@ -171,9 +171,16 @@ class AccountResponse(BaseModel):
     operation_mode: OperationMode
     initial_cash: Decimal
     cash_balance: Decimal
+    invested_principal: Decimal = Decimal("0")
     status: str
     selected_strategy_id: str | None
     created_at: datetime
+
+    @field_validator("invested_principal", mode="before")
+    @classmethod
+    def normalize_legacy_principal(cls, value):
+        # 마이그레이션 전 객체를 직접 만드는 단위 테스트와 순차 배포 중 응답도 0원으로 수렴시킨다.
+        return Decimal("0") if value is None else value
 
 
 class OperationModeSwitchRequest(BaseModel):
@@ -210,6 +217,51 @@ class InvestmentDepositResponse(BaseModel):
     balance_after: Decimal
     required_deposit_amount: Decimal
     onboarding: InvestmentOnboardingResponse
+
+
+class FundOperationRequest(BaseModel):
+    """내부 가상 자산만 변경하는 멱등한 추가투자·출금 요청이다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(ge=1, le=100_000_000, decimal_places=2)
+    idempotency_key: str = Field(min_length=8, max_length=100)
+
+
+class FundTradeResponse(BaseModel):
+    order_id: UUID
+    stock_code: str
+    side: Literal["BUY", "SELL"]
+    applied_weight: Decimal
+    quantity: Decimal
+    execution_price: Decimal
+    transaction_amount: Decimal
+
+
+class FundSummaryResponse(BaseModel):
+    account_id: UUID
+    settlement_mode: Literal["VIRTUAL"] = "VIRTUAL"
+    invested_principal: Decimal
+    cash_balance: Decimal
+    position_evaluation_amount: Decimal
+    total_assets: Decimal
+    valuation_profit: Decimal
+    return_rate: Decimal
+    withdrawable_amount: Decimal
+    valuation_as_of: datetime | None
+
+
+class FundOperationResponse(BaseModel):
+    operation_id: UUID
+    type: Literal["ADDITIONAL_INVESTMENT", "WITHDRAWAL"]
+    status: Literal["COMPLETED"]
+    settlement_mode: Literal["VIRTUAL"] = "VIRTUAL"
+    requested_amount: Decimal
+    executed_amount: Decimal
+    principal_before: Decimal
+    principal_after: Decimal
+    portfolio: FundSummaryResponse
+    trades: list[FundTradeResponse]
 
 
 class StrategyResponse(BaseModel):
@@ -346,6 +398,29 @@ class PortfolioTransactionResponse(BaseModel):
 class PortfolioTransactionListResponse(BaseModel):
     account_id: UUID
     items: list[PortfolioTransactionResponse]
+    next_cursor: str | None
+    has_more: bool
+
+
+class PortfolioActivityResponse(BaseModel):
+    id: int
+    type: Literal["BUY", "SELL", "ADDITIONAL_INVESTMENT", "WITHDRAWAL"]
+    cash_amount: Decimal
+    transaction_amount: Decimal
+    balance_after: Decimal
+    reference_id: str
+    order_id: UUID | None = None
+    stock_code: str | None = None
+    stock_name: str | None = None
+    quantity: Decimal | None = None
+    execution_price: Decimal | None = None
+    occurred_at: datetime
+
+
+class PortfolioActivityListResponse(BaseModel):
+    account_id: UUID
+    settlement_mode: Literal["VIRTUAL"] = "VIRTUAL"
+    items: list[PortfolioActivityResponse]
     next_cursor: str | None
     has_more: bool
 
@@ -508,6 +583,10 @@ class PortfolioResponse(BaseModel):
     strategy_targets_available: bool
     rebalancing_proposals: list[RebalancingProposalResponse]
     positions: list[PositionResponse]
+    invested_principal: Decimal = Decimal("0")
+    valuation_profit: Decimal = Decimal("0")
+    withdrawable_amount: Decimal = Decimal("0")
+    settlement_mode: Literal["VIRTUAL"] = "VIRTUAL"
 
 
 class PortfolioHistoryPointResponse(BaseModel):
@@ -594,6 +673,9 @@ class PortfolioHomeSummaryResponse(BaseModel):
     return_rate: Decimal
     today_profit: Decimal | None
     top_contributor: PortfolioContributionResponse | None
+    invested_principal: Decimal = Decimal("0")
+    valuation_profit: Decimal = Decimal("0")
+    withdrawable_amount: Decimal = Decimal("0")
 
 
 class PortfolioAllocationResponse(BaseModel):

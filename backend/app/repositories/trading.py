@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.models import (
     CashLedger,
     Execution,
+    FundOperation,
+    FundOperationOrder,
     InvestmentOnboarding,
     MarketStock,
     Order,
@@ -155,7 +157,13 @@ class TradingRepository:
             select(CashLedger)
             .where(
                 CashLedger.account_id == account_id,
-                CashLedger.transaction_type.in_(("INITIAL_DEPOSIT", "DEPOSIT", "ADJUSTMENT")),
+                CashLedger.transaction_type.in_((
+                    "INITIAL_DEPOSIT",
+                    "DEPOSIT",
+                    "ADDITIONAL_INVESTMENT",
+                    "WITHDRAWAL",
+                    "ADJUSTMENT",
+                )),
                 CashLedger.created_at >= started_at,
                 CashLedger.created_at < ended_before,
             )
@@ -208,6 +216,57 @@ class TradingRepository:
 
     def order_by_idempotency(self, account_id: UUID, key: str) -> Order | None:
         return self.session.scalar(select(Order).where(Order.account_id == account_id, Order.idempotency_key == key))
+
+    def fund_operation_by_idempotency(
+        self,
+        account_id: UUID,
+        key: str,
+    ) -> FundOperation | None:
+        return self.session.scalar(
+            select(FundOperation).where(
+                FundOperation.account_id == account_id,
+                FundOperation.idempotency_key == key,
+            )
+        )
+
+    def fund_operation_orders(
+        self,
+        operation_id: UUID,
+    ) -> list[tuple[FundOperationOrder, Order]]:
+        rows = self.session.execute(
+            select(FundOperationOrder, Order)
+            .join(Order, Order.id == FundOperationOrder.order_id)
+            .where(FundOperationOrder.fund_operation_id == operation_id)
+            .order_by(Order.requested_at, Order.stock_code)
+        )
+        return [(row[0], row[1]) for row in rows]
+
+    def cash_activity_history(
+        self,
+        account_id: UUID,
+        *,
+        limit: int,
+        before_created_at: datetime | None = None,
+        before_id: int | None = None,
+    ) -> list[CashLedger]:
+        query = select(CashLedger).where(
+            CashLedger.account_id == account_id,
+            CashLedger.transaction_type.in_((
+                "BUY",
+                "SELL",
+                "ADDITIONAL_INVESTMENT",
+                "WITHDRAWAL",
+            )),
+        )
+        if before_created_at is not None and before_id is not None:
+            query = query.where(or_(
+                CashLedger.created_at < before_created_at,
+                (CashLedger.created_at == before_created_at)
+                & (CashLedger.id < before_id),
+            ))
+        return list(self.session.scalars(
+            query.order_by(CashLedger.created_at.desc(), CashLedger.id.desc()).limit(limit)
+        ))
 
     def strategies(self) -> list[Strategy]:
         return list(self.session.scalars(select(Strategy).where(Strategy.is_active.is_(True)).order_by(Strategy.id)))

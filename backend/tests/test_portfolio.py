@@ -450,6 +450,7 @@ def test_evaluate_combines_real_metadata_quote_and_daily_contribution() -> None:
     account = SimpleNamespace(
         id=account_id,
         cash_balance=Decimal("300000"),
+        invested_principal=Decimal("1000000"),
         selected_strategy_id=None,
     )
     position = SimpleNamespace(
@@ -495,6 +496,8 @@ def test_evaluate_combines_real_metadata_quote_and_daily_contribution() -> None:
     result = service.evaluate(1, account_id)
 
     assert result.total_assets == Decimal("1010000.00")
+    assert result.valuation_profit == Decimal("10000.00")
+    assert result.return_rate == Decimal("1.00")
     assert result.positions[0].stock_name == "삼성전자"
     assert result.positions[0].weight == Decimal("70.30")
     assert result.today_profit == Decimal("5000.00")
