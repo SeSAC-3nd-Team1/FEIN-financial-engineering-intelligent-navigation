@@ -34,7 +34,6 @@ from app.schemas.api import (
 )
 from app.services.market import MarketService
 
-
 HISTORY_DAYS = {"1M": 31, "3M": 93, "1Y": 366}
 KST = timezone(timedelta(hours=9))
 logger = logging.getLogger(__name__)
@@ -52,11 +51,19 @@ class PortfolioHomeData:
 
 
 def calculate_return(profit: Decimal, purchase: Decimal) -> Decimal:
-    return Decimal("0") if purchase == 0 else (profit / purchase * 100).quantize(Decimal("0.01"))
+    return (
+        Decimal("0")
+        if purchase == 0
+        else (profit / purchase * 100).quantize(Decimal("0.01"))
+    )
 
 
 def calculate_weight(evaluation: Decimal, total_assets: Decimal) -> Decimal:
-    return Decimal("0") if total_assets == 0 else (evaluation / total_assets * 100).quantize(Decimal("0.01"))
+    return (
+        Decimal("0")
+        if total_assets == 0
+        else (evaluation / total_assets * 100).quantize(Decimal("0.01"))
+    )
 
 
 def calculate_rebalancing(
@@ -72,33 +79,53 @@ def calculate_rebalancing(
     proposals: list[RebalancingProposalResponse] = []
     for stock_code in sorted(set(current_weights) | set(target_weights)):
         current = current_weights.get(stock_code, Decimal("0"))
-        target = (target_weights.get(stock_code, Decimal("0")) * 100).quantize(Decimal("0.01"))
+        target = (target_weights.get(stock_code, Decimal("0")) * 100).quantize(
+            Decimal("0.01")
+        )
         diff = (current - target).quantize(Decimal("0.01"))
         if diff == 0:
             continue
-        proposals.append(RebalancingProposalResponse(
-            stock_code=stock_code,
-            stock_name=stock_names.get(stock_code),
-            current_weight=current,
-            target_weight=target,
-            weight_diff=diff,
-            action="SELL" if diff > 0 else "BUY",
-            recommended_amount=(total_assets * abs(diff) / 100).quantize(Decimal("0.01")),
-        ))
+        proposals.append(
+            RebalancingProposalResponse(
+                stock_code=stock_code,
+                stock_name=stock_names.get(stock_code),
+                current_weight=current,
+                target_weight=target,
+                weight_diff=diff,
+                action="SELL" if diff > 0 else "BUY",
+                recommended_amount=(total_assets * abs(diff) / 100).quantize(
+                    Decimal("0.01")
+                ),
+            )
+        )
     return sorted(proposals, key=lambda item: item.recommended_amount, reverse=True)
 
 
-def validate_target_weights(target_weights: dict[str, Decimal]) -> None:
+def validate_target_weights(
+    target_weights: dict[str, Decimal],
+    *,
+    allow_cash_buffer: bool = False,
+) -> None:
     total = sum(target_weights.values(), Decimal("0"))
-    if target_weights and (total <= 0 or total > Decimal("1")):
-        raise ServiceError(
-            "INVALID_STRATEGY_TARGET_WEIGHTS",
-            "전략 목표 비중 합계는 0보다 크고 1 이하여야 합니다.",
-            503,
+    if not target_weights:
+        return
+    valid_total = (
+        Decimal("0") < total <= Decimal("1")
+        if allow_cash_buffer
+        else total == Decimal("1")
+    )
+    if not valid_total:
+        message = (
+            "전략 목표 비중 합계는 0보다 크고 1 이하여야 합니다."
+            if allow_cash_buffer
+            else "전략 목표 비중 합계가 1이 아닙니다."
         )
+        raise ServiceError("INVALID_STRATEGY_TARGET_WEIGHTS", message, 503)
 
 
-def build_history_points(snapshots: list, indices: list) -> list[PortfolioHistoryPointResponse]:
+def build_history_points(
+    snapshots: list, indices: list
+) -> list[PortfolioHistoryPointResponse]:
     """실제 snapshot 날짜에 맞춰 포트폴리오와 직전 KOSPI 수익률을 정규화한다."""
 
     if not snapshots:
@@ -112,27 +139,36 @@ def build_history_points(snapshots: list, indices: list) -> list[PortfolioHistor
     index_position = 0
     items: list[PortfolioHistoryPointResponse] = []
     for snapshot_index, snapshot in enumerate(snapshots):
-        while index_position < len(indices) and indices[index_position].trade_date <= snapshot.snapshot_date:
+        while (
+            index_position < len(indices)
+            and indices[index_position].trade_date <= snapshot.snapshot_date
+        ):
             latest_benchmark = indices[index_position].close_value
             index_position += 1
         if snapshot_index == 0:
             benchmark_base = latest_benchmark
         portfolio_rate = (
             ((snapshot.total_assets / first_assets) - 1) * 100
-            if first_assets and first_assets > 0 else Decimal("0")
+            if first_assets and first_assets > 0
+            else Decimal("0")
         )
         benchmark_rate = (
             ((latest_benchmark / benchmark_base) - 1) * 100
-            if latest_benchmark is not None and benchmark_base else None
+            if latest_benchmark is not None and benchmark_base
+            else None
         )
-        items.append(PortfolioHistoryPointResponse(
-            date=snapshot.snapshot_date,
-            total_assets=snapshot.total_assets,
-            portfolio_return_rate=portfolio_rate.quantize(Decimal("0.01")),
-            benchmark_return_rate=(
-                benchmark_rate.quantize(Decimal("0.01")) if benchmark_rate is not None else None
-            ),
-        ))
+        items.append(
+            PortfolioHistoryPointResponse(
+                date=snapshot.snapshot_date,
+                total_assets=snapshot.total_assets,
+                portfolio_return_rate=portfolio_rate.quantize(Decimal("0.01")),
+                benchmark_return_rate=(
+                    benchmark_rate.quantize(Decimal("0.01"))
+                    if benchmark_rate is not None
+                    else None
+                ),
+            )
+        )
     return items
 
 
@@ -144,13 +180,18 @@ def sort_positions(
     """허용된 포트폴리오 컬럼으로 보유종목을 결정적으로 정렬한다."""
 
     if sort_by == "stock_name":
-        key = lambda item: ((item.stock_name or item.stock_code).casefold(), item.stock_code)
+        key = lambda item: (
+            (item.stock_name or item.stock_code).casefold(),
+            item.stock_code,
+        )
     else:
         key = lambda item: (getattr(item, sort_by), item.stock_code)
     return sorted(positions, key=key, reverse=order == "desc")
 
 
-def build_allocations(portfolio: PortfolioResponse) -> list[PortfolioAllocationResponse]:
+def build_allocations(
+    portfolio: PortfolioResponse,
+) -> list[PortfolioAllocationResponse]:
     """도넛 차트 합계가 전체 자산을 나타내도록 보유종목과 현금을 함께 반환한다."""
 
     allocations = [
@@ -163,13 +204,15 @@ def build_allocations(portfolio: PortfolioResponse) -> list[PortfolioAllocationR
         )
         for position in portfolio.positions
     ]
-    allocations.append(PortfolioAllocationResponse(
-        type="CASH",
-        stock_code=None,
-        name="현금",
-        amount=portfolio.cash_balance,
-        weight=calculate_weight(portfolio.cash_balance, portfolio.total_assets),
-    ))
+    allocations.append(
+        PortfolioAllocationResponse(
+            type="CASH",
+            stock_code=None,
+            name="현금",
+            amount=portfolio.cash_balance,
+            weight=calculate_weight(portfolio.cash_balance, portfolio.total_assets),
+        )
+    )
     return allocations
 
 
@@ -277,7 +320,9 @@ class PortfolioService:
             positions=positions,
             allocations=build_allocations(portfolio),
             valuation_as_of=valuation_as_of,
-            price_sources=sorted({position.price_source for position in portfolio.positions}),
+            price_sources=sorted(
+                {position.price_source for position in portfolio.positions}
+            ),
         )
 
     async def _ai_rebalancing(
@@ -289,7 +334,10 @@ class PortfolioService:
     ) -> tuple[RebalancingInsightResponse, list[RebalancingProposalResponse]]:
         candidates = portfolio.rebalancing_proposals
         if not portfolio.strategy_targets_available:
-            return self._rebalancing_unavailable("적용 가능한 전략 목표 비중이 없습니다."), []
+            return (
+                self._rebalancing_unavailable("적용 가능한 전략 목표 비중이 없습니다."),
+                [],
+            )
         if not candidates:
             return (
                 RebalancingInsightResponse(
@@ -301,7 +349,12 @@ class PortfolioService:
                 [],
             )
         if self.rebalancing_client is None:
-            return self._rebalancing_unavailable("리밸런싱 제안 모델 연결을 준비 중입니다."), []
+            return (
+                self._rebalancing_unavailable(
+                    "리밸런싱 제안 모델 연결을 준비 중입니다."
+                ),
+                [],
+            )
 
         context = RebalancingAnalysisContext(
             operation_mode=account.operation_mode,
@@ -309,15 +362,18 @@ class PortfolioService:
             total_assets=portfolio.total_assets,
             cash_balance=portfolio.cash_balance,
             valuation_as_of=valuation_as_of,
-            validated_candidates=[{
-                "stock_code": candidate.stock_code,
-                "stock_name": candidate.stock_name,
-                "current_weight": candidate.current_weight,
-                "target_weight": candidate.target_weight,
-                "weight_diff": candidate.weight_diff,
-                "action": candidate.action,
-                "recommended_amount": candidate.recommended_amount,
-            } for candidate in candidates],
+            validated_candidates=[
+                {
+                    "stock_code": candidate.stock_code,
+                    "stock_name": candidate.stock_name,
+                    "current_weight": candidate.current_weight,
+                    "target_weight": candidate.target_weight,
+                    "weight_diff": candidate.weight_diff,
+                    "action": candidate.action,
+                    "recommended_amount": candidate.recommended_amount,
+                }
+                for candidate in candidates
+            ],
         )
         try:
             result = await self.rebalancing_client.analyze(context)
@@ -326,7 +382,12 @@ class PortfolioService:
             if not exc.code.startswith("AI_"):
                 raise
             logger.warning("AI rebalancing unavailable code=%s", exc.code)
-            return self._rebalancing_unavailable("AI 리밸런싱 제안을 현재 불러올 수 없습니다."), []
+            return (
+                self._rebalancing_unavailable(
+                    "AI 리밸런싱 제안을 현재 불러올 수 없습니다."
+                ),
+                [],
+            )
 
         return (
             RebalancingInsightResponse(
@@ -343,11 +404,15 @@ class PortfolioService:
         result: AIRebalancingResult,
         candidates: list[RebalancingProposalResponse],
     ) -> list[RebalancingProposalResponse]:
-        candidate_by_code = {candidate.stock_code: candidate for candidate in candidates}
+        candidate_by_code = {
+            candidate.stock_code: candidate for candidate in candidates
+        }
         proposals = sorted(result.proposals, key=lambda item: item.priority)
         codes = [item.stock_code for item in proposals]
         priorities = [item.priority for item in proposals]
-        if len(set(codes)) != len(codes) or priorities != list(range(1, len(proposals) + 1)):
+        if len(set(codes)) != len(codes) or priorities != list(
+            range(1, len(proposals) + 1)
+        ):
             raise ServiceError(
                 "AI_INVALID_REBALANCING_RESPONSE",
                 "AI 리밸런싱 제안 순서가 올바르지 않습니다.",
@@ -357,24 +422,30 @@ class PortfolioService:
         validated: list[RebalancingProposalResponse] = []
         for item in proposals:
             candidate = candidate_by_code.get(item.stock_code)
-            if candidate is None or any((
-                item.current_weight != candidate.current_weight,
-                item.target_weight != candidate.target_weight,
-                item.weight_diff != candidate.weight_diff,
-                item.action != candidate.action,
-                item.recommended_amount != candidate.recommended_amount,
-            )):
+            if candidate is None or any(
+                (
+                    item.current_weight != candidate.current_weight,
+                    item.target_weight != candidate.target_weight,
+                    item.weight_diff != candidate.weight_diff,
+                    item.action != candidate.action,
+                    item.recommended_amount != candidate.recommended_amount,
+                )
+            ):
                 raise ServiceError(
                     "AI_INVALID_REBALANCING_RESPONSE",
                     "AI 리밸런싱 제안이 검증된 포트폴리오 후보와 일치하지 않습니다.",
                     502,
                 )
-            validated.append(candidate.model_copy(update={
-                "priority": item.priority,
-                "reason": item.reason,
-                "why_now": item.why_now,
-                "source": "AI",
-            }))
+            validated.append(
+                candidate.model_copy(
+                    update={
+                        "priority": item.priority,
+                        "reason": item.reason,
+                        "why_now": item.why_now,
+                        "source": "AI",
+                    }
+                )
+            )
         return validated
 
     @staticmethod
@@ -411,22 +482,35 @@ class PortfolioService:
                 continue
             quote = quote_provider(position.stock_code)
             stock = self.market_repo.stock(position.stock_code)
-            purchase = (position.average_price * position.quantity).quantize(Decimal("0.01"))
+            purchase = (position.average_price * position.quantity).quantize(
+                Decimal("0.01")
+            )
             evaluation = (quote.price * position.quantity).quantize(Decimal("0.01"))
             profit = evaluation - purchase
             today_profit = (
-                ((quote.price - quote.previous_close) * position.quantity).quantize(Decimal("0.01"))
-                if quote.previous_close is not None else None
+                ((quote.price - quote.previous_close) * position.quantity).quantize(
+                    Decimal("0.01")
+                )
+                if quote.previous_close is not None
+                else None
             )
             purchase_total += purchase
             evaluation_total += evaluation
-            evaluated.append({
-                "position": position, "quote": quote, "stock": stock,
-                "purchase": purchase, "evaluation": evaluation,
-                "profit": profit, "today_profit": today_profit,
-            })
+            evaluated.append(
+                {
+                    "position": position,
+                    "quote": quote,
+                    "stock": stock,
+                    "purchase": purchase,
+                    "evaluation": evaluation,
+                    "profit": profit,
+                    "today_profit": today_profit,
+                }
+            )
 
-        total_assets = (account.cash_balance + evaluation_total).quantize(Decimal("0.01"))
+        total_assets = (account.cash_balance + evaluation_total).quantize(
+            Decimal("0.01")
+        )
         unrealized = evaluation_total - purchase_total
         rows: list[PositionResponse] = []
         current_weights: dict[str, Decimal] = {}
@@ -437,7 +521,8 @@ class PortfolioService:
         )
         today_profit = (
             sum((item["today_profit"] for item in evaluated), Decimal("0"))
-            if all_today_prices_available else None
+            if all_today_prices_available
+            else None
         )
 
         for item in evaluated:
@@ -448,48 +533,76 @@ class PortfolioService:
             stock_name = stock.stock_name if stock else None
             current_weights[position.stock_code] = weight
             stock_names[position.stock_code] = stock_name
-            rows.append(PositionResponse(
-                stock_code=position.stock_code, stock_name=stock_name,
-                sector=stock.sector if stock else None, quantity=position.quantity,
-                average_price=position.average_price, current_price=quote.price,
-                previous_close=quote.previous_close, change_rate=quote.change_rate,
-                purchase_amount=item["purchase"], evaluation_amount=item["evaluation"],
-                unrealized_profit=item["profit"],
-                return_rate=calculate_return(item["profit"], item["purchase"]),
-                realized_profit=position.realized_profit, weight=weight,
-                today_profit=item["today_profit"], price_source=quote.source,
-                price_as_of=quote.as_of,
-            ))
+            rows.append(
+                PositionResponse(
+                    stock_code=position.stock_code,
+                    stock_name=stock_name,
+                    sector=stock.sector if stock else None,
+                    quantity=position.quantity,
+                    average_price=position.average_price,
+                    current_price=quote.price,
+                    previous_close=quote.previous_close,
+                    change_rate=quote.change_rate,
+                    purchase_amount=item["purchase"],
+                    evaluation_amount=item["evaluation"],
+                    unrealized_profit=item["profit"],
+                    return_rate=calculate_return(item["profit"], item["purchase"]),
+                    realized_profit=position.realized_profit,
+                    weight=weight,
+                    today_profit=item["today_profit"],
+                    price_source=quote.source,
+                    price_as_of=quote.as_of,
+                )
+            )
             if item["today_profit"] is not None:
                 share = (
-                    (item["today_profit"] / today_profit * 100).quantize(Decimal("0.01"))
-                    if all_today_prices_available and today_profit != Decimal("0") else None
+                    (item["today_profit"] / today_profit * 100).quantize(
+                        Decimal("0.01")
+                    )
+                    if all_today_prices_available and today_profit != Decimal("0")
+                    else None
                 )
-                contributions.append(PortfolioContributionResponse(
-                    stock_code=position.stock_code, stock_name=stock_name,
-                    amount=item["today_profit"], share_rate=share,
-                ))
+                contributions.append(
+                    PortfolioContributionResponse(
+                        stock_code=position.stock_code,
+                        stock_name=stock_name,
+                        amount=item["today_profit"],
+                        share_rate=share,
+                    )
+                )
         contributions.sort(key=lambda item: item.amount, reverse=True)
 
         targets = (
             self.repo.target_weights(account.selected_strategy_id, effective_on)
-            if include_strategy and account.selected_strategy_id else {}
+            if include_strategy and account.selected_strategy_id
+            else {}
         )
         validate_target_weights(targets)
         for stock_code in targets:
             if stock_code not in stock_names:
                 stock = self.market_repo.stock(stock_code)
                 stock_names[stock_code] = stock.stock_name if stock else None
-        proposals = calculate_rebalancing(total_assets, current_weights, targets, stock_names) if targets else []
+        proposals = (
+            calculate_rebalancing(total_assets, current_weights, targets, stock_names)
+            if targets
+            else []
+        )
 
         return PortfolioResponse(
-            account_id=account.id, cash_balance=account.cash_balance,
-            total_purchase_amount=purchase_total, total_evaluation_amount=evaluation_total,
-            total_assets=total_assets, unrealized_profit=unrealized,
-            realized_profit=realized_total, return_rate=calculate_return(unrealized, purchase_total),
-            today_profit=today_profit, top_contributor=contributions[0] if contributions else None,
-            contributions=contributions, strategy_targets_available=bool(targets),
-            rebalancing_proposals=proposals, positions=rows,
+            account_id=account.id,
+            cash_balance=account.cash_balance,
+            total_purchase_amount=purchase_total,
+            total_evaluation_amount=evaluation_total,
+            total_assets=total_assets,
+            unrealized_profit=unrealized,
+            realized_profit=realized_total,
+            return_rate=calculate_return(unrealized, purchase_total),
+            today_profit=today_profit,
+            top_contributor=contributions[0] if contributions else None,
+            contributions=contributions,
+            strategy_targets_available=bool(targets),
+            rebalancing_proposals=proposals,
+            positions=rows,
         )
 
     def _current_quote(self, stock_code: str) -> CurrentQuote:
@@ -520,12 +633,16 @@ class PortfolioService:
             for account in self.repo.active_accounts():
                 response = self._evaluate_account(
                     account,
-                    quote_provider=lambda stock_code: self._closing_quote(stock_code, snapshot_date),
+                    quote_provider=lambda stock_code: self._closing_quote(
+                        stock_code, snapshot_date
+                    ),
                     effective_on=snapshot_date,
                     include_strategy=False,
                 )
                 self.repo.save_snapshot(
-                    account.id, snapshot_date, cash_balance=response.cash_balance,
+                    account.id,
+                    snapshot_date,
+                    cash_balance=response.cash_balance,
                     total_purchase_amount=response.total_purchase_amount,
                     total_evaluation_amount=response.total_evaluation_amount,
                     total_assets=response.total_assets,
@@ -561,17 +678,30 @@ class PortfolioService:
             source=latest.source,
         )
 
-    def history(self, user_id: int, account_id: UUID, period: str) -> PortfolioHistoryResponse:
+    def history(
+        self, user_id: int, account_id: UUID, period: str
+    ) -> PortfolioHistoryResponse:
         account = self.repo.owned_account(account_id, user_id)
         if not account:
             raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
         return self._history_response(account.id, period)
 
-    def _history_response(self, account_id: UUID, period: str) -> PortfolioHistoryResponse:
-        start_date = date.today() - timedelta(days=HISTORY_DAYS[period]) if period != "ALL" else None
+    def _history_response(
+        self, account_id: UUID, period: str
+    ) -> PortfolioHistoryResponse:
+        start_date = (
+            date.today() - timedelta(days=HISTORY_DAYS[period])
+            if period != "ALL"
+            else None
+        )
         snapshots = self.repo.snapshots_since(account_id, start_date)
-        indices = self.market_repo.kospi_since(start_date - timedelta(days=7) if start_date else None)
+        indices = self.market_repo.kospi_since(
+            start_date - timedelta(days=7) if start_date else None
+        )
         items = build_history_points(snapshots, indices)
         return PortfolioHistoryResponse(
-            account_id=account_id, period=period, benchmark_name="KOSPI", items=items,
+            account_id=account_id,
+            period=period,
+            benchmark_name="KOSPI",
+            items=items,
         )

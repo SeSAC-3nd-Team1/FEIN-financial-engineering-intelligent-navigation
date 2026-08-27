@@ -1,56 +1,81 @@
-import { useEffect, useRef, useState } from 'react';
-import AllHoldings from './pages/AllHoldings';
-import Chatbot from './components/Chatbot';
-import Dashboard from './pages/Dashboard';
-import Home from './pages/Home';
-import InformationExam from './pages/InformationExam';
-import InvestAccount from './pages/InvestAccount';
-import InvestConfirm from './pages/InvestConfirm';
-import InvestDeposit from './pages/InvestDeposit';
-import InvestorProfileCheck from './pages/InvestorProfileCheck';
-import InvestTerms from './pages/InvestTerms';
-import Login from './pages/Login';
-import type { LoginContext } from './pages/Login';
-import Portfolio from './pages/Portfolio';
-import PortfolioAuto from './pages/PortfolioAuto';
-import PortfolioDetail from './pages/PortfolioDetail';
-import RebalanceAlerts from './pages/RebalanceAlerts';
-import RiskProfile from './pages/RiskProfile';
-import RiskResult from './pages/RiskResult';
-import SignupStep1 from './pages/SignupStep1';
-import SignupStep2 from './pages/SignupStep2';
-import SignupStep3 from './pages/SignupStep3';
-import StartInvesting from './pages/StartInvesting';
-import StockDetail from './pages/StockDetail';
-import StrategyComingSoon from './pages/StrategyComingSoon';
-import StrategyDetail from './pages/StrategyDetail';
-import StrategyF4List from './pages/StrategyF4List';
-import StrategyList from './pages/StrategyList';
-import StrategyPersonalizedPreview from './pages/StrategyPersonalizedPreview';
-import TransactionDetail from './pages/TransactionDetail';
-import TransactionHistory from './pages/TransactionHistory';
-import { toAccountOperationMode, toOperationMode, type OperationMode } from './data/fees';
+import { useEffect, useRef, useState } from "react";
+import AllHoldings from "./pages/AllHoldings";
+import Chatbot from "./components/Chatbot";
+import Dashboard from "./pages/Dashboard";
+import Home from "./pages/Home";
+import InformationExam from "./pages/InformationExam";
+import InvestAccount from "./pages/InvestAccount";
+import InvestConfirm from "./pages/InvestConfirm";
+import InvestDeposit from "./pages/InvestDeposit";
+import InvestorProfileCheck from "./pages/InvestorProfileCheck";
+import InvestTerms from "./pages/InvestTerms";
+import Login from "./pages/Login";
+import type { LoginContext } from "./pages/Login";
+import Portfolio from "./pages/Portfolio";
+import PortfolioAuto from "./pages/PortfolioAuto";
+import PortfolioDetail from "./pages/PortfolioDetail";
+import RebalanceAlerts from "./pages/RebalanceAlerts";
+import RiskProfile from "./pages/RiskProfile";
+import RiskResult from "./pages/RiskResult";
+import SignupStep1 from "./pages/SignupStep1";
+import SignupStep2 from "./pages/SignupStep2";
+import SignupStep3 from "./pages/SignupStep3";
+import StartInvesting from "./pages/StartInvesting";
+import StockDetail from "./pages/StockDetail";
+import StrategyComingSoon from "./pages/StrategyComingSoon";
+import StrategyDetail from "./pages/StrategyDetail";
+import StrategyF4List from "./pages/StrategyF4List";
+import StrategyList from "./pages/StrategyList";
+import StrategyPersonalizedPreview from "./pages/StrategyPersonalizedPreview";
+import TransactionDetail from "./pages/TransactionDetail";
+import TransactionHistory from "./pages/TransactionHistory";
 import {
-  analyzeInvestorProfileApi, ApiError, applyLatestModelRecommendationsApi, getMyAccountApi, getStrategiesApi, sendEmailVerificationApi, signupTermsApi,
+  toAccountOperationMode,
+  toOperationMode,
+  type OperationMode,
+} from "./data/fees";
+import {
+  analyzeInvestorProfileApi,
+  ApiError,
+  applyLatestModelRecommendationsApi,
+  getMyAccountApi,
+  getStrategiesApi,
+  sendEmailVerificationApi,
+  signupTermsApi,
   startInvestmentApi,
-  verifyEmailVerificationApi, type StrategyRecommendationItemResponse, type StrategyResponse,
-} from './lib/backendApi';
-import { buildInvestorAnswerPayload, mapInvestorProfileResponse } from './lib/investorProfile';
-import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
-import { resolvePortfolioStrategy } from './lib/strategyCatalog';
-import { useAuthStore } from './store/authStore';
-import { useInvestmentStore } from './store/investmentStore';
-import { useTradingStore } from './store/tradingStore';
-import type { Screen, SignupPersonal } from './types';
+  verifyEmailVerificationApi,
+  type SignupPayload,
+  type StrategyRecommendationItemResponse,
+  type StrategyResponse,
+} from "./lib/backendApi";
+import {
+  buildInvestorAnswerPayload,
+  mapInvestorProfileResponse,
+} from "./lib/investorProfile";
+import {
+  resolveInvestmentEntryStep,
+  resolvePreviousStep,
+  type InvestmentEntryStep,
+} from "./lib/investmentFlow";
+import { resolvePortfolioStrategy } from "./lib/strategyCatalog";
+import { useAuthStore } from "./store/authStore";
+import { useInvestmentStore } from "./store/investmentStore";
+import { useTradingStore } from "./store/tradingStore";
+import type { Screen, SignupPersonal } from "./types";
 
 /** 새로고침해도 유지할 최소한의 내비게이션 상태 — sessionStorage 에 저장한다(탭을 닫으면 사라짐).
  *  회원가입 입력값처럼 민감하거나 오래 들고 있을 필요 없는 값은 여기 포함하지 않는다.
  *  사용자별로 분리된 키가 아니라, 로그아웃 시 authStore.logout()/initialize() 이 이 키를 함께 지운다
  *  (같은 브라우저에서 다른 사용자가 로그인해도 이전 사용자의 화면 상태를 이어받지 않도록). */
-const SESSION_KEY = 'fein.session-nav';
+const SESSION_KEY = "fein.session-nav";
 interface PersistedNav {
-  screen: Screen; strategyId: string; stockCode: string; stockBackTarget: Screen;
-  selectedTransactionId: string; transactionBackTarget: Screen; rebalanceBackTarget: Screen;
+  screen: Screen;
+  strategyId: string;
+  stockCode: string;
+  stockBackTarget: Screen;
+  selectedTransactionId: string;
+  transactionBackTarget: Screen;
+  rebalanceBackTarget: Screen;
 }
 function loadPersistedNav(): Partial<PersistedNav> {
   try {
@@ -66,21 +91,48 @@ function loadPersistedNav(): Partial<PersistedNav> {
  *  읽고 기본 백테스트를 보는 것은 공개(PUBLIC)이고, 실제 조작/투자만 그 화면 내부에서 개별적으로
  *  로그인을 요구한다(handleStartInvesting/requestLoginForBacktest 참고). */
 const PROTECTED_SCREENS: Screen[] = [
-  'dashboard', 'portfolio', 'portfolio-detail', 'stock', 'start', 'transactions', 'transaction-detail',
-  'rebalance-alerts', 'all-holdings', 'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm',
+  "dashboard",
+  "portfolio",
+  "portfolio-detail",
+  "stock",
+  "start",
+  "transactions",
+  "transaction-detail",
+  "rebalance-alerts",
+  "all-holdings",
+  "invest-terms",
+  "invest-account",
+  "invest-deposit",
+  "invest-confirm",
 ];
 
 /** 투자 시작 Flow(약관~최종확인) 화면 목록 — Header 등으로 이 밖으로 나가면 inFlight(새로고침 복원용 진행 상태)를 정리한다 */
-const INVEST_FLOW_SCREENS: Screen[] = ['invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm'];
+const INVEST_FLOW_SCREENS: Screen[] = [
+  "invest-terms",
+  "invest-account",
+  "invest-deposit",
+  "invest-confirm",
+];
 
 /** 실제 전략 카탈로그 객체가 있어야 내용을 안전하게 렌더링할 수 있는 화면들. */
 const STRATEGY_DATA_SCREENS: Screen[] = [
-  'strategy', 'start', 'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm', 'dashboard',
-  'portfolio-detail', 'rebalance-alerts',
+  "strategy",
+  "start",
+  "invest-terms",
+  "invest-account",
+  "invest-deposit",
+  "invest-confirm",
+  "dashboard",
+  "portfolio-detail",
+  "rebalance-alerts",
 ];
 
 /** 실제 계좌의 selected_strategy_id를 Source of Truth로 써야 하는 포트폴리오 화면들. */
-const PORTFOLIO_STRATEGY_SCREENS: Screen[] = ['dashboard', 'portfolio-detail', 'rebalance-alerts'];
+const PORTFOLIO_STRATEGY_SCREENS: Screen[] = [
+  "dashboard",
+  "portfolio-detail",
+  "rebalance-alerts",
+];
 
 /**
  * 라우팅 상태 머신 — 전체 사용자 흐름
@@ -104,9 +156,12 @@ export default function App() {
   // screen/strategyId/stockCode/stockBackTarget 은 새로고침 직후 첫 렌더에서 sessionStorage 값으로
   // 곧바로 초기화한다(useState lazy initializer) — 그래야 'home' 으로 한 번 그렸다가 다시 튀는 깜빡임이 없다.
   const [persistedNav] = useState(loadPersistedNav);
-  const [screen, setScreen] = useState<Screen>(persistedNav.screen ?? 'home');
+  const [screen, setScreen] = useState<Screen>(persistedNav.screen ?? "home");
   const [personal, setPersonal] = useState<SignupPersonal>({
-    name: '', birthdate: '', email: '', aiPersonalizationConsent: false,
+    name: "",
+    birthdate: "",
+    email: "",
+    aiPersonalizationConsent: false,
     agreements: { b: false, c: false, ai: false },
   });
   /** 회원가입 Step 02(이메일 인증) 진행 상태 — 화면 전환과 무관하게 App.tsx가 들고 있어야
@@ -129,14 +184,24 @@ export default function App() {
   };
   // 전략 선택은 실제 GET /strategies 카탈로그의 id 하나만 저장한다. 상세·투자 흐름에서 로컬 STRATEGIES
   // 목업으로 되돌아가지 않도록 이름과 위험도 등 화면 데이터도 같은 실 카탈로그에서 파생한다.
-  const [strategyId, setStrategyId] = useState<string>(persistedNav.strategyId ?? 'low');
-  const [strategyCatalog, setStrategyCatalog] = useState<StrategyResponse[]>([]);
-  const [isStrategyCatalogLoading, setIsStrategyCatalogLoading] = useState(true);
-  const [strategyCatalogError, setStrategyCatalogError] = useState<string | null>(null);
+  const [strategyId, setStrategyId] = useState<string>(
+    persistedNav.strategyId ?? "low",
+  );
+  const [strategyCatalog, setStrategyCatalog] = useState<StrategyResponse[]>(
+    [],
+  );
+  const [isStrategyCatalogLoading, setIsStrategyCatalogLoading] =
+    useState(true);
+  const [strategyCatalogError, setStrategyCatalogError] = useState<
+    string | null
+  >(null);
   const [strategyCatalogRetry, setStrategyCatalogRetry] = useState(0);
-  const [strategyRecommendation, setStrategyRecommendation] = useState<StrategyRecommendationItemResponse | null>(null);
-  const [strategyDetailBackTarget, setStrategyDetailBackTarget] = useState<Screen>('strategy-list');
-  const strategy = strategyCatalog.find((item) => item.id === strategyId) ?? null;
+  const [strategyRecommendation, setStrategyRecommendation] =
+    useState<StrategyRecommendationItemResponse | null>(null);
+  const [strategyDetailBackTarget, setStrategyDetailBackTarget] =
+    useState<Screen>("strategy-list");
+  const strategy =
+    strategyCatalog.find((item) => item.id === strategyId) ?? null;
   useEffect(() => {
     let cancelled = false;
     setIsStrategyCatalogLoading(true);
@@ -145,7 +210,7 @@ export default function App() {
       .then((items) => {
         if (cancelled) return;
         if (items.length === 0) {
-          setStrategyCatalogError('현재 이용 가능한 전략이 없어요.');
+          setStrategyCatalogError("현재 이용 가능한 전략이 없어요.");
         } else {
           setStrategyCatalog(items);
         }
@@ -153,24 +218,41 @@ export default function App() {
       })
       .catch((error) => {
         if (!cancelled) {
-          setStrategyCatalogError(error instanceof Error ? error.message : '전략 목록을 불러오지 못했어요.');
+          setStrategyCatalogError(
+            error instanceof Error
+              ? error.message
+              : "전략 목록을 불러오지 못했어요.",
+          );
           setIsStrategyCatalogLoading(false);
         }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [strategyCatalogRetry]);
-  const [stockCode, setStockCode] = useState(persistedNav.stockCode ?? '005930');
+  const [stockCode, setStockCode] = useState(
+    persistedNav.stockCode ?? "005930",
+  );
   // 종목 상세 진입 지점에 따라 뒤로가기 목적지가 달라진다 (start 에서 왔으면 start로, portfolio 에서 왔으면 portfolio-detail로)
-  const [stockBackTarget, setStockBackTarget] = useState<Screen>(persistedNav.stockBackTarget ?? 'portfolio-detail');
+  const [stockBackTarget, setStockBackTarget] = useState<Screen>(
+    persistedNav.stockBackTarget ?? "portfolio-detail",
+  );
   // 거래 상세 진입 지점(포트폴리오 상세의 "최근 거래" 3건 vs 전체 거래 내역)에 따라 뒤로가기 목적지가 달라진다.
-  const [selectedTransactionId, setSelectedTransactionId] = useState(persistedNav.selectedTransactionId ?? '');
-  const [transactionBackTarget, setTransactionBackTarget] = useState<Screen>(persistedNav.transactionBackTarget ?? 'portfolio-detail');
+  const [selectedTransactionId, setSelectedTransactionId] = useState(
+    persistedNav.selectedTransactionId ?? "",
+  );
+  const [transactionBackTarget, setTransactionBackTarget] = useState<Screen>(
+    persistedNav.transactionBackTarget ?? "portfolio-detail",
+  );
   // 리밸런싱 제안 상세 진입 지점(Portfolio/PortfolioAuto 요약 위젯 vs PortfolioDetail의 같은 위젯)에
   // 따라 뒤로가기 목적지가 달라진다 — portfolio-detail로 고정해두면 Portfolio에서 들어온 유저가
   // "돌아가기"를 눌렀을 때 원래 없던 PortfolioDetail을 거치게 된다.
-  const [rebalanceBackTarget, setRebalanceBackTarget] = useState<Screen>(persistedNav.rebalanceBackTarget ?? 'portfolio-detail');
+  const [rebalanceBackTarget, setRebalanceBackTarget] = useState<Screen>(
+    persistedNav.rebalanceBackTarget ?? "portfolio-detail",
+  );
   // 투자자 정보 확인(risk) 완료 후 어디로 이어갈지 + 진입 맥락(안내 문구)
-  const [postDiagnosisTarget, setPostDiagnosisTarget] = useState<Screen>('risk-result');
+  const [postDiagnosisTarget, setPostDiagnosisTarget] =
+    useState<Screen>("risk-result");
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
   const [riskErrorCode, setRiskErrorCode] = useState<string | null>(null);
   // 투자자 정보 확인(risk) 완료 버튼을 누른 뒤 백엔드 분석 응답을 기다리는 동안 true — 이 결과가
@@ -184,21 +266,29 @@ export default function App() {
   const [pendingReturnToStrategy, setPendingReturnToStrategy] = useState(false);
   // 비회원이 Home "내 투자성향 알아보기"/"무료로 시작하기"를 눌러 로그인 화면으로 보내진 경우 true —
   // 로그인 완료 후 Portfolio가 아니라 투자성향 진단으로 이어간다(아래 Login onLogin 참고).
-  const [pendingRiskProfileAfterLogin, setPendingRiskProfileAfterLogin] = useState(false);
+  const [pendingRiskProfileAfterLogin, setPendingRiskProfileAfterLogin] =
+    useState(false);
   // 로그인 화면 title/subtitle을 결정하는 진입 경로 — Header의 일반 로그인은 기본값(header)을 쓰고,
   // Home/Strategy Detail의 특정 CTA는 각자 진입 시점에 이 값을 명시적으로 세팅한다.
-  const [loginContext, setLoginContext] = useState<LoginContext>('header');
+  const [loginContext, setLoginContext] = useState<LoginContext>("header");
   // 투자 시작 Flow(약관 → 계좌 준비 → 입금 → 최종 확인) 동안 유지해야 하는 선택 금액/운용방식
   // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
   const [investmentAmount, setInvestmentAmount] = useState(1_000_000);
-  const [investmentMode, setInvestmentMode] = useState<OperationMode>('auto');
+  const [investmentMode, setInvestmentMode] = useState<OperationMode>("auto");
+  const [investmentAgreements, setInvestmentAgreements] = useState<
+    SignupPayload["agreements"]
+  >([]);
   const register = useAuthStore((s) => s.register);
   const initialize = useAuthStore((s) => s.initialize);
   const authenticatedUser = useAuthStore((s) => s.user);
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const isHydrating = useAuthStore((s) => s.isHydrating);
-  const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
-  const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
+  const investorProfileCompleted = useAuthStore(
+    (s) => s.investorProfileCompleted,
+  );
+  const completeInvestorProfile = useAuthStore(
+    (s) => s.completeInvestorProfile,
+  );
   const accessToken = useAuthStore((s) => s.accessToken);
   const ensureAccount = useTradingStore((s) => s.ensureAccount);
   const tradingAccount = useTradingStore((s) => s.account);
@@ -207,8 +297,12 @@ export default function App() {
     strategy,
     tradingAccount ? tradingAccount.selected_strategy_id : undefined,
   );
-  const screenStrategy = PORTFOLIO_STRATEGY_SCREENS.includes(screen) ? portfolioStrategy : strategy;
-  const termsAcceptedStrategyIds = useInvestmentStore((s) => s.termsAcceptedStrategyIds);
+  const screenStrategy = PORTFOLIO_STRATEGY_SCREENS.includes(screen)
+    ? portfolioStrategy
+    : strategy;
+  const termsAcceptedStrategyIds = useInvestmentStore(
+    (s) => s.termsAcceptedStrategyIds,
+  );
   const accountsByMode = useInvestmentStore((s) => s.accountsByMode);
   // 운용방식은 같은 계좌를 공유할 수 없어(정책), "지금 선택된 운용방식의 계좌"만 이 이름으로 다룬다
   const sesacAccount = accountsByMode[investmentMode] ?? null;
@@ -220,13 +314,19 @@ export default function App() {
   const connectSesacAccount = useInvestmentStore((s) => s.connectSesacAccount);
   const deposit = useInvestmentStore((s) => s.deposit);
   const deferDeposit = useInvestmentStore((s) => s.deferDeposit);
-  const clearPendingInvestment = useInvestmentStore((s) => s.clearPendingInvestment);
+  const clearPendingInvestment = useInvestmentStore(
+    (s) => s.clearPendingInvestment,
+  );
   const hydrateForUser = useInvestmentStore((s) => s.hydrateForUser);
   const setInFlightStep = useInvestmentStore((s) => s.setInFlightStep);
   const clearInFlight = useInvestmentStore((s) => s.clearInFlight);
   const setActiveMode = useInvestmentStore((s) => s.setActiveMode);
-  const markActiveModeChecked = useInvestmentStore((s) => s.markActiveModeChecked);
-  const setAccountActiveStrategy = useInvestmentStore((s) => s.setAccountActiveStrategy);
+  const markActiveModeChecked = useInvestmentStore(
+    (s) => s.markActiveModeChecked,
+  );
+  const setAccountActiveStrategy = useInvestmentStore(
+    (s) => s.setAccountActiveStrategy,
+  );
 
   /**
    * invest-terms~invest-confirm 중 한 화면으로 이동할 때 항상 이 함수를 거친다.
@@ -238,14 +338,31 @@ export default function App() {
    * 끝난 시점부터 DEPOSIT_PENDING으로 간주해야 Home/다른 메뉴로 이탈하거나 로그아웃해도 다시
    * 돌아왔을 때 입금 단계부터 이어갈 수 있다. 실제 투자 시작(InvestConfirm 성공) 시에만 clear한다.
    */
-  const enterInvestmentStep = (step: InvestmentEntryStep, ctxStrategyId: string, ctxAmount: number, ctxMode: OperationMode) => {
+  const enterInvestmentStep = (
+    step: InvestmentEntryStep,
+    ctxStrategyId: string,
+    ctxAmount: number,
+    ctxMode: OperationMode,
+  ) => {
     setStrategyId(ctxStrategyId);
     setInvestmentAmount(ctxAmount);
     setInvestmentMode(ctxMode);
-    setInFlightStep({ step, strategyId: ctxStrategyId, amount: ctxAmount, mode: ctxMode });
-    if (step === 'invest-deposit' || step === 'invest-confirm') {
-      const ctxStrategyName = strategyCatalog.find((item) => item.id === ctxStrategyId)?.name ?? ctxStrategyId;
-      deferDeposit({ strategyId: ctxStrategyId, strategyName: ctxStrategyName, amount: ctxAmount, mode: ctxMode });
+    setInFlightStep({
+      step,
+      strategyId: ctxStrategyId,
+      amount: ctxAmount,
+      mode: ctxMode,
+    });
+    if (step === "invest-deposit" || step === "invest-confirm") {
+      const ctxStrategyName =
+        strategyCatalog.find((item) => item.id === ctxStrategyId)?.name ??
+        ctxStrategyId;
+      deferDeposit({
+        strategyId: ctxStrategyId,
+        strategyName: ctxStrategyName,
+        amount: ctxAmount,
+        mode: ctxMode,
+      });
     }
     setScreen(step);
   };
@@ -257,7 +374,12 @@ export default function App() {
    */
   const enterInvestmentFlow = (amount: number, mode: OperationMode) => {
     const accountForMode = accountsByMode[mode] ?? null;
-    const step = resolveInvestmentEntryStep({ strategyId, amount, termsAcceptedStrategyIds, sesacAccount: accountForMode });
+    const step = resolveInvestmentEntryStep({
+      strategyId,
+      amount,
+      termsAcceptedStrategyIds,
+      sesacAccount: accountForMode,
+    });
     enterInvestmentStep(step, strategyId, amount, mode);
   };
 
@@ -267,10 +389,15 @@ export default function App() {
    * 들어온 경우) 금액 선택 화면('start')으로 나가고, 그 시점에 inFlight도 정리한다.
    */
   const goBackInInvestmentFlow = (currentStep: InvestmentEntryStep) => {
-    const prev = resolvePreviousStep(currentStep, { strategyId, amount: investmentAmount, termsAcceptedStrategyIds, sesacAccount });
-    if (prev === 'start') {
+    const prev = resolvePreviousStep(currentStep, {
+      strategyId,
+      amount: investmentAmount,
+      termsAcceptedStrategyIds,
+      sesacAccount,
+    });
+    if (prev === "start") {
       clearInFlight();
-      setScreen('start');
+      setScreen("start");
     } else {
       enterInvestmentStep(prev, strategyId, investmentAmount, investmentMode);
     }
@@ -298,33 +425,42 @@ export default function App() {
     // 이 함수를 거쳐 로그인으로 가는 경로(Header 일반 로그인, "나의 포트폴리오" 등 guarded 메뉴 리다이렉트)는
     // 모두 기본 context — Home/Strategy Detail의 특정 CTA는 이 함수를 거치지 않고 각자
     // requestLoginFromHome/requestLoginForBacktest/handleStartInvesting에서 직접 context를 세팅한다.
-    if (target === 'login') {
-      setLoginContext('header');
+    if (target === "login") {
+      setLoginContext("header");
     }
-    if (target === 'portfolio') {
+    if (target === "portfolio") {
       const userId = useAuthStore.getState().user?.user_id ?? null;
       hydrateForUser(userId);
       const freshState = useInvestmentStore.getState();
       const pending = freshState.pendingInvestment;
       if (pending) {
-        const accountForPendingMode = freshState.accountsByMode[pending.mode] ?? null;
+        const accountForPendingMode =
+          freshState.accountsByMode[pending.mode] ?? null;
         const step = resolveInvestmentEntryStep({
           strategyId: pending.strategyId,
           amount: pending.amount,
           termsAcceptedStrategyIds: freshState.termsAcceptedStrategyIds,
           sesacAccount: accountForPendingMode,
         });
-        enterInvestmentStep(step, pending.strategyId, pending.amount, pending.mode);
+        enterInvestmentStep(
+          step,
+          pending.strategyId,
+          pending.amount,
+          pending.mode,
+        );
         return;
       }
     }
-    if (INVEST_FLOW_SCREENS.includes(screen) && !INVEST_FLOW_SCREENS.includes(target)) {
+    if (
+      INVEST_FLOW_SCREENS.includes(screen) &&
+      !INVEST_FLOW_SCREENS.includes(target)
+    ) {
       clearInFlight();
     }
     setScreen(target);
   };
 
-  const userName = authenticatedUser?.name ?? (personal.name.trim() || '서연');
+  const userName = authenticatedUser?.name ?? (personal.name.trim() || "서연");
 
   const hasRestoredInvestFlowRef = useRef(false);
   // 직전 렌더의 로그인 사용자 id — 로그아웃(비로그인으로 전환)을 감지해 화면 상태를 초기화하는 데만 쓴다.
@@ -362,12 +498,12 @@ export default function App() {
     // 전환된 순간(currentUserId 가 null)에는 다음 로그인 사용자가 이전 사용자의 전략/종목 선택을
     // 이어받지 않도록 화면 상태를 기본값으로 되돌린다. 최초 마운트(null → null/user 로 시작)에는 건드리지 않는다.
     if (prevUserIdRef.current && !currentUserId) {
-      setScreen('home');
-      setStrategyId('low');
-      setStockCode('005930');
-      setStockBackTarget('portfolio-detail');
-      setSelectedTransactionId('');
-      setTransactionBackTarget('portfolio-detail');
+      setScreen("home");
+      setStrategyId("low");
+      setStockCode("005930");
+      setStockBackTarget("portfolio-detail");
+      setSelectedTransactionId("");
+      setTransactionBackTarget("portfolio-detail");
     }
     prevUserIdRef.current = currentUserId;
   }, [authenticatedUser?.user_id, hydrateForUser]);
@@ -388,7 +524,7 @@ export default function App() {
     let cancelled = false;
     (async () => {
       const [semiAuto, auto] = await Promise.all(
-        (['SEMI_AUTO', 'AUTO'] as const).map((probeMode) =>
+        (["SEMI_AUTO", "AUTO"] as const).map((probeMode) =>
           getMyAccountApi(accessToken, probeMode).catch(() => null),
         ),
       );
@@ -396,11 +532,11 @@ export default function App() {
       const semiAutoActive = Boolean(semiAuto?.selected_strategy_id);
       const autoActive = Boolean(auto?.selected_strategy_id);
       if (semiAutoActive && !autoActive) {
-        setActiveMode('manual');
+        setActiveMode("manual");
       } else if (autoActive && !semiAutoActive) {
-        setActiveMode('auto');
+        setActiveMode("auto");
       } else if (semiAutoActive && autoActive) {
-        setActiveMode('manual'); // 위 주석 참고 — 둘 다 활성이면 기존 앱 기본값(반자동)으로 수렴
+        setActiveMode("manual"); // 위 주석 참고 — 둘 다 활성이면 기존 앱 기본값(반자동)으로 수렴
       } else {
         markActiveModeChecked();
       }
@@ -413,10 +549,24 @@ export default function App() {
   // 새로고침해도 같은 화면에 남아있도록 내비게이션 상태를 sessionStorage 에 계속 동기화한다.
   useEffect(() => {
     const nav: PersistedNav = {
-      screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget, rebalanceBackTarget,
+      screen,
+      strategyId,
+      stockCode,
+      stockBackTarget,
+      selectedTransactionId,
+      transactionBackTarget,
+      rebalanceBackTarget,
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(nav));
-  }, [screen, strategyId, stockCode, stockBackTarget, selectedTransactionId, transactionBackTarget, rebalanceBackTarget]);
+  }, [
+    screen,
+    strategyId,
+    stockCode,
+    stockBackTarget,
+    selectedTransactionId,
+    transactionBackTarget,
+    rebalanceBackTarget,
+  ]);
 
   // react-router 없이 screen state 하나로 화면을 전환하는 구조라, 브라우저가 자동으로 해주는
   // 스크롤 리셋이 없다 — 스크롤을 많이 내린 화면(예: PortfolioDetail)에서 다른 화면(예: StockDetail)으로
@@ -430,15 +580,15 @@ export default function App() {
   // 실제로는 로그인 상태가 아닌 것으로 확인되면(토큰 만료 등) 로그인 화면으로 돌려보낸다.
   useEffect(() => {
     if (!isHydrating && !isLoggedIn && PROTECTED_SCREENS.includes(screen)) {
-      setScreen('login');
+      setScreen("login");
     }
   }, [isHydrating, isLoggedIn, screen]);
 
   // 거래 상세를 새로고침으로 복원했는데 selectedTransactionId 를 복원할 수 없으면(예: 이 필드가 없던
   // 이전 버전의 sessionStorage) "거래 내역을 찾을 수 없어요" 대신 전체 거래 내역으로 보낸다.
   useEffect(() => {
-    if (screen === 'transaction-detail' && !selectedTransactionId) {
-      setScreen('transactions');
+    if (screen === "transaction-detail" && !selectedTransactionId) {
+      setScreen("transactions");
     }
   }, [screen, selectedTransactionId]);
 
@@ -447,7 +597,7 @@ export default function App() {
     setPostDiagnosisTarget(target);
     setRiskNotice(opts?.notice);
     setRiskErrorCode(null);
-    setScreen('risk');
+    setScreen("risk");
   };
 
   /**
@@ -457,9 +607,11 @@ export default function App() {
    */
   const proceedToStartInvesting = () => {
     if (useAuthStore.getState().investorProfileCompleted) {
-      setScreen('investor-check');
+      setScreen("investor-check");
     } else {
-      startInvestorProfile('start', { notice: '투자를 시작하기 전에 투자자 정보를 확인해주세요.' });
+      startInvestorProfile("start", {
+        notice: "투자를 시작하기 전에 투자자 정보를 확인해주세요.",
+      });
     }
   };
 
@@ -470,9 +622,9 @@ export default function App() {
    */
   const handleStartInvesting = () => {
     if (!isLoggedIn) {
-      setLoginContext('strategy');
+      setLoginContext("strategy");
       setPendingStartAfterLogin(true);
-      setScreen('login');
+      setScreen("login");
       return;
     }
     proceedToStartInvesting();
@@ -484,9 +636,9 @@ export default function App() {
    * pendingRiskProfileAfterLogin으로 투자성향 진단까지 이어가도록 목적지를 보존한다.
    */
   const requestLoginFromHome = () => {
-    setLoginContext('home');
+    setLoginContext("home");
     setPendingRiskProfileAfterLogin(true);
-    setScreen('login');
+    setScreen("login");
   };
 
   /**
@@ -495,9 +647,9 @@ export default function App() {
    * 않는다). strategyId는 이미 상태로 유지되고 있어 따로 안 챙겨도 된다.
    */
   const requestLoginForBacktest = () => {
-    setLoginContext('strategy');
+    setLoginContext("strategy");
     setPendingReturnToStrategy(true);
-    setScreen('login');
+    setScreen("login");
   };
 
   /**
@@ -512,21 +664,29 @@ export default function App() {
    */
   const confirmStrategyChange = async () => {
     const realAccount = useTradingStore.getState().account;
-    const mode = activeMode ?? (realAccount ? toOperationMode(realAccount.operation_mode) : null);
+    const mode =
+      activeMode ??
+      (realAccount ? toOperationMode(realAccount.operation_mode) : null);
     if (!accessToken || !mode) {
-      throw new Error('로그인이 필요합니다.');
+      throw new Error("로그인이 필요합니다.");
     }
     await ensureAccount(accessToken, strategyId, toAccountOperationMode(mode));
     setAccountActiveStrategy(mode, strategyId);
     setActiveMode(mode);
-    navigate('portfolio');
+    navigate("portfolio");
   };
 
   return (
     <div className="min-h-screen bg-canvas">
-      {screen === 'home' && <Home userName={userName} onNavigate={navigate} onRequestLogin={requestLoginFromHome} />}
+      {screen === "home" && (
+        <Home
+          userName={userName}
+          onNavigate={navigate}
+          onRequestLogin={requestLoginFromHome}
+        />
+      )}
 
-      {screen === 'login' && (
+      {screen === "login" && (
         <Login
           context={loginContext}
           // 로그인 성공 — "이 전략으로 시작하기"를 거쳐 왔으면 그 절차로 이어가고, 잠긴 백테스트에서
@@ -540,32 +700,38 @@ export default function App() {
             }
             if (pendingReturnToStrategy) {
               setPendingReturnToStrategy(false);
-              setScreen('strategy');
+              setScreen("strategy");
               return;
             }
             if (pendingRiskProfileAfterLogin) {
               setPendingRiskProfileAfterLogin(false);
-              startInvestorProfile('risk-result');
+              startInvestorProfile("risk-result");
               return;
             }
-            navigate('portfolio');
+            navigate("portfolio");
           }}
           onSignup={() => {
-            setPendingStartAfterLogin(false); setPendingReturnToStrategy(false); setPendingRiskProfileAfterLogin(false);
-            setScreen('signup-1');
+            setPendingStartAfterLogin(false);
+            setPendingReturnToStrategy(false);
+            setPendingRiskProfileAfterLogin(false);
+            setScreen("signup-1");
           }}
           onHome={() => {
-            setPendingStartAfterLogin(false); setPendingReturnToStrategy(false); setPendingRiskProfileAfterLogin(false);
-            setScreen('home');
+            setPendingStartAfterLogin(false);
+            setPendingReturnToStrategy(false);
+            setPendingRiskProfileAfterLogin(false);
+            setScreen("home");
           }}
           onNavigate={(s) => {
-            setPendingStartAfterLogin(false); setPendingReturnToStrategy(false); setPendingRiskProfileAfterLogin(false);
+            setPendingStartAfterLogin(false);
+            setPendingReturnToStrategy(false);
+            setPendingRiskProfileAfterLogin(false);
             navigate(s);
           }}
         />
       )}
 
-      {screen === 'signup-1' && (
+      {screen === "signup-1" && (
         <SignupStep1
           value={personal}
           onChange={handlePersonalChange}
@@ -579,21 +745,26 @@ export default function App() {
               resendAfterSeconds: result.resend_after_seconds,
               token: null,
             });
-            setScreen('signup-2');
+            setScreen("signup-2");
           }}
           userName={userName}
           onNavigate={navigate}
         />
       )}
-      {screen === 'signup-2' && (
+      {screen === "signup-2" && (
         <SignupStep2
           email={emailVerification?.email ?? personal.email}
           verified={emailVerification?.token != null}
           expiresInSeconds={emailVerification?.expiresInSeconds ?? 300}
           resendAfterSeconds={emailVerification?.resendAfterSeconds ?? 60}
           onResend={async () => {
-            if (!emailVerification) throw new Error('이메일 정보를 찾을 수 없어요. 처음부터 다시 시도해주세요.');
-            const result = await sendEmailVerificationApi(emailVerification.email);
+            if (!emailVerification)
+              throw new Error(
+                "이메일 정보를 찾을 수 없어요. 처음부터 다시 시도해주세요.",
+              );
+            const result = await sendEmailVerificationApi(
+              emailVerification.email,
+            );
             setEmailVerification({
               email: emailVerification.email,
               verificationId: result.verification_id,
@@ -603,28 +774,39 @@ export default function App() {
             });
           }}
           onVerify={async (code) => {
-            if (!emailVerification) throw new Error('이메일 정보를 찾을 수 없어요. 처음부터 다시 시도해주세요.');
-            const result = await verifyEmailVerificationApi(emailVerification.verificationId, code);
-            setEmailVerification({ ...emailVerification, token: result.verification_token });
-            setScreen('signup-3');
+            if (!emailVerification)
+              throw new Error(
+                "이메일 정보를 찾을 수 없어요. 처음부터 다시 시도해주세요.",
+              );
+            const result = await verifyEmailVerificationApi(
+              emailVerification.verificationId,
+              code,
+            );
+            setEmailVerification({
+              ...emailVerification,
+              token: result.verification_token,
+            });
+            setScreen("signup-3");
           }}
-          onContinue={() => setScreen('signup-3')}
-          onBack={() => setScreen('signup-1')}
+          onContinue={() => setScreen("signup-3")}
+          onBack={() => setScreen("signup-1")}
           userName={userName}
           onNavigate={navigate}
         />
       )}
-      {screen === 'signup-3' && (
+      {screen === "signup-3" && (
         <SignupStep3
           // 가입 API 성공 후 JWT 로그인까지 완료하고 투자자 정보 확인으로 이동한다.
           onComplete={async (userId, password, phone) => {
             if (!emailVerification?.token) {
-              throw new Error('이메일 인증이 필요해요. 이메일 인증을 다시 진행해주세요.');
+              throw new Error(
+                "이메일 인증이 필요해요. 이메일 인증을 다시 진행해주세요.",
+              );
             }
             const termCodeByAgreement = {
-              b: 'B_PRIVACY',
-              c: 'C_ASSOCIATE_TERMS',
-              ai: 'AI_PERSONALIZATION',
+              b: "B_PRIVACY",
+              c: "C_ASSOCIATE_TERMS",
+              ai: "AI_PERSONALIZATION",
             } as const;
             const agreementByTermCode = Object.fromEntries(
               Object.entries(termCodeByAgreement).map(([key, code]) => [
@@ -648,39 +830,46 @@ export default function App() {
               })),
             });
             setEmailVerification(null);
-            startInvestorProfile('risk-result');
+            startInvestorProfile("risk-result");
           }}
-          onBack={() => setScreen('signup-2')}
+          onBack={() => setScreen("signup-2")}
           userName={userName}
           onNavigate={navigate}
         />
       )}
 
-      {screen === 'risk' && (
+      {screen === "risk" && (
         <RiskProfile
           notice={riskNotice}
           isSubmitting={isDiagnosisSubmitting}
           // postDiagnosisTarget이 'start'면 Strategy Detail "이 전략으로 시작하기"에서 온 것 —
           // 새 진입 state를 따로 만들지 않고 이미 있는 이 값을 그대로 재사용해 context를 판단한다.
-          context={postDiagnosisTarget === 'start' ? 'strategy' : 'general'}
-          allowNonAiFallback={riskErrorCode === 'AI_PERSONALIZATION_CONSENT_REQUIRED'}
+          context={postDiagnosisTarget === "start" ? "strategy" : "general"}
+          allowNonAiFallback={
+            riskErrorCode === "AI_PERSONALIZATION_CONSENT_REQUIRED"
+          }
           onContinueWithoutAi={() => {
             setRiskNotice(undefined);
             setRiskErrorCode(null);
-            setPostDiagnosisTarget('risk-result');
-            setScreen('strategy-list');
+            setPostDiagnosisTarget("risk-result");
+            setScreen("strategy-list");
           }}
           onComplete={async (answers) => {
             setIsDiagnosisSubmitting(true);
             setRiskErrorCode(null);
             if (!accessToken) {
-              setRiskNotice('로그인 상태를 확인할 수 없어요. 다시 로그인한 뒤 시도해주세요.');
+              setRiskNotice(
+                "로그인 상태를 확인할 수 없어요. 다시 로그인한 뒤 시도해주세요.",
+              );
               setIsDiagnosisSubmitting(false);
               return;
             }
             try {
               const response = await analyzeInvestorProfileApi(
-                { questionnaire_version: 'v1', answers: buildInvestorAnswerPayload(answers) },
+                {
+                  questionnaire_version: "v1",
+                  answers: buildInvestorAnswerPayload(answers),
+                },
                 accessToken,
               );
               completeInvestorProfile(
@@ -692,26 +881,30 @@ export default function App() {
               setRiskNotice(undefined);
               setRiskErrorCode(null);
               setScreen(postDiagnosisTarget);
-              setPostDiagnosisTarget('risk-result');
+              setPostDiagnosisTarget("risk-result");
             } catch (error) {
-              setRiskErrorCode(error instanceof ApiError ? error.code : 'UNKNOWN_ERROR');
-              setRiskNotice(error instanceof Error
-                ? error.message
-                : '투자성향을 분석하지 못했어요. 잠시 후 다시 시도해주세요.');
+              setRiskErrorCode(
+                error instanceof ApiError ? error.code : "UNKNOWN_ERROR",
+              );
+              setRiskNotice(
+                error instanceof Error
+                  ? error.message
+                  : "투자성향을 분석하지 못했어요. 잠시 후 다시 시도해주세요.",
+              );
             } finally {
               setIsDiagnosisSubmitting(false);
             }
           }}
-          onExit={() => setScreen('home')}
+          onExit={() => setScreen("home")}
         />
       )}
-      {screen === 'risk-result' && (
+      {screen === "risk-result" && (
         <RiskResult
           userName={userName}
           onNavigate={navigate}
           onSelectStrategy={(selectedStrategy, selectedRecommendation) => {
             setStrategyId(selectedStrategy.id);
-            setStrategyDetailBackTarget('strategy-list');
+            setStrategyDetailBackTarget("strategy-list");
             // RiskResult가 방금 사용한 실제 카탈로그 객체를 그대로 이어받는다. App의 병렬 카탈로그
             // 조회가 아직 끝나지 않았거나 일시 실패해도 상세 화면이 로컬 목업으로 되돌아가지 않는다.
             setStrategyCatalog((current) => [
@@ -719,70 +912,78 @@ export default function App() {
               selectedStrategy,
             ]);
             setStrategyRecommendation(selectedRecommendation);
-            setScreen('strategy');
+            setScreen("strategy");
           }}
         />
       )}
-      {screen === 'investor-check' && (
+      {screen === "investor-check" && (
         <InvestorProfileCheck
           userName={userName}
           onNavigate={navigate}
-          onContinue={() => setScreen('start')}
-          onRediagnose={() => startInvestorProfile('start')}
+          onContinue={() => setScreen("start")}
+          onRediagnose={() => startInvestorProfile("start")}
         />
       )}
 
-      {screen === 'strategy-list' && (
+      {screen === "strategy-list" && (
         <StrategyList
           userName={userName}
           onNavigate={navigate}
-          onSelectLossAvoidance={() => setScreen('strategy-coming-soon-loss-avoidance')}
-          onSelectF4={() => setScreen('strategy-f4')}
-          onSelectPersonalizedPreview={() => setScreen('strategy-preview')}
+          onSelectLossAvoidance={() =>
+            setScreen("strategy-coming-soon-loss-avoidance")
+          }
+          onSelectF4={() => setScreen("strategy-f4")}
+          onSelectPersonalizedPreview={() => setScreen("strategy-preview")}
         />
       )}
-      {screen === 'strategy-f4' && (
+      {screen === "strategy-f4" && (
         <StrategyF4List
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen('strategy-list')}
+          onBack={() => setScreen("strategy-list")}
           onSelectMomentum={() => {
-            setStrategyId('momentum');
-            setStrategyDetailBackTarget('strategy-f4');
+            setStrategyId("momentum");
+            setStrategyDetailBackTarget("strategy-f4");
             setStrategyRecommendation(null);
-            setScreen('strategy');
+            setScreen("strategy");
           }}
-          onSelectEventDriven={() => setScreen('strategy-coming-soon-event-driven')}
+          onSelectEventDriven={() =>
+            setScreen("strategy-coming-soon-event-driven")
+          }
         />
       )}
-      {screen === 'strategy-coming-soon-loss-avoidance' && (
+      {screen === "strategy-coming-soon-loss-avoidance" && (
         <StrategyComingSoon
           strategyKey="loss-avoidance"
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen('strategy-list')}
+          onBack={() => setScreen("strategy-list")}
         />
       )}
-      {screen === 'strategy-coming-soon-event-driven' && (
+      {screen === "strategy-coming-soon-event-driven" && (
         <StrategyComingSoon
           strategyKey="event-driven"
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen('strategy-f4')}
+          onBack={() => setScreen("strategy-f4")}
         />
       )}
-      {screen === 'strategy-preview' && (
+      {screen === "strategy-preview" && (
         <StrategyPersonalizedPreview
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen('strategy-list')}
+          onBack={() => setScreen("strategy-list")}
         />
       )}
-      {screen === 'strategy' && strategy && (
+      {screen === "strategy" && strategy && (
         <StrategyDetail
           strategy={strategy}
           strategyCatalog={strategyCatalog}
-          recommendation={strategyRecommendation?.strategy_id === strategy.id ? strategyRecommendation : null}
+          recommendation={
+            strategyRecommendation?.strategy_id === strategy.id
+              ? strategyRecommendation
+              : null
+          }
           userName={userName}
           onNavigate={navigate}
           onBack={() => setScreen(strategyDetailBackTarget)}
@@ -791,82 +992,129 @@ export default function App() {
           onConfirmStrategyChange={confirmStrategyChange}
           pendingDeposit={
             pendingInvestment && pendingInvestment.strategyId === strategyId
-              // InvestDeposit과 동일하게, 이미 보유한 잔액(대기 중인 투자와 같은 운용방식 계좌 기준)을 제외한 부족분만 안내한다
-              ? { amount: Math.max(0, pendingInvestment.amount - (accountsByMode[pendingInvestment.mode]?.balance ?? 0)) }
+              ? // InvestDeposit과 동일하게, 이미 보유한 잔액(대기 중인 투자와 같은 운용방식 계좌 기준)을 제외한 부족분만 안내한다
+                {
+                  amount: Math.max(
+                    0,
+                    pendingInvestment.amount -
+                      (accountsByMode[pendingInvestment.mode]?.balance ?? 0),
+                  ),
+                }
               : null
           }
           onResumeDeposit={() => {
             if (!pendingInvestment) return;
-            enterInvestmentStep('invest-deposit', pendingInvestment.strategyId, pendingInvestment.amount, pendingInvestment.mode);
+            enterInvestmentStep(
+              "invest-deposit",
+              pendingInvestment.strategyId,
+              pendingInvestment.amount,
+              pendingInvestment.mode,
+            );
           }}
         />
       )}
       {STRATEGY_DATA_SCREENS.includes(screen) && !screenStrategy && (
-        <main className="flex min-h-screen flex-col items-center justify-center gap-5 bg-canvas px-8 text-center" role="alert">
+        <main
+          className="flex min-h-screen flex-col items-center justify-center gap-5 bg-canvas px-8 text-center"
+          role="alert"
+        >
           <h1 className="text-[28px] font-bold">
-            {isStrategyCatalogLoading ? '전략 정보를 불러오고 있어요' : '전략 정보를 불러오지 못했어요'}
+            {isStrategyCatalogLoading
+              ? "전략 정보를 불러오고 있어요"
+              : "전략 정보를 불러오지 못했어요"}
           </h1>
           <p className="text-base text-muted">
-            {isStrategyCatalogLoading ? '현재 전략 목록을 확인하고 있어요.' : (strategyCatalogError ?? '선택한 전략을 현재 목록에서 찾을 수 없어요.')}
+            {isStrategyCatalogLoading
+              ? "현재 전략 목록을 확인하고 있어요."
+              : (strategyCatalogError ??
+                "선택한 전략을 현재 목록에서 찾을 수 없어요.")}
           </p>
           {!isStrategyCatalogLoading && (
-            <button onClick={() => setStrategyCatalogRetry((value) => value + 1)} className="rounded-field bg-lime px-8 py-4 text-base font-bold text-navy">
+            <button
+              onClick={() => setStrategyCatalogRetry((value) => value + 1)}
+              className="rounded-field bg-lime px-8 py-4 text-base font-bold text-navy"
+            >
               다시 시도하기
             </button>
           )}
         </main>
       )}
-      {screen === 'start' && strategy && (
+      {screen === "start" && strategy && (
         <StartInvesting
           userName={userName}
           strategyName={strategy.name}
           onNavigate={navigate}
           onStart={enterInvestmentFlow}
-          onSelectStock={(code) => { setStockCode(code); setStockBackTarget('start'); setScreen('stock'); }}
+          onSelectStock={(code) => {
+            setStockCode(code);
+            setStockBackTarget("start");
+            setScreen("stock");
+          }}
         />
       )}
-      {screen === 'invest-terms' && strategy && (
+      {screen === "invest-terms" && strategy && (
         <InvestTerms
           userName={userName}
           strategy={strategy}
           amount={investmentAmount}
           mode={investmentMode}
+          token={accessToken ?? ""}
           onNavigate={navigate}
-          onBack={() => goBackInInvestmentFlow('invest-terms')}
-          onComplete={() => {
+          onBack={() => goBackInInvestmentFlow("invest-terms")}
+          onComplete={(agreements: SignupPayload["agreements"]) => {
+            setInvestmentAgreements(agreements);
             acceptStrategyTerms(strategyId);
             const step = resolveInvestmentEntryStep({
               strategyId,
               amount: investmentAmount,
-              termsAcceptedStrategyIds: [...termsAcceptedStrategyIds, strategyId],
+              termsAcceptedStrategyIds: [
+                ...termsAcceptedStrategyIds,
+                strategyId,
+              ],
               sesacAccount,
             });
-            enterInvestmentStep(step, strategyId, investmentAmount, investmentMode);
+            enterInvestmentStep(
+              step,
+              strategyId,
+              investmentAmount,
+              investmentMode,
+            );
           }}
         />
       )}
-      {screen === 'invest-account' && strategy && (
+      {screen === "invest-account" && strategy && (
         <InvestAccount
           userName={userName}
           strategyName={strategy.name}
           mode={investmentMode}
           otherModeAccount={(() => {
-            const otherMode: OperationMode = investmentMode === 'auto' ? 'manual' : 'auto';
+            const otherMode: OperationMode =
+              investmentMode === "auto" ? "manual" : "auto";
             const otherAccount = accountsByMode[otherMode];
-            return otherAccount ? { mode: otherMode, accountNumber: otherAccount.accountNumber } : null;
+            return otherAccount
+              ? { mode: otherMode, accountNumber: otherAccount.accountNumber }
+              : null;
           })()}
           onNavigate={navigate}
-          onBack={() => goBackInInvestmentFlow('invest-account')}
+          onBack={() => goBackInInvestmentFlow("invest-account")}
           onComplete={(account) => {
             connectSesacAccount(investmentMode, account);
             const step = resolveInvestmentEntryStep({
-              strategyId, amount: investmentAmount, termsAcceptedStrategyIds, sesacAccount: account,
+              strategyId,
+              amount: investmentAmount,
+              termsAcceptedStrategyIds,
+              sesacAccount: account,
             });
-            enterInvestmentStep(step, strategyId, investmentAmount, investmentMode);
+            enterInvestmentStep(
+              step,
+              strategyId,
+              investmentAmount,
+              investmentMode,
+            );
           }}
         />
       )}
-      {screen === 'invest-deposit' && sesacAccount && strategy && (
+      {screen === "invest-deposit" && sesacAccount && strategy && (
         <InvestDeposit
           userName={userName}
           strategyName={strategy.name}
@@ -874,27 +1122,40 @@ export default function App() {
           mode={investmentMode}
           account={sesacAccount}
           onNavigate={navigate}
-          onBack={() => goBackInInvestmentFlow('invest-deposit')}
+          onBack={() => goBackInInvestmentFlow("invest-deposit")}
           onDeposit={(shortfall) => {
             deposit(investmentMode, shortfall);
             const step = resolveInvestmentEntryStep({
               strategyId,
               amount: investmentAmount,
               termsAcceptedStrategyIds,
-              sesacAccount: { ...sesacAccount, balance: sesacAccount.balance + shortfall },
+              sesacAccount: {
+                ...sesacAccount,
+                balance: sesacAccount.balance + shortfall,
+              },
             });
-            enterInvestmentStep(step, strategyId, investmentAmount, investmentMode);
+            enterInvestmentStep(
+              step,
+              strategyId,
+              investmentAmount,
+              investmentMode,
+            );
           }}
           onDeferDeposit={() => {
             // Home 은 비로그인 전용 랜딩이라 로그인 상태가 반영되지 않는다 — 전략 상세로 돌려보낸다
             // (Header에 로그인 상태가 정상 표시되고, 필요하면 "이 전략으로 시작하기"로 바로 이 화면에 재진입할 수 있다)
-            deferDeposit({ strategyId, strategyName: strategy.name, amount: investmentAmount, mode: investmentMode });
+            deferDeposit({
+              strategyId,
+              strategyName: strategy.name,
+              amount: investmentAmount,
+              mode: investmentMode,
+            });
             clearInFlight();
-            setScreen('strategy');
+            setScreen("strategy");
           }}
         />
       )}
-      {screen === 'invest-confirm' && sesacAccount && strategy && (
+      {screen === "invest-confirm" && sesacAccount && strategy && (
         <InvestConfirm
           userName={userName}
           strategyName={strategy.name}
@@ -902,21 +1163,26 @@ export default function App() {
           mode={investmentMode}
           account={sesacAccount}
           onNavigate={navigate}
-          onBack={() => goBackInInvestmentFlow('invest-confirm')}
+          onBack={() => goBackInInvestmentFlow("invest-confirm")}
           onConfirm={async () => {
             if (!accessToken) {
-              setScreen('login');
-              throw new Error('로그인이 필요합니다.');
+              setScreen("login");
+              throw new Error("로그인이 필요합니다.");
             }
             const operationMode = toAccountOperationMode(investmentMode);
             await startInvestmentApi(
               strategyId,
               investmentAmount,
               operationMode,
+              investmentAgreements,
               accessToken,
             );
-            const account = await ensureAccount(accessToken, strategyId, operationMode);
-            if (strategyId === 'momentum') {
+            const account = await ensureAccount(
+              accessToken,
+              strategyId,
+              operationMode,
+            );
+            if (strategyId === "momentum") {
               await applyLatestModelRecommendationsApi(account.id, accessToken);
               await ensureAccount(accessToken, strategyId, operationMode);
             }
@@ -926,98 +1192,116 @@ export default function App() {
             // 실제 투자가 시작된 시점 — 여기서만 DEPOSIT_PENDING을 해소한다
             clearPendingInvestment();
             clearInFlight();
-            setScreen('portfolio');
+            setScreen("portfolio");
           }}
         />
       )}
 
-      {screen === 'information' && <InformationExam userName={userName} onNavigate={navigate} />}
+      {screen === "information" && (
+        <InformationExam userName={userName} onNavigate={navigate} />
+      )}
 
-      {screen === 'dashboard' && portfolioStrategy && (
+      {screen === "dashboard" && portfolioStrategy && (
         <Dashboard
           userName={userName}
           strategy={portfolioStrategy}
           mode={activeMode}
           onNavigate={navigate}
-          onOpenHoldings={() => navigate('portfolio-detail')}
-          onChangeStrategy={() => navigate('portfolio-detail')}
+          onOpenHoldings={() => navigate("portfolio-detail")}
+          onChangeStrategy={() => navigate("portfolio-detail")}
         />
       )}
 
       {/* 운용방식(activeMode)에 따라 요약 화면을 다르게 보여준다 — 반자동은 AI 제안을 사용자가 승인해야 하는
           Portfolio.tsx, 자동매매는 AI가 이미 실행을 마친 PortfolioAuto.tsx. 계좌를 아직 안 만든 경우(null)는
           기존 기본값인 반자동으로 보여준다. */}
-      {screen === 'portfolio' && (
-        activeMode === 'auto' ? (
+      {screen === "portfolio" &&
+        (activeMode === "auto" ? (
           <PortfolioAuto
             userName={userName}
             onNavigate={navigate}
-            onOpenDetail={() => setScreen('portfolio-detail')}
-            onOpenRebalanceAlerts={() => { setRebalanceBackTarget('portfolio'); setScreen('rebalance-alerts'); }}
+            onOpenDetail={() => setScreen("portfolio-detail")}
+            onOpenRebalanceAlerts={() => {
+              setRebalanceBackTarget("portfolio");
+              setScreen("rebalance-alerts");
+            }}
           />
         ) : (
           <Portfolio
             userName={userName}
             onNavigate={navigate}
-            onOpenDetail={() => setScreen('portfolio-detail')}
-            onOpenRebalanceAlerts={() => { setRebalanceBackTarget('portfolio'); setScreen('rebalance-alerts'); }}
-            onStartRiskProfile={() => startInvestorProfile('risk-result')}
+            onOpenDetail={() => setScreen("portfolio-detail")}
+            onOpenRebalanceAlerts={() => {
+              setRebalanceBackTarget("portfolio");
+              setScreen("rebalance-alerts");
+            }}
+            onStartRiskProfile={() => startInvestorProfile("risk-result")}
           />
-        )
-      )}
+        ))}
 
-      {screen === 'portfolio-detail' && portfolioStrategy && (
+      {screen === "portfolio-detail" && portfolioStrategy && (
         <PortfolioDetail
           userName={userName}
           strategy={portfolioStrategy}
           strategies={strategyCatalog}
           onStrategyChange={setStrategyId}
           onNavigate={navigate}
-          onSelectStock={(code) => { setStockCode(code); setStockBackTarget('portfolio-detail'); setScreen('stock'); }}
+          onSelectStock={(code) => {
+            setStockCode(code);
+            setStockBackTarget("portfolio-detail");
+            setScreen("stock");
+          }}
           onSelectTransaction={(id) => {
             setSelectedTransactionId(id);
-            setTransactionBackTarget('portfolio-detail');
-            setScreen('transaction-detail');
+            setTransactionBackTarget("portfolio-detail");
+            setScreen("transaction-detail");
           }}
-          onOpenRebalanceAlerts={() => { setRebalanceBackTarget('portfolio-detail'); setScreen('rebalance-alerts'); }}
-          onRediagnose={() => startInvestorProfile('risk-result')}
-          onBack={() => setScreen('portfolio')}
+          onOpenRebalanceAlerts={() => {
+            setRebalanceBackTarget("portfolio-detail");
+            setScreen("rebalance-alerts");
+          }}
+          onRediagnose={() => startInvestorProfile("risk-result")}
+          onBack={() => setScreen("portfolio")}
         />
       )}
 
-      {screen === 'rebalance-alerts' && portfolioStrategy && (
+      {screen === "rebalance-alerts" && portfolioStrategy && (
         <RebalanceAlerts
           userName={userName}
           strategy={portfolioStrategy}
           onNavigate={navigate}
           onBack={() => setScreen(rebalanceBackTarget)}
-          isAutoMode={activeMode === 'auto'}
+          isAutoMode={activeMode === "auto"}
         />
       )}
 
-      {screen === 'all-holdings' && (
+      {screen === "all-holdings" && (
         <AllHoldings
           userName={userName}
           onNavigate={navigate}
-          onSelectStock={(code) => { setStockCode(code); setStockBackTarget('all-holdings'); setScreen('stock'); }}
-          onBack={() => setScreen('portfolio-detail')}
+          onSelectStock={(code) => {
+            setStockCode(code);
+            setStockBackTarget("all-holdings");
+            setScreen("stock");
+          }}
+          onBack={() => setScreen("portfolio-detail")}
         />
       )}
 
-      {screen === 'transactions' && (
+      {screen === "transactions" && (
         <TransactionHistory
           userName={userName}
           onNavigate={navigate}
           onSelectTransaction={(id) => {
             setSelectedTransactionId(id);
-            setTransactionBackTarget('transactions');
-            setScreen('transaction-detail');
+            setTransactionBackTarget("transactions");
+            setScreen("transaction-detail");
           }}
-          onBack={() => setScreen('portfolio-detail')}
+          onBack={() => setScreen("portfolio-detail")}
         />
       )}
 
-      {screen === 'transaction-detail' && (
+      {screen === "transaction-detail" && (
         <TransactionDetail
           transactionId={selectedTransactionId}
           backTarget={transactionBackTarget}
@@ -1027,7 +1311,7 @@ export default function App() {
         />
       )}
 
-      {screen === 'stock' && (
+      {screen === "stock" && (
         <StockDetail
           stockCode={stockCode}
           userName={userName}

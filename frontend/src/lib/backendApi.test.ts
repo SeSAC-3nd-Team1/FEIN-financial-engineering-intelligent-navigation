@@ -171,58 +171,79 @@ describe("investment onboarding API", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(baseOnboarding)))
-      .mockResolvedValueOnce(new Response(JSON.stringify([
-        {
-          term_code: "INVEST_PRODUCT_MOMENTUM",
-          version: "v1",
-          title: "모멘텀 상품설명서",
-          is_required: true,
-          content_reference: null,
-        },
-      ])))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        ...baseOnboarding,
-        status: "ACCOUNT_PENDING",
-        terms_completed: true,
-        next_step: "ACCOUNT",
-      })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        account: {
-          id: "account-1",
-          account_name: "나의 가상 투자계좌",
-          operation_mode: "AUTO",
-          initial_cash: "0",
-          cash_balance: "0",
-          status: "ACTIVE",
-          selected_strategy_id: null,
-          created_at: "2026-08-27T00:00:00Z",
-        },
-        created: true,
-        required_deposit_amount: "10000000",
-        onboarding: { ...baseOnboarding, status: "DEPOSIT_PENDING" },
-      })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        deposit_id: "deposit-1",
-        amount: "10000000",
-        balance_after: "10000000",
-        required_deposit_amount: "0",
-        onboarding: { ...baseOnboarding, status: "READY" },
-      })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        ...baseOnboarding,
-        status: "COMPLETED",
-        account_id: "account-1",
-        terms_completed: true,
-        account_exists: true,
-        next_step: "PORTFOLIO",
-        completed_at: "2026-08-27T00:00:01Z",
-      })));
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              term_code: "INVEST_PRODUCT_MOMENTUM",
+              version: "v1",
+              title: "모멘텀 상품설명서",
+              is_required: true,
+              content_reference: null,
+            },
+          ]),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...baseOnboarding,
+            status: "ACCOUNT_PENDING",
+            terms_completed: true,
+            next_step: "ACCOUNT",
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            account: {
+              id: "account-1",
+              account_name: "나의 가상 투자계좌",
+              operation_mode: "AUTO",
+              initial_cash: "0",
+              cash_balance: "0",
+              status: "ACTIVE",
+              selected_strategy_id: null,
+              created_at: "2026-08-27T00:00:00Z",
+            },
+            created: true,
+            required_deposit_amount: "10000000",
+            onboarding: { ...baseOnboarding, status: "DEPOSIT_PENDING" },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            deposit_id: "deposit-1",
+            amount: "10000000",
+            balance_after: "10000000",
+            required_deposit_amount: "0",
+            onboarding: { ...baseOnboarding, status: "READY" },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...baseOnboarding,
+            status: "COMPLETED",
+            account_id: "account-1",
+            terms_completed: true,
+            account_exists: true,
+            next_step: "PORTFOLIO",
+            completed_at: "2026-08-27T00:00:01Z",
+          }),
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await startInvestmentApi(
       "momentum",
       10_000_000,
       "AUTO",
+      [{ term_code: "INVEST_PRODUCT_MOMENTUM", version: "v1", agreed: true }],
       "token-a",
     );
 

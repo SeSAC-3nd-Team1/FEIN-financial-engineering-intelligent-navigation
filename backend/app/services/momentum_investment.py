@@ -52,16 +52,20 @@ class MomentumInvestmentService:
             if item.target_weight > 0
         }
         total_weight = sum(target_weights.values(), Decimal("0"))
-        if not target_weights or total_weight <= 0 or total_weight > 1:
+        # momentum 모델만 주식 95% + 현금 5% 정책을 허용한다. 다른 비중 누락은
+        # 모델 산출 오류로 간주해 적용하지 않는다.
+        if not target_weights or total_weight != Decimal("0.95"):
             raise ServiceError(
                 "INVALID_STRATEGY_TARGET_WEIGHTS",
-                "모델 목표 비중 합계가 올바르지 않습니다.",
+                "모멘텀 목표 주식 비중 합계는 0.95여야 합니다(현금 0.05 포함).",
                 503,
             )
         self._publish_targets(snapshot.as_of, target_weights)
 
         if account.operation_mode != "AUTO":
-            return self._response(account.id, snapshot.as_of, len(target_weights), 0, "PROPOSAL_ONLY")
+            return self._response(
+                account.id, snapshot.as_of, len(target_weights), 0, "PROPOSAL_ONLY"
+            )
 
         order_keys = {
             stock_code: f"momentum-{snapshot.as_of.isoformat()}-{stock_code}"
@@ -75,13 +79,18 @@ class MomentumInvestmentService:
                 )
             )
         )
-        position_count = self.session.scalar(
-            select(func.count(Position.id)).where(Position.account_id == account.id)
-        ) or 0
+        position_count = (
+            self.session.scalar(
+                select(func.count(Position.id)).where(Position.account_id == account.id)
+            )
+            or 0
+        )
         # 기존 수동/과거 포트폴리오는 자동으로 덮어쓰지 않는다. 다만 현재 스냅샷 주문이
         # 일부 체결된 재시도라면 같은 멱등성 키를 기준으로 남은 주문만 이어서 처리한다.
         if position_count > 0 and not existing_order_keys:
-            return self._response(account.id, snapshot.as_of, len(target_weights), 0, "PROPOSAL_ONLY")
+            return self._response(
+                account.id, snapshot.as_of, len(target_weights), 0, "PROPOSAL_ONLY"
+            )
 
         created = 0
         starting_assets = Decimal(account.initial_cash)
@@ -111,7 +120,9 @@ class MomentumInvestmentService:
             created += 1
 
         status = "APPLIED" if created else "ALREADY_APPLIED"
-        return self._response(account.id, snapshot.as_of, len(target_weights), created, status)
+        return self._response(
+            account.id, snapshot.as_of, len(target_weights), created, status
+        )
 
     def _publish_targets(
         self,
@@ -135,15 +146,17 @@ class MomentumInvestmentService:
                     409,
                 )
             return
-        self.session.add_all([
-            StrategyTargetWeight(
-                strategy_id="momentum",
-                stock_code=stock_code,
-                target_weight=weight,
-                effective_from=effective_from,
-            )
-            for stock_code, weight in target_weights.items()
-        ])
+        self.session.add_all(
+            [
+                StrategyTargetWeight(
+                    strategy_id="momentum",
+                    stock_code=stock_code,
+                    target_weight=weight,
+                    effective_from=effective_from,
+                )
+                for stock_code, weight in target_weights.items()
+            ]
+        )
         self.session.commit()
 
     @staticmethod

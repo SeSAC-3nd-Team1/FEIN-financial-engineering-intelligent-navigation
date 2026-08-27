@@ -640,6 +640,7 @@ export async function startInvestmentApi(
   strategyId: string,
   investmentAmount: number,
   operationMode: AccountOperationMode,
+  agreements: SignupPayload["agreements"],
   token: string,
 ): Promise<InvestmentOnboardingResponse> {
   let onboarding = await createInvestmentOnboardingApi(
@@ -651,19 +652,14 @@ export async function startInvestmentApi(
   if (onboarding.status === "COMPLETED") return onboarding;
 
   if (!onboarding.terms_completed) {
-    const terms = await getInvestmentTermsApi(strategyId, token);
-    const requiredAgreements = terms
-      .filter((term) => term.is_required)
-      .map((term) => ({
-        term_code: term.term_code,
-        version: term.version,
-        agreed: true,
-      }));
+    const requiredAgreements = agreements.filter(
+      (agreement) => agreement.agreed,
+    );
     if (requiredAgreements.length === 0) {
       throw new ApiError(
         "INVESTMENT_TERMS_UNAVAILABLE",
-        "투자 필수 약관을 불러올 수 없습니다.",
-        503,
+        "확인한 투자 필수 약관이 없습니다.",
+        400,
       );
     }
     onboarding = await agreeInvestmentTermsApi(
