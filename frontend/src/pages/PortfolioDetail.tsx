@@ -133,12 +133,12 @@ export default function PortfolioDetail({
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
   const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
 
-  // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는
-  // 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 —
-  // portfolio===null 하나만으로 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회 실패"를 구분하지
-  // 못해, 로딩/오류 중에 실계좌 사용자에게 목업 20종목이 노출될 수 있다.
+  // 총자산/보유종목 모두 계좌가 없다고 확인된 경우(accountMissing)에만 목업 값을 쓰고, 그 외(실 계좌
+  // 포지션이 0개, 또는 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 0원/빈 배열로 실제 빈
+  // 상태를 보여준다 — portfolio===null 하나만으로 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회
+  // 실패"를 구분하지 못해, 로딩/오류 중에 실계좌 사용자에게 목업 데이터가 노출될 수 있다.
   // 실 포지션에는 investor-facing 메타(섹터/AI 편입 사유 등)가 없어 STOCK_INFO 코드로 목업과 매칭해 보완한다.
-  const HOLD_TOTAL = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
+  const HOLD_TOTAL = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
   const ALL_HOLDINGS = useMemo(() => {
     if (accountMissing) return MOCK_HOLDINGS;
     if (!portfolio) return [];
