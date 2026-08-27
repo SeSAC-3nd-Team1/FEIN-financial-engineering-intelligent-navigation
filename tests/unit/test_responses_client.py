@@ -62,6 +62,32 @@ async def test_responses_client_uses_entra_bearer_and_parses_report():
 
 
 @pytest.mark.asyncio
+@respx.mock
+async def test_responses_client_returns_natural_language_text_without_json_validation():
+    endpoint = "https://example.invalid/agents/MBGCoordinator/endpoint/protocols/openai/responses"
+    route = respx.post(endpoint).mock(
+        return_value=httpx.Response(
+            200,
+            json={"output_text": "삼성전자는 반도체와 모바일 사업을 운영합니다."},
+        )
+    )
+    async with httpx.AsyncClient() as http:
+        client = ResponsesAgentClient(endpoint, FakeCredential(), http)
+        answer = await client.invoke_text(
+            AgentRequest(
+                request_id="req-1",
+                role="MBGCoordinator",
+                user_query="삼성전자를 설명해줘",
+            ),
+            timeout_seconds=5,
+            idempotency_key="idem-1",
+        )
+
+    assert answer == "삼성전자는 반도체와 모바일 사업을 운영합니다."
+    assert route.called
+
+
+@pytest.mark.asyncio
 async def test_responses_client_rejects_non_https_endpoint_before_token_acquisition():
     credential = FakeCredential()
     async with httpx.AsyncClient() as http:
