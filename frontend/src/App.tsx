@@ -22,8 +22,11 @@ import SignupStep2 from './pages/SignupStep2';
 import SignupStep3 from './pages/SignupStep3';
 import StartInvesting from './pages/StartInvesting';
 import StockDetail from './pages/StockDetail';
+import StrategyComingSoon from './pages/StrategyComingSoon';
 import StrategyDetail from './pages/StrategyDetail';
+import StrategyF4List from './pages/StrategyF4List';
 import StrategyList from './pages/StrategyList';
+import StrategyPersonalizedPreview from './pages/StrategyPersonalizedPreview';
 import TransactionDetail from './pages/TransactionDetail';
 import TransactionHistory from './pages/TransactionHistory';
 import { toAccountOperationMode, toOperationMode, type OperationMode } from './data/fees';
@@ -730,11 +733,40 @@ export default function App() {
         <StrategyList
           userName={userName}
           onNavigate={navigate}
-          strategies={strategyCatalog}
-          isLoading={isStrategyCatalogLoading}
-          error={strategyCatalogError}
-          onRetry={() => setStrategyCatalogRetry((value) => value + 1)}
-          onSelectStrategy={(id) => { setStrategyId(id); setStrategyRecommendation(null); setScreen('strategy'); }}
+          onSelectLossAvoidance={() => setScreen('strategy-coming-soon-loss-avoidance')}
+          onSelectF4={() => setScreen('strategy-f4')}
+          onSelectPersonalizedPreview={() => setScreen('strategy-preview')}
+        />
+      )}
+      {screen === 'strategy-f4' && (
+        <StrategyF4List
+          userName={userName}
+          onNavigate={navigate}
+          onBack={() => setScreen('strategy-list')}
+          onSelectEventDriven={() => setScreen('strategy-coming-soon-event-driven')}
+        />
+      )}
+      {screen === 'strategy-coming-soon-loss-avoidance' && (
+        <StrategyComingSoon
+          strategyKey="loss-avoidance"
+          userName={userName}
+          onNavigate={navigate}
+          onBack={() => setScreen('strategy-list')}
+        />
+      )}
+      {screen === 'strategy-coming-soon-event-driven' && (
+        <StrategyComingSoon
+          strategyKey="event-driven"
+          userName={userName}
+          onNavigate={navigate}
+          onBack={() => setScreen('strategy-f4')}
+        />
+      )}
+      {screen === 'strategy-preview' && (
+        <StrategyPersonalizedPreview
+          userName={userName}
+          onNavigate={navigate}
+          onBack={() => setScreen('strategy-list')}
         />
       )}
       {screen === 'strategy' && strategy && (
