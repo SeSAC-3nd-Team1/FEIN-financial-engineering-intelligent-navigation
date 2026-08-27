@@ -139,22 +139,28 @@ print(metrics.to_dict())
 `risk_eligible` 종목만 대상으로 120일 모멘텀 순위를 계산하고 목표 비중을 생성한다. 결과 계약은
 `as_of`, 모델·데이터 버전, 시장 국면과 종목별 점수·순위·목표 비중·선정 사유를 포함한다.
 
-`inference.export_recommendation_snapshot` CLI는 CSV 또는 Parquet Feature를 읽어 실제 모델 함수를
-실행한 뒤 JSON을 임시 파일에 먼저 쓰고 원자적으로 교체한다. Compose에서는 AI의
+실제 E2E 실행 경로인 `inference.generate_latest_recommendations` CLI는 Azure의
+`model_stock_daily`에서 모델 Feature를, `algorithm_ohlcv`에서 거래 가능 여부를 읽어 자연키로
+결합하고 AI Risk Filter를 적용한다. 이어 실제 모델 함수를 실행한 뒤 JSON을 임시 파일에 먼저 쓰고
+원자적으로 교체한다. Compose에서는 AI의
 `/model-artifacts/model_recommendation_snapshot.json`과 Backend의 동일 경로가 전용 볼륨으로 연결된다.
 
 ```bash
-docker compose --profile ai run --rm ai python -m inference.export_recommendation_snapshot \
-  --input /app/path/to/model_stock_daily.parquet \
-  --output /model-artifacts/model_recommendation_snapshot.json \
-  --data-version algorithm-ohlcv-v2 \
+docker compose --profile ai run --rm ai python -m inference.generate_latest_recommendations \
+  --model-version 2 \
+  --algorithm-version 2 \
   --top-n 5
 ```
 
-입력에는 `trade_date`, `stock_code`, `market_cap`, `momentum_120d`, `is_tradable`,
-`risk_eligible`이 필요하며 `stock_name`은 선택 사항이다. 생성 결과는 Backend의
+두 Dataset의 최신 거래일이나 자연키가 어긋나면 오래되거나 불완전한 추천을 발행하지 않고 실패한다.
+`data_version`에는 `model_stock_daily`, `algorithm_ohlcv`, Risk Filter 버전이 모두 기록된다.
+생성 결과는 Backend의
 `GET /api/v1/model-recommendations/latest`에서 계약 검증 후 제공된다. 로컬 E2E 경로는 고정 Feature
 fixture로 다음과 같이 재현할 수 있다.
+
+이미 결합된 CSV/Parquet로 재현하거나 디버깅할 때는 기존
+`inference.export_recommendation_snapshot` CLI를 사용할 수 있으며, 이 입력에는 `trade_date`,
+`stock_code`, `market_cap`, `momentum_120d`, `is_tradable`, `risk_eligible`이 필요하다.
 
 ```bash
 ./scripts/verify_model_recommendation_e2e.sh

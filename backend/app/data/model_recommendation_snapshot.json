@@ -1,7 +1,7 @@
 {
   "as_of": "2026-08-26",
   "model_version": "price-momentum-v1",
-  "data_version": "algorithm-ohlcv-v2",
+  "data_version": "model_stock_daily-v2+algorithm_ohlcv-v2+risk-filter-v1",
   "status": "ready",
   "market_regime": "neutral",
   "recommendations": [

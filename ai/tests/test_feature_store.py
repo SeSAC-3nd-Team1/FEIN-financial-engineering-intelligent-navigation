@@ -60,6 +60,7 @@ class FakeServiceClient:
 
 def test_dataset_prefix_normalizes_version_and_rejects_paths() -> None:
     assert FeatureStore.dataset_prefix("model_stock_daily", "v2") == "model_stock_daily/version=v2/"
+    assert FeatureStore.dataset_prefix("algorithm_ohlcv", "2") == "algorithm_ohlcv/version=v2/"
     with pytest.raises(ValueError):
         FeatureStore.dataset_prefix("../raw", "2")
     with pytest.raises(ValueError, match="safe version"):
