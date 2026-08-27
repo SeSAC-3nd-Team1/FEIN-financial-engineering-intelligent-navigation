@@ -110,6 +110,8 @@ class UniverseTarget(BaseModel):
     @field_validator("asset_type", mode="before")
     @classmethod
     def normalize_asset_type(cls, value: AssetType | str) -> AssetType:
+        if value is None:
+            raise ValueError("asset_type is required")
         return coerce_asset_type(value)
 
     @model_validator(mode="after")
@@ -118,13 +120,19 @@ class UniverseTarget(BaseModel):
             raise ValueError("ticker is invalid for its asset type")
         return self
 
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False):
+        payload = {"ticker": self.ticker, "asset_type": self.asset_type}
+        if update:
+            payload.update(update)
+        return type(self).model_validate(payload)
+
 
 class UniverseProviderError(RuntimeError):
     block_reason = "UNIVERSE_UNAVAILABLE"
 
 
 class UniverseSnapshot(BaseModel):
-    model_config = ConfigDict(validate_assignment=True)
+    model_config = ConfigDict(frozen=True)
 
     as_of: datetime
     max_age_days: int = Field(

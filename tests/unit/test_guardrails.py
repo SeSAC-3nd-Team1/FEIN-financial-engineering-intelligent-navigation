@@ -252,6 +252,51 @@ def test_snapshot_model_copy_revalidates_age_bounds():
         snapshot.model_copy(update={"max_age_days": 1_000_000})
 
 
+def test_target_model_copy_revalidates_asset_type():
+    target = UniverseTarget(ticker="BTC", asset_type="CRYPTO")
+
+    with pytest.raises(ValidationError):
+        target.model_copy(update={"asset_type": None})
+
+
+def test_snapshot_is_frozen_but_valid_copies_remain_available():
+    snapshot = UniverseSnapshot(
+        as_of=datetime.now(UTC),
+        max_age_days=7,
+        instruments={"005930": "KOSPI200_STOCK"},
+    )
+
+    with pytest.raises((ValidationError, TypeError)):
+        snapshot.instruments = {"BTC": AssetType.CRYPTO}
+    with pytest.raises((ValidationError, TypeError)):
+        snapshot.as_of = datetime.now(UTC)
+
+    copied = snapshot.model_copy(update={"max_age_days": 30})
+
+    assert snapshot.max_age_days == 7
+    assert copied.max_age_days == 30
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [("as_of", "not-a-timestamp"), ("max_age_days", "not-an-age")],
+)
+def test_malformed_freshness_state_fails_closed(field, value):
+    snapshot_values = {
+        "as_of": datetime.now(UTC),
+        "max_age_days": 7,
+        "instruments": {"005930": "KOSPI200_STOCK"},
+    }
+    snapshot_values[field] = value
+    snapshot = UniverseSnapshot.model_construct(**snapshot_values)
+
+    result = evaluate_guardrails("005930", snapshot, analysis_mode="paper_trading")
+
+    assert result.trade_blocked is True
+    assert result.execution_allowed is False
+    assert "UNIVERSE_UNAVAILABLE" in result.block_reasons
+
+
 def test_policy_and_nested_boundary_state_are_immutable():
     snapshot = UniverseSnapshot(
         as_of=datetime.now(UTC),

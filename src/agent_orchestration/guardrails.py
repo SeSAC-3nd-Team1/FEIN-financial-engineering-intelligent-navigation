@@ -49,7 +49,13 @@ def evaluate_guardrails(
         reasons.append("UNIVERSE_UNAVAILABLE")
         return GuardrailResult(block_reasons=reasons)
 
-    if snapshot.stale:
+    try:
+        snapshot_is_stale = snapshot.stale
+    except Exception:
+        reasons.append("UNIVERSE_UNAVAILABLE")
+        return GuardrailResult(block_reasons=reasons)
+
+    if snapshot_is_stale:
         reasons.append("STALE_UNIVERSE")
 
     target_ticker = ticker.ticker if isinstance(ticker, UniverseTarget) else ticker
