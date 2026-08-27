@@ -790,6 +790,21 @@ class ModelRecommendationSnapshotResponse(BaseModel):
     recommendations: list[ModelRecommendationItemResponse] = Field(max_length=20)
 
 
+class ModelRecommendationApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID
+
+
+class ModelRecommendationApplyResponse(BaseModel):
+    account_id: UUID
+    strategy_id: Literal["momentum"]
+    as_of: date
+    target_count: int = Field(ge=1)
+    orders_created: int = Field(ge=0)
+    status: Literal["APPLIED", "PROPOSAL_ONLY", "ALREADY_APPLIED"]
+
+
 class NewsArticleResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     id: str

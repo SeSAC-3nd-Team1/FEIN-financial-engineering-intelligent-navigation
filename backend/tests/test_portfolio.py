@@ -94,9 +94,15 @@ def test_history_uses_first_snapshot_date_as_benchmark_base_and_deduplicates_dat
 
 def test_invalid_target_weight_sum_is_rejected() -> None:
     with pytest.raises(ServiceError) as error:
-        validate_target_weights({"005930": Decimal("0.5"), "000660": Decimal("0.4")})
+        validate_target_weights({"005930": Decimal("0.7"), "000660": Decimal("0.4")})
 
     assert error.value.code == "INVALID_STRATEGY_TARGET_WEIGHTS"
+
+
+def test_target_weights_allow_explicit_cash_buffer() -> None:
+    validate_target_weights(
+        {"005930": Decimal("0.475"), "000660": Decimal("0.475")}
+    )
 
 
 def portfolio_position(

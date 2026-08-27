@@ -89,10 +89,11 @@ def calculate_rebalancing(
 
 
 def validate_target_weights(target_weights: dict[str, Decimal]) -> None:
-    if target_weights and sum(target_weights.values(), Decimal("0")) != Decimal("1"):
+    total = sum(target_weights.values(), Decimal("0"))
+    if target_weights and (total <= 0 or total > Decimal("1")):
         raise ServiceError(
             "INVALID_STRATEGY_TARGET_WEIGHTS",
-            "전략 목표 비중 합계가 1이 아닙니다.",
+            "전략 목표 비중 합계는 0보다 크고 1 이하여야 합니다.",
             503,
         )
 

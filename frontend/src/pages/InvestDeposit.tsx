@@ -32,7 +32,7 @@ export default function InvestDeposit({
 
   const handleDeposit = () => {
     setDepositing(true);
-    // PoC Mock — 실제 이체 연동 전까지 짧은 처리 지연만 흉내낸다
+    // 이 화면에서는 처리 피드백만 보여주고, 실제 백엔드 입금은 최종 확인 시 onboarding API로 완료한다
     setTimeout(() => onDeposit(shortfall), 500);
   };
 
