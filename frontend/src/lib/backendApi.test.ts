@@ -173,19 +173,6 @@ describe("investment onboarding API", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify(baseOnboarding)))
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify([
-            {
-              term_code: "INVEST_PRODUCT_MOMENTUM",
-              version: "v1",
-              title: "모멘텀 상품설명서",
-              is_required: true,
-              content_reference: null,
-            },
-          ]),
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
           JSON.stringify({
             ...baseOnboarding,
             status: "ACCOUNT_PENDING",
@@ -248,17 +235,16 @@ describe("investment onboarding API", () => {
     );
 
     expect(result.status).toBe("COMPLETED");
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "/api/v1/investment/onboardings",
-      "/api/v1/investment/terms?strategy_id=momentum",
       "/api/v1/investment/onboardings/onboarding-1/agreements",
       "/api/v1/investment/onboardings/onboarding-1/account",
       "/api/v1/investment/onboardings/onboarding-1/deposit",
       "/api/v1/investment/onboardings/onboarding-1/complete",
     ]);
     const depositBody = JSON.parse(
-      String((fetchMock.mock.calls[4][1] as RequestInit).body),
+      String((fetchMock.mock.calls[3][1] as RequestInit).body),
     );
     expect(depositBody).toEqual({
       amount: 10_000_000,

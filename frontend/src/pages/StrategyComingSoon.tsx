@@ -11,7 +11,11 @@ interface Props {
 }
 
 /**
- * 물림방지 / 이벤트 드리븐 전략 상세 — 이번 UI/IA 1차 개편 STOP CONDITION(새 canonical strategy id
+ * 아직 실제 Model/API가 연결되지 않은 전략의 상세 placeholder(현재는 물림방지만 해당) —
+ * `strategyKey`는 COMING_SOON_COPY에 등록된 키 아무거나 받으므로, 대상이 늘어나도 이 컴포넌트는
+ * 수정할 필요가 없다. F4 MVP 대상이던 모멘텀은 canonical 백엔드 전략에 실제로 연결되면서 이 화면
+ * 대신 실 StrategyDetail로 바로 이동하도록 바뀌었다(strategyProducts.ts COMING_SOON_COPY 주석 참고).
+ * 이번 UI/IA 1차 개편 STOP CONDITION(새 canonical strategy id
  * 결정 금지, 새 Backtest response 정의 금지, 기존 mock 데이터를 새 전략인 것처럼 위장 금지)에 따라
  * 실제 Model/API를 연결하지 않는다.
  *
@@ -46,10 +50,8 @@ export default function StrategyComingSoon({ strategyKey, userName, onNavigate, 
             <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-surface-soft text-muted">
               <Clock size={26} />
             </div>
-            <h2 className="text-2xl font-bold tracking-[-0.025em]">백테스트를 준비하고 있어요</h2>
-            <p className="max-w-[520px] text-[17px] leading-7 text-muted">
-              실제 모델이 연결되면 기간별 성과와 지표를 여기서 확인할 수 있어요.
-            </p>
+            <h2 className="text-2xl font-bold tracking-[-0.025em]">{copy.panelHeading}</h2>
+            <p className="max-w-[520px] text-[17px] leading-7 text-muted">{copy.panelBody}</p>
           </section>
 
           {/* 기존 AI 설명 카드와 같은 위치/스타일 — 캐릭터는 기존 것을 그대로 재사용 */}
@@ -59,26 +61,22 @@ export default function StrategyComingSoon({ strategyKey, userName, onNavigate, 
               <span className="text-[22px] font-bold leading-[34px] tracking-[-0.025em]">
                 모델이 준비되면 물방개가 결과를 설명해드릴게요
               </span>
-              <p className="max-w-[760px] text-lg leading-[30px] text-ink-soft">
-                지금은 이 전략의 정보구조만 먼저 볼 수 있어요.
-              </p>
+              <p className="max-w-[760px] text-lg leading-[30px] text-ink-soft">{copy.aiBody}</p>
             </div>
           </section>
 
           {/* 기존 투자 시작 CTA와 같은 위치 — 실제 CTA는 아직 연결하지 않는다 */}
           <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
             <div className="flex flex-col gap-2.5">
-              <span className="text-2xl font-bold tracking-[-0.025em] text-white">투자 시작은 아직 준비 중이에요</span>
-              <span className="text-[17px] leading-7 text-neutral-muted">모델이 연결되면 이 전략으로 투자를 시작할 수 있어요.</span>
+              <span className="text-2xl font-bold tracking-[-0.025em] text-white">{copy.ctaHeading}</span>
+              <span className="text-[17px] leading-7 text-neutral-muted">{copy.ctaBody}</span>
             </div>
             <span className="shrink-0 rounded-full bg-white/10 px-7 py-4 text-base font-bold text-white">
-              준비 중
+              {copy.ctaBadge}
             </span>
           </section>
 
-          <p className="text-sm leading-[22px] text-subtle">
-            ※ 이 전략은 아직 실제 모델과 연결되지 않았어요. 위 화면은 정보구조 확인을 위한 준비 화면입니다.
-          </p>
+          <p className="text-sm leading-[22px] text-subtle">{copy.disclaimer}</p>
         </div>
       </main>
     </div>

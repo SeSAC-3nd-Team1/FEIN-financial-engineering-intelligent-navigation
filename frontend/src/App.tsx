@@ -343,6 +343,7 @@ export default function App() {
     ctxStrategyId: string,
     ctxAmount: number,
     ctxMode: OperationMode,
+    agreements: SignupPayload["agreements"] = investmentAgreements,
   ) => {
     setStrategyId(ctxStrategyId);
     setInvestmentAmount(ctxAmount);
@@ -352,6 +353,7 @@ export default function App() {
       strategyId: ctxStrategyId,
       amount: ctxAmount,
       mode: ctxMode,
+      agreements,
     });
     if (step === "invest-deposit" || step === "invest-confirm") {
       const ctxStrategyName =
@@ -482,6 +484,7 @@ export default function App() {
           setStrategyId(restored.strategyId);
           setInvestmentAmount(restored.amount);
           setInvestmentMode(restored.mode);
+          setInvestmentAgreements(restored.agreements ?? []);
           setScreen(restored.step);
         }
       }
@@ -941,7 +944,7 @@ export default function App() {
           userName={userName}
           onNavigate={navigate}
           onBack={() => setScreen("strategy-list")}
-          onSelectMomentum={() => {
+          onSelectAvailableStrategy={() => {
             setStrategyId("momentum");
             setStrategyDetailBackTarget("strategy-f4");
             setStrategyRecommendation(null);
@@ -1078,6 +1081,7 @@ export default function App() {
               strategyId,
               investmentAmount,
               investmentMode,
+              agreements,
             );
           }}
         />
