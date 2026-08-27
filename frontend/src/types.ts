@@ -5,7 +5,7 @@ export type Screen =
   | 'risk' | 'risk-result' | 'investor-check'
   | 'strategy-list' | 'strategy' | 'start'
   // 물·방·개 전략 체계(UI/IA 1차 개편) — 실제 Model/API 미연결, strategy-list 카드에서만 진입
-  | 'strategy-f4' | 'strategy-coming-soon-loss-avoidance' | 'strategy-coming-soon-event-driven' | 'strategy-preview'
+  | 'strategy-f4' | 'strategy-coming-soon-loss-avoidance' | 'strategy-coming-soon-momentum' | 'strategy-preview'
   // 투자 시작 Flow — "이 전략으로 시작하기" 이후, 사용자 준비 상태에 따라 필요한 화면으로만 분기
   | 'invest-terms' | 'invest-account' | 'invest-deposit' | 'invest-confirm'
   | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail'

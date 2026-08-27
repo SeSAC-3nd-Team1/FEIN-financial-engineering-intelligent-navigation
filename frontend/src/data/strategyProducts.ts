@@ -64,44 +64,44 @@ export interface F4SubStrategy {
 }
 
 /**
- * 방탄 F4 전략집 하위 4개 — 이벤트 드리븐만 MVP에서 실제 연결 대상(상세는 StrategyComingSoon 참고).
- * 2차 디자인 QA: 실제 이용 가능한 전략을 먼저 보여주는 게 자연스럽다는 피드백에 따라 이벤트
- * 드리븐을 배열 맨 앞으로 이동했다 — canonical id/데이터 구조는 그대로, display order만 변경.
+ * 방탄 F4 전략집 하위 4개 — MVP 실제 연결 대상이 이벤트 드리븐 → 모멘텀으로 변경됨(상세는
+ * StrategyComingSoon 참고). 모멘텀을 배열 맨 앞으로, 이벤트 드리븐은 다른 테스트 중 전략과
+ * 같은 자리로 이동했다 — canonical id/데이터 구조는 그대로, status·display order만 변경.
  */
 export const F4_SUB_STRATEGIES: F4SubStrategy[] = [
   {
-    id: 'f4-event-driven', name: '이벤트 드리븐 전략', status: 'available',
-    description: '공시나 뉴스 같은 시장 이벤트를 활용해 상대적으로 유리한 종목을 찾는 전략이에요.',
+    id: 'f4-momentum', name: '모멘텀 전략', status: 'available',
+    description: '최근 가격 흐름이 강한 종목의 움직임을 활용하는 전략이에요.',
   },
   {
     id: 'f4-value', name: '가치주 전략', status: 'testing',
     description: '기업의 가치에 비해 상대적으로 저평가된 종목을 찾는 전략이에요.',
   },
   {
-    id: 'f4-momentum', name: '모멘텀 전략', status: 'testing',
-    description: '최근 가격 흐름이 강한 종목의 움직임을 활용하는 전략이에요.',
-  },
-  {
     id: 'f4-stat-arb', name: '통계적 차익거래 전략', status: 'testing',
     description: '종목 간 가격 관계와 통계적 패턴을 활용하는 전략이에요.',
+  },
+  {
+    id: 'f4-event-driven', name: '이벤트 드리븐 전략', status: 'testing',
+    description: '공시나 뉴스 같은 시장 이벤트를 활용해 상대적으로 유리한 종목을 찾는 전략이에요.',
   },
 ];
 
 export const F4_COLLECTION_INTRO = {
   name: '방탄 F4 전략집',
-  description: '시장에서 활용되는 대표적인 투자 전략 4가지를 살펴보세요. 이벤트 드리븐 전략은 MVP에서 실제로 이용할 수 있어요.',
+  description: '시장에서 활용되는 대표적인 투자 전략 4가지를 살펴보세요. 모멘텀 전략은 MVP에서 실제로 이용할 수 있어요.',
 };
 
 /**
- * StrategyComingSoon 전용 카피 — 물림방지/이벤트 드리븐 모두 아직 실제 Model/API가 연결되지 않아
+ * StrategyComingSoon 전용 카피 — 물림방지/모멘텀 모두 아직 실제 Model/API가 연결되지 않아
  * 실제 백테스트 대신 이 정적 안내 문구를 보여준다.
  * TODO(Mock/실제 Model contract 확정 후): canonical strategy id가 정해지면 이 화면 대신 기존
  * StrategyDetail(실 backtest 연동)로 교체한다.
  *
- * 3차 디자인 QA: 이벤트 드리븐은 F4 화면에서 "이용 가능"으로 보여주면서 이 화면에서는 "Coming
- * Soon/준비 중"으로 읽히면 모순되므로, panel/AI/CTA 카피를 "MVP 연동을 준비 중"이라는 의미로
- * 별도로 다듬었다(전략 자체가 없는 게 아니라 이 화면의 연동 작업이 진행 중이라는 뉘앙스).
- * 물림방지는 아직 이런 모순이 없어 기존 카피를 그대로 유지한다.
+ * F4 MVP 대상이 이벤트 드리븐 → 모멘텀으로 바뀌면서 이 키도 함께 옮겼다. 모멘텀은 F4 화면에서
+ * "이용 가능"으로 보여주면서 이 화면에서는 "Coming Soon/준비 중"으로 읽히면 모순되므로,
+ * panel/AI/CTA 카피를 "MVP 연동을 준비 중"이라는 의미로 다듬었다(전략 자체가 없는 게 아니라
+ * 이 화면의 연동 작업이 진행 중이라는 뉘앙스). 물림방지는 이런 모순이 없어 기존 카피를 유지한다.
  */
 export const COMING_SOON_COPY = {
   'loss-avoidance': {
@@ -117,17 +117,17 @@ export const COMING_SOON_COPY = {
     ctaBadge: '준비 중',
     disclaimer: '※ 이 전략은 아직 실제 모델과 연결되지 않았어요. 위 화면은 정보구조 확인을 위한 준비 화면입니다.',
   },
-  'event-driven': {
-    name: '이벤트 드리븐 전략',
+  momentum: {
+    name: '모멘텀 전략',
     meta: '방탄 F4 전략집 · MVP에서 실제 이용 가능 예정',
-    description: '공시나 뉴스 같은 시장 이벤트를 활용해 상대적으로 유리한 종목을 찾는 전략이에요.',
+    description: '최근 가격 흐름이 강한 종목의 움직임을 활용하는 전략이에요.',
     backLabel: '← 방탄 F4 전략집',
-    panelHeading: 'MVP 연동을 준비하고 있어요',
-    panelBody: '이벤트 드리븐 전략은 실제 모델과 연결될 예정이에요. 연동이 끝나면 이 화면에서 기간별 백테스트 결과를 확인할 수 있어요.',
-    aiBody: '모델 연동이 끝나면 물방개가 이벤트 드리븐 전략의 결과를 설명해드릴게요.',
+    panelHeading: '모멘텀 전략의 MVP 연동을 준비하고 있어요',
+    panelBody: '연동이 끝나면 이 화면에서 백테스트 결과를 확인할 수 있어요.',
+    aiBody: '모델 연동이 끝나면 물방개가 모멘텀 전략의 결과를 설명해드릴게요.',
     ctaHeading: '투자 시작은 연동이 끝난 뒤 열려요',
     ctaBody: '모델 연결이 끝나면 이 화면에서 바로 투자를 시작할 수 있어요.',
     ctaBadge: '연동 준비 중',
-    disclaimer: '※ 이벤트 드리븐 전략은 실제 모델과 연결될 예정이에요. 지금 화면은 연동 전 정보구조 확인용입니다.',
+    disclaimer: '※ 모멘텀 전략은 실제 모델과 연결될 예정이에요. 지금 화면은 연동 전 정보구조 확인용입니다.',
   },
 } as const;

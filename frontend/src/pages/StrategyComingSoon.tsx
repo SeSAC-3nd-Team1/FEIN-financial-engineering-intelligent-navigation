@@ -11,7 +11,9 @@ interface Props {
 }
 
 /**
- * 물림방지 / 이벤트 드리븐 전략 상세 — 이번 UI/IA 1차 개편 STOP CONDITION(새 canonical strategy id
+ * 물림방지 / 모멘텀(F4 MVP 대상) 전략 상세 — `strategyKey`는 COMING_SOON_COPY에 등록된 키
+ * 아무거나 받으므로, F4의 MVP 대상 전략이 다시 바뀌어도 이 컴포넌트는 수정할 필요가 없다.
+ * 이번 UI/IA 1차 개편 STOP CONDITION(새 canonical strategy id
  * 결정 금지, 새 Backtest response 정의 금지, 기존 mock 데이터를 새 전략인 것처럼 위장 금지)에 따라
  * 실제 Model/API를 연결하지 않는다.
  *

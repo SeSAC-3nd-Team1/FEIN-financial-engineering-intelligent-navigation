@@ -743,7 +743,7 @@ export default function App() {
           userName={userName}
           onNavigate={navigate}
           onBack={() => setScreen('strategy-list')}
-          onSelectEventDriven={() => setScreen('strategy-coming-soon-event-driven')}
+          onSelectAvailableStrategy={() => setScreen('strategy-coming-soon-momentum')}
         />
       )}
       {screen === 'strategy-coming-soon-loss-avoidance' && (
@@ -754,9 +754,9 @@ export default function App() {
           onBack={() => setScreen('strategy-list')}
         />
       )}
-      {screen === 'strategy-coming-soon-event-driven' && (
+      {screen === 'strategy-coming-soon-momentum' && (
         <StrategyComingSoon
-          strategyKey="event-driven"
+          strategyKey="momentum"
           userName={userName}
           onNavigate={navigate}
           onBack={() => setScreen('strategy-f4')}
