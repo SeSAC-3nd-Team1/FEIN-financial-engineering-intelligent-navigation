@@ -77,6 +77,7 @@ def simulate_history(
         raise ValueError("거래일이 없습니다.")
     if initial_cash <= 0:
         raise ValueError("초기 투자금은 0보다 커야 합니다.")
+    has_explicit_schedule = bool(target_weight_schedule)
     schedules = {0: target_weights, **(target_weight_schedule or {})}
     if any(index < 0 or index >= len(trading_dates) for index in schedules):
         raise ValueError("목표 비중 변경 거래일이 전체 기간을 벗어났습니다.")
@@ -145,7 +146,8 @@ def simulate_history(
 
     for day_index, day in enumerate(trading_dates):
         schedule_changed = day_index > 0 and day_index in schedules
-        if day_index > 0 and (day_index % rebalance_every == 0 or schedule_changed):
+        periodic_rebalance = not has_explicit_schedule and day_index % rebalance_every == 0
+        if day_index > 0 and (periodic_rebalance or schedule_changed):
             active_weights = weights_for(day_index)
             evaluations = {
                 code: money(holding.quantity * closes[code][day])

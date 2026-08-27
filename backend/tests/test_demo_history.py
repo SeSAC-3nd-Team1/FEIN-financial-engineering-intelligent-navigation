@@ -87,6 +87,24 @@ def test_simulation_rotates_into_new_momentum_stocks() -> None:
     assert result.holdings["CCC"].quantity > 0
 
 
+def test_explicit_model_schedule_does_not_add_21_day_rebalances() -> None:
+    dates, closes = market(43)
+    result = simulate_history(
+        dates,
+        closes,
+        {"AAA": Decimal("0.60"), "BBB": Decimal("0.35")},
+        initial_cash=Decimal("3000000"),
+        target_weight_schedule={
+            20: {"AAA": Decimal("0.35"), "BBB": Decimal("0.60")}
+        },
+    )
+
+    trade_dates = {trade.trade_date for trade in result.trades}
+    assert dates[20] in trade_dates
+    assert dates[21] not in trade_dates
+    assert dates[42] not in trade_dates
+
+
 def test_demo_seed_requires_explicit_opt_in_and_rejects_production() -> None:
     with pytest.raises(RuntimeError, match="DEMO_SEED_ENABLED"):
         ensure_demo_environment("", "development")

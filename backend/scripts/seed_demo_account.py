@@ -7,7 +7,7 @@ import os
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
@@ -32,26 +32,19 @@ from app.models import (
 )
 from app.services.model_recommendation import ModelRecommendationService
 from scripts.demo_history import SimulationResult, simulate_history
+from scripts.historical_momentum import (
+    PriceBar,
+    monthly_signal_dates,
+    select_momentum_targets,
+)
 
 
-DEMO_VERSION = "minjun-1y-v2"
+DEMO_VERSION = "minjun-1y-v3"
 DEMO_LOGIN_ID = "demomin32"
 DEMO_EMAIL = "demo.minjun@example.invalid"
 INITIAL_CASH = Decimal("3000000.00")
 HISTORY_TRADING_DAYS = 253
 KST = ZoneInfo("Asia/Seoul")
-INITIAL_TARGET_WEIGHTS = {
-    # 적재된 최근 1년 종가에서 극단적 급등 종목을 제외하고 완만한 양의 모멘텀을
-    # 보인 후보군으로 구성한다. 주식 95% + 현금 5% 정책을 유지한다.
-    "033780": Decimal("0.20"),  # KT&G
-    "068270": Decimal("0.18"),  # 셀트리온
-    "000270": Decimal("0.17"),  # 기아
-    "271560": Decimal("0.15"),  # 오리온
-    "005490": Decimal("0.13"),  # POSCO홀딩스
-    "051900": Decimal("0.12"),  # LG생활건강
-}
-
-
 def model_target_weights(snapshot) -> dict[str, Decimal]:
     """실제 최신 모멘텀 산출물만 95% 주식 목표 비중으로 변환한다."""
 
@@ -74,61 +67,93 @@ def ensure_demo_environment(enabled: str, environment: str) -> None:
         raise RuntimeError("운영 환경에서는 데모 시드를 실행할 수 없습니다.")
 
 
-def _common_market_history(
+def _historical_model_history(
     session: Session,
-    stock_codes: tuple[str, ...],
-) -> tuple[list[date], dict[str, dict[date, Decimal]]]:
-    latest_dates = [
-        session.scalar(
-            select(func.max(MarketStockPrice.trade_date)).where(
-                MarketStockPrice.stock_code == stock_code
-            )
-        )
-        for stock_code in stock_codes
-    ]
-    latest_index_date = session.scalar(
-        select(func.max(MarketIndex.trade_date)).where(
-            MarketIndex.market == "KOSPI",
-            MarketIndex.index_name.in_(("코스피", "KOSPI")),
-        )
-    )
-    if any(value is None for value in latest_dates) or latest_index_date is None:
-        raise RuntimeError("데모 생성에 필요한 종목 또는 KOSPI 시장 데이터가 없습니다.")
-    end_date = min(*latest_dates, latest_index_date)
-    start_candidate = end_date - timedelta(days=450)
-
-    closes: dict[str, dict[date, Decimal]] = {}
-    common_dates: set[date] | None = None
-    for stock_code in stock_codes:
-        rows = session.execute(
-            select(MarketStockPrice.trade_date, MarketStockPrice.close_price).where(
-                MarketStockPrice.stock_code == stock_code,
-                MarketStockPrice.trade_date >= start_candidate,
-                MarketStockPrice.trade_date <= end_date,
-            )
-        )
-        closes[stock_code] = {trade_date: Decimal(close) for trade_date, close in rows}
-        dates = set(closes[stock_code])
-        common_dates = dates if common_dates is None else common_dates & dates
-
-    index_dates = set(
+    final_model_date: date,
+    final_model_weights: dict[str, Decimal],
+) -> tuple[
+    list[date],
+    dict[str, dict[date, Decimal]],
+    dict[int, dict[str, Decimal]],
+    dict[int, date],
+]:
+    index_dates = sorted(
+        set(
         session.scalars(
             select(MarketIndex.trade_date).where(
                 MarketIndex.market == "KOSPI",
                 MarketIndex.index_name.in_(("코스피", "KOSPI")),
-                MarketIndex.trade_date >= start_candidate,
-                MarketIndex.trade_date <= end_date,
             )
         )
-    )
-    trading_dates = sorted((common_dates or set()) & index_dates)
-    if len(trading_dates) < HISTORY_TRADING_DAYS:
-        raise RuntimeError(
-            "공통 종가가 있는 거래일이 부족합니다: "
-            f"필요={HISTORY_TRADING_DAYS}, 실제={len(trading_dates)}"
         )
-    trading_dates = trading_dates[-HISTORY_TRADING_DAYS:]
-    return trading_dates, closes
+    )
+    if len(index_dates) < HISTORY_TRADING_DAYS:
+        raise RuntimeError(
+            "KOSPI 거래일이 부족합니다: "
+            f"필요={HISTORY_TRADING_DAYS}, 실제={len(index_dates)}"
+        )
+    trading_dates = index_dates[-HISTORY_TRADING_DAYS:]
+    if final_model_date not in trading_dates:
+        raise RuntimeError("최신 모델 기준일이 1년 데모 거래 기간에 없습니다.")
+    warmup_start = trading_dates[0] - timedelta(days=260)
+    rows = session.execute(
+        select(
+            MarketStockPrice.stock_code,
+            MarketStockPrice.trade_date,
+            MarketStockPrice.open_price,
+            MarketStockPrice.high_price,
+            MarketStockPrice.low_price,
+            MarketStockPrice.close_price,
+            MarketStockPrice.volume,
+            MarketStockPrice.trading_value,
+            MarketStockPrice.market_cap,
+        )
+        .where(
+            MarketStockPrice.trade_date >= warmup_start,
+            MarketStockPrice.trade_date <= trading_dates[-1],
+        )
+        .order_by(MarketStockPrice.stock_code, MarketStockPrice.trade_date)
+    )
+    bars_by_stock: dict[str, list[PriceBar]] = {}
+    for row in rows:
+        bar = PriceBar(*row)
+        bars_by_stock.setdefault(bar.stock_code, []).append(bar)
+
+    signal_dates = sorted(
+        set(monthly_signal_dates(trading_dates)) | {final_model_date}
+    )
+    weights_by_date = {
+        signal_date: select_momentum_targets(bars_by_stock, signal_date)
+        for signal_date in signal_dates
+    }
+    if weights_by_date[final_model_date] != final_model_weights:
+        raise RuntimeError(
+            "DB 시점 데이터로 재현한 최신 모멘텀 결과가 generated 산출물과 다릅니다."
+        )
+
+    selected_codes = sorted(
+        {code for weights in weights_by_date.values() for code in weights}
+    )
+    closes: dict[str, dict[date, Decimal]] = {}
+    for stock_code in selected_codes:
+        observed = {
+            bar.trade_date: Decimal(bar.close_price)
+            for bar in bars_by_stock[stock_code]
+            if bar.close_price is not None and bar.close_price > 0
+        }
+        aligned: dict[date, Decimal] = {}
+        last_close: Decimal | None = None
+        for trading_date in trading_dates:
+            last_close = observed.get(trading_date, last_close)
+            if last_close is None:
+                raise RuntimeError(f"{stock_code} 평가 종가가 없습니다: {trading_date}")
+            aligned[trading_date] = last_close
+        closes[stock_code] = aligned
+
+    date_to_index = {trading_date: index for index, trading_date in enumerate(trading_dates)}
+    schedule = {date_to_index[day]: weights for day, weights in weights_by_date.items()}
+    schedule_dates = {date_to_index[day]: day for day in weights_by_date}
+    return trading_dates, closes, schedule, schedule_dates
 
 
 def _publish_model_targets(
@@ -292,26 +317,20 @@ def seed_demo_account(
         raise RuntimeError("활성 momentum 전략이 없습니다. DB migration/seed를 먼저 실행해주세요.")
     model_snapshot = ModelRecommendationService().latest()
     final_target_weights = model_target_weights(model_snapshot)
-    stock_codes = tuple(
-        sorted(set(INITIAL_TARGET_WEIGHTS) | set(final_target_weights))
+    trading_dates, closes, target_schedule, target_schedule_dates = (
+        _historical_model_history(
+            session,
+            model_snapshot.as_of,
+            final_target_weights,
+        )
     )
-    trading_dates, closes = _common_market_history(session, stock_codes)
-    model_dates = [
-        index
-        for index, trading_date in enumerate(trading_dates)
-        if trading_date <= model_snapshot.as_of
-    ]
-    if not model_dates:
-        raise RuntimeError("모델 기준일이 데모 투자 기간보다 이전입니다.")
-    model_rotation_index = model_dates[-1]
+    first_weights = target_schedule[0]
     simulation = simulate_history(
         trading_dates,
         closes,
-        INITIAL_TARGET_WEIGHTS,
+        first_weights,
         initial_cash=INITIAL_CASH,
-        target_weight_schedule={
-            model_rotation_index: final_target_weights,
-        },
+        target_weight_schedule=target_schedule,
     )
     started_at = datetime.combine(trading_dates[0], time(9), tzinfo=KST)
     now = datetime.now(UTC)
@@ -416,11 +435,12 @@ def seed_demo_account(
                 created_at=started_at,
             )
         )
-        _publish_model_targets(
-            session,
-            model_snapshot.as_of,
-            final_target_weights,
-        )
+        for schedule_index, weights in sorted(target_schedule.items()):
+            _publish_model_targets(
+                session,
+                target_schedule_dates[schedule_index],
+                weights,
+            )
         _persist_simulation(session, account, simulation)
         session.commit()
     except Exception:
