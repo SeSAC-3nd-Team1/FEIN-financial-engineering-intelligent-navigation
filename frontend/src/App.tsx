@@ -1439,7 +1439,12 @@ export default function App() {
       )}
 
       {/* 전 화면 상주 플로팅 챗봇 */}
-      <Chatbot />
+      <Chatbot
+        screen={screen}
+        stockCode={stockCode}
+        strategyId={strategyId}
+        accountId={tradingAccount?.id}
+      />
     </div>
   );
 }
