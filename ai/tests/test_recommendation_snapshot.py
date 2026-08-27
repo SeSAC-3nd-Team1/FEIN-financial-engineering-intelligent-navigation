@@ -40,7 +40,10 @@ def test_snapshot_uses_latest_date_and_excludes_ineligible_stocks() -> None:
     )
 
     assert snapshot.as_of == "2026-08-26"
+    assert snapshot.generated_at
     assert snapshot.model_version == "price-momentum-v1"
+    assert snapshot.source == "generated"
+    assert not snapshot.is_stale
     assert [item.symbol for item in snapshot.recommendations] == ["B", "D", "A"]
     assert sum(
         item.target_weight for item in snapshot.recommendations

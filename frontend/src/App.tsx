@@ -134,6 +134,7 @@ export default function App() {
   const [strategyCatalogError, setStrategyCatalogError] = useState<string | null>(null);
   const [strategyCatalogRetry, setStrategyCatalogRetry] = useState(0);
   const [strategyRecommendation, setStrategyRecommendation] = useState<StrategyRecommendationItemResponse | null>(null);
+  const [strategyDetailBackTarget, setStrategyDetailBackTarget] = useState<Screen>('strategy-list');
   const strategy = strategyCatalog.find((item) => item.id === strategyId) ?? null;
   useEffect(() => {
     let cancelled = false;
@@ -709,6 +710,7 @@ export default function App() {
           onNavigate={navigate}
           onSelectStrategy={(selectedStrategy, selectedRecommendation) => {
             setStrategyId(selectedStrategy.id);
+            setStrategyDetailBackTarget('strategy-list');
             // RiskResult가 방금 사용한 실제 카탈로그 객체를 그대로 이어받는다. App의 병렬 카탈로그
             // 조회가 아직 끝나지 않았거나 일시 실패해도 상세 화면이 로컬 목업으로 되돌아가지 않는다.
             setStrategyCatalog((current) => [
@@ -743,7 +745,12 @@ export default function App() {
           userName={userName}
           onNavigate={navigate}
           onBack={() => setScreen('strategy-list')}
-          onSelectEventDriven={() => setScreen('strategy-coming-soon-event-driven')}
+          onSelectMomentum={() => {
+            setStrategyId('momentum');
+            setStrategyDetailBackTarget('strategy-f4');
+            setStrategyRecommendation(null);
+            setScreen('strategy');
+          }}
         />
       )}
       {screen === 'strategy-coming-soon-loss-avoidance' && (
@@ -776,6 +783,7 @@ export default function App() {
           recommendation={strategyRecommendation?.strategy_id === strategy.id ? strategyRecommendation : null}
           userName={userName}
           onNavigate={navigate}
+          onBack={() => setScreen(strategyDetailBackTarget)}
           onStart={handleStartInvesting}
           onRequestLoginForBacktest={requestLoginForBacktest}
           onConfirmStrategyChange={confirmStrategyChange}

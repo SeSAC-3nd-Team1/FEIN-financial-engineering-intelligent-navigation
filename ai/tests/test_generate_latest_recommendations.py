@@ -13,13 +13,27 @@ from inference.generate_latest_recommendations import (
 
 
 class FakeFeatureStore:
-    def __init__(self, model: pd.DataFrame, algorithm: pd.DataFrame) -> None:
+    def __init__(
+        self,
+        model: pd.DataFrame,
+        algorithm: pd.DataFrame,
+        master: pd.DataFrame | None = None,
+    ) -> None:
         self.frames = {
             "model_stock_daily": model,
             "algorithm_ohlcv": algorithm,
+            "security_master_latest": master if master is not None else master_frame(),
         }
 
     def parquet_files(self, dataset: str, version: str) -> tuple[FeatureFile, ...]:
+        if dataset == "security_master_latest":
+            return (
+                FeatureFile(
+                    path=f"{dataset}/version=v{version}/year=2026/month=08/part.parquet",
+                    size=1,
+                    etag=f"{dataset}-etag",
+                ),
+            )
         return (
             FeatureFile(
                 path=f"{dataset}/version=v{version}/year=2026/month=07/part.parquet",
@@ -68,6 +82,16 @@ def algorithm_frame() -> pd.DataFrame:
     )
 
 
+def master_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "reference_date": ["2026-08-26"] * 2,
+            "stock_code": ["005930", "000660"],
+            "stock_name": ["삼성전자", "SK하이닉스"],
+        }
+    )
+
+
 def test_real_dataset_pipeline_joins_filters_and_exports(tmp_path: Path) -> None:
     output = tmp_path / "snapshot.json"
     store = FakeFeatureStore(model_frame(), algorithm_frame())
@@ -77,14 +101,20 @@ def test_real_dataset_pipeline_joins_filters_and_exports(tmp_path: Path) -> None
         output,
         model_version="2",
         algorithm_version="v2",
+        master_version="2",
         top_n=2,
     )
 
     assert snapshot.data_version == (
-        "model_stock_daily-v2+algorithm_ohlcv-v2+risk-filter-v1"
+        "model_stock_daily-v2+algorithm_ohlcv-v2+"
+        "security_master_latest-v2+risk-filter-v1"
     )
     assert [item.symbol for item in snapshot.recommendations] == ["000660", "005930"]
-    assert json.loads(output.read_text(encoding="utf-8"))["as_of"] == "2026-08-26"
+    assert [item.stock_name for item in snapshot.recommendations] == ["SK하이닉스", "삼성전자"]
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["as_of"] == "2026-08-26"
+    assert payload["source"] == "generated"
+    assert payload["generated_at"]
 
 
 def test_pipeline_rejects_misaligned_latest_dates() -> None:
@@ -96,6 +126,7 @@ def test_pipeline_rejects_misaligned_latest_dates() -> None:
             FakeFeatureStore(model_frame(), algorithm),  # type: ignore[arg-type]
             model_version="2",
             algorithm_version="2",
+            master_version="2",
         )
 
 
@@ -105,6 +136,7 @@ def test_pipeline_rejects_missing_algorithm_rows() -> None:
             FakeFeatureStore(model_frame(), algorithm_frame().iloc[:1]),  # type: ignore[arg-type]
             model_version="2",
             algorithm_version="2",
+            master_version="2",
         )
 
 
@@ -116,6 +148,7 @@ def test_pipeline_computes_risk_eligibility() -> None:
         FakeFeatureStore(model, algorithm_frame()),  # type: ignore[arg-type]
         model_version="2",
         algorithm_version="2",
+        master_version="2",
     ).set_index("stock_code")
 
     assert bool(features.loc["005930", "risk_eligible"])
@@ -124,6 +157,38 @@ def test_pipeline_computes_risk_eligibility() -> None:
 
 
 def test_data_lineage_normalizes_version_prefixes() -> None:
-    assert data_lineage("v3", "4") == (
-        "model_stock_daily-v3+algorithm_ohlcv-v4+risk-filter-v1"
+    assert data_lineage("v3", "4", "v5") == (
+        "model_stock_daily-v3+algorithm_ohlcv-v4+"
+        "security_master_latest-v5+risk-filter-v1"
     )
+
+
+def test_pipeline_keeps_rows_with_missing_stock_names() -> None:
+    master = master_frame().iloc[:1]
+
+    features = build_latest_feature_frame(
+        FakeFeatureStore(model_frame(), algorithm_frame(), master),  # type: ignore[arg-type]
+        model_version="2",
+        algorithm_version="2",
+        master_version="2",
+    ).set_index("stock_code")
+
+    assert pd.isna(features.loc["000660", "stock_name"])
+
+
+@pytest.mark.parametrize(
+    "master_codes",
+    ([5930, 660], ["A005930", "A000660"]),
+)
+def test_pipeline_normalizes_master_stock_codes(master_codes: list[object]) -> None:
+    master = master_frame()
+    master["stock_code"] = master_codes
+
+    features = build_latest_feature_frame(
+        FakeFeatureStore(model_frame(), algorithm_frame(), master),  # type: ignore[arg-type]
+        model_version="2",
+        algorithm_version="2",
+        master_version="2",
+    )
+
+    assert features["stock_name"].tolist() == ["삼성전자", "SK하이닉스"]

@@ -141,7 +141,7 @@ print(metrics.to_dict())
 
 실제 E2E 실행 경로인 `inference.generate_latest_recommendations` CLI는 Azure의
 `model_stock_daily`에서 모델 Feature를, `algorithm_ohlcv`에서 거래 가능 여부를 읽어 자연키로
-결합하고 AI Risk Filter를 적용한다. 이어 실제 모델 함수를 실행한 뒤 JSON을 임시 파일에 먼저 쓰고
+결합하고 `security_master_latest`에서 표시용 종목명을 보강한 뒤 AI Risk Filter를 적용한다. 이어 실제 모델 함수를 실행한 뒤 JSON을 임시 파일에 먼저 쓰고
 원자적으로 교체한다. Compose에서는 AI의
 `/model-artifacts/model_recommendation_snapshot.json`과 Backend의 동일 경로가 전용 볼륨으로 연결된다.
 
@@ -149,11 +149,19 @@ print(metrics.to_dict())
 docker compose --profile ai run --rm ai python -m inference.generate_latest_recommendations \
   --model-version 2 \
   --algorithm-version 2 \
+  --master-version 1 \
   --top-n 5
 ```
 
-두 Dataset의 최신 거래일이나 자연키가 어긋나면 오래되거나 불완전한 추천을 발행하지 않고 실패한다.
-`data_version`에는 `model_stock_daily`, `algorithm_ohlcv`, Risk Filter 버전이 모두 기록된다.
+`docker compose --profile ai up recommendation-generator`를 사용하면 동일 생성을 one-shot 서비스로
+실행할 수 있다. Backend 응답의 `source`는 실제 생성 파일이면 `generated`, 패키지 내 시연 데이터면
+`fallback`이며, `generated_at`과 `is_stale`로 생성 시각과 최신 여부를 확인할 수 있다.
+`MODEL_RECOMMENDATION_ALLOW_FALLBACK=false`로 설정하면 생성 파일 부재·손상 시 fallback 대신 503을
+반환한다. 최신 판단 기준은 `MODEL_RECOMMENDATION_STALE_AFTER_DAYS`로 조정한다.
+
+가격 Dataset의 최신 거래일이나 자연키가 어긋나면 오래되거나 불완전한 추천을 발행하지 않고 실패한다.
+종목 마스터에 이름이 없는 우선주 등의 일부 종목은 API의 nullable 계약에 따라 종목 코드를 표시명으로 사용한다.
+`data_version`에는 `model_stock_daily`, `algorithm_ohlcv`, `security_master_latest`, Risk Filter 버전이 모두 기록된다.
 생성 결과는 Backend의
 `GET /api/v1/model-recommendations/latest`에서 계약 검증 후 제공된다. 로컬 E2E 경로는 고정 Feature
 fixture로 다음과 같이 재현할 수 있다.
