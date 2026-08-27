@@ -60,7 +60,13 @@ def upgrade() -> None:
         "invested_principal >= 0",
     )
 
-    op.drop_constraint("ck_cash_ledger_type_values", "cash_ledger", type_="check")
+    # 이 제약조건은 0020에서 naming convention이 적용된 물리 이름으로 생성됐다.
+    # op.f()로 이미 확정된 이름임을 표시하지 않으면 Alembic이 접두사를 다시 붙인다.
+    op.drop_constraint(
+        op.f("ck_cash_ledger_type_values"),
+        "cash_ledger",
+        type_="check",
+    )
     op.create_check_constraint(
         "type_values",
         "cash_ledger",
@@ -166,7 +172,11 @@ def downgrade() -> None:
     op.drop_table("fund_operation_orders")
     op.drop_index("ix_fund_operations_account_created", table_name="fund_operations")
     op.drop_table("fund_operations")
-    op.drop_constraint("ck_cash_ledger_type_values", "cash_ledger", type_="check")
+    op.drop_constraint(
+        op.f("ck_cash_ledger_type_values"),
+        "cash_ledger",
+        type_="check",
+    )
     op.create_check_constraint(
         "type_values",
         "cash_ledger",
@@ -175,7 +185,7 @@ def downgrade() -> None:
         ")",
     )
     op.drop_constraint(
-        "ck_virtual_accounts_invested_principal_nonnegative",
+        op.f("ck_virtual_accounts_invested_principal_nonnegative"),
         "virtual_accounts",
         type_="check",
     )
