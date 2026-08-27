@@ -86,7 +86,25 @@ paths = store.parquet_paths("model_stock_daily", "2")
 frame = store.read_partition(paths[0], columns=["stock_code", "trade_date"])
 ```
 
+### 학습 Dataset 검증과 Manifest
+
+`model_stock_daily`를 학습에 사용하기 전에 전체 버전의 Parquet partition을 검증하고 JSON Manifest를 생성한다.
+
+```bash
+docker compose exec ai python training/validate_dataset.py \
+  --dataset model_stock_daily \
+  --version 2 \
+  --output artifacts/model-stock-daily-v2-manifest.json
+```
+
+검증은 partition schema 일치, 날짜 범위, 행·종목 수, key 결측·중복, Feature/Target 결측률과 무한대, 120일 warm-up, Target 관측일, split별 eligible target 경계를 확인한다. 오류가 하나라도 있으면 `DatasetValidationError`로 학습 전에 중단하며 Manifest를 쓰지 않는다.
+
+Manifest에는 Dataset/version, schema fingerprint, 기간, 행·종목 수, 결측률, Blob 경로·크기·ETag·수정 시각과 생성 시각이 기록된다. `manifest_id`는 생성 시각을 제외한 Dataset 식별 정보의 SHA-256이므로 같은 입력 파일 집합과 검증 결과는 같은 ID를 갖는다. 각 Blob은 목록 조회 시 얻은 ETag를 조건부 다운로드에 사용하므로 검증 중 파일이 변경되면 읽기가 실패한다.
+
+Azure 접근은 `DefaultAzureCredential` 기반 읽기 전용이며 Shared Key와 원본 Parquet를 저장소에 저장하지 않는다. 출력은 Git에서 제외된 `ai/artifacts/`에 둔다. 현재 구현은 모든 partition을 메모리에 적재하므로 대용량 Dataset 검증 시 컨테이너 메모리를 충분히 확보해야 한다.
+
 ## 성과 지표 평가
+
 
 `evaluation.calculate_performance_metrics`는 일별 수익률 또는 자산 곡선 중 하나를 입력받아 다음 지표를 계산한다.
 
