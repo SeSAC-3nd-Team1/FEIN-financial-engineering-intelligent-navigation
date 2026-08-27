@@ -162,7 +162,10 @@ class AccountCreateRequest(BaseModel):
         default="나의 가상 투자계좌", min_length=1, max_length=100
     )
     operation_mode: OperationMode = "SEMI_AUTO"
-    initial_deposit: Decimal = Field(default=Decimal("0"), ge=0)
+    # 0 = 예수금 없이 계좌만 만드는 기존 경로(전략 변경 등)도 그대로 허용한다.
+    # 상한은 StartInvesting.tsx의 "10만원 ~ 1억원" 클라이언트 측 clamp와 동일하게 맞춰
+    # API를 직접 호출해 그 제한을 우회하는 것을 막는다.
+    initial_deposit: Decimal = Field(default=Decimal("0"), ge=0, le=Decimal("100000000"))
 
 
 class AccountResponse(BaseModel):
