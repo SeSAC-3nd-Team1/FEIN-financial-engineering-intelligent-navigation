@@ -157,7 +157,7 @@ class BacktestService:
     @staticmethod
     def _financial_map(points: list[PointInTimeFinancial]) -> dict[str, list[PointInTimeFinancial]]:
         financials: dict[str, list[PointInTimeFinancial]] = defaultdict(list)
-        for point in sorted(points, key=lambda item: (item.stock_code, item.available_at)):
+        for point in sorted(points, key=lambda item: (item.stock_code, item.period_end, item.available_at)):
             financials[point.stock_code].append(point)
         return financials
 
@@ -268,13 +268,14 @@ class BacktestService:
                 market_cap = cap_history.get(code, {}).get(as_of)
                 if market_cap is None or market_cap <= 0:
                     continue
-                latest_financial = next(
-                    (
-                        point
-                        for point in reversed(financial_history.get(code, []))
-                        if point.available_at <= as_of
-                    ),
-                    None,
+                available_financials = [
+                    point for point in financial_history.get(code, [])
+                    if point.available_at <= as_of
+                ]
+                latest_financial = max(
+                    available_financials,
+                    key=lambda point: (point.period_end, point.available_at),
+                    default=None,
                 )
                 if latest_financial is None or latest_financial.total_equity <= 0:
                     continue

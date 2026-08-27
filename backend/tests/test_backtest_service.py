@@ -69,6 +69,7 @@ class FakeRepository:
             PointInTimeFinancial(
                 stock_code=code,
                 available_at=self.start - timedelta(days=30),
+                period_end=date(2025, 9, 30),
                 business_year="2025",
                 report_code="11014",
                 fs_div="CFS",
@@ -166,6 +167,7 @@ def test_value_selection_never_uses_financials_before_disclosure_date() -> None:
             PointInTimeFinancial(
                 stock_code=code,
                 available_at=as_of - timedelta(days=1),
+                period_end=date(2025, 9, 30),
                 business_year="2025",
                 report_code="11014",
                 fs_div="CFS",
@@ -176,6 +178,7 @@ def test_value_selection_never_uses_financials_before_disclosure_date() -> None:
         PointInTimeFinancial(
             stock_code="000010",
             available_at=as_of + timedelta(days=1),
+            period_end=date(2025, 9, 30),
             business_year="2025",
             report_code="11014",
             fs_div="CFS",
@@ -195,10 +198,69 @@ def test_value_selection_never_uses_financials_before_disclosure_date() -> None:
     assert "000010" not in selected
 
 
+def test_value_selection_prefers_latest_period_over_late_old_period_correction() -> None:
+    as_of = date(2026, 1, 1)
+    prices = {f"{index:06d}": {as_of: 100.0} for index in range(11)}
+    market_caps = {f"{index:06d}": {as_of: 1000.0} for index in range(11)}
+    financials: dict[str, list[PointInTimeFinancial]] = {}
+    for index in range(10):
+        code = f"{index:06d}"
+        financials[code] = [
+            PointInTimeFinancial(
+                stock_code=code,
+                available_at=date(2025, 11, 15),
+                period_end=date(2025, 9, 30),
+                business_year="2025",
+                report_code="11014",
+                fs_div="CFS",
+                total_equity=Decimal(100 + index),
+            )
+        ]
+
+    # 2024 Q1 정정공시가 더 늦게 접수됐어도, 2026-01-01에 이미 공개된 2025 Q3보다
+    # 최신 재무정보로 취급하면 안 된다. 최신 period의 B/P가 낮으므로 이 종목은 제외돼야 한다.
+    financials["000010"] = [
+        PointInTimeFinancial(
+            stock_code="000010",
+            available_at=date(2025, 11, 15),
+            period_end=date(2025, 9, 30),
+            business_year="2025",
+            report_code="11014",
+            fs_div="CFS",
+            total_equity=Decimal("1"),
+        ),
+        PointInTimeFinancial(
+            stock_code="000010",
+            available_at=date(2025, 12, 20),
+            period_end=date(2024, 3, 31),
+            business_year="2024",
+            report_code="11013",
+            fs_div="CFS",
+            total_equity=Decimal("999999"),
+        ),
+    ]
+
+    selected = BacktestService._select(
+        "value",
+        prices,
+        as_of,
+        market_caps=market_caps,
+        financials=financials,
+    )
+
+    assert len(selected) == 10
+    assert "000010" not in selected
+
+
 def test_financial_period_end_supports_quarter_and_non_december_fiscal_year() -> None:
     assert financial_period_end("2024", "11013", "12") == date(2024, 3, 31)
     assert financial_period_end("2024", "11011", "12") == date(2024, 12, 31)
     assert financial_period_end("2024", "11013", "03") == date(2023, 6, 30)
+
+
+def test_financial_period_end_rejects_missing_accounting_month() -> None:
+    assert financial_period_end("2024", "11011", None) is None
+    assert financial_period_end("2024", "11011", "") is None
 
 
 def test_disclosure_period_match_rejects_other_quarter() -> None:

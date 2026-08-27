@@ -54,6 +54,7 @@ class IndexPricePoint:
 class PointInTimeFinancial:
     stock_code: str
     available_at: date
+    period_end: date
     business_year: str
     report_code: str
     fs_div: str
@@ -69,11 +70,11 @@ def financial_period_end(
     """사업연도·결산월·보고서코드로 해당 재무기간 종료일을 계산한다."""
 
     months_before = REPORT_MONTHS_BEFORE_FY.get(report_code)
-    if months_before is None:
+    if months_before is None or not accounting_month:
         return None
     try:
         fiscal_year = int(business_year)
-        fiscal_month = int(accounting_month or "12")
+        fiscal_month = int(accounting_month)
     except (TypeError, ValueError):
         return None
     if fiscal_month < 1 or fiscal_month > 12:
@@ -270,6 +271,7 @@ class BacktestRepository:
             point = PointInTimeFinancial(
                 stock_code=stock_code,
                 available_at=available_at,
+                period_end=period_end,
                 business_year=financial.business_year,
                 report_code=financial.report_code,
                 fs_div=financial.fs_div,
@@ -284,7 +286,7 @@ class BacktestRepository:
 
         return sorted(
             (point for _, point in selected.values()),
-            key=lambda item: (item.stock_code, item.available_at, item.business_year, item.report_code),
+            key=lambda item: (item.stock_code, item.period_end, item.available_at),
         )
 
     def kospi_prices(self, start_date: date, end_date: date) -> list[IndexPricePoint]:
