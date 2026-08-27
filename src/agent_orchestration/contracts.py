@@ -97,25 +97,57 @@ def extract_json_object(text: str) -> dict[str, Any]:
         raise ValueError("response contains an incomplete fenced JSON payload")
 
     decoder = json.JSONDecoder()
-    objects: list[dict[str, Any]] = []
-    cursor = 0
-    while cursor < len(text):
-        start = text.find("{", cursor)
-        if start == -1:
-            break
-        try:
-            value, end = decoder.raw_decode(text[start:])
-        except json.JSONDecodeError:
-            cursor = start + 1
+    spans: list[tuple[int, int]] = []
+    open_braces: list[int] = []
+    in_string = False
+    escaped = False
+    for index, character in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
             continue
-        if isinstance(value, dict):
-            objects.append(value)
-            if len(objects) > 1:
-                raise ValueError("response contains multiple JSON objects")
-            cursor = start + end
-        else:
-            cursor = start + 1
+        if character == '"':
+            in_string = True
+        elif character == "{":
+            open_braces.append(index)
+        elif character == "}" and open_braces:
+            spans.append((open_braces.pop(), index + 1))
 
+    valid_objects: list[tuple[int, int, dict[str, Any]]] = []
+    for start, end in spans:
+        try:
+            value, decoded_end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and decoded_end == end - start:
+            valid_objects.append((start, end, value))
+
+    for start, end, _ in valid_objects:
+        if any(unclosed < start for unclosed in open_braces):
+            raise ValueError("response contains an incomplete JSON object")
+        if any(
+            outer_start < start
+            and outer_end >= end
+            and not any(outer_start == valid_start and outer_end == valid_end for valid_start, valid_end, _ in valid_objects)
+            for outer_start, outer_end in spans
+        ):
+            raise ValueError("response contains an invalid enclosing JSON object")
+
+    objects = [
+        value
+        for start, end, value in valid_objects
+        if not any(
+            outer_start < start
+            and outer_end >= end
+            for outer_start, outer_end, _ in valid_objects
+        )
+    ]
     if len(objects) == 1:
         return objects[0]
+    if len(objects) > 1:
+        raise ValueError("response contains multiple JSON objects")
     raise ValueError("response does not contain a valid JSON object")
