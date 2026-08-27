@@ -1,12 +1,10 @@
-"""환경변수 기반 애플리케이션 설정."""
+﻿"""환경변수 기반 애플리케이션 설정."""
 
 from dataclasses import dataclass
 import os
 
 
 def _required_database_url() -> str:
-    """필수 DATABASE_URL을 읽고 누락되면 애플리케이션 시작 전에 실패한다."""
-
     value = os.getenv("DATABASE_URL", "").strip()
     if not value:
         raise RuntimeError("DATABASE_URL is required")
@@ -29,13 +27,21 @@ class Settings:
     email_otp_resend_seconds: int = int(os.getenv("EMAIL_OTP_RESEND_SECONDS", "60"))
     email_otp_hourly_limit: int = int(os.getenv("EMAIL_OTP_HOURLY_LIMIT", "5"))
     email_otp_ip_hourly_limit: int = int(os.getenv("EMAIL_OTP_IP_HOURLY_LIMIT", "20"))
-    email_verification_token_ttl_seconds: int = int(
-        os.getenv("EMAIL_VERIFICATION_TOKEN_TTL_SECONDS", "1800")
-    )
+    email_verification_token_ttl_seconds: int = int(os.getenv("EMAIL_VERIFICATION_TOKEN_TTL_SECONDS", "1800"))
+
     azure_openai_endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
     azure_openai_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
     azure_openai_deployment: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
     azure_openai_api_version: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
+
+    azure_openai_chatbot_endpoint: str = os.getenv("AZURE_OPENAI_CHATBOT_ENDPOINT", "")
+    azure_openai_chatbot_api_key: str = os.getenv("AZURE_OPENAI_CHATBOT_API_KEY", "")
+    azure_openai_chatbot_deployment: str = os.getenv("AZURE_OPENAI_CHATBOT_DEPLOYMENT", "")
+    azure_openai_chatbot_api_version: str = os.getenv("AZURE_OPENAI_CHATBOT_API_VERSION", "2024-10-21")
+    ai_chatbot_timeout_seconds: float = float(os.getenv("AI_CHATBOT_TIMEOUT_SECONDS", "30"))
+    ai_chatbot_model_version: str = os.getenv("AI_CHATBOT_MODEL_VERSION", "chatbot-v1")
+    ai_chatbot_prompt_version: str = os.getenv("AI_CHATBOT_PROMPT_VERSION", "v1")
+
     ai_profile_timeout_seconds: float = float(os.getenv("AI_PROFILE_TIMEOUT_SECONDS", "15"))
     ai_profile_model_version: str = os.getenv("AI_PROFILE_MODEL_VERSION", "investor-profile-v1")
     ai_profile_prompt_version: str = os.getenv("AI_PROFILE_PROMPT_VERSION", "v1")
@@ -50,16 +56,9 @@ class Settings:
     azure_openai_comparison_deployment: str = os.getenv("AZURE_OPENAI_COMPARISON_DEPLOYMENT", "")
     ai_comparison_timeout_seconds: float = float(os.getenv("AI_COMPARISON_TIMEOUT_SECONDS", "15"))
     ai_comparison_model_version: str = os.getenv("AI_COMPARISON_MODEL_VERSION", "portfolio-comparison-v1")
-    azure_openai_chatbot_endpoint: str = os.getenv("AZURE_OPENAI_CHATBOT_ENDPOINT", "")
-    azure_openai_chatbot_api_key: str = os.getenv("AZURE_OPENAI_CHATBOT_API_KEY", "")
-    azure_openai_chatbot_deployment: str = os.getenv("AZURE_OPENAI_CHATBOT_DEPLOYMENT", "")
-    azure_openai_chatbot_api_version: str = os.getenv(
-        "AZURE_OPENAI_CHATBOT_API_VERSION", "2024-10-21"
-    )
-    ai_chatbot_timeout_seconds: float = float(os.getenv("AI_CHATBOT_TIMEOUT_SECONDS", "30"))
-    ai_chatbot_model_version: str = os.getenv("AI_CHATBOT_MODEL_VERSION", "chatbot-v1")
-    ai_chatbot_prompt_version: str = os.getenv("AI_CHATBOT_PROMPT_VERSION", "v1")
+
     strategy_catalog_version: str = os.getenv("STRATEGY_CATALOG_VERSION", "v1")
+
     kis_app_key: str = os.getenv("KIS_APP_KEY", "")
     kis_app_secret: str = os.getenv("KIS_APP_SECRET", "")
     kis_base_url: str = os.getenv("KIS_BASE_URL", "https://openapi.koreainvestment.com:9443")
@@ -73,6 +72,7 @@ class Settings:
     realtime_reconnect_max_seconds: int = int(os.getenv("KIS_REALTIME_RECONNECT_MAX_SECONDS", "30"))
     realtime_client_queue_size: int = int(os.getenv("KIS_REALTIME_CLIENT_QUEUE_SIZE", "100"))
     realtime_max_symbols_per_client: int = int(os.getenv("KIS_REALTIME_MAX_SYMBOLS_PER_CLIENT", "20"))
+
     naver_api_hub_client_id: str = os.getenv("NAVER_API_HUB_CLIENT_ID", "")
     naver_api_hub_client_secret: str = os.getenv("NAVER_API_HUB_CLIENT_SECRET", "")
     naver_news_base_url: str = os.getenv("NAVER_NEWS_BASE_URL", "https://naverapihub.apigw.ntruss.com")
@@ -82,15 +82,7 @@ class Settings:
 
     @property
     def email_verification_configured(self) -> bool:
-        """ACS Email과 OTP 서명 설정이 모두 있을 때만 실제 발송을 허용한다."""
-
-        return all(
-            (
-                self.acs_email_connection_string,
-                self.acs_email_sender_address,
-                self.email_otp_secret,
-            )
-        )
+        return all((self.acs_email_connection_string, self.acs_email_sender_address, self.email_otp_secret))
 
 
 settings = Settings()

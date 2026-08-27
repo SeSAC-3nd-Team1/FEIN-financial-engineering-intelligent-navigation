@@ -1438,8 +1438,15 @@ export default function App() {
         />
       )}
 
-      {/* 전 화면 상주 플로팅 챗봇 */}
-      <Chatbot />
+                  {/* 로그인 사용자에게만 챗봇을 노출한다. 비로그인 요청은 Backend에서 차단된다. */}
+      {accessToken && (
+        <Chatbot
+          screen={screen}
+          stockCode={stockCode}
+          strategyId={strategyId}
+          accountId={tradingAccount?.id}
+        />
+      )}
     </div>
   );
 }
