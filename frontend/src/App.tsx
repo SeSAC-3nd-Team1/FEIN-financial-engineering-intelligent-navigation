@@ -4,8 +4,9 @@ import Chatbot from "./components/Chatbot";
 import Dashboard from "./pages/Dashboard";
 import FundAddAmount from "./pages/FundAddAmount";
 import FundAddConfirm from "./pages/FundAddConfirm";
-import FundManagementComingSoon from "./pages/FundManagementComingSoon";
+import FundOperationResult from "./pages/FundOperationResult";
 import FundWithdrawAmount from "./pages/FundWithdrawAmount";
+
 import FundWithdrawConfirm from "./pages/FundWithdrawConfirm";
 import Home from "./pages/Home";
 import InformationExam from "./pages/InformationExam";
@@ -41,8 +42,10 @@ import {
 } from "./data/fees";
 import {
   analyzeInvestorProfileApi,
-  ApiError,
+    ApiError,
   applyLatestModelRecommendationsApi,
+  createAdditionalInvestmentApi,
+  createWithdrawalApi,
   getMyAccountApi,
   getStrategiesApi,
   sendEmailVerificationApi,
@@ -221,8 +224,11 @@ export default function App() {
     useState<Screen>("strategy-list");
   // 추가 투자/출금 STEP 1(금액) → STEP 2(확인) 사이에서만 쓰는 draft 금액 — 새로고침 유지가 필요 없는
   // 일회성 입력값이라 persistedNav(sessionStorage)에는 넣지 않는다.
-  const [fundAddAmount, setFundAddAmount] = useState(0);
+    const [fundAddAmount, setFundAddAmount] = useState(0);
   const [fundWithdrawAmount, setFundWithdrawAmount] = useState(0);
+  const [fundOperation, setFundOperation] = useState<import("./lib/backendApi").FundOperationResponse | null>(null);
+  const [fundOperationError, setFundOperationError] = useState<string | null>(null);
+
   const strategy =
     strategyCatalog.find((item) => item.id === strategyId) ?? null;
   useEffect(() => {
@@ -1315,8 +1321,24 @@ export default function App() {
           amount={fundAddAmount}
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen("fund-add")}
-          onConfirm={() => setScreen("fund-add-pending")}
+                    onBack={() => setScreen("fund-add")}
+          onConfirm={async () => {
+            if (!accessToken || !tradingAccount) return;
+            setFundOperationError(null);
+            try {
+              const operation = await createAdditionalInvestmentApi(
+                tradingAccount.id,
+                { amount: fundAddAmount, idempotency_key: `additional-${crypto.randomUUID()}` },
+                accessToken,
+              );
+              setFundOperation(operation);
+              await useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode);
+              setScreen("fund-add-pending");
+            } catch (error) {
+              setFundOperationError(error instanceof ApiError ? error.message : "추가 투자에 실패했어요. 다시 시도해주세요.");
+            }
+          }}
+
         />
       )}
 
@@ -1343,19 +1365,47 @@ export default function App() {
           amount={fundWithdrawAmount}
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen("fund-withdraw")}
-          onConfirm={() => setScreen("fund-withdraw-pending")}
+                    onBack={() => setScreen("fund-withdraw")}
+          onConfirm={async () => {
+            if (!accessToken || !tradingAccount) return;
+            setFundOperationError(null);
+            try {
+              const operation = await createWithdrawalApi(
+                tradingAccount.id,
+                { amount: fundWithdrawAmount, idempotency_key: `withdrawal-${crypto.randomUUID()}` },
+                accessToken,
+              );
+              setFundOperation(operation);
+              await useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode);
+              setScreen("fund-withdraw-pending");
+            } catch (error) {
+              setFundOperationError(error instanceof ApiError ? error.message : "출금에 실패했어요. 다시 시도해주세요.");
+            }
+          }}
+
         />
       )}
 
-      {(screen === "fund-add-pending" || screen === "fund-withdraw-pending") && (
-        <FundManagementComingSoon
+            {(screen === "fund-add-pending" || screen === "fund-withdraw-pending") && fundOperation && (
+        <FundOperationResult
           kind={screen === "fund-add-pending" ? "deposit" : "withdraw"}
+          operation={fundOperation}
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen("portfolio")}
+          onDone={() => {
+            setFundOperation(null);
+            setFundAddAmount(0);
+            setFundWithdrawAmount(0);
+            setScreen("portfolio");
+          }}
         />
       )}
+      {fundOperationError && (screen === "fund-add-confirm" || screen === "fund-withdraw-confirm") && (
+        <div className="fixed bottom-6 left-1/2 z-[800] -translate-x-1/2 rounded-field bg-[#FBEAEA] px-6 py-4 text-sm font-semibold text-down shadow-lg">
+          {fundOperationError}
+        </div>
+      )}
+
 
       {screen === "portfolio-detail" && portfolioStrategy && (
         <PortfolioDetail
