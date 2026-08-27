@@ -1,6 +1,6 @@
 # 가상투자 데이터 명세서
 
-Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260825_0021_active_operation_mode.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
+Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`부터 `20260827_0024_virtual_fund_operations.py`까지. PostgreSQL 17/Azure Database for PostgreSQL 호환.
 
 | Table.Column | PostgreSQL Type | PK/FK/NULL/Default | Constraint/Index | 설명 |
 | --- | --- | --- | --- | --- |
@@ -14,6 +14,7 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | virtual_accounts.id | uuid | PK |  | 가상계좌 ID |
 | virtual_accounts.user_id/operation_mode | bigint/varchar(20) | FK users.id, NOT NULL | UNIQUE pair, RESTRICT | 사용자·AUTO/SEMI_AUTO별 계좌 |
 | virtual_accounts.initial_cash/cash_balance | numeric(20,2) | NOT NULL | >=0 / >=0 | 최초 입금액/현재 cash snapshot |
+| virtual_accounts.invested_principal | numeric(20,2) | NOT NULL, DEFAULT 0 | >=0 | 추가투자·출금 후 원금 기준액 |
 | virtual_accounts.status | varchar(20) | DEFAULT ACTIVE | CHECK, index | ACTIVE/SUSPENDED/CLOSED |
 | virtual_accounts.selected_strategy_id | varchar(30) | FK strategies.id, NULL | SET NULL | 선택 전략 |
 | positions.id | bigint identity | PK |  | 포지션 ID |
@@ -22,7 +23,7 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | positions.average_price | numeric(20,4) | NOT NULL | >0 | 가중평균 매입가 |
 | positions.realized_profit | numeric(20,2) | DEFAULT 0 |  | 누적 실현손익 |
 | portfolio_snapshots.account_id/snapshot_date | uuid/date | FK, UNIQUE pair |  | 일별 실제 계좌 평가 snapshot |
-| portfolio_snapshots.total_assets/return_rate | numeric | NOT NULL |  | 현금 포함 총자산과 매입원가 기준 수익률 |
+| portfolio_snapshots.total_assets/return_rate | numeric | NOT NULL |  | 현금 포함 총자산과 현재 투자원금 기준 수익률 |
 | strategy_target_weights.strategy_id/stock_code/effective_from | varchar | FK, UNIQUE version |  | 전략이 명시적으로 산출한 목표비중 버전 |
 | strategy_target_weights.target_weight | numeric(9,8) | NOT NULL | 0~1 | 리밸런싱 계산용 비율 |
 | rebalancing_decisions.id/account_id | uuid/uuid | PK/FK | account/created_at index | 실제 제안에 대한 판단 기록 |
@@ -41,12 +42,16 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 | executions.stock_code/side/quantity/price | varchar/varchar/numeric(20,8)/numeric | NOT NULL | 양수/CHECK | 소수점 수량을 포함한 체결 사실 |
 | cash_ledger.id | bigint identity | PK |  | 원장 ID |
 | cash_ledger.account_id | uuid | FK, NOT NULL | account/created_at index, RESTRICT | 계좌 |
-| cash_ledger.transaction_type | varchar(30) | NOT NULL | INITIAL_DEPOSIT/DEPOSIT/BUY/SELL/ADJUSTMENT | 증감 이유 |
+| cash_ledger.transaction_type | varchar(30) | NOT NULL | INITIAL_DEPOSIT/DEPOSIT/ADDITIONAL_INVESTMENT/WITHDRAWAL/BUY/SELL/ADJUSTMENT | 증감 이유 |
 | cash_ledger.amount/balance_after | numeric(20,2) | NOT NULL | amount != 0, balance >= 0 | 증감액/결과 잔액 |
 | cash_ledger.reference_type/id | varchar | NOT NULL | composite index | ACCOUNT/ORDER 추적 |
 | account_deposits.id/account_id/onboarding_id | uuid | PK/FK, NOT NULL | RESTRICT | 부족분 입금과 대상 계좌·온보딩 |
 | account_deposits.amount/balance_after | numeric(20,2) | NOT NULL | >0 / >=0 | 정확한 부족분과 처리 후 잔액 |
 | account_deposits.idempotency_key | varchar(100) | NOT NULL | UNIQUE(account,key) | 재시도 중복 입금 방지 |
+| fund_operations.id/account_id | uuid/uuid | PK/FK, NOT NULL | account/created_at index, RESTRICT | 한 번의 가상 추가투자·출금 |
+| fund_operations.operation_type/status/requested_amount/executed_amount | varchar/varchar/numeric/numeric | NOT NULL | UNIQUE(account,idempotency), CHECK | 작업 유형·완료 상태·요청/실행액 |
+| fund_operations.principal/total_assets before/after | numeric | NOT NULL | >=0 | 작업 전후 원금과 총자산 snapshot |
+| fund_operation_orders.operation_id/order_id | uuid/uuid | composite PK/FK | order UNIQUE | 자금 작업이 만든 주문과 배분 근거 |
 
 공통 시간은 `timestamptz`, DB server `now()`를 사용한다. `users`, `terms`, `user_agreements`, 가입 임시 관계는 기존 `20260816_0011`을 보존한다.
 
@@ -61,7 +66,9 @@ Source of truth: `data/db/migrations/versions/20260823_0012_virtual_trading.py`�
 
 ## Transaction 경계
 
-시장가 체결 시 `virtual_accounts` 행을 `SELECT ... FOR UPDATE`로 잠그고 한 transaction에서 `orders → executions → positions → virtual_accounts.cash_balance → cash_ledger`를 처리한다. 원화 반올림 주문금액이 1원 미만이면 어떤 거래 행도 만들지 않고 거부하며, 하나라도 실패하면 rollback한다. `cash_balance`는 조회 snapshot, `cash_ledger`는 append-only 감사 이력이다.
+시장가 체결 시 `virtual_accounts` 행을 `SELECT ... FOR UPDATE`로 잠그고 한 transaction에서 `orders → executions → positions → virtual_accounts.cash_balance → cash_ledger`를 처리한다. 추가투자·출금은 같은 잠금 아래 여러 주문과 `fund_operations`, 현재 원금까지 한 번에 commit하며 종목 하나라도 실패하면 전체 rollback한다. 원화 반올림 주문금액이 1원 미만이면 해당 종목 주문을 만들지 않는다. `cash_balance`는 조회 snapshot, `cash_ledger`는 append-only 감사 이력이다.
+
+입출금은 실제 은행·증권계좌와 연결하지 않는다. `settlement_mode=VIRTUAL`인 내부 현금흐름이며 은행코드·계좌번호·예금주를 저장하거나 응답하지 않는다.
 
 ## 보안·보존
 

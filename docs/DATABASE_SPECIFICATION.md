@@ -45,6 +45,8 @@ Redis
 | `investment_onboardings` | 전략·투자 예정 금액·운용방식과 가상계좌 준비 상태 |
 | `virtual_accounts` | 사용자·운용방식별 내부 가상투자 계좌 |
 | `account_deposits` | 투자 예정 금액 부족분의 멱등한 1회 가상 입금 이력 |
+| `fund_operations` | 내부 가상 추가투자·출금의 멱등한 작업 및 전후 원금·자산 snapshot |
+| `fund_operation_orders` | 한 자금 작업에서 생성된 종목별 내부 주문과 적용 비중 |
 | `companies` | DART 기업 마스터와 종목코드 매핑 |
 | `company_financial_accounts` | 공시 재무제표의 계정별 정제 행 |
 | `company_financials` | FastAPI용 핵심 재무지표 집계 |

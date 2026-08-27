@@ -9,7 +9,7 @@
 | RiskProfile/Result | 설문 입력과 추천 결과 표시 | `POST /api/v1/investor-profile/analyze`, `GET /api/v1/investor-profile/me/latest`, `POST /api/v1/strategy-recommendations`, `GET /api/v1/strategy-recommendations/me/latest` | `investor_profile_assessments`, `strategy_recommendations`, `strategy_recommendation_items` |
 | StrategyDetail | 실제 KRX 시세 백테스트와 KOSPI 비교, DB 가용 기간 기반 기간 선택, 데이터 부족 오류 상태 | `GET /api/v1/strategies`, `GET /api/v1/backtest/available-range`, `POST /api/v1/backtest/run` | `strategies.rule_config`, `market_stock_prices`, `market_indices`; 가치 전략은 PIT 재무 가능일 부재로 unavailable |
 | StartInvesting | 전략 배분은 명시적 mock, 시작 시 투자 온보딩·약관 동의·가상계좌 준비·전략 저장 | `/investment/terms`, `/investment/onboardings*` | `investment_onboardings`, `terms`, `user_agreements`, `virtual_accounts`, `cash_ledger`, `strategies`; 신규 계좌 초기금은 선택 투자 금액 |
-| Portfolio/Dashboard | 홈 통합 조회, 최근 체결·상세 거래내역, 운용방식별 계좌 전환, AI 자동투자와 내 투자 비교, 실제 계좌 평가·당일 기여·자산 이력·5축 feature·AI 리밸런싱 제안·판단 이력 | `GET /api/v1/auth/me`, `GET /accounts/me`, `PUT /accounts/me/active-operation-mode`, `GET /portfolio/home`, `GET /portfolio/comparison`, `GET /portfolio/transactions`, `GET /portfolio`, `GET /portfolio/history`, `GET/POST /portfolio/decisions`, `GET /portfolio/stock-evaluation` | `users.active_operation_mode`, `virtual_accounts`, `positions`, `executions`, `market_stocks`, `portfolio_snapshots`, `strategy_target_weights`, `rebalancing_decisions`, KRX/OpenDART + Redis/KIS 현재가 + AI 리밸런싱·비교 모델 |
+| Portfolio/Dashboard | 홈 통합 조회, 가상 추가투자·출금, 통합 활동내역, 운용방식별 계좌 전환, AI 자동투자와 내 투자 비교, 실제 계좌 평가·당일 기여·자산 이력·5축 feature·AI 리밸런싱 제안·판단 이력 | `GET /api/v1/auth/me`, `GET /accounts/me`, `GET /accounts/{id}/funds`, `POST /accounts/{id}/additional-investments`, `POST /accounts/{id}/withdrawals`, `PUT /accounts/me/active-operation-mode`, `GET /portfolio/home`, `GET /portfolio/activities`, `GET /portfolio/comparison`, `GET /portfolio/transactions`, `GET /portfolio`, `GET /portfolio/history`, `GET/POST /portfolio/decisions`, `GET /portfolio/stock-evaluation` | `users.active_operation_mode`, `virtual_accounts`, `fund_operations`, `fund_operation_orders`, `cash_ledger`, `positions`, `executions`, `market_stocks`, `portfolio_snapshots`, `strategy_target_weights`, `rebalancing_decisions`, KRX/OpenDART + Redis/KIS 현재가 + AI 리밸런싱·비교 모델 |
 | StockDetail | 실제 현재가·차트·종목/재무 요약과 계좌별 5축 feature 평가 | `GET /api/v1/market/stocks/{code}/price`, `GET /market/stocks/{code}/summary`, `GET /market/stocks/{code}/chart`, `GET /portfolio/stock-evaluation` | KRX `market_*`, OpenDART `company_*`, `positions`, `strategy_target_weights`; 1D 분봉/현재가는 KIS |
 | InformationExam | 한국 뉴스는 실제 Backend, 금융 상식은 기존 mock | `GET /api/v1/information/news/kr?page=1&size=20` | NAVER API HUB → Redis `information:news:kr:{query}:{page}:{size}`; PostgreSQL/Blob 저장 없음 |
 | 자동 운용 주문 처리 | 사용자가 직접 매수·매도하지 않으며, 전략 기반 자동 운용 계층이 MARKET BUY/SELL과 UUID idempotency key를 사용한 뒤 portfolio를 갱신 | `POST/GET /api/v1/orders`, `GET /executions`, `GET /portfolio` | `orders`, `executions`, `positions`, `cash_ledger`; KIS 주문 API 사용 안 함 |
@@ -18,7 +18,7 @@
 
 - Notion의 기존 계좌 문서는 증권 연동 계좌와 KIS 주문/잔고를 전제로 하나, 구현은 서비스 내부 가상계좌다.
 - Frontend 인증·계좌·현재가·포트폴리오·주문·체결·자산 이력·5축 feature·리밸런싱 판단 기록은 실제 API와 연결되었다. 계산 불가능한 feature와 결과는 null/unavailable로 표시한다.
-- 신규 가상계좌는 사용자가 선택한 투자 금액으로 시작한다. 기존 가상계좌 재사용 시에는 잔액·포지션·원장을 유지하고 추가 입금이나 초기화를 하지 않는다. 사용자 입출금 기능은 이번 MVP 범위 밖이다.
+- 신규 가상계좌는 사용자가 선택한 투자 금액으로 시작한다. 이후 추가투자·출금은 실제 은행 연동 없이 내부 가상 현금과 포지션만 변경하고 모든 응답에 `settlement_mode=VIRTUAL`을 사용한다.
 
 ## 실제 호출 흐름
 
