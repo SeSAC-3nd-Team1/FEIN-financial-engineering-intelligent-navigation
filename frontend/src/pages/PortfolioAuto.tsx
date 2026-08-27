@@ -126,14 +126,20 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
     });
   }, [portfolio, accountMissing]);
 
-  // 자산 증감 요약 — 실 계좌가 있으면 백엔드가 이미 계산해 둔 계좌 손익(unrealized_profit + realized_profit, return_rate)을
-  // 그대로 쓴다. total_assets - total_purchase_amount 로 직접 빼면 total_assets 에 포함된 미투자 현금(cash_balance)이
+  // 자산 증감 요약 — 계좌가 없다고 확인된 경우(accountMissing)에만 목업 값을 쓰고, 그 외(로딩 중/조회
+  // 실패로 portfolio를 못 받은 경우 포함)에는 실 계좌 값(아직 없으면 0)을 쓴다. 실 계좌가 있으면
+  // 백엔드가 이미 계산해 둔 계좌 손익(unrealized_profit + realized_profit, return_rate)을 그대로 쓴다.
+  // total_assets - total_purchase_amount 로 직접 빼면 total_assets 에 포함된 미투자 현금(cash_balance)이
   // 수익으로 잡히는 문제가 있어(예: 매수 전 예치금만 있어도 +100% 로 표시됨) 이 방식은 쓰지 않는다.
-  const principalTotal = portfolio ? Number(portfolio.total_purchase_amount) : MOCK_PRINCIPAL_TOTAL;
-  const holdTotal = portfolio ? Number(portfolio.total_assets) : MOCK_HOLD_TOTAL;
+  const principalTotal = accountMissing ? MOCK_PRINCIPAL_TOTAL : Number(portfolio?.total_purchase_amount ?? 0);
+  const holdTotal = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
   const mockGainAmount = holdTotal - principalTotal;
-  const gainAmount = portfolio ? Number(portfolio.unrealized_profit) + Number(portfolio.realized_profit) : mockGainAmount;
-  const gainPct = portfolio ? Number(portfolio.return_rate) : (principalTotal > 0 ? (mockGainAmount / principalTotal) * 100 : 0);
+  const gainAmount = accountMissing
+    ? mockGainAmount
+    : portfolio ? Number(portfolio.unrealized_profit) + Number(portfolio.realized_profit) : 0;
+  const gainPct = accountMissing
+    ? (principalTotal > 0 ? (mockGainAmount / principalTotal) * 100 : 0)
+    : (portfolio ? Number(portfolio.return_rate) : 0);
 
   // ── Power BI 스타일 분석 섹션 상태 ───────────────────────────────
   const [tab, setTab] = useState<AnalyticsTab>('weight');
@@ -178,11 +184,10 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
     return () => { cancelled = true; };
   }, [account, accessToken, historyPeriod]);
 
-  // 실 계좌가 있으면(account) 이력이 0건이어도 그 실제 결과를 그대로 쓴다 — history가 아직 응답을
-  // 못 받았을 때(요청 중)만 잠깐 빈 배열로 보이고, 없는 데이터를 mock으로 대신 채우지는 않는다.
-  // mock은 애초에 실 계좌 자체가 없을 때(account === null)만 쓴다.
+  // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 추이를 쓴다. 그 외(로딩 중/history 조회 전·실패)에는
+  // 이력이 0건이어도 그 실제 결과(빈 배열)를 그대로 쓴다 — 없는 데이터를 mock으로 대신 채우지는 않는다.
   const trendData = useMemo(() => {
-    if (account) {
+    if (!accountMissing) {
       return (history?.items ?? []).map((item) => ({
         label: item.date.slice(5).replace('-', '.'),
         port: Number(item.portfolio_return_rate),
@@ -193,19 +198,18 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
     }
     const mockN = TREND_PERIODS.find((p) => p.value === historyPeriod)?.mockN ?? PORTFOLIO_TREND.length;
     return PORTFOLIO_TREND.slice(-mockN);
-  }, [account, history, historyPeriod]);
+  }, [accountMissing, history, historyPeriod]);
   const benchmarkName = history?.benchmark_name ?? 'KOSPI';
 
-  // 종목별 기여 탭: 실 계좌가 있으면(portfolio) 기여도가 0건이어도 그 실제 결과를 그대로 쓴다.
-  // mock은 실 계좌 자체가 없을 때(portfolio === null)만 쓴다.
+  // 종목별 기여 탭: 계좌가 없다고 확인된 경우(accountMissing)에만 목업을 쓴다. 그 외(로딩 중/조회
+  // 실패로 portfolio를 못 받은 경우 포함)에는 기여도가 0건이어도 그 실제 결과(빈 배열)를 그대로 쓴다.
   const contributionData = useMemo(() => {
-    if (portfolio) {
-      return [...portfolio.contributions]
-        .map((c) => ({ name: c.stock_name ?? c.stock_code, amount: Number(c.amount) }))
-        .sort((a, b) => b.amount - a.amount);
-    }
-    return [...STOCK_CONTRIBUTION].sort((a, b) => b.amount - a.amount);
-  }, [portfolio]);
+    if (accountMissing) return [...STOCK_CONTRIBUTION].sort((a, b) => b.amount - a.amount);
+    if (!portfolio) return [];
+    return [...portfolio.contributions]
+      .map((c) => ({ name: c.stock_name ?? c.stock_code, amount: Number(c.amount) }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [portfolio, accountMissing]);
   const topContributor = contributionData[0];
 
   // 보유 비중 탭: 선택된 종목의 현재 비중 vs 전략 목표 비중 — 실 계좌가 있는데 포지션이 0건이면
