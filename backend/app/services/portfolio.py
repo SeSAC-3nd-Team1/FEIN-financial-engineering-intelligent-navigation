@@ -110,13 +110,11 @@ def validate_target_weights(
     if not target_weights:
         return
     valid_total = (
-        Decimal("0") < total <= Decimal("1")
-        if allow_cash_buffer
-        else total == Decimal("1")
+        total == Decimal("0.95") if allow_cash_buffer else total == Decimal("1")
     )
     if not valid_total:
         message = (
-            "전략 목표 비중 합계는 0보다 크고 1 이하여야 합니다."
+            "현금 버퍼를 사용하는 전략의 주식 목표 비중 합계는 0.95여야 합니다."
             if allow_cash_buffer
             else "전략 목표 비중 합계가 1이 아닙니다."
         )
@@ -577,7 +575,10 @@ class PortfolioService:
             if include_strategy and account.selected_strategy_id
             else {}
         )
-        validate_target_weights(targets)
+        validate_target_weights(
+            targets,
+            allow_cash_buffer=account.selected_strategy_id == "momentum",
+        )
         for stock_code in targets:
             if stock_code not in stock_names:
                 stock = self.market_repo.stock(stock_code)
