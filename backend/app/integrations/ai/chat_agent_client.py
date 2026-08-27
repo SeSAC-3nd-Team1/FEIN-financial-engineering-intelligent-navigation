@@ -133,7 +133,10 @@ class AzureOpenAIChatAgentClient:
         timeout_seconds: float,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self.endpoint = endpoint.rstrip("/")
+        normalized_endpoint = endpoint.strip().rstrip("/")
+        if normalized_endpoint and not normalized_endpoint.startswith(("http://", "https://")):
+            normalized_endpoint = f"https://{normalized_endpoint}"
+        self.endpoint = normalized_endpoint
         self.api_key = api_key
         self.deployment = deployment
         self.api_version = api_version
@@ -187,7 +190,11 @@ class AzureOpenAIChatAgentClient:
             )
         return None
 
-    def _validate_configuration(self) -> None:
+
+
+        
+
+        def _validate_configuration(self) -> None:
         if not all((self.endpoint, self.api_key, self.deployment, self.api_version)):
             raise ServiceError(
                 "CHAT_AGENT_NOT_CONFIGURED",
@@ -195,12 +202,17 @@ class AzureOpenAIChatAgentClient:
                 503,
             )
 
+    def _is_foundry_project_endpoint(self) -> bool:
+        return "/api/projects/" in self.endpoint
+
     def _request_url(self) -> str:
+        if self._is_foundry_project_endpoint():
+            return f"{self.endpoint}/openai/v1/chat/completions"
         deployment = quote(self.deployment, safe="")
         return f"{self.endpoint}/openai/deployments/{deployment}/chat/completions"
 
-    @staticmethod
     def _request_body(
+        self,
         message: str,
         history: list[ChatHistoryMessage],
         context: ChatScreenContext,
@@ -228,9 +240,8 @@ class AzureOpenAIChatAgentClient:
         ]
         messages.extend(item.model_dump() for item in history[-10:])
         messages.append({"role": "user", "content": message})
-        return {
+                body = {
             "messages": messages,
-            "temperature": 0.2,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -240,6 +251,9 @@ class AzureOpenAIChatAgentClient:
                 },
             },
         }
+        if self._is_foundry_project_endpoint():
+            body["model"] = self.deployment
+        return body
 
     async def answer(
         self,
@@ -261,7 +275,11 @@ class AzureOpenAIChatAgentClient:
         try:
             response = await request.post(
                 self._request_url(),
-                params={"api-version": self.api_version},
+                params=(
+                    {}
+                    if self._is_foundry_project_endpoint()
+                    else {"api-version": self.api_version}
+                ),
                 headers={"api-key": self.api_key, "Content-Type": "application/json"},
                 json=self._request_body(message, history, context),
             )
@@ -273,12 +291,19 @@ class AzureOpenAIChatAgentClient:
                 504,
             ) from exc
         except httpx.HTTPStatusError as exc:
-            status_code = (
-                503
-                if exc.response.status_code == 429
-                or exc.response.status_code >= 500
-                else 502
-            )
+            if exc.response.status_code in (401, 403):
+                raise ServiceError(
+                    "CHAT_AGENT_AUTH_FAILED",
+                    "물방개 AI 인증 설정을 확인해주세요.",
+                    502,
+                ) from exc
+            if exc.response.status_code == 404:
+                raise ServiceError(
+                    "CHAT_AGENT_DEPLOYMENT_NOT_FOUND",
+                    "물방개 AI 배포 이름 또는 Endpoint를 확인해주세요.",
+                    502,
+                ) from exc
+            status_code = 503 if exc.response.status_code == 429 or exc.response.status_code >= 500 else 502
             raise ServiceError(
                 "CHAT_AGENT_UNAVAILABLE",
                 "물방개 AI를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.",
