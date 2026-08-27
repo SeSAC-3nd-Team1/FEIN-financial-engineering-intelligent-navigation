@@ -751,6 +751,7 @@ export default function App() {
             setStrategyRecommendation(null);
             setScreen('strategy');
           }}
+          onSelectEventDriven={() => setScreen('strategy-coming-soon-event-driven')}
         />
       )}
       {screen === 'strategy-coming-soon-loss-avoidance' && (

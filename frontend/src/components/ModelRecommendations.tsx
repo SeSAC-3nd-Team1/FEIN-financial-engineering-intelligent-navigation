@@ -17,7 +17,12 @@ export default function ModelRecommendations({ token, limit = 4 }: Props) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!token) { setSnapshot(null); setFailed(false); return; }
+    if (!token) {
+      setSnapshot(null);
+      setFailed(false);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setFailed(false);

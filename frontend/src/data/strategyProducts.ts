@@ -67,7 +67,7 @@ export interface F4SubStrategy {
  */
 export const F4_SUB_STRATEGIES: F4SubStrategy[] = [
   {
-    id: 'f4-event-driven', name: '이벤트 드리븐 전략', status: 'testing',
+    id: 'f4-event-driven', name: '이벤트 드리븐 전략', status: 'available',
     description: '공시나 뉴스 같은 시장 이벤트를 활용해 상대적으로 유리한 종목을 찾는 전략이에요.',
   },
   {
@@ -86,7 +86,7 @@ export const F4_SUB_STRATEGIES: F4SubStrategy[] = [
 
 export const F4_COLLECTION_INTRO = {
   name: '방탄 F4 전략집',
-  description: '시장에서 활용되는 대표적인 투자 전략 4가지를 살펴보세요. 모멘텀 전략은 실제 모델과 백테스트 결과를 확인할 수 있어요.',
+  description: '시장에서 활용되는 대표적인 투자 전략 4가지를 살펴보세요. 이벤트 드리븐과 모멘텀 전략을 자세히 확인할 수 있어요.',
 };
 
 /**

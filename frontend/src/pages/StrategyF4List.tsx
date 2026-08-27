@@ -9,6 +9,8 @@ interface Props {
   onBack: () => void;
   /** 실제 canonical momentum 전략 상세로 이동한다. */
   onSelectMomentum: () => void;
+  /** 기존 이벤트 드리븐 Coming Soon 상세로 이동한다. */
+  onSelectEventDriven: () => void;
 }
 
 /**
@@ -17,7 +19,9 @@ interface Props {
  * "이용 가능" 배지 + CTA를 갖고, 나머지 3개는 muted "테스트 중" 배지 + TermTooltip 안내 +
  * 비활성 버튼으로 처리한다(새 modal/복잡한 interaction 없음).
  */
-export default function StrategyF4List({ userName, onNavigate, onBack, onSelectMomentum }: Props) {
+export default function StrategyF4List({
+  userName, onNavigate, onBack, onSelectMomentum, onSelectEventDriven,
+}: Props) {
   return (
     <div className="min-h-screen bg-canvas">
       <Header active="strategy" userName={userName} onNavigate={onNavigate} />
@@ -66,7 +70,10 @@ export default function StrategyF4List({ userName, onNavigate, onBack, onSelectM
                   </div>
                   {available ? (
                     <button
-                      onClick={onSelectMomentum}
+                      onClick={() => {
+                        if (s.id === 'f4-momentum') onSelectMomentum();
+                        if (s.id === 'f4-event-driven') onSelectEventDriven();
+                      }}
                       className="group self-start text-[15px] font-bold text-status-green-text transition-colors hover:text-navy"
                     >
                       자세히 보기 →
