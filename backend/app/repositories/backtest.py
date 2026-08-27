@@ -3,7 +3,7 @@
 import calendar
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 import re
 
@@ -33,7 +33,6 @@ REPORT_DISCLOSURE_KEYWORDS = {
     "11011": "사업보고서",
 }
 REPORT_PERIOD_RE = re.compile(r"\((\d{4})\.(\d{2})\)")
-MAX_DISCLOSURE_LAG_DAYS = 180
 
 
 @dataclass(frozen=True)
@@ -92,15 +91,16 @@ def disclosure_matches_financial_period(
     report_code: str,
     period_end: date,
 ) -> bool:
-    """공시명이 재무 보고서 종류와 기간에 대응하는지 보수적으로 판정한다."""
+    """공시명이 재무 보고서 종류와 회계기간에 명확히 대응할 때만 허용한다."""
 
     keyword = REPORT_DISCLOSURE_KEYWORDS.get(report_code)
     if not keyword or keyword not in report_name:
         return False
 
+    # 기간 표기가 없는 공시는 다른 분기와의 구분이 모호하므로 자동 연결하지 않는다.
     period_match = REPORT_PERIOD_RE.search(report_name)
     if period_match is None:
-        return True
+        return False
     return (
         int(period_match.group(1)) == period_end.year
         and int(period_match.group(2)) == period_end.month
@@ -191,7 +191,13 @@ class BacktestRepository:
         stock_codes: list[str],
         end_date: date,
     ) -> list[PointInTimeFinancial]:
-        """실제 공시 접수일 이후에만 사용 가능한 재무 요약을 반환한다."""
+        """현재 재무 요약을 모든 확인된 정정공시 이후에만 사용 가능하게 만든다.
+
+        OpenDART 재무 API에는 receipt_no/rcept_dt가 없고 현재 적재된 요약값은 정정된
+        수치를 포함할 수 있다. 따라서 같은 회계기간의 공시 중 가장 늦은 접수일을
+        ``available_at``으로 사용한다. 기간 표기가 없거나 연결이 모호한 행은 제외한다.
+        이 방식은 가용 시점을 늦출 수 있지만 미래정보 누수보다 보수적이다.
+        """
 
         if not stock_codes:
             return []
@@ -216,7 +222,6 @@ class BacktestRepository:
             select(CompanyDisclosure)
             .where(
                 CompanyDisclosure.corp_code.in_(corp_codes),
-                CompanyDisclosure.receipt_date <= end_date,
                 or_(
                     CompanyDisclosure.report_name.ilike("%사업보고서%"),
                     CompanyDisclosure.report_name.ilike("%반기보고서%"),
@@ -246,21 +251,20 @@ class BacktestRepository:
             if period_end is None:
                 continue
 
-            max_receipt_date = period_end + timedelta(days=MAX_DISCLOSURE_LAG_DAYS)
-            available_at = next(
-                (
-                    disclosure.receipt_date
-                    for disclosure in disclosures_by_corp.get(financial.corp_code, [])
-                    if period_end < disclosure.receipt_date <= max_receipt_date
-                    and disclosure_matches_financial_period(
-                        disclosure.report_name,
-                        financial.report_code,
-                        period_end,
-                    )
-                ),
-                None,
-            )
-            if available_at is None or available_at > end_date:
+            matching_receipts = [
+                disclosure.receipt_date
+                for disclosure in disclosures_by_corp.get(financial.corp_code, [])
+                if disclosure.receipt_date > period_end
+                and disclosure_matches_financial_period(
+                    disclosure.report_name,
+                    financial.report_code,
+                    period_end,
+                )
+            ]
+            if not matching_receipts:
+                continue
+            available_at = max(matching_receipts)
+            if available_at > end_date:
                 continue
 
             point = PointInTimeFinancial(
