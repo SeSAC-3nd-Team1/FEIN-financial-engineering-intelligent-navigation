@@ -217,284 +217,293 @@ export default function PortfolioDetail({
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
 
       <main className="flex flex-col items-center px-16 pb-24 pt-6">
-        <div className="flex w-[1040px] flex-col gap-10">
+        <div className="flex w-[1040px] flex-col">
           {/* PowerBI Embedded 페이지(`/portfolio`)로 돌아가는 상단 네비게이션 */}
-          <button onClick={onBack} className="self-start text-[15px] text-muted">← 돌아가기</button>
+          <button onClick={onBack} className="mb-7 self-start text-[15px] text-muted">← 돌아가기</button>
 
-          <section className="flex flex-col gap-4">
-            <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">
-              {userName}님의 투자는<br />오늘도 전략대로 움직이고 있어요.
-            </h1>
-            <div className="flex items-baseline gap-4">
-              <span className="text-[40px] font-bold tracking-[-0.035em]">{won(HOLD_TOTAL)}</span>
-              <span className="text-xl font-bold text-up">
-                오늘 {todayTotal >= 0 ? '+' : ''}{Math.round(todayTotal).toLocaleString('ko-KR')}원
-              </span>
-            </div>
-          </section>
-
-          {/* Dashboard.tsx 병합 — "오늘 무슨 일이 있었나요" 스토리 카드. 아래에 이미 있는
-              리밸런싱 경고/현재 전략 카드와 겹치는 항목은 중복 제거하고, 여기 없던 두 카드만 가져왔다. */}
-          <section className="flex flex-col gap-6">
-            <h2 className="text-[32px] font-bold leading-[46px] tracking-[-0.03em]">오늘 내 투자에는 무슨 일이 있었나요?</h2>
+          {/* ============ 오늘: 인사말/총자산 + 오늘의 스토리 ============ */}
+          <section className="flex flex-col gap-7">
             <div className="flex flex-col gap-4">
-              {top ? (
-                <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
-                  <div className="flex items-baseline gap-4">
-                    <span className="text-2xl font-bold text-up">+{Math.round(top.gain).toLocaleString('ko-KR')}원</span>
-                    <span className="text-[17px] text-muted">
-                      오늘 전체 수익의 {todayTotal !== 0 ? Math.round((top.gain / todayTotal) * 100) : 0}%
-                    </span>
-                  </div>
-                </Story>
-              ) : (
-                <Story title="아직 보유 중인 종목이 없어요">
-                  <span className="text-[17px] leading-7 text-muted">계좌에 입금하고 투자를 시작하면 여기에 오늘의 이야기가 채워져요.</span>
-                </Story>
-              )}
-              {/* 보유 종목이 없으면(top === undefined) 이 카드도 고정 mock 스토리를 보여주지 않는다 —
-                  바로 위 카드가 이미 "아직 보유 중인 종목이 없어요"로 빈 상태를 알려주는데, 그 아래에
-                  실제로는 없는 KT&G 보유를 전제한 문구가 이어지면 모순된다. */}
-              {top && (
-                <Story title="KT&G는 포트폴리오의 흔들림을 줄여줬어요">
-                  <span className="text-[17px] leading-7 text-muted">오늘 시장보다 변동성이 낮았어요.</span>
-                </Story>
-              )}
+              <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">
+                {userName}님의 투자는<br />오늘도 전략대로 움직이고 있어요.
+              </h1>
+              <div className="flex items-baseline gap-4">
+                <span className="text-[40px] font-bold tracking-[-0.035em]">{won(HOLD_TOTAL)}</span>
+                <span className="text-xl font-bold text-up">
+                  오늘 {todayTotal >= 0 ? '+' : ''}{Math.round(todayTotal).toLocaleString('ko-KR')}원
+                </span>
+              </div>
+            </div>
+
+            {/* Dashboard.tsx 병합 — "오늘 무슨 일이 있었나요" 스토리 카드. 짧은 인사이트 2장이라
+                세로로 쌓지 않고 나란히 둬서 한눈에 훑을 수 있게 한다. */}
+            <div className="flex flex-col gap-3.5">
+              <h2 className="text-[15px] font-semibold text-muted">오늘 내 투자에는 무슨 일이 있었나요</h2>
+              <div className="grid grid-cols-2 gap-4">
+                {top ? (
+                  <Story title={`${top.name}가 오늘 수익을 가장 많이 만들었어요`}>
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-xl font-bold text-up">+{Math.round(top.gain).toLocaleString('ko-KR')}원</span>
+                      <span className="text-sm text-muted">
+                        오늘 전체 수익의 {todayTotal !== 0 ? Math.round((top.gain / todayTotal) * 100) : 0}%
+                      </span>
+                    </div>
+                  </Story>
+                ) : (
+                  <Story title="아직 보유 중인 종목이 없어요">
+                    <span className="text-sm leading-6 text-muted">계좌에 입금하고 투자를 시작하면 여기에 오늘의 이야기가 채워져요.</span>
+                  </Story>
+                )}
+                {/* 보유 종목이 없으면(top === undefined) 이 카드도 고정 mock 스토리를 보여주지 않는다 —
+                    바로 위 카드가 이미 "아직 보유 중인 종목이 없어요"로 빈 상태를 알려주는데, 그 아래에
+                    실제로는 없는 KT&G 보유를 전제한 문구가 이어지면 모순된다. */}
+                {top && (
+                  <Story title="KT&G는 포트폴리오의 흔들림을 줄여줬어요">
+                    <span className="text-sm leading-6 text-muted">오늘 시장보다 변동성이 낮았어요.</span>
+                  </Story>
+                )}
+              </div>
             </div>
           </section>
 
-          {/* 현재 전략 + 변경 트리거 — Primary 로 강조하지 않는다 */}
-          <section className="flex items-center justify-between gap-8 rounded-card bg-surface px-12 py-11">
-            <div className="flex flex-col gap-2.5">
-              <span className="text-[15px] text-muted">현재 전략</span>
-              <span className="text-2xl font-bold tracking-[-0.025em]">{strategy.name}</span>
-              <span className="text-base text-muted">
-                위험도 {strategyRiskLabel(strategy.risk_level)} · 리밸런싱 {strategyRebalanceLabel(strategy.rebalance_cycle)}
+          {/* ============ 전략: 슬림 스트립 — 텍스트 몇 줄짜리 설정 항목이라 큰 카드 대신 얇은 줄로 둔다 ============ */}
+          <section className="mt-10 flex items-center justify-between gap-6 rounded-panel bg-surface px-8 py-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-[13px] text-subtle">현재 전략</span>
+              <span className="text-lg font-bold tracking-[-0.02em]">{strategy.name}</span>
+              <span className="text-[13px] text-muted">
+                · 위험도 {strategyRiskLabel(strategy.risk_level)} · 리밸런싱 {strategyRebalanceLabel(strategy.rebalance_cycle)}
               </span>
             </div>
             <button
               onClick={() => setModalOpen(true)}
-              className="shrink-0 rounded-field bg-[#F4F6F1] px-7 py-4 text-[17px] font-semibold text-[#3F4A43]"
+              className="shrink-0 rounded-field bg-[#F4F6F1] px-5 py-2.5 text-sm font-semibold text-[#3F4A43]"
             >
               전략 변경하기
             </button>
           </section>
 
-          {/* AI 손절/리밸런싱 제안 — 실 계좌에 제안이 있으면 그 값을, 없으면 목업을 쓴다(lib/rebalancing.ts).
-              "조정 제안/손절 조치 확인하기"를 누르면 사유+조치 시트가 열린다 */}
-          {displayAlerts.length > 0 && (
-            <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
-              <div className="flex items-baseline justify-between">
-                <div className="flex flex-col gap-2.5">
-                  <span className="text-base font-semibold text-[#3F5222]">✦ AI의 리밸런싱 제안</span>
-                  <h2 className="text-[26px] font-bold tracking-[-0.025em]">지금 확인해야 할 손절·리밸런싱 제안이 있어요</h2>
+          {/* ============ 내 자산: 보유 종목 + 최근 거래 — 둘 다 "무엇을 갖고 있는지" 리스트라 나란히 둔다 ============ */}
+          <section className="mt-14 flex flex-col gap-4">
+            <h2 className="text-[15px] font-semibold text-muted">내 자산</h2>
+            <div className="grid grid-cols-2 gap-5">
+              {/* 보유 종목 미리보기 — 비중 상위 5종목만 보여주고 전체 목록은 /all-holdings 로 뺀다.
+                  투자 원금/수익률은 실 계좌 포지션(purchase_amount/return_rate)이 있으면 그 값을, 없으면 목업 값을 쓴다. */}
+              <div className="flex flex-col gap-3 rounded-card bg-surface p-7">
+                <div className="flex items-baseline justify-between">
+                  <h2 className="text-xl font-bold tracking-[-0.02em]">보유 종목</h2>
+                  <button onClick={() => onNavigate('all-holdings')} className="text-sm font-semibold text-navy">전체 종목 보기 →</button>
                 </div>
-                <button onClick={onOpenRebalanceAlerts} className="text-base font-semibold text-navy">더보기 →</button>
-              </div>
-              <div className="flex flex-col gap-4">
-                {displayAlerts.slice(0, 3).map((a) => {
-                  const decision = alertDecisions[a.id];
-                  return (
-                    <div key={a.id} className="flex items-center justify-between gap-6 rounded-[20px] bg-canvas px-9 py-7">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2.5">
-                          <span className={`rounded-full px-3 py-1.5 text-sm font-bold ${ALERT_BADGE[a.kind]}`}>{a.badge}</span>
-                          <span className="text-[19px] font-bold tracking-[-0.02em]">{a.stockName}</span>
-                          {decision && (
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${
-                              decision === 'adjusted' ? 'bg-[#F8FCEE] text-[#3F5222]' : 'bg-[#F4F6F1] text-muted'
-                            }`}>
-                              {decision === 'adjusted' ? '✓ 승인함' : '보류함'}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[16px] text-muted">{a.headline}</p>
-                      </div>
-                      <button
-                        onClick={() => setRebalanceSheetId(a.id)}
-                        className={`shrink-0 rounded-field px-6 py-3.5 text-[15px] font-bold ${
-                          decision ? 'bg-[#F4F6F1] text-[#3F4A43]' : 'bg-lime text-navy'
-                        }`}
-                      >
-                        {decision ? '결정 다시 보기' : (a.kind === '리밸런싱' ? '조정 제안 확인하기' : '손절 조치 확인하기')}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {/* 보유 종목 미리보기 — 비중 상위 5종목만 보여주고 전체 목록은 /all-holdings 로 뺀다.
-              투자 원금/수익률은 실 계좌 포지션(purchase_amount/return_rate)이 있으면 그 값을, 없으면 목업 값을 쓴다. */}
-          <section className="flex flex-col gap-5 rounded-card bg-surface p-12">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-[26px] font-bold tracking-[-0.025em]">보유 종목</h2>
-              <button onClick={() => onNavigate('all-holdings')} className="text-base font-semibold text-navy">전체 종목 보기 →</button>
-            </div>
-            <div className="flex flex-col">
-              {previewHoldings.length === 0 && (
-                <p className="py-6 text-center text-[15px] text-subtle">아직 보유 중인 종목이 없어요.</p>
-              )}
-              {previewHoldings.map((h) => {
-                const stockCode = STOCK_INFO[h.name]?.code;
-                const alert = displayAlerts.find((a) => a.stockName === h.name);
-                return (
-                  <button
-                    key={h.name}
-                    onClick={() => stockCode && onSelectStock(stockCode)}
-                    className="flex items-center gap-6 border-b border-line py-5 text-left last:border-0 hover:bg-canvas"
-                  >
-                    <div className="flex flex-1 flex-col gap-1">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[18px] font-semibold tracking-[-0.02em]">{h.name}</span>
-                        {alert && (
-                          <span
-                            onClick={(e) => { e.stopPropagation(); setAlertModalId(alert.id); }}
-                            className={`rounded-full px-2.5 py-1 text-xs font-bold ${ALERT_BADGE[alert.kind]}`}
-                          >
-                            {alert.badge}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[14px] text-subtle">{h.sector}</span>
-                    </div>
-                    <span className="w-20 shrink-0 text-right text-[17px] font-bold">{h.pct.toFixed(1)}%</span>
-                    <span className={`w-28 shrink-0 text-right text-[16px] font-semibold ${
-                      (h.returnRate ?? 0) > 0 ? 'text-up' : (h.returnRate ?? 0) < 0 ? 'text-down' : 'text-subtle'
-                    }`}>
-                      {(h.returnRate ?? 0) > 0 ? '+' : ''}{(h.returnRate ?? 0).toFixed(1)}%
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* 최근 거래 — 실 체결 내역이 있으면 최신 3건, 없으면 목업 3건. 전체 내역은 별도 페이지로 라우팅한다 */}
-          <section className="flex flex-col gap-5 rounded-card bg-surface p-12">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-[26px] font-bold tracking-[-0.025em]">최근 거래 내역</h2>
-              <button onClick={() => onNavigate('transactions')} className="text-base font-semibold text-navy">더보기 →</button>
-            </div>
-            <div className="flex flex-col">
-              {displayTransactions.length === 0 && (
-                <p className="py-10 text-center text-[15px] text-subtle">아직 거래 내역이 없어요.</p>
-              )}
-              {displayTransactions.slice(0, 3).map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => onSelectTransaction(t.id)}
-                  className="flex items-center gap-6 border-b border-line py-5 text-left last:border-0 hover:bg-canvas"
-                >
-                  <span className="w-24 shrink-0 text-[14px] text-subtle">{t.date}</span>
-                  <span className={`w-[76px] shrink-0 rounded-full px-3 py-1.5 text-center text-sm font-bold ${TX_BADGE[t.type]}`}>
-                    {t.type}
-                  </span>
-                  <span className="flex-1 text-[17px] font-semibold text-[#3F4A43]">{t.stockName}</span>
-                  <span className={`shrink-0 text-[16px] font-bold ${t.amount >= 0 ? 'text-up' : 'text-down'}`}>
-                    {t.amount >= 0 ? '+' : ''}{t.amount.toLocaleString('ko-KR')}원
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {/* AI 자동투자 vs 내 투자 — GET /portfolio/comparison(실 API). AUTO/SEMI_AUTO 계좌가 둘 다
-              있어야 비교가 가능하고, 공통 관측일이 부족하면 서버가 숫자를 만들지 않고 그대로 알려준다. */}
-          <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
-            <div className="flex flex-col gap-2.5">
-              <h2 className="text-[26px] font-bold tracking-[-0.025em]">AI 자동투자 vs 내 투자 수익률 한눈에 비교하기</h2>
-              {comparison.kind === 'ready' && (
-                <p className="text-lg text-muted">{COMPARISON_PERIOD_LABEL[comparison.data.period]} 동안의 두 운용방식 성과를 비교해봤어요.</p>
-              )}
-            </div>
-
-            {comparison.kind === 'loading' && (
-              <p className="text-base text-subtle">비교 정보를 불러오는 중이에요.</p>
-            )}
-            {comparison.kind === 'accounts-required' && (
-              <p className="text-base text-subtle">자동투자와 반자동 계좌가 모두 있어야 비교할 수 있어요. 아직 한쪽 운용방식만 이용 중이에요.</p>
-            )}
-            {comparison.kind === 'insufficient' && (
-              <p className="text-base text-subtle">두 계좌가 함께 운용된 기간이 아직 짧아 비교할 데이터가 충분하지 않아요.</p>
-            )}
-            {comparison.kind === 'error' && (
-              <p className="text-base text-subtle">비교 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
-            )}
-
-            {comparison.kind === 'ready' && (() => {
-              const { accounts, metrics, ai_analysis } = comparison.data;
-              const aiReturn = accounts.ai_auto.return_rate == null ? null : Number(accounts.ai_auto.return_rate);
-              const myReturn = accounts.my_investment.return_rate == null ? null : Number(accounts.my_investment.return_rate);
-              return (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                      <span className="text-[15px] text-muted">AI 자동투자</span>
-                      <span className={`text-[30px] font-bold tracking-[-0.03em] ${
-                        aiReturn == null ? 'text-subtle' : aiReturn >= 0 ? 'text-up' : 'text-down'
-                      }`}>
-                        {aiReturn == null ? '데이터 없음' : `${aiReturn >= 0 ? '+' : ''}${aiReturn.toFixed(2)}%`}
-                      </span>
-                    </div>
-                    <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                      <span className="text-[15px] text-muted">내 투자 (반자동)</span>
-                      <span className={`text-[30px] font-bold tracking-[-0.03em] ${
-                        myReturn == null ? 'text-subtle' : myReturn >= 0 ? 'text-up' : 'text-down'
-                      }`}>
-                        {myReturn == null ? '데이터 없음' : `${myReturn >= 0 ? '+' : ''}${myReturn.toFixed(2)}%`}
-                      </span>
-                    </div>
-                  </div>
-                  <Insight>
-                    {ai_analysis.status === 'AVAILABLE' && (ai_analysis.headline ?? ai_analysis.summary)
-                      ? (ai_analysis.headline ?? ai_analysis.summary)
-                      : metrics
-                        ? (metrics.leader === 'TIE'
-                            ? '이 기간에는 두 방식의 성과가 비슷해요.'
-                            : `이 기간에는 ${metrics.leader === 'AI_AUTO' ? 'AI 자동투자' : '내 투자'}가 ${Math.abs(Number(metrics.return_rate_gap)).toFixed(1)}%p 더 좋았어요.`)
-                        : '비교할 수 있는 결과가 아직 없어요.'}
-                  </Insight>
-                  {ai_analysis.status === 'AVAILABLE' && ai_analysis.caution && (
-                    <p className="text-sm text-subtle">※ {ai_analysis.caution}</p>
+                <div className="flex flex-col">
+                  {previewHoldings.length === 0 && (
+                    <p className="py-6 text-center text-[15px] text-subtle">아직 보유 중인 종목이 없어요.</p>
                   )}
-                </>
-              );
-            })()}
+                  {previewHoldings.map((h) => {
+                    const stockCode = STOCK_INFO[h.name]?.code;
+                    const alert = displayAlerts.find((a) => a.stockName === h.name);
+                    return (
+                      <button
+                        key={h.name}
+                        onClick={() => stockCode && onSelectStock(stockCode)}
+                        className="flex items-center gap-4 border-t border-line py-3.5 text-left first:border-0 hover:bg-canvas"
+                      >
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-[15px] font-semibold tracking-[-0.01em]">{h.name}</span>
+                            {alert && (
+                              <span
+                                onClick={(e) => { e.stopPropagation(); setAlertModalId(alert.id); }}
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${ALERT_BADGE[alert.kind]}`}
+                              >
+                                {alert.badge}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-subtle">{h.sector}</span>
+                        </div>
+                        <span className="w-14 shrink-0 text-right text-sm font-bold">{h.pct.toFixed(1)}%</span>
+                        <span className={`w-16 shrink-0 text-right text-[13px] font-semibold ${
+                          (h.returnRate ?? 0) > 0 ? 'text-up' : (h.returnRate ?? 0) < 0 ? 'text-down' : 'text-subtle'
+                        }`}>
+                          {(h.returnRate ?? 0) > 0 ? '+' : ''}{(h.returnRate ?? 0).toFixed(1)}%
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 최근 거래 — 실 체결 내역이 있으면 최신 3건, 없으면 목업 3건. 전체 내역은 별도 페이지로 라우팅한다 */}
+              <div className="flex flex-col gap-3 rounded-card bg-surface p-7">
+                <div className="flex items-baseline justify-between">
+                  <h2 className="text-xl font-bold tracking-[-0.02em]">최근 거래</h2>
+                  <button onClick={() => onNavigate('transactions')} className="text-sm font-semibold text-navy">더보기 →</button>
+                </div>
+                <div className="flex flex-col">
+                  {displayTransactions.length === 0 && (
+                    <p className="py-6 text-center text-[15px] text-subtle">아직 거래 내역이 없어요.</p>
+                  )}
+                  {displayTransactions.slice(0, 3).map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => onSelectTransaction(t.id)}
+                      className="flex items-center gap-3.5 border-t border-line py-3.5 text-left first:border-0 hover:bg-canvas"
+                    >
+                      <span className="w-14 shrink-0 text-xs text-subtle">{t.date.slice(5)}</span>
+                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-center text-[11px] font-bold ${TX_BADGE[t.type]}`}>
+                        {t.type}
+                      </span>
+                      <span className="flex-1 truncate text-[15px] font-semibold text-[#3F4A43]">{t.stockName}</span>
+                      <span className={`shrink-0 text-sm font-bold ${t.amount >= 0 ? 'text-up' : 'text-down'}`}>
+                        {t.amount >= 0 ? '+' : ''}{t.amount.toLocaleString('ko-KR')}원
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </section>
 
-          {/* "내 투자 판단은 어땠을까요?" — 요약 카드. 상세 회고는 "지난 판단 돌아보기"에서 서브뷰로 전환한다.
-              실 계좌에 리밸런싱 판단 이력이 있으면 그 값을, 없으면 목업을 쓴다(lib/decisions.ts). */}
-          <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
-            <div className="flex flex-col gap-3.5">
-              <h2 className="text-[26px] font-bold tracking-[-0.025em]">내 투자 판단은 어땠을까요?</h2>
-              <p className="text-lg leading-[30px] text-muted">
-                최근 리밸런싱 제안에 어떻게 대응했는지, 그 결과를 확인할 수 있어요.
-              </p>
-            </div>
-            {displayDecisions.items.length > 0 && (
-              <>
+          {/* ============ AI 인사이트: 리밸런싱 제안 + AI vs 나 비교 + 판단 회고 — 전부 "AI가 내 투자를
+              어떻게 보고 있는지"라 하나의 구역으로 묶는다 ============ */}
+          <section className="mt-14 flex flex-col gap-4">
+            <h2 className="text-[15px] font-bold text-[#3F5222]">✦ AI 인사이트</h2>
+
+            {/* AI 손절/리밸런싱 제안 — 실 계좌에 제안이 있으면 그 값을, 없으면 목업을 쓴다(lib/rebalancing.ts).
+                "조정 제안/손절 조치 확인하기"를 누르면 사유+조치 시트가 열린다 */}
+            {displayAlerts.length > 0 && (
+              <div className="flex flex-col gap-5 rounded-card bg-surface p-7">
+                <div className="flex items-baseline justify-between gap-4">
+                  <h2 className="text-xl font-bold tracking-[-0.02em]">지금 확인해야 할 손절·리밸런싱 제안이 있어요</h2>
+                  <button onClick={onOpenRebalanceAlerts} className="shrink-0 text-sm font-semibold text-navy">더보기 →</button>
+                </div>
                 <div className="flex flex-col gap-3">
-                  <span className="text-[15px] text-muted">지난 리밸런싱 제안</span>
-                  <div className="flex items-center gap-3.5 text-[19px] text-[#3F4A43]">
-                    <span>AI 제안 <b>{displayDecisions.items[0].action}</b></span>
-                    <span className="text-[#A6AFA7]">·</span>
-                    <span>내 선택 <b>{displayDecisions.items[0].choice === '수락' ? '수락함' : '하지 않음 (보류)'}</b></span>
-                  </div>
+                  {displayAlerts.slice(0, 3).map((a) => {
+                    const decision = alertDecisions[a.id];
+                    return (
+                      <div key={a.id} className="flex items-center justify-between gap-5 rounded-[18px] bg-canvas px-6 py-5">
+                        <div className="flex min-w-0 flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${ALERT_BADGE[a.kind]}`}>{a.badge}</span>
+                            <span className="text-base font-bold tracking-[-0.02em]">{a.stockName}</span>
+                            {decision && (
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                                decision === 'adjusted' ? 'bg-[#F8FCEE] text-[#3F5222]' : 'bg-[#F4F6F1] text-muted'
+                              }`}>
+                                {decision === 'adjusted' ? '✓ 승인함' : '보류함'}
+                              </span>
+                            )}
+                          </div>
+                          <p className="truncate text-sm text-muted">{a.headline}</p>
+                        </div>
+                        <button
+                          onClick={() => setRebalanceSheetId(a.id)}
+                          className={`shrink-0 rounded-field px-5 py-3 text-sm font-bold ${
+                            decision ? 'bg-[#F4F6F1] text-[#3F4A43]' : 'bg-lime text-navy'
+                          }`}
+                        >
+                          {decision ? '결정 다시 보기' : (a.kind === '리밸런싱' ? '조정 제안 확인하기' : '손절 조치 확인하기')}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                  <span className="text-[15px] text-muted">결과</span>
-                  <span className="text-[26px] font-bold tracking-[-0.03em]">{displayDecisions.items[0].result}</span>
-                </div>
-              </>
+              </div>
             )}
-            <button
-              onClick={() => setView('review')}
-              className="self-start text-base font-semibold text-navy"
-            >
-              지난 판단 돌아보기 →
-            </button>
+
+            <div className="grid grid-cols-2 gap-5">
+              {/* AI 자동투자 vs 내 투자 — GET /portfolio/comparison(실 API). AUTO/SEMI_AUTO 계좌가 둘 다
+                  있어야 비교가 가능하고, 공통 관측일이 부족하면 서버가 숫자를 만들지 않고 그대로 알려준다. */}
+              <div className="flex flex-col gap-4 rounded-card bg-surface p-7">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-bold tracking-[-0.02em]">AI 자동투자 vs 내 투자</h2>
+                  {comparison.kind === 'ready' && (
+                    <p className="text-xs text-muted">{COMPARISON_PERIOD_LABEL[comparison.data.period]} 동안의 두 운용방식 성과예요.</p>
+                  )}
+                </div>
+
+                {comparison.kind === 'loading' && (
+                  <p className="text-sm text-subtle">비교 정보를 불러오는 중이에요.</p>
+                )}
+                {comparison.kind === 'accounts-required' && (
+                  <p className="text-sm text-subtle">자동투자와 반자동 계좌가 모두 있어야 비교할 수 있어요. 아직 한쪽 운용방식만 이용 중이에요.</p>
+                )}
+                {comparison.kind === 'insufficient' && (
+                  <p className="text-sm text-subtle">두 계좌가 함께 운용된 기간이 아직 짧아 비교할 데이터가 충분하지 않아요.</p>
+                )}
+                {comparison.kind === 'error' && (
+                  <p className="text-sm text-subtle">비교 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+                )}
+
+                {comparison.kind === 'ready' && (() => {
+                  const { accounts, metrics, ai_analysis } = comparison.data;
+                  const aiReturn = accounts.ai_auto.return_rate == null ? null : Number(accounts.ai_auto.return_rate);
+                  const myReturn = accounts.my_investment.return_rate == null ? null : Number(accounts.my_investment.return_rate);
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex flex-col gap-1.5 rounded-[18px] bg-canvas px-5 py-4">
+                          <span className="text-xs text-muted">AI 자동투자</span>
+                          <span className={`text-xl font-bold tracking-[-0.02em] ${
+                            aiReturn == null ? 'text-subtle' : aiReturn >= 0 ? 'text-up' : 'text-down'
+                          }`}>
+                            {aiReturn == null ? '데이터 없음' : `${aiReturn >= 0 ? '+' : ''}${aiReturn.toFixed(2)}%`}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-1.5 rounded-[18px] bg-canvas px-5 py-4">
+                          <span className="text-xs text-muted">내 투자 (반자동)</span>
+                          <span className={`text-xl font-bold tracking-[-0.02em] ${
+                            myReturn == null ? 'text-subtle' : myReturn >= 0 ? 'text-up' : 'text-down'
+                          }`}>
+                            {myReturn == null ? '데이터 없음' : `${myReturn >= 0 ? '+' : ''}${myReturn.toFixed(2)}%`}
+                          </span>
+                        </div>
+                      </div>
+                      <Insight compact>
+                        {ai_analysis.status === 'AVAILABLE' && (ai_analysis.headline ?? ai_analysis.summary)
+                          ? (ai_analysis.headline ?? ai_analysis.summary)
+                          : metrics
+                            ? (metrics.leader === 'TIE'
+                                ? '이 기간에는 두 방식의 성과가 비슷해요.'
+                                : `이 기간에는 ${metrics.leader === 'AI_AUTO' ? 'AI 자동투자' : '내 투자'}가 ${Math.abs(Number(metrics.return_rate_gap)).toFixed(1)}%p 더 좋았어요.`)
+                            : '비교할 수 있는 결과가 아직 없어요.'}
+                      </Insight>
+                      {ai_analysis.status === 'AVAILABLE' && ai_analysis.caution && (
+                        <p className="text-xs text-subtle">※ {ai_analysis.caution}</p>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* "내 투자 판단은 어땠을까요?" — 요약 카드. 상세 회고는 "지난 판단 돌아보기"에서 서브뷰로 전환한다.
+                  실 계좌에 리밸런싱 판단 이력이 있으면 그 값을, 없으면 목업을 쓴다(lib/decisions.ts). */}
+              <div className="flex flex-col gap-4 rounded-card bg-surface p-7">
+                <h2 className="text-lg font-bold tracking-[-0.02em]">내 투자 판단은 어땠을까요</h2>
+                {displayDecisions.items.length > 0 && (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-xs text-subtle">지난 리밸런싱 제안</span>
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-[#3F4A43]">
+                        <span>AI 제안 <b>{displayDecisions.items[0].action}</b></span>
+                        <span className="text-[#A6AFA7]">·</span>
+                        <span>내 선택 <b>{displayDecisions.items[0].choice === '수락' ? '수락함' : '하지 않음 (보류)'}</b></span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1.5 rounded-[18px] bg-canvas px-5 py-4">
+                      <span className="text-xs text-muted">결과</span>
+                      <span className="text-lg font-bold tracking-[-0.02em]">{displayDecisions.items[0].result}</span>
+                    </div>
+                  </>
+                )}
+                <button
+                  onClick={() => setView('review')}
+                  className="self-start text-sm font-semibold text-navy"
+                >
+                  지난 판단 돌아보기 →
+                </button>
+              </div>
+            </div>
           </section>
         </div>
       </main>
@@ -727,8 +736,8 @@ function ReviewView({
 /** Dashboard.tsx 병합 — "오늘 무슨 일이 있었나요" 스토리 카드 껍데기 */
 function Story({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-3.5 rounded-card bg-surface px-11 py-10">
-      <span className="text-[26px] font-bold leading-[38px] tracking-[-0.025em]">{title}</span>
+    <div className="flex flex-col gap-3 rounded-card bg-surface p-7">
+      <span className="text-lg font-bold leading-[26px] tracking-[-0.02em]">{title}</span>
       {children}
     </div>
   );
@@ -743,11 +752,11 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Insight({ children }: { children: React.ReactNode }) {
+function Insight({ children, compact }: { children: React.ReactNode; compact?: boolean }) {
   return (
-    <div className="flex items-start gap-4 rounded-[18px] bg-[#F8FCEE] px-8 py-6">
+    <div className={`flex items-start gap-4 rounded-[18px] bg-[#F8FCEE] ${compact ? 'px-5 py-4' : 'px-8 py-6'}`}>
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-lime text-base text-navy">✦</div>
-      <p className="pt-0.5 text-[17px] leading-7 text-[#3F4A43]">{children}</p>
+      <p className={`pt-0.5 text-[#3F4A43] ${compact ? 'text-sm leading-6' : 'text-[17px] leading-7'}`}>{children}</p>
     </div>
   );
 }
