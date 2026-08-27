@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import Header from '../components/Header';
-import ModelRecommendations from '../components/ModelRecommendations';
 import TermTooltip from '../components/TermTooltip';
 import { fetchAiExplanation, getBacktestAvailableRange, runBacktest, USE_MOCK_BACKTEST } from '../data/backtestApi';
 import type { BacktestAvailableRange } from '../data/backtestApi';
@@ -69,7 +68,6 @@ export default function StrategyDetail({
   // 비회원 공개 정책: 전략을 읽고 백테스트 기본 결과를 보는 것은 PUBLIC이지만, "나와 몇% 잘
   // 맞는지" 같은 개인화 적합도는 로그인 + 투자성향 진단 완료 사용자에게만 보여준다.
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
-  const accessToken = useAuthStore((s) => s.accessToken);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const showSuitability = isLoggedIn && investorProfileCompleted;
 
@@ -296,20 +294,12 @@ export default function StrategyDetail({
             </section>
           )}
 
-          {strategyId === 'momentum' && (
-            <section className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
-                <h2 className="text-[26px] font-bold tracking-[-0.025em]">최신 모멘텀 편입 후보</h2>
-                <p className="text-[17px] text-muted">120일 가격 흐름과 거래 가능·위험 기준을 통과한 종목이에요.</p>
-              </div>
-              <ModelRecommendations token={accessToken} limit={5} />
-            </section>
-          )}
-
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
             <div className="flex flex-col gap-2.5">
-              <h2 className="text-[26px] font-bold tracking-[-0.025em]">언제를 골라볼까요?</h2>
-              <p className="text-[17px] text-muted">1,000만원을 넣었다고 가정하고, 구간을 바꿔가며 결과를 볼 수 있어요.</p>
+              <h2 className="text-[26px] font-bold tracking-[-0.025em]">시장이 흔들릴 때, 이 전략은 어땠을까요?</h2>
+              <p className="text-[17px] text-muted">
+                코로나 폭락, 2022 하락장처럼 실제 시장이 크게 움직였던 시기에 이 전략이 어떻게 움직였는지 확인해보세요.
+              </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -398,9 +388,11 @@ export default function StrategyDetail({
           {resultLoading && (
             <section className="flex animate-pulse flex-col gap-4 rounded-card bg-surface p-12">
               <div className="h-8 w-1/3 rounded-md bg-[#F0F2ED]" />
-              <div className="h-[300px] w-full rounded-[14px] bg-[#F4F6F1]" />
-              <div className="grid grid-cols-4 gap-8">
-                {[0, 1, 2, 3].map((i) => <div key={i} className="h-14 rounded-md bg-[#F0F2ED]" />)}
+              <div className="flex gap-8">
+                <div className="h-[300px] flex-1 rounded-[14px] bg-[#F4F6F1]" />
+                <div className="flex w-[240px] shrink-0 flex-col gap-3">
+                  {[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-5 rounded-md bg-[#F0F2ED]" />)}
+                </div>
               </div>
             </section>
           )}
@@ -418,6 +410,9 @@ export default function StrategyDetail({
 
           {result && (
             <>
+              {/* 투자 결과: 그래프(약 75~80%)가 주인공, 주요 지표는 오른쪽 compact summary(고정폭
+                 240px)로 축소 — 지표별 개별 카드 대신 얇은 divider로만 구분되는 세로 리스트다.
+                 그래프/계산 로직(chartData, LineChart 구성)은 그대로다. */}
               <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
                 <div className="flex flex-col gap-2">
                   <span className="text-base text-muted">
@@ -432,53 +427,54 @@ export default function StrategyDetail({
                   </span>
                 </div>
 
-                <div className="h-[300px] w-full">
-                  <ResponsiveContainer>
-                    <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                      <CartesianGrid stroke="#F0F2ED" vertical={false} />
-                      <XAxis
-                        dataKey="t"
-                        tick={{ fill: '#8A948C', fontSize: 12 }}
-                        axisLine={false}
-                        tickLine={false}
-                        tickFormatter={fmtAxisDate}
-                        interval={tickInterval}
-                      />
-                      <YAxis
-                        tick={{ fill: '#8A948C', fontSize: 13 }}
-                        axisLine={false}
-                        tickLine={false}
-                        width={56}
-                        tickFormatter={(v: number) => `${v}%`}
-                      />
-                      <Tooltip content={<BacktestChartTooltip strategyName={result.strategyName} />} />
-                      <Legend iconType="plainline" wrapperStyle={{ fontSize: 15, color: '#5C665F' }} />
-                      <Line type="monotone" dataKey={result.benchmarkName} stroke="#C3CBC4" strokeWidth={3.5} dot={false} />
-                      <Line type="monotone" dataKey={result.strategyName} stroke="#18243A" strokeWidth={5} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-
-                {aiHeadline && (
-                  <div className="flex items-center gap-4 rounded-[16px] bg-[#F8FCEE] px-8 py-6">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-lime text-base text-navy">✦</span>
-                    <span className="text-[19px] font-bold leading-[28px] tracking-[-0.02em]">{aiHeadline}</span>
+                <div className="flex gap-8">
+                  <div className="h-[300px] min-w-0 flex-1">
+                    <ResponsiveContainer>
+                      <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                        <CartesianGrid stroke="#F0F2ED" vertical={false} />
+                        <XAxis
+                          dataKey="t"
+                          tick={{ fill: '#8A948C', fontSize: 12 }}
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={fmtAxisDate}
+                          interval={tickInterval}
+                        />
+                        <YAxis
+                          tick={{ fill: '#8A948C', fontSize: 13 }}
+                          axisLine={false}
+                          tickLine={false}
+                          width={56}
+                          tickFormatter={(v: number) => `${v}%`}
+                        />
+                        <Tooltip content={<BacktestChartTooltip strategyName={result.strategyName} />} />
+                        <Legend iconType="plainline" wrapperStyle={{ fontSize: 15, color: '#5C665F' }} />
+                        <Line type="monotone" dataKey={result.benchmarkName} stroke="#C3CBC4" strokeWidth={3.5} dot={false} />
+                        <Line type="monotone" dataKey={result.strategyName} stroke="#18243A" strokeWidth={5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
-                )}
 
-                <div className="grid grid-cols-4 gap-8 border-t border-[#F0F2ED] pt-7">
-                  <MetricTile label="누적 수익률" value={signed(result.metrics.cumulativeReturn)} termKey="cumulativeReturn" />
-                  <MetricTile label={METRIC_LABELS.cagr} value={signed(result.metrics.cagr)} termKey="cagr" />
-                  <MetricTile label={METRIC_LABELS.mdd} value={`${result.metrics.mdd}%`} accent termKey="mdd" />
-                  <MetricTile label="변동성" value={`${result.metrics.volatility}%`} termKey="volatility" />
-                  {result.metrics.sharpe != null && (
-                    <MetricTile label="샤프 지수" value={`${result.metrics.sharpe}`} termKey="sharpe" />
-                  )}
-                  <MetricTile label="리밸런싱" value={REBALANCE_LABEL[strategy.rebalance_cycle] ?? strategy.rebalance_cycle} />
+                  <div className="w-px shrink-0 bg-line" />
+
+                  <div className="flex w-[240px] shrink-0 flex-col justify-center divide-y divide-line">
+                    <span className="pb-2.5 text-[13px] font-semibold text-muted">주요 지표</span>
+                    <MetricRow label={METRIC_LABELS.cagr} value={signed(result.metrics.cagr)} termKey="cagr" />
+                    <MetricRow label={METRIC_LABELS.mdd} value={`${result.metrics.mdd}%`} accent termKey="mdd" />
+                    <MetricRow label="변동성" value={`${result.metrics.volatility}%`} termKey="volatility" />
+                    {result.metrics.sharpe != null && (
+                      <MetricRow label="샤프 지수" value={`${result.metrics.sharpe}`} termKey="sharpe" />
+                    )}
+                    <MetricRow label="리밸런싱 주기" value={REBALANCE_LABEL[strategy.rebalance_cycle] ?? strategy.rebalance_cycle} />
+                  </div>
                 </div>
               </section>
 
-              <section className="flex gap-6 rounded-[20px] bg-[#F8FCEE] px-10 py-9">
+              {/* AI 설명은 이 카드 하나로 통합 — 이전에 결과 카드 안에 따로 있던 headline 박스를
+                 여기로 옮겨 첫 줄(핵심 요약)로 삼고, 그 아래 한눈에 보면/주의해서 볼 점을 잇는다.
+                 headline/overview/caution 전부 backtestApi.fetchAiExplanation()이 실제 백테스트
+                 수치를 문장으로 옮긴 값이며, 여기서 숫자를 새로 만들지 않는다. */}
+              <section className="flex gap-6 rounded-[20px] bg-accent-soft px-10 py-9">
                 <img
                   src={aiLoading ? '/character-thinking.png' : '/character-analyze.png'}
                   alt="물방개"
@@ -488,17 +484,22 @@ export default function StrategyDetail({
                   <span className="text-[22px] font-bold leading-[34px] tracking-[-0.025em]">
                     {aiLoading ? '물방개가 결과를 살펴보고 있어요...' : '물방개가 결과를 쉽게 설명해드릴게요'}
                   </span>
-                  {aiError && <p className="text-lg leading-[30px] text-[#3F4A43]">{aiError}</p>}
+                  {aiError && <p className="text-lg leading-[30px] text-ink-soft">{aiError}</p>}
+                  {aiHeadline && (
+                    <p className="flex items-start gap-2 text-[21px] font-extrabold leading-[30px] tracking-[-0.02em] text-ink">
+                      <span className="mt-0.5 shrink-0 text-lime">✦</span>{aiHeadline}
+                    </p>
+                  )}
                   {aiOverview && (
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-[15px] font-bold text-[#3F5222]">한눈에 보면</span>
-                      <p className="max-w-[760px] text-lg leading-[30px] text-[#3F4A43]">{aiOverview}</p>
+                      <span className="text-[15px] font-bold text-accent-ink">한눈에 보면</span>
+                      <p className="max-w-[760px] text-lg leading-[30px] text-ink-soft">{aiOverview}</p>
                     </div>
                   )}
                   {aiCaution && (
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-[15px] font-bold text-[#3F5222]">주의해서 볼 점</span>
-                      <p className="max-w-[760px] text-lg leading-[30px] text-[#3F4A43]">{aiCaution}</p>
+                      <span className="text-[15px] font-bold text-accent-ink">주의해서 볼 점</span>
+                      <p className="max-w-[760px] text-lg leading-[30px] text-ink-soft">{aiCaution}</p>
                     </div>
                   )}
                 </div>
@@ -509,7 +510,7 @@ export default function StrategyDetail({
           {ctaPending && (
             // 로그인 사용자인데 activeMode/실제 계좌 조회가 아직 끝나지 않은 순간 — 이미 투자 중인
             // 사용자에게 "이 전략으로 시작하기"가 잘못(일시적으로) 노출되지 않도록 판단을 보류한다.
-            <section className="flex animate-pulse items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+            <section className="flex animate-pulse items-center justify-between gap-8 rounded-card bg-navy px-12 py-8">
               <div className="flex flex-col gap-2.5">
                 <div className="h-7 w-56 rounded-md bg-white/10" />
                 <div className="h-5 w-40 rounded-md bg-white/10" />
@@ -519,19 +520,22 @@ export default function StrategyDetail({
           )}
 
           {!ctaPending && ctaState === 'start' && (
-            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
-              <div className="flex flex-col gap-2.5">
-                <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략으로 시작해볼까요?</span>
-                <span className="text-[17px] leading-7 text-[#B9C2BA]">10만원부터 시작할 수 있어요.</span>
+            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-8">
+              <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략이 마음에 드시나요?</span>
+              <div className="flex shrink-0 flex-col items-end gap-2.5">
+                <button onClick={onStart} className="rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
+                  이 전략으로 시작하기 →
+                </button>
+                {/* "시작하기"가 곧바로 주문 체결이 아니라는 걸 CTA 바로 옆에서 명확히 알려준다 —
+                   다음 화면(약관/계좌)을 거치는 동안 실제 편입 종목/전략 구성을 먼저 보여준다.
+                   neutral-muted(#B9C2BA)는 navy 배경에서 너무 흐려 보여, 한 단계 밝은 neutral-100로 올림. */}
+                <span className="text-[14px] text-neutral-100">다음 단계에서 편입 종목과 전략 구성을 확인할 수 있어요.</span>
               </div>
-              <button onClick={onStart} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
-                이 전략으로 시작하기 →
-              </button>
             </section>
           )}
 
           {!ctaPending && ctaState === 'current' && (
-            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-8">
               <div className="flex flex-col gap-2.5">
                 <span className="text-2xl font-bold tracking-[-0.025em] text-white">현재 이 전략으로 운용하고 있어요</span>
                 <span className="text-[17px] leading-7 text-[#B9C2BA]">
@@ -550,7 +554,7 @@ export default function StrategyDetail({
           )}
 
           {!ctaPending && ctaState === 'change' && (
-            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
+            <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-8">
               <div className="flex flex-col gap-2.5">
                 <span className="text-2xl font-bold tracking-[-0.025em] text-white">다른 전략으로 바꿔볼까요?</span>
                 <span className="text-[17px] leading-7 text-[#B9C2BA]">
@@ -666,14 +670,15 @@ function LoginLockBadge() {
   );
 }
 
-function MetricTile({ label, value, accent, termKey }: { label: string; value: string; accent?: boolean; termKey?: string }) {
+/** 주요 지표 compact summary의 한 줄 — 개별 카드 대신 divide-y로만 구분되는 세로 리스트 항목 */
+function MetricRow({ label, value, accent, termKey }: { label: string; value: string; accent?: boolean; termKey?: string }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1">
-        <span className="text-[15px] text-muted">{label}</span>
+    <div className="flex items-center justify-between gap-3 py-3 first:pt-2.5 last:pb-0">
+      <span className="flex items-center gap-1 text-[13px] text-muted">
+        {label}
         {termKey && <TermTooltip label={label} description={METRIC_TERMS[termKey]} />}
-      </div>
-      <span className={`text-[22px] font-bold ${accent ? 'text-down' : ''}`}>{value}</span>
+      </span>
+      <span className={`text-[15px] font-bold ${accent ? 'text-down' : 'text-ink'}`}>{value}</span>
     </div>
   );
 }

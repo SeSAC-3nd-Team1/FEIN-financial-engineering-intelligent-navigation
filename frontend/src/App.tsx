@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import AllHoldings from "./pages/AllHoldings";
 import Chatbot from "./components/Chatbot";
 import Dashboard from "./pages/Dashboard";
+import FundAddAmount from "./pages/FundAddAmount";
+import FundAddConfirm from "./pages/FundAddConfirm";
+import FundManagementComingSoon from "./pages/FundManagementComingSoon";
+import FundWithdrawAmount from "./pages/FundWithdrawAmount";
+import FundWithdrawConfirm from "./pages/FundWithdrawConfirm";
 import Home from "./pages/Home";
 import InformationExam from "./pages/InformationExam";
 import InvestAccount from "./pages/InvestAccount";
@@ -104,6 +109,12 @@ const PROTECTED_SCREENS: Screen[] = [
   "invest-account",
   "invest-deposit",
   "invest-confirm",
+  "fund-add",
+  "fund-add-confirm",
+  "fund-add-pending",
+  "fund-withdraw",
+  "fund-withdraw-confirm",
+  "fund-withdraw-pending",
 ];
 
 /** 투자 시작 Flow(약관~최종확인) 화면 목록 — Header 등으로 이 밖으로 나가면 inFlight(새로고침 복원용 진행 상태)를 정리한다 */
@@ -125,6 +136,10 @@ const STRATEGY_DATA_SCREENS: Screen[] = [
   "dashboard",
   "portfolio-detail",
   "rebalance-alerts",
+  "fund-add",
+  "fund-add-confirm",
+  "fund-withdraw",
+  "fund-withdraw-confirm",
 ];
 
 /** 실제 계좌의 selected_strategy_id를 Source of Truth로 써야 하는 포트폴리오 화면들. */
@@ -132,6 +147,10 @@ const PORTFOLIO_STRATEGY_SCREENS: Screen[] = [
   "dashboard",
   "portfolio-detail",
   "rebalance-alerts",
+  "fund-add",
+  "fund-add-confirm",
+  "fund-withdraw",
+  "fund-withdraw-confirm",
 ];
 
 /**
@@ -200,6 +219,10 @@ export default function App() {
     useState<StrategyRecommendationItemResponse | null>(null);
   const [strategyDetailBackTarget, setStrategyDetailBackTarget] =
     useState<Screen>("strategy-list");
+  // 추가 투자/출금 STEP 1(금액) → STEP 2(확인) 사이에서만 쓰는 draft 금액 — 새로고침 유지가 필요 없는
+  // 일회성 입력값이라 persistedNav(sessionStorage)에는 넣지 않는다.
+  const [fundAddAmount, setFundAddAmount] = useState(0);
+  const [fundWithdrawAmount, setFundWithdrawAmount] = useState(0);
   const strategy =
     strategyCatalog.find((item) => item.id === strategyId) ?? null;
   useEffect(() => {
@@ -594,6 +617,21 @@ export default function App() {
       setScreen("transactions");
     }
   }, [screen, selectedTransactionId]);
+
+  // 추가 투자/출금 확인 화면(screen)은 sessionStorage로 복원되지만 금액(fundAddAmount/
+  // fundWithdrawAmount)은 새로고침 유지가 필요 없는 일반 state라 복원되지 않는다(0으로 초기화됨).
+  // 그대로 두면 확인 화면이 0원인 채로 뜨고 실행 버튼이 금액을 재검증하지 않아 다음 단계로 넘어갈 수
+  // 있어, 금액을 복원할 수 없는 채로 확인 화면을 새로고침한 경우 STEP 1(금액 입력)으로 돌려보낸다.
+  useEffect(() => {
+    if (screen === "fund-add-confirm" && fundAddAmount <= 0) {
+      setScreen("fund-add");
+    }
+  }, [screen, fundAddAmount]);
+  useEffect(() => {
+    if (screen === "fund-withdraw-confirm" && fundWithdrawAmount <= 0) {
+      setScreen("fund-withdraw");
+    }
+  }, [screen, fundWithdrawAmount]);
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
@@ -1218,6 +1256,17 @@ export default function App() {
               setRebalanceBackTarget("portfolio");
               setScreen("rebalance-alerts");
             }}
+            onOpenFundManagement={(kind) => {
+              // STEP1↔STEP2 사이에서만 쓰는 일회성 draft 금액 — 이전에 종료한 Flow에서 남은 값이
+              // 새 Flow 진입 시 그대로 미리 채워져 보이지 않도록 매번 새로 시작할 때 0으로 되돌린다.
+              if (kind === "deposit") {
+                setFundAddAmount(0);
+                setScreen("fund-add");
+              } else {
+                setFundWithdrawAmount(0);
+                setScreen("fund-withdraw");
+              }
+            }}
           />
         ) : (
           <Portfolio
@@ -1229,8 +1278,84 @@ export default function App() {
               setScreen("rebalance-alerts");
             }}
             onStartRiskProfile={() => startInvestorProfile("risk-result")}
+            onOpenFundManagement={(kind) => {
+              // STEP1↔STEP2 사이에서만 쓰는 일회성 draft 금액 — 이전에 종료한 Flow에서 남은 값이
+              // 새 Flow 진입 시 그대로 미리 채워져 보이지 않도록 매번 새로 시작할 때 0으로 되돌린다.
+              if (kind === "deposit") {
+                setFundAddAmount(0);
+                setScreen("fund-add");
+              } else {
+                setFundWithdrawAmount(0);
+                setScreen("fund-withdraw");
+              }
+            }}
           />
         ))}
+
+      {/* 추가 투자 STEP 1(금액) — portfolioStrategy가 없으면 아래 STRATEGY_DATA_SCREENS 가드가 대신 렌더링한다 */}
+      {screen === "fund-add" && portfolioStrategy && (
+        <FundAddAmount
+          strategy={portfolioStrategy}
+          initialAmount={fundAddAmount}
+          userName={userName}
+          onNavigate={navigate}
+          onBack={() => setScreen("portfolio")}
+          onContinue={(amount) => {
+            setFundAddAmount(amount);
+            setScreen("fund-add-confirm");
+          }}
+        />
+      )}
+
+      {/* STEP 2(확인) — onConfirm은 실제 매수를 실행하지 않는다. Backend 추가투자 API contract가
+         나오기 전까지는 STEP 3(fund-add-pending, FundManagementComingSoon 재사용)으로만 보낸다. */}
+      {screen === "fund-add-confirm" && portfolioStrategy && (
+        <FundAddConfirm
+          strategy={portfolioStrategy}
+          amount={fundAddAmount}
+          userName={userName}
+          onNavigate={navigate}
+          onBack={() => setScreen("fund-add")}
+          onConfirm={() => setScreen("fund-add-pending")}
+        />
+      )}
+
+      {/* 투자금 출금 STEP 1(금액) */}
+      {screen === "fund-withdraw" && portfolioStrategy && (
+        <FundWithdrawAmount
+          strategy={portfolioStrategy}
+          initialAmount={fundWithdrawAmount}
+          userName={userName}
+          onNavigate={navigate}
+          onBack={() => setScreen("portfolio")}
+          onContinue={(amount) => {
+            setFundWithdrawAmount(amount);
+            setScreen("fund-withdraw-confirm");
+          }}
+        />
+      )}
+
+      {/* STEP 2(확인) — onConfirm은 실제 매도/출금을 실행하지 않는다. Backend 출금 API contract가
+         나오기 전까지는 STEP 3(fund-withdraw-pending, FundManagementComingSoon 재사용)으로만 보낸다. */}
+      {screen === "fund-withdraw-confirm" && portfolioStrategy && (
+        <FundWithdrawConfirm
+          strategy={portfolioStrategy}
+          amount={fundWithdrawAmount}
+          userName={userName}
+          onNavigate={navigate}
+          onBack={() => setScreen("fund-withdraw")}
+          onConfirm={() => setScreen("fund-withdraw-pending")}
+        />
+      )}
+
+      {(screen === "fund-add-pending" || screen === "fund-withdraw-pending") && (
+        <FundManagementComingSoon
+          kind={screen === "fund-add-pending" ? "deposit" : "withdraw"}
+          userName={userName}
+          onNavigate={navigate}
+          onBack={() => setScreen("portfolio")}
+        />
+      )}
 
       {screen === "portfolio-detail" && portfolioStrategy && (
         <PortfolioDetail

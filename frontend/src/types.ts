@@ -11,7 +11,11 @@ export type Screen =
   // 투자 시작 Flow — "이 전략으로 시작하기" 이후, 사용자 준비 상태에 따라 필요한 화면으로만 분기
   | 'invest-terms' | 'invest-account' | 'invest-deposit' | 'invest-confirm'
   | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail'
-  | 'rebalance-alerts' | 'all-holdings';
+  | 'rebalance-alerts' | 'all-holdings'
+  // 자금관리: 추가 투자/출금 모두 금액 입력 → 확인 → 실행 대기(*-pending, FundManagementComingSoon
+  // 재사용) 3단계 실 UI Flow. Backend contract가 아직 없어 실제 매수/매도/출금 실행만 placeholder로 남긴다.
+  | 'fund-add' | 'fund-add-confirm' | 'fund-add-pending'
+  | 'fund-withdraw' | 'fund-withdraw-confirm' | 'fund-withdraw-pending';
 
 /** 온보딩 Step 01 폼 값 — 이메일 인증만 쓰는 정책으로, email도 여기서 함께 입력받는다(인증 자체는 Step 02) */
 export interface SignupPersonal {
