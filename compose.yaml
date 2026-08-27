@@ -48,6 +48,7 @@ services:
       AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${AZURE_OPENAI_COMPARISON_DEPLOYMENT:-}
       AI_COMPARISON_TIMEOUT_SECONDS: ${AI_COMPARISON_TIMEOUT_SECONDS:-15}
       AI_COMPARISON_MODEL_VERSION: ${AI_COMPARISON_MODEL_VERSION:-portfolio-comparison-v1}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
       STRATEGY_CATALOG_VERSION: ${STRATEGY_CATALOG_VERSION:-v1}
       KIS_APP_KEY: ${KIS_APP_KEY:-}
       KIS_APP_SECRET: ${KIS_APP_SECRET:-}
@@ -85,6 +86,7 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+      - model_recommendation_artifacts:/model-artifacts:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -175,8 +177,10 @@ services:
       AZURE_CONFIG_DIR: /root/.azure
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
     volumes:
       - ./ai:/app
+      - model_recommendation_artifacts:/model-artifacts
       - azure_cli_data:/root/.azure
     depends_on:
       redis:
@@ -202,3 +206,4 @@ volumes:
   frontend_node_modules:
   redis_data:
   azure_cli_data:
+  model_recommendation_artifacts:
