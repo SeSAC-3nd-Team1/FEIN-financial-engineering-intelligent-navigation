@@ -293,6 +293,29 @@ export interface InvestorProfileResponse {
   created_at: string;
 }
 
+export type StrategyRecommendationMatchLevel = 'BEST' | 'GOOD' | 'CAUTION';
+
+export interface StrategyRecommendationItemResponse {
+  strategy_id: string;
+  rank: number;
+  /** 예상수익률이 아니라 투자성향과 전략의 적합도(0~1)다. */
+  score: number;
+  match_level: StrategyRecommendationMatchLevel;
+  reason: string;
+  caution: string;
+}
+
+export interface StrategyRecommendationResponse {
+  recommendation_id: string;
+  assessment_id: string;
+  primary: StrategyRecommendationItemResponse;
+  alternatives: StrategyRecommendationItemResponse[];
+  model_version: string;
+  dataset_version: string;
+  recommendation_version: 'v1';
+  created_at: string;
+}
+
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status: number) {
     super(message);
@@ -433,6 +456,55 @@ export function getPortfolioHistoryApi(
   );
 }
 
+export interface PortfolioComparisonAccountResponse {
+  account_id: string;
+  account_name: string;
+  operation_mode: AccountOperationMode;
+  strategy_id: string | null;
+  baseline_assets: DecimalString | null;
+  current_assets: DecimalString | null;
+  return_rate: DecimalString | null;
+}
+
+export interface PortfolioComparisonMetricsResponse {
+  return_rate_gap: DecimalString;
+  asset_gap: DecimalString;
+  leader: 'AI_AUTO' | 'MY_INVESTMENT' | 'TIE';
+}
+
+export interface PortfolioComparisonAIAnalysisResponse {
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  headline: string | null;
+  summary: string;
+  key_points: string[];
+  caution: string | null;
+  model_version: string | null;
+  generated_at: string | null;
+}
+
+export interface PortfolioComparisonResponse {
+  comparison_status: 'AVAILABLE' | 'INSUFFICIENT_DATA';
+  period: PortfolioHistoryPeriod;
+  baseline_date: string | null;
+  as_of: string | null;
+  observation_count: number;
+  accounts: {
+    ai_auto: PortfolioComparisonAccountResponse;
+    my_investment: PortfolioComparisonAccountResponse;
+  };
+  metrics: PortfolioComparisonMetricsResponse | null;
+  ai_analysis: PortfolioComparisonAIAnalysisResponse;
+}
+
+/** 자동투자(AUTO) vs 반자동(SEMI_AUTO) 계좌 비교 — 두 계좌가 모두 있어야 하고, 없으면 백엔드가
+ *  409 COMPARISON_ACCOUNTS_REQUIRED를 반환한다(ApiError.code로 구분). */
+export function getPortfolioComparisonApi(
+  period: PortfolioHistoryPeriod,
+  token: string,
+): Promise<PortfolioComparisonResponse> {
+  return request<PortfolioComparisonResponse>(`/portfolio/comparison?period=${period}`, {}, token);
+}
+
 export function getStockEvaluationApi(
   accountId: string,
   stockCode: string,
@@ -480,8 +552,8 @@ export function getExecutionsApi(accountId: string, token: string): Promise<Exec
 }
 
 /** AI가 실제로 문항 응답을 분석해 투자성향을 산출·저장한다(investor_profile_assessments 테이블).
- *  AI_PERSONALIZATION 약관에 동의하지 않은 사용자는 403(AI_PERSONALIZATION_CONSENT_REQUIRED)을 받는다 —
- *  호출부에서 이 실패를 화면 흐름을 막지 않는 best-effort 로 다뤄야 한다. */
+ *  AI_PERSONALIZATION 약관에 동의하지 않은 사용자는 403(AI_PERSONALIZATION_CONSENT_REQUIRED)을 받는다.
+ *  실패 결과를 임의 성향으로 대체하지 않고 호출 화면에서 오류·재시도 상태로 처리한다. */
 export function analyzeInvestorProfileApi(
   payload: InvestorProfileAnalyzeRequest,
   token: string,
@@ -493,4 +565,14 @@ export function analyzeInvestorProfileApi(
 
 export function latestInvestorProfileApi(token: string): Promise<InvestorProfileResponse> {
   return request<InvestorProfileResponse>('/investor-profile/me/latest', {}, token);
+}
+
+/** 저장된 투자성향 assessment를 실제 AI 전략 추천에 연결한다. Backend가 동일 입력을 멱등 처리한다. */
+export function createStrategyRecommendationApi(
+  assessmentId: string,
+  token: string,
+): Promise<StrategyRecommendationResponse> {
+  return request<StrategyRecommendationResponse>('/strategy-recommendations', {
+    method: 'POST', body: JSON.stringify({ assessment_id: assessmentId }),
+  }, token);
 }

@@ -96,7 +96,6 @@ export default function InformationExam({ userName, onNavigate }: Props) {
             <div className="flex flex-col gap-3">
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} className="flex animate-pulse gap-6 rounded-[20px] bg-surface px-8 py-7">
-                  <div className="h-[104px] w-40 shrink-0 rounded-[14px] bg-[#F0F2ED]" />
                   <div className="flex flex-1 flex-col gap-3 pt-1.5">
                     <div className="h-[22px] w-[70%] rounded-md bg-[#F0F2ED]" />
                     <div className="h-4 w-[92%] rounded-md bg-[#F4F6F1]" />
@@ -133,12 +132,8 @@ export default function InformationExam({ userName, onNavigate }: Props) {
                   href={a.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex gap-6 rounded-[20px] bg-surface px-8 py-7 shadow-[0_0_0_1px_#FFFFFF_inset] hover:shadow-[0_0_0_1.5px_#C6F04D_inset]"
+                  className="flex items-center gap-6 rounded-[20px] bg-surface px-8 py-7 shadow-[0_0_0_1px_#FFFFFF_inset] hover:shadow-[0_0_0_1.5px_#C6F04D_inset]"
                 >
-                  <div
-                    className="h-[104px] w-40 shrink-0 rounded-[14px] bg-[#F0F2ED] bg-cover bg-center"
-                    style={a.thumbnail ? { backgroundImage: `url(${a.thumbnail})` } : undefined}
-                  />
                   <div className="flex min-w-0 flex-1 flex-col gap-2.5">
                     <span className="text-[21px] font-bold leading-8 tracking-[-0.02em] [text-wrap:pretty]">{a.title}</span>
                     <span className="text-base leading-[26px] text-muted">{a.summary}</span>

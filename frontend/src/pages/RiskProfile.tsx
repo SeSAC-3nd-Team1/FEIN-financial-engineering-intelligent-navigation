@@ -10,6 +10,9 @@ interface Props {
   notice?: string;
   /** onComplete 이후 백엔드 분석 응답을 기다리는 동안 true — 완료 버튼을 비활성화하고 로딩 문구를 보여준다 */
   isSubmitting?: boolean;
+  /** 선택 약관인 AI 개인화에 동의하지 않은 경우에도 설문 뒤 진행이 막히지 않도록 비AI 경로를 연다. */
+  allowNonAiFallback?: boolean;
+  onContinueWithoutAi?: () => void;
   /**
    * 'general': Home 등 일반 onboarding에서 진입 — "나에게 맞는 전략을 찾아볼까요?"
    * 'strategy': Strategy Detail "이 전략으로 시작하기"에서 진입 — 이미 고른 전략이 나와 맞는지 확인하는 맥락.
@@ -42,7 +45,9 @@ type Phase = 'intro' | 'question' | 'done' | 'review';
 const REVIEW_GROUPS = Array.from(new Set(RISK_QUESTIONS.map((q) => q.reviewGroup)));
 
 /** 투자자 정보 확인 — 인트로 → 8문항(한 화면 한 질문) → 완료 → 답변 확인(Review) */
-export default function RiskProfile({ onComplete, onExit, notice, isSubmitting, context = 'general' }: Props) {
+export default function RiskProfile({
+  onComplete, onExit, notice, isSubmitting, allowNonAiFallback, onContinueWithoutAi, context = 'general',
+}: Props) {
   const [phase, setPhase] = useState<Phase>('intro');
   const introCopy = INTRO_COPY[context];
   const doneCopy = DONE_COPY[context];
@@ -207,6 +212,20 @@ export default function RiskProfile({ onComplete, onExit, notice, isSubmitting, 
               잘못 입력한 내용이 있다면 수정할 수 있어요.
             </p>
           </div>
+
+          {notice && (
+            <div role="alert" className="flex flex-col gap-4 rounded-[16px] bg-[#FDF1E0] px-6 py-4 text-base font-semibold text-warn">
+              <span>{notice}</span>
+              {allowNonAiFallback && onContinueWithoutAi && (
+                <button
+                  onClick={onContinueWithoutAi}
+                  className="self-start rounded-field bg-surface px-6 py-3 text-[15px] font-bold text-navy shadow-[0_0_0_1px_#E5E9E3_inset]"
+                >
+                  AI 추천 없이 전략 직접 보기 →
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-col gap-6">
             {REVIEW_GROUPS.map((group) => (

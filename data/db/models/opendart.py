@@ -1,9 +1,21 @@
 """OpenDART 기업·재무·공시 정제 데이터를 저장하는 ORM 모델이다."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Date, ForeignKey, Identity, Index, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Date,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base
@@ -44,14 +56,23 @@ class CompanyFinancialAccount(TimestampMixin, Base):
     __tablename__ = "company_financial_accounts"
     __table_args__ = (
         UniqueConstraint(
-            "corp_code", "business_year", "report_code", "fs_div", "sj_div", "account_id",
+            "corp_code",
+            "business_year",
+            "report_code",
+            "fs_div",
+            "sj_div",
+            "account_id",
             name="uq_financial_accounts_identity",
         ),
         Index("ix_financial_accounts_stock_year", "stock_code", "business_year"),
         Index("ix_financial_accounts_corp_year", "corp_code", "business_year"),
     )
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    corp_code: Mapped[str] = mapped_column(String(8), ForeignKey("companies.corp_code", ondelete="RESTRICT"), nullable=False)
+    corp_code: Mapped[str] = mapped_column(
+        String(8),
+        ForeignKey("companies.corp_code", ondelete="RESTRICT"),
+        nullable=False,
+    )
     stock_code: Mapped[str | None] = mapped_column(String(12))
     business_year: Mapped[str] = mapped_column(String(4), nullable=False)
     report_code: Mapped[str] = mapped_column(String(5), nullable=False)
@@ -61,7 +82,9 @@ class CompanyFinancialAccount(TimestampMixin, Base):
     account_name: Mapped[str] = mapped_column(String(200), nullable=False)
     current_amount: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
     previous_amount: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
-    currency: Mapped[str] = mapped_column(String(10), nullable=False, server_default="KRW")
+    currency: Mapped[str] = mapped_column(
+        String(10), nullable=False, server_default="KRW"
+    )
 
 
 class CompanyFinancial(TimestampMixin, Base):
@@ -69,11 +92,21 @@ class CompanyFinancial(TimestampMixin, Base):
 
     __tablename__ = "company_financials"
     __table_args__ = (
-        UniqueConstraint("corp_code", "business_year", "report_code", "fs_div", name="uq_company_financials_report"),
+        UniqueConstraint(
+            "corp_code",
+            "business_year",
+            "report_code",
+            "fs_div",
+            name="uq_company_financials_report",
+        ),
         Index("ix_company_financials_stock_year", "stock_code", "business_year"),
     )
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    corp_code: Mapped[str] = mapped_column(String(8), ForeignKey("companies.corp_code", ondelete="RESTRICT"), nullable=False)
+    corp_code: Mapped[str] = mapped_column(
+        String(8),
+        ForeignKey("companies.corp_code", ondelete="RESTRICT"),
+        nullable=False,
+    )
     stock_code: Mapped[str | None] = mapped_column(String(12))
     business_year: Mapped[str] = mapped_column(String(4), nullable=False)
     report_code: Mapped[str] = mapped_column(String(5), nullable=False)
@@ -90,6 +123,44 @@ class CompanyFinancial(TimestampMixin, Base):
     financing_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
 
 
+class StockDividend(TimestampMixin, Base):
+    """OpenDART 사업보고서의 연간 배당 지표를 주식 종류별로 저장한다."""
+
+    __tablename__ = "stock_dividends"
+    __table_args__ = (
+        UniqueConstraint(
+            "stock_code",
+            "business_year",
+            "report_code",
+            "stock_kind",
+            name="uq_stock_dividends_report_kind",
+        ),
+        Index("ix_stock_dividends_stock_year", "stock_code", "business_year"),
+        Index("ix_stock_dividends_corp_year", "corp_code", "business_year"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    stock_code: Mapped[str] = mapped_column(String(12), nullable=False)
+    corp_code: Mapped[str] = mapped_column(
+        String(8),
+        ForeignKey("companies.corp_code", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    business_year: Mapped[str] = mapped_column(String(4), nullable=False)
+    report_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    stock_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    raw_stock_kind: Mapped[str | None] = mapped_column(String(100))
+    dividend_per_share: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    reported_dividend_yield: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    total_dividend: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    dividend_payout_ratio: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    receipt_no: Mapped[str | None] = mapped_column(String(20))
+    settlement_date: Mapped[date | None] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class CompanyDisclosure(TimestampMixin, Base):
     """접수번호로 중복을 막는 OpenDART 공시 목록이다."""
 
@@ -101,7 +172,11 @@ class CompanyDisclosure(TimestampMixin, Base):
     )
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     receipt_no: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
-    corp_code: Mapped[str] = mapped_column(String(8), ForeignKey("companies.corp_code", ondelete="RESTRICT"), nullable=False)
+    corp_code: Mapped[str] = mapped_column(
+        String(8),
+        ForeignKey("companies.corp_code", ondelete="RESTRICT"),
+        nullable=False,
+    )
     stock_code: Mapped[str | None] = mapped_column(String(12))
     corp_name: Mapped[str] = mapped_column(String(200), nullable=False)
     report_name: Mapped[str] = mapped_column(String(500), nullable=False)

@@ -4,7 +4,21 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,9 +45,15 @@ class User(Base):
     account_status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     active_operation_mode: Mapped[str | None] = mapped_column(String(20))
-    operation_mode_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    operation_mode_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Term(Base):
@@ -50,8 +70,12 @@ class Term(Base):
 class UserAgreement(Base):
     __tablename__ = "user_agreements"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"))
-    term_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("terms.id", ondelete="RESTRICT"))
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    term_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("terms.id", ondelete="RESTRICT")
+    )
     is_agreed: Mapped[bool] = mapped_column(Boolean)
     agreed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     agreed_ip: Mapped[str | None] = mapped_column(INET)
@@ -72,45 +96,80 @@ class Strategy(Base):
 class StrategyTargetWeight(Base):
     __tablename__ = "strategy_target_weights"
     __table_args__ = (
-        UniqueConstraint("strategy_id", "stock_code", "effective_from", name="uq_strategy_target_weights_version"),
-        CheckConstraint("target_weight >= 0 AND target_weight <= 1", name="ck_strategy_target_weights_range"),
-        Index("ix_strategy_target_weights_strategy_effective", "strategy_id", "effective_from"),
+        UniqueConstraint(
+            "strategy_id",
+            "stock_code",
+            "effective_from",
+            name="uq_strategy_target_weights_version",
+        ),
+        CheckConstraint(
+            "target_weight >= 0 AND target_weight <= 1",
+            name="ck_strategy_target_weights_range",
+        ),
+        Index(
+            "ix_strategy_target_weights_strategy_effective",
+            "strategy_id",
+            "effective_from",
+        ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    strategy_id: Mapped[str] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="CASCADE"))
+    strategy_id: Mapped[str] = mapped_column(
+        String(30), ForeignKey("strategies.id", ondelete="CASCADE")
+    )
     stock_code: Mapped[str] = mapped_column(String(12))
     target_weight: Mapped[Decimal] = mapped_column(Numeric(9, 8))
     effective_from: Mapped[date] = mapped_column(Date)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class VirtualAccount(Base):
     __tablename__ = "virtual_accounts"
     __table_args__ = (
-        UniqueConstraint("user_id", "operation_mode", name="uq_virtual_accounts_user_mode"),
-        CheckConstraint("initial_cash >= 0", name="ck_virtual_accounts_initial_cash_nonnegative"),
+        UniqueConstraint(
+            "user_id", "operation_mode", name="uq_virtual_accounts_user_mode"
+        ),
+        CheckConstraint(
+            "initial_cash >= 0", name="ck_virtual_accounts_initial_cash_nonnegative"
+        ),
         CheckConstraint(
             "operation_mode IN ('AUTO', 'SEMI_AUTO')",
             name="ck_virtual_accounts_operation_mode_values",
         ),
     )
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"))
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
+    )
     operation_mode: Mapped[str] = mapped_column(String(20))
     account_name: Mapped[str] = mapped_column(String(100))
     initial_cash: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
-    selected_strategy_id: Mapped[str | None] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="SET NULL"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    selected_strategy_id: Mapped[str | None] = mapped_column(
+        String(30), ForeignKey("strategies.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class InvestmentOnboarding(Base):
     __tablename__ = "investment_onboardings"
     __table_args__ = (
-        UniqueConstraint("user_id", "operation_mode", name="uq_investment_onboardings_user_mode"),
-        CheckConstraint("investment_amount > 0", name="ck_investment_onboardings_investment_amount_positive"),
+        UniqueConstraint(
+            "user_id", "operation_mode", name="uq_investment_onboardings_user_mode"
+        ),
+        CheckConstraint(
+            "investment_amount > 0",
+            name="ck_investment_onboardings_investment_amount_positive",
+        ),
         CheckConstraint(
             "operation_mode IN ('AUTO', 'SEMI_AUTO')",
             name="ck_investment_onboardings_operation_mode_values",
@@ -126,38 +185,62 @@ class InvestmentOnboarding(Base):
         ),
         Index("ix_investment_onboardings_status", "status"),
     )
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"))
-    strategy_id: Mapped[str] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="RESTRICT"))
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    strategy_id: Mapped[str] = mapped_column(
+        String(30), ForeignKey("strategies.id", ondelete="RESTRICT")
+    )
     investment_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     operation_mode: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20))
-    account_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"))
+    account_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT")
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Position(Base):
     __tablename__ = "positions"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"))
+    account_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE")
+    )
     stock_code: Mapped[str] = mapped_column(String(12))
     quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8))
     average_price: Mapped[Decimal] = mapped_column(Numeric(20, 4))
-    realized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2), default=Decimal("0"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    realized_profit: Mapped[Decimal] = mapped_column(
+        Numeric(20, 2), default=Decimal("0")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class PortfolioSnapshot(Base):
     __tablename__ = "portfolio_snapshots"
     __table_args__ = (
-        UniqueConstraint("account_id", "snapshot_date", name="uq_portfolio_snapshots_account_date"),
+        UniqueConstraint(
+            "account_id", "snapshot_date", name="uq_portfolio_snapshots_account_date"
+        ),
         Index("ix_portfolio_snapshots_account_date", "account_id", "snapshot_date"),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"))
+    account_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE")
+    )
     snapshot_date: Mapped[date] = mapped_column(Date)
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     total_purchase_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
@@ -166,21 +249,40 @@ class PortfolioSnapshot(Base):
     unrealized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     realized_profit: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     return_rate: Mapped[Decimal] = mapped_column(Numeric(12, 6))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class RebalancingDecision(Base):
     __tablename__ = "rebalancing_decisions"
     __table_args__ = (
-        UniqueConstraint("account_id", "idempotency_key", name="uq_rebalancing_decisions_account_idempotency"),
-        CheckConstraint("action IN ('BUY', 'SELL')", name="ck_rebalancing_decisions_action_values"),
-        CheckConstraint("decision IN ('ACCEPTED', 'HELD')", name="ck_rebalancing_decisions_decision_values"),
+        UniqueConstraint(
+            "account_id",
+            "idempotency_key",
+            name="uq_rebalancing_decisions_account_idempotency",
+        ),
+        CheckConstraint(
+            "action IN ('BUY', 'SELL')", name="ck_rebalancing_decisions_action_values"
+        ),
+        CheckConstraint(
+            "decision IN ('ACCEPTED', 'HELD')",
+            name="ck_rebalancing_decisions_decision_values",
+        ),
         Index("ix_rebalancing_decisions_account_created", "account_id", "created_at"),
     )
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"))
-    strategy_id: Mapped[str | None] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="SET NULL"))
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE")
+    )
+    strategy_id: Mapped[str | None] = mapped_column(
+        String(30), ForeignKey("strategies.id", ondelete="SET NULL")
+    )
     stock_code: Mapped[str] = mapped_column(String(12))
     stock_name: Mapped[str | None] = mapped_column(String(200))
     action: Mapped[str] = mapped_column(String(4))
@@ -192,13 +294,19 @@ class RebalancingDecision(Base):
     idempotency_key: Mapped[str] = mapped_column(String(100))
     baseline_snapshot_date: Mapped[date | None] = mapped_column(Date)
     baseline_total_assets: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Order(Base):
     __tablename__ = "orders"
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"))
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT")
+    )
     stock_code: Mapped[str] = mapped_column(String(12))
     side: Mapped[str] = mapped_column(String(4))
     order_type: Mapped[str] = mapped_column(String(10), default="MARKET")
@@ -207,19 +315,27 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(12), default="PENDING")
     idempotency_key: Mapped[str] = mapped_column(String(100))
     rejection_code: Mapped[str | None] = mapped_column(String(50))
-    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Execution(Base):
     __tablename__ = "executions"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    order_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("orders.id", ondelete="RESTRICT"), unique=True)
-    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"))
+    order_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("orders.id", ondelete="RESTRICT"), unique=True
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT")
+    )
     stock_code: Mapped[str] = mapped_column(String(12))
     side: Mapped[str] = mapped_column(String(4))
     quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8))
     execution_price: Mapped[Decimal] = mapped_column(Numeric(20, 4))
-    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class CashLedger(Base):
@@ -231,13 +347,17 @@ class CashLedger(Base):
         ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    account_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT"))
+    account_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="RESTRICT")
+    )
     transaction_type: Mapped[str] = mapped_column(String(30))
     amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     balance_after: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     reference_type: Mapped[str] = mapped_column(String(30))
     reference_id: Mapped[str] = mapped_column(String(100))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class AccountDeposit(Base):
@@ -245,13 +365,23 @@ class AccountDeposit(Base):
 
     __tablename__ = "account_deposits"
     __table_args__ = (
-        UniqueConstraint("account_id", "idempotency_key", name="uq_account_deposits_account_idempotency"),
+        UniqueConstraint(
+            "account_id",
+            "idempotency_key",
+            name="uq_account_deposits_account_idempotency",
+        ),
         CheckConstraint("amount > 0", name="ck_account_deposits_amount_positive"),
-        CheckConstraint("balance_after >= 0", name="ck_account_deposits_balance_nonnegative"),
-        CheckConstraint("status = 'COMPLETED'", name="ck_account_deposits_status_values"),
+        CheckConstraint(
+            "balance_after >= 0", name="ck_account_deposits_balance_nonnegative"
+        ),
+        CheckConstraint(
+            "status = 'COMPLETED'", name="ck_account_deposits_status_values"
+        ),
         Index("ix_account_deposits_account_created", "account_id", "created_at"),
     )
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     account_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("virtual_accounts.id", ondelete="RESTRICT"),
@@ -264,8 +394,12 @@ class AccountDeposit(Base):
     balance_after: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     status: Mapped[str] = mapped_column(String(20), default="COMPLETED")
     idempotency_key: Mapped[str] = mapped_column(String(100))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class InvestorProfileAssessment(Base):
@@ -275,13 +409,26 @@ class InvestorProfileAssessment(Base):
             "profile_type IN ('안정추구형', '안정투자형', '중립투자형', '성장추구형', '공격투자형')",
             name="ck_investor_profile_assessments_profile_type_values",
         ),
-        CheckConstraint("stability BETWEEN 1 AND 5", name="ck_investor_profile_assessments_stability_range"),
-        CheckConstraint("return_seeking BETWEEN 1 AND 5", name="ck_investor_profile_assessments_return_seeking_range"),
-        CheckConstraint("horizon BETWEEN 1 AND 5", name="ck_investor_profile_assessments_horizon_range"),
+        CheckConstraint(
+            "stability BETWEEN 1 AND 5",
+            name="ck_investor_profile_assessments_stability_range",
+        ),
+        CheckConstraint(
+            "return_seeking BETWEEN 1 AND 5",
+            name="ck_investor_profile_assessments_return_seeking_range",
+        ),
+        CheckConstraint(
+            "horizon BETWEEN 1 AND 5",
+            name="ck_investor_profile_assessments_horizon_range",
+        ),
         Index("ix_investor_profile_assessments_user_created", "user_id", "created_at"),
     )
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"))
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
+    )
     questionnaire_version: Mapped[str] = mapped_column(String(20))
     analysis_version: Mapped[str] = mapped_column(String(20))
     profile_type: Mapped[str] = mapped_column(String(20))
@@ -293,7 +440,9 @@ class InvestorProfileAssessment(Base):
     analysis_summary: Mapped[list[str]] = mapped_column(JSONB)
     model_version: Mapped[str] = mapped_column(String(100))
     prompt_version: Mapped[str] = mapped_column(String(20))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class StrategyRecommendation(Base):
@@ -307,9 +456,15 @@ class StrategyRecommendation(Base):
             "dataset_version",
             name="uq_strategy_recommendations_reproducible_input",
         ),
-        Index("ix_strategy_recommendations_assessment_created", "assessment_id", "created_at"),
+        Index(
+            "ix_strategy_recommendations_assessment_created",
+            "assessment_id",
+            "created_at",
+        ),
     )
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     assessment_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("investor_profile_assessments.id", ondelete="CASCADE"),
@@ -318,15 +473,24 @@ class StrategyRecommendation(Base):
     prompt_version: Mapped[str] = mapped_column(String(20))
     strategy_catalog_version: Mapped[str] = mapped_column(String(50))
     dataset_version: Mapped[str] = mapped_column(String(100))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class StrategyRecommendationItem(Base):
     __tablename__ = "strategy_recommendation_items"
     __table_args__ = (
-        UniqueConstraint("recommendation_id", "rank", name="uq_strategy_recommendation_items_rank"),
-        CheckConstraint("rank BETWEEN 1 AND 3", name="ck_strategy_recommendation_items_rank_range"),
-        CheckConstraint("score >= 0 AND score <= 1", name="ck_strategy_recommendation_items_score_range"),
+        UniqueConstraint(
+            "recommendation_id", "rank", name="uq_strategy_recommendation_items_rank"
+        ),
+        CheckConstraint(
+            "rank BETWEEN 1 AND 3", name="ck_strategy_recommendation_items_rank_range"
+        ),
+        CheckConstraint(
+            "score >= 0 AND score <= 1",
+            name="ck_strategy_recommendation_items_score_range",
+        ),
         CheckConstraint(
             "match_level IN ('BEST', 'GOOD', 'CAUTION')",
             name="ck_strategy_recommendation_items_match_level_values",
@@ -369,13 +533,19 @@ class Company(Base):
     established_date: Mapped[date | None]
     accounting_month: Mapped[str | None] = mapped_column(String(2))
     dart_modify_date: Mapped[date | None]
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class CompanyFinancial(Base):
     __tablename__ = "company_financials"
-    __table_args__ = (UniqueConstraint("corp_code", "business_year", "report_code", "fs_div"),)
+    __table_args__ = (
+        UniqueConstraint("corp_code", "business_year", "report_code", "fs_div"),
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     corp_code: Mapped[str] = mapped_column(String(8), ForeignKey("companies.corp_code"))
     stock_code: Mapped[str | None] = mapped_column(String(12))
@@ -392,8 +562,46 @@ class CompanyFinancial(Base):
     operating_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
     investing_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
     financing_cash_flow: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class StockDividend(Base):
+    __tablename__ = "stock_dividends"
+    __table_args__ = (
+        UniqueConstraint(
+            "stock_code",
+            "business_year",
+            "report_code",
+            "stock_kind",
+            name="uq_stock_dividends_report_kind",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    stock_code: Mapped[str] = mapped_column(String(12))
+    corp_code: Mapped[str] = mapped_column(String(8), ForeignKey("companies.corp_code"))
+    business_year: Mapped[str] = mapped_column(String(4))
+    report_code: Mapped[str] = mapped_column(String(5))
+    stock_kind: Mapped[str] = mapped_column(String(20))
+    raw_stock_kind: Mapped[str | None] = mapped_column(String(100))
+    dividend_per_share: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    reported_dividend_yield: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    total_dividend: Mapped[Decimal | None] = mapped_column(Numeric(30, 2))
+    dividend_payout_ratio: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    receipt_no: Mapped[str | None] = mapped_column(String(20))
+    settlement_date: Mapped[date | None] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(30))
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class CompanyDisclosure(Base):
@@ -411,5 +619,9 @@ class CompanyDisclosure(Base):
     filer_name: Mapped[str | None] = mapped_column(String(200))
     receipt_date: Mapped[date]
     remarks: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

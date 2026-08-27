@@ -1,15 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import Header from '../components/Header';
 import {
-  ALL_HOLDINGS as MOCK_HOLDINGS, AUTO_VS_MANUAL,
+  ALL_HOLDINGS as MOCK_HOLDINGS,
   HOLD_TOTAL as MOCK_HOLD_TOTAL, STOCK_INFO,
 } from '../data/holdings';
 import { toAccountOperationMode } from '../data/fees';
-import { STRATEGIES } from '../data/strategies';
 import { useTradingData } from '../hooks/useTradingData';
+import {
+  ApiError, getPortfolioComparisonApi, type PortfolioComparisonResponse, type PortfolioHistoryPeriod, type StrategyResponse,
+} from '../lib/backendApi';
 import { getDisplayDecisions, type DisplayDecisionSummary } from '../lib/decisions';
 import { getDisplayAlerts } from '../lib/rebalancing';
+import { strategyRebalanceLabel, strategyRiskLabel } from '../lib/strategyCatalog';
 import { getDisplayTransactions } from '../lib/transactions';
 import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
@@ -19,12 +22,17 @@ import type { Screen, TransactionRecord } from '../types';
 
 interface Props {
   userName: string;
-  /** 모달에서 선택·표시되는 현재 전략 id — RiskResult/StrategyDetail 과 동일한 STRATEGIES.id 를 그대로 쓴다 */
-  strategyId: string;
+  /** App이 실제 GET /strategies에서 확인한 현재 전략과 전체 활성 카탈로그. */
+  strategy: StrategyResponse;
+  strategies: StrategyResponse[];
   onStrategyChange: (id: string) => void;
   onNavigate: (s: Screen) => void;
   onSelectStock: (stockCode: string) => void;
   onSelectTransaction: (id: string) => void;
+  /** "더보기" — AI 손절·리밸런싱 제안 전체 목록(rebalance-alerts)으로 이동한다. onNavigate 대신 별도 prop을
+   *  두는 이유는, 그 화면의 "돌아가기"가 진입 지점(Portfolio/PortfolioAuto 요약 위젯 vs 여기)에 따라
+   *  달라져야 해서 App.tsx가 이동과 함께 back target을 같이 기록해야 하기 때문이다. */
+  onOpenRebalanceAlerts: () => void;
   /** 모달의 "다시 진단하기" — 투자성향 진단으로 되돌린다 */
   onRediagnose: () => void;
   /** 상단 "돌아가기" — PowerBI 컨테이너만 있는 `/portfolio` 로 되돌아간다 */
@@ -45,12 +53,26 @@ const ALERT_BADGE: Record<'손절' | '리밸런싱', string> = {
   '리밸런싱': 'bg-[#FCF3E4] text-warn',
 };
 
+const COMPARISON_PERIOD_LABEL: Record<PortfolioHistoryPeriod, string> = {
+  '1M': '최근 1개월', '3M': '최근 3개월', '1Y': '최근 1년', ALL: '전체 기간',
+};
+
+/** GET /portfolio/comparison 응답 상태 — 두 계좌가 다 있어야 하고(없으면 accounts-required),
+ *  공통 관측일이 부족하면(insufficient) 서버가 숫자를 만들어내지 않고 명시적으로 알려준다. */
+type ComparisonState =
+  | { kind: 'loading' }
+  | { kind: 'accounts-required' }
+  | { kind: 'insufficient' }
+  | { kind: 'error' }
+  | { kind: 'ready'; data: PortfolioComparisonResponse };
+
 /** `/portfolio/detail` — 실 계좌(useTradingStore) 데이터 기준 포트폴리오 관리 화면.
  *  PowerBI 차트(도넛/라인/바/레이더)는 `/portfolio`(Portfolio.tsx)에만 있고, 여기는 그 아래 실무 기능 전부:
- *  오늘의 스토리, 전략 설정, AI 손절·리밸런싱 제안(목업), 보유 종목, 거래 내역(실 체결), 자동매매 비교(목업), 판단 회고(목업).
+ *  오늘의 스토리, 전략 설정, AI 손절·리밸런싱 제안(목업), 보유 종목, 거래 내역(실 체결), 자동매매 비교(실 API), 판단 회고(목업).
  *  매매 방식(반자동/전체자동) 토글은 백엔드에 그런 구분이 없어 넣지 않았다 — PR #57 에서도 같은 이유로 제거된 것으로 보인다. */
 export default function PortfolioDetail({
-  userName, strategyId, onStrategyChange, onNavigate, onSelectStock, onSelectTransaction, onRediagnose, onBack,
+  userName, strategy, strategies, onStrategyChange, onNavigate, onSelectStock, onSelectTransaction, onOpenRebalanceAlerts,
+  onRediagnose, onBack,
 }: Props) {
   const token = useTradingData();
   const logout = useAuthStore((state) => state.logout);
@@ -65,10 +87,32 @@ export default function PortfolioDetail({
   const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
   const displayDecisions: DisplayDecisionSummary = useMemo(() => getDisplayDecisions(decisions), [decisions]);
 
-  // 전략 변경 모달 상태
+  // AI 자동투자 vs 내 투자 비교 — AUTO/SEMI_AUTO 두 계좌가 모두 있어야 하는 별도 API라 account_id가
+  // 필요 없다(로그인 사용자 기준으로 백엔드가 알아서 두 계좌를 찾는다). 계좌가 하나뿐이면 409
+  // COMPARISON_ACCOUNTS_REQUIRED로 실패하는데, 그것도 실제 상태라 mock으로 가리지 않고 그대로 안내한다.
+  const [comparison, setComparison] = useState<ComparisonState>({ kind: 'loading' });
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setComparison({ kind: 'loading' });
+    getPortfolioComparisonApi('3M', token)
+      .then((data) => {
+        if (cancelled) return;
+        setComparison(data.comparison_status === 'AVAILABLE' ? { kind: 'ready', data } : { kind: 'insufficient' });
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setComparison(
+          e instanceof ApiError && e.code === 'COMPARISON_ACCOUNTS_REQUIRED'
+            ? { kind: 'accounts-required' }
+            : { kind: 'error' },
+        );
+      });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  // 전략 변경 모달 상태 — 현재 전략과 선택지는 모두 App의 실제 카탈로그를 사용한다.
   const [isModalOpen, setModalOpen] = useState(false);
-  // strategyId 로부터 표시용 전략 객체(이름/나와 맞는 정도 등)를 파생시킨다 — STRATEGIES 가 유일한 출처
-  const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const setSelectedStrategy = async (nextStrategyId: string) => {
     if (!token) return;
     try {
@@ -220,8 +264,10 @@ export default function PortfolioDetail({
           <section className="flex items-center justify-between gap-8 rounded-card bg-surface px-12 py-11">
             <div className="flex flex-col gap-2.5">
               <span className="text-[15px] text-muted">현재 전략</span>
-              <span className="text-2xl font-bold tracking-[-0.025em]">{selectedStrategy.name}</span>
-              <span className="text-base text-muted">나와 {selectedStrategy.match}% 잘 맞아요</span>
+              <span className="text-2xl font-bold tracking-[-0.025em]">{strategy.name}</span>
+              <span className="text-base text-muted">
+                위험도 {strategyRiskLabel(strategy.risk_level)} · 리밸런싱 {strategyRebalanceLabel(strategy.rebalance_cycle)}
+              </span>
             </div>
             <button
               onClick={() => setModalOpen(true)}
@@ -240,7 +286,7 @@ export default function PortfolioDetail({
                   <span className="text-base font-semibold text-[#3F5222]">✦ AI의 리밸런싱 제안</span>
                   <h2 className="text-[26px] font-bold tracking-[-0.025em]">지금 확인해야 할 손절·리밸런싱 제안이 있어요</h2>
                 </div>
-                <button onClick={() => onNavigate('rebalance-alerts')} className="text-base font-semibold text-navy">더보기 →</button>
+                <button onClick={onOpenRebalanceAlerts} className="text-base font-semibold text-navy">더보기 →</button>
               </div>
               <div className="flex flex-col gap-4">
                 {displayAlerts.slice(0, 3).map((a) => {
@@ -351,32 +397,68 @@ export default function PortfolioDetail({
             </div>
           </section>
 
-          {/* AI 알고리즘 vs 내 포트폴리오 — 백엔드에 자동매매 비교 지표가 없어 목업이다.
-              자동매매 전환을 유도하는 수익률 비교 카드 */}
+          {/* AI 자동투자 vs 내 투자 — GET /portfolio/comparison(실 API). AUTO/SEMI_AUTO 계좌가 둘 다
+              있어야 비교가 가능하고, 공통 관측일이 부족하면 서버가 숫자를 만들지 않고 그대로 알려준다. */}
           <section className="flex flex-col gap-6 rounded-card bg-surface p-12">
             <div className="flex flex-col gap-2.5">
-              <h2 className="text-[26px] font-bold tracking-[-0.025em]">AI 알고리즘 vs 내 포트폴리오 수익률 한눈에 비교하기</h2>
-              <p className="text-lg text-muted">{AUTO_VS_MANUAL.periodLabel} 동안 AI 제안을 그대로 따랐다면과 실제 내 선택을 비교해봤어요.</p>
+              <h2 className="text-[26px] font-bold tracking-[-0.025em]">AI 자동투자 vs 내 투자 수익률 한눈에 비교하기</h2>
+              {comparison.kind === 'ready' && (
+                <p className="text-lg text-muted">{COMPARISON_PERIOD_LABEL[comparison.data.period]} 동안의 두 운용방식 성과를 비교해봤어요.</p>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                <span className="text-[15px] text-muted">AI 알고리즘 (완전 자동)</span>
-                <span className="text-[30px] font-bold tracking-[-0.03em] text-up">+{AUTO_VS_MANUAL.aiReturn.toFixed(1)}%</span>
-                <span className="text-[14px] text-subtle">변동성 {AUTO_VS_MANUAL.aiVol.toFixed(1)}%</span>
-              </div>
-              <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
-                <span className="text-[15px] text-muted">내 포트폴리오 (실제)</span>
-                <span className={`text-[30px] font-bold tracking-[-0.03em] ${AUTO_VS_MANUAL.myReturn >= 0 ? 'text-up' : 'text-down'}`}>
-                  {AUTO_VS_MANUAL.myReturn >= 0 ? '+' : ''}{AUTO_VS_MANUAL.myReturn.toFixed(2)}%
-                </span>
-                <span className="text-[14px] text-subtle">변동성 {AUTO_VS_MANUAL.myVol.toFixed(1)}%</span>
-              </div>
-            </div>
-            <Insight>
-              {AUTO_VS_MANUAL.aiReturn > AUTO_VS_MANUAL.myReturn
-                ? `이 기간에는 AI 제안을 모두 따랐다면 수익률이 ${(AUTO_VS_MANUAL.aiReturn - AUTO_VS_MANUAL.myReturn).toFixed(1)}%p 더 높았어요.`
-                : '이 기간에는 내 선택이 AI 제안보다 더 좋은 결과를 냈어요.'}
-            </Insight>
+
+            {comparison.kind === 'loading' && (
+              <p className="text-base text-subtle">비교 정보를 불러오는 중이에요.</p>
+            )}
+            {comparison.kind === 'accounts-required' && (
+              <p className="text-base text-subtle">자동투자와 반자동 계좌가 모두 있어야 비교할 수 있어요. 아직 한쪽 운용방식만 이용 중이에요.</p>
+            )}
+            {comparison.kind === 'insufficient' && (
+              <p className="text-base text-subtle">두 계좌가 함께 운용된 기간이 아직 짧아 비교할 데이터가 충분하지 않아요.</p>
+            )}
+            {comparison.kind === 'error' && (
+              <p className="text-base text-subtle">비교 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+            )}
+
+            {comparison.kind === 'ready' && (() => {
+              const { accounts, metrics, ai_analysis } = comparison.data;
+              const aiReturn = accounts.ai_auto.return_rate == null ? null : Number(accounts.ai_auto.return_rate);
+              const myReturn = accounts.my_investment.return_rate == null ? null : Number(accounts.my_investment.return_rate);
+              return (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
+                      <span className="text-[15px] text-muted">AI 자동투자</span>
+                      <span className={`text-[30px] font-bold tracking-[-0.03em] ${
+                        aiReturn == null ? 'text-subtle' : aiReturn >= 0 ? 'text-up' : 'text-down'
+                      }`}>
+                        {aiReturn == null ? '데이터 없음' : `${aiReturn >= 0 ? '+' : ''}${aiReturn.toFixed(2)}%`}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-2 rounded-[18px] bg-canvas px-8 py-7">
+                      <span className="text-[15px] text-muted">내 투자 (반자동)</span>
+                      <span className={`text-[30px] font-bold tracking-[-0.03em] ${
+                        myReturn == null ? 'text-subtle' : myReturn >= 0 ? 'text-up' : 'text-down'
+                      }`}>
+                        {myReturn == null ? '데이터 없음' : `${myReturn >= 0 ? '+' : ''}${myReturn.toFixed(2)}%`}
+                      </span>
+                    </div>
+                  </div>
+                  <Insight>
+                    {ai_analysis.status === 'AVAILABLE' && (ai_analysis.headline ?? ai_analysis.summary)
+                      ? (ai_analysis.headline ?? ai_analysis.summary)
+                      : metrics
+                        ? (metrics.leader === 'TIE'
+                            ? '이 기간에는 두 방식의 성과가 비슷해요.'
+                            : `이 기간에는 ${metrics.leader === 'AI_AUTO' ? 'AI 자동투자' : '내 투자'}가 ${Math.abs(Number(metrics.return_rate_gap)).toFixed(1)}%p 더 좋았어요.`)
+                        : '비교할 수 있는 결과가 아직 없어요.'}
+                  </Insight>
+                  {ai_analysis.status === 'AVAILABLE' && ai_analysis.caution && (
+                    <p className="text-sm text-subtle">※ {ai_analysis.caution}</p>
+                  )}
+                </>
+              );
+            })()}
           </section>
 
           {/* "내 투자 판단은 어땠을까요?" — 요약 카드. 상세 회고는 "지난 판단 돌아보기"에서 서브뷰로 전환한다.
@@ -429,8 +511,8 @@ export default function PortfolioDetail({
             </div>
 
             <div className="flex flex-col gap-3">
-              {STRATEGIES.map((s) => {
-                const active = s.id === selectedStrategy.id;
+              {strategies.map((s) => {
+                const active = s.id === strategy.id;
                 return (
                   <button
                     key={s.id}
@@ -521,7 +603,7 @@ export default function PortfolioDetail({
                 {rebalanceAlert.kind === '리밸런싱' ? '조정하지 않으면?' : '정리하지 않으면?'}
               </span>
               <p className="text-[17px] leading-7 text-[#3F4A43]">
-                특정 종목의 영향이 커져 {selectedStrategy.name}보다 포트폴리오가 더 많이 흔들릴 수 있어요.
+                특정 종목의 영향이 커져 {strategy.name}보다 포트폴리오가 더 많이 흔들릴 수 있어요.
               </p>
             </div>
             {alertDecisions[rebalanceAlert.id] ? (

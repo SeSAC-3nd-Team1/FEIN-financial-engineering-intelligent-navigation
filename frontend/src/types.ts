@@ -104,7 +104,8 @@ export type TermKey = 'div' | 'pbr' | 'per' | 'roe';
 
 /* ----- InformationExam 외부 API 응답 계약 ----- */
 export interface NewsArticle {
-  id: string; title: string; summary: string; thumbnail: string | null;
+  // 연동된 뉴스 API(/news/kr)가 이미지를 내려주지 않아 thumbnail 필드는 쓰지 않는다.
+  id: string; title: string; summary: string;
   publisher: string; publishedAt: string; link: string;
 }
 export interface KnowledgeArticle {
