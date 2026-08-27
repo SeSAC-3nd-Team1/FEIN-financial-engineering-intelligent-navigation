@@ -10,9 +10,12 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   /** STEP 1(금액 입력)로 돌아간다 — 입력했던 금액은 App.tsx가 그대로 들고 있어 유지된다 */
-  onBack: () => void;
-  /** "추가 투자하기" — 실제 매수/Backend 연동 전이라 완료 처리 없이 준비 중 화면(STEP 3)으로만 이동한다 */
+    onBack: () => void;
+  /** 추가 투자 API 호출을 시작한다 */
   onConfirm: () => void;
+  isSubmitting?: boolean;
+
+
 }
 
 /**
@@ -20,7 +23,7 @@ interface Props {
  * (portfolio.total_purchase_amount)에 이 화면의 입력 금액을 더하는 계산이 기존 계좌/mock 분기와
  * 완전히 맞아떨어지는지 확신할 수 없어, 가짜 값을 보여주는 대신 생략했다(STOP 대신 생략 우선).
  */
-export default function FundAddConfirm({ strategy, amount, userName, onNavigate, onBack, onConfirm }: Props) {
+export default function FundAddConfirm({ strategy, amount, userName, onNavigate, onBack, onConfirm, isSubmitting = false }: Props) {
   return (
     <div className="min-h-screen bg-canvas">
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
@@ -60,11 +63,12 @@ export default function FundAddConfirm({ strategy, amount, userName, onNavigate,
             >
               이전
             </button>
-            <button
+                        <button
               onClick={onConfirm}
-              className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy"
+              disabled={isSubmitting}
+              className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy disabled:cursor-wait disabled:opacity-60"
             >
-              추가 투자하기
+              {isSubmitting ? '추가 투자 처리 중...' : '추가 투자하기'}
             </button>
           </div>
         </div>

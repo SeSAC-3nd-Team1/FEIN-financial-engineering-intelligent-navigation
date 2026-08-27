@@ -228,6 +228,8 @@ export default function App() {
   const [fundWithdrawAmount, setFundWithdrawAmount] = useState(0);
   const [fundOperation, setFundOperation] = useState<import("./lib/backendApi").FundOperationResponse | null>(null);
   const [fundOperationError, setFundOperationError] = useState<string | null>(null);
+  const [fundOperationIdempotencyKey, setFundOperationIdempotencyKey] = useState<string | null>(null);
+  const [isFundOperationSubmitting, setIsFundOperationSubmitting] = useState(false);
 
   const strategy =
     strategyCatalog.find((item) => item.id === strategyId) ?? null;
@@ -1308,6 +1310,7 @@ export default function App() {
           onBack={() => setScreen("portfolio")}
           onContinue={(amount) => {
             setFundAddAmount(amount);
+            setFundOperationIdempotencyKey(`additional-${crypto.randomUUID()}`);
             setScreen("fund-add-confirm");
           }}
         />
@@ -1321,21 +1324,27 @@ export default function App() {
           amount={fundAddAmount}
           userName={userName}
           onNavigate={navigate}
-                    onBack={() => setScreen("fund-add")}
+                              onBack={() => setScreen("fund-add")}
+          isSubmitting={isFundOperationSubmitting}
           onConfirm={async () => {
-            if (!accessToken || !tradingAccount) return;
+            if (!accessToken || !tradingAccount || !fundOperationIdempotencyKey || isFundOperationSubmitting) return;
             setFundOperationError(null);
+            setIsFundOperationSubmitting(true);
             try {
               const operation = await createAdditionalInvestmentApi(
                 tradingAccount.id,
-                { amount: fundAddAmount, idempotency_key: `additional-${crypto.randomUUID()}` },
+                { amount: fundAddAmount, idempotency_key: fundOperationIdempotencyKey },
                 accessToken,
               );
               setFundOperation(operation);
-              await useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode);
               setScreen("fund-add-pending");
+              void useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode).catch((error) => {
+                console.error("Fund operation succeeded, but portfolio refresh failed", error);
+              });
             } catch (error) {
               setFundOperationError(error instanceof ApiError ? error.message : "추가 투자에 실패했어요. 다시 시도해주세요.");
+            } finally {
+              setIsFundOperationSubmitting(false);
             }
           }}
 
@@ -1352,6 +1361,7 @@ export default function App() {
           onBack={() => setScreen("portfolio")}
           onContinue={(amount) => {
             setFundWithdrawAmount(amount);
+            setFundOperationIdempotencyKey(`withdrawal-${crypto.randomUUID()}`);
             setScreen("fund-withdraw-confirm");
           }}
         />
@@ -1365,21 +1375,27 @@ export default function App() {
           amount={fundWithdrawAmount}
           userName={userName}
           onNavigate={navigate}
-                    onBack={() => setScreen("fund-withdraw")}
+                              onBack={() => setScreen("fund-withdraw")}
+          isSubmitting={isFundOperationSubmitting}
           onConfirm={async () => {
-            if (!accessToken || !tradingAccount) return;
+            if (!accessToken || !tradingAccount || !fundOperationIdempotencyKey || isFundOperationSubmitting) return;
             setFundOperationError(null);
+            setIsFundOperationSubmitting(true);
             try {
               const operation = await createWithdrawalApi(
                 tradingAccount.id,
-                { amount: fundWithdrawAmount, idempotency_key: `withdrawal-${crypto.randomUUID()}` },
+                { amount: fundWithdrawAmount, idempotency_key: fundOperationIdempotencyKey },
                 accessToken,
               );
               setFundOperation(operation);
-              await useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode);
               setScreen("fund-withdraw-pending");
+              void useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode).catch((error) => {
+                console.error("Fund operation succeeded, but portfolio refresh failed", error);
+              });
             } catch (error) {
               setFundOperationError(error instanceof ApiError ? error.message : "출금에 실패했어요. 다시 시도해주세요.");
+            } finally {
+              setIsFundOperationSubmitting(false);
             }
           }}
 
@@ -1396,6 +1412,7 @@ export default function App() {
             setFundOperation(null);
             setFundAddAmount(0);
             setFundWithdrawAmount(0);
+            setFundOperationIdempotencyKey(null);
             setScreen("portfolio");
           }}
         />

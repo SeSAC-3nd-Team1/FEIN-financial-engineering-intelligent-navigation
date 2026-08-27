@@ -10,9 +10,12 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   /** STEP 1(금액 입력)로 돌아간다 — 입력했던 금액은 App.tsx가 그대로 들고 있어 유지된다 */
-  onBack: () => void;
-  /** "출금 신청하기" — 실제 매도/출금 전이라 완료 처리 없이 Backend 연결 대기 화면(STEP 3)으로만 이동한다 */
+    onBack: () => void;
+  /** 출금 API 호출을 시작한다 */
   onConfirm: () => void;
+  isSubmitting?: boolean;
+
+
 }
 
 /**
@@ -21,7 +24,7 @@ interface Props {
  * - 받을 계좌 — 연결 계좌의 은행명/계좌번호를 내려주는 field가 현재 없음(lib/backendApi.ts 확인)
  * - 수수료 — 출금 수수료 정책/field가 현재 없음
  */
-export default function FundWithdrawConfirm({ strategy, amount, userName, onNavigate, onBack, onConfirm }: Props) {
+export default function FundWithdrawConfirm({ strategy, amount, userName, onNavigate, onBack, onConfirm, isSubmitting = false }: Props) {
   return (
     <div className="min-h-screen bg-canvas">
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
@@ -61,11 +64,12 @@ export default function FundWithdrawConfirm({ strategy, amount, userName, onNavi
             >
               이전
             </button>
-            <button
+                        <button
               onClick={onConfirm}
-              className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy"
+              disabled={isSubmitting}
+              className="flex-1 rounded-field bg-lime py-4 text-base font-bold text-navy disabled:cursor-wait disabled:opacity-60"
             >
-              출금 신청하기
+              {isSubmitting ? '출금 처리 중...' : '출금 신청하기'}
             </button>
           </div>
         </div>
