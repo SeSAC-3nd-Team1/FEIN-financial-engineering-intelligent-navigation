@@ -898,7 +898,7 @@ export default function App() {
               setScreen('login');
               throw new Error('로그인이 필요합니다.');
             }
-            await ensureAccount(accessToken, strategyId, toAccountOperationMode(investmentMode));
+            await ensureAccount(accessToken, strategyId, toAccountOperationMode(investmentMode), investmentAmount);
             setActiveMode(investmentMode);
             // "계좌 1개 = 활성 전략 1개" — 실제 투자가 시작된 이 시점에만 계좌의 활성 전략을 기록한다
             setAccountActiveStrategy(investmentMode, strategyId);

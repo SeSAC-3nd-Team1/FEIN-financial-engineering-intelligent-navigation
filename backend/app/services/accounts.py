@@ -26,7 +26,13 @@ class AccountService:
         self.session = session
         self.repo = TradingRepository(session)
 
-    def create(self, user_id: int, account_name: str, operation_mode: OperationMode) -> VirtualAccount:
+    def create(
+        self,
+        user_id: int,
+        account_name: str,
+        operation_mode: OperationMode,
+        initial_deposit: Decimal = Decimal("0"),
+    ) -> VirtualAccount:
         try:
             existing = self.repo.account_for_user(user_id, operation_mode)
             if existing:
@@ -35,8 +41,8 @@ class AccountService:
                 user_id=user_id,
                 account_name=account_name,
                 operation_mode=operation_mode,
-                initial_cash=Decimal("0"),
-                cash_balance=Decimal("0"),
+                initial_cash=initial_deposit,
+                cash_balance=initial_deposit,
                 status="ACTIVE",
             )
             self.session.add(account)

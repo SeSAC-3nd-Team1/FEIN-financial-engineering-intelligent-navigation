@@ -475,12 +475,17 @@ export function createAccountApi(
   accountName: string,
   mode: AccountOperationMode,
   token: string,
+  initialDeposit = 0,
 ): Promise<AccountResponse> {
   return request<AccountResponse>(
     "/accounts",
     {
       method: "POST",
-      body: JSON.stringify({ account_name: accountName, operation_mode: mode }),
+      body: JSON.stringify({
+        account_name: accountName,
+        operation_mode: mode,
+        initial_deposit: initialDeposit,
+      }),
     },
     token,
   );
