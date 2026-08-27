@@ -28,12 +28,14 @@ Microsoft Foundry의 `MBGCoordinator`와 전문 에이전트 5개를 Python에�
 ## 3. Git 상태
 
 - 브랜치: `feat/agent-orchestration`
-- 기준 커밋: `73f8074` (`feat: add coordinator fan-out and fan-in`)
+- 현재 인계 기준 커밋: `bd3818d` (`docs: remove supplied identifiers from scan example`)
+- 주요 구현 체크포인트: `73f8074` (`feat: add coordinator fan-out and fan-in`)
 - `main` 기준 커밋: `c0d09fc`
 - 추적 중인 파일의 미커밋 변경은 없다.
 - `.superpowers/sdd/` 아래 진행 기록과 리뷰 자료는 untracked 상태다. 기존 기록이므로 삭제하거나 덮어쓰지 않는다.
 - Task 5 구현인 `src/agent_orchestration/coordinator.py`와 `tests/unit/test_coordinator.py`는 `73f8074`에 커밋되어 있다.
-- 이 `HANDOFF.md` 역시 새 untracked 인계 문서다. 사용자가 요청하지 않는 한 임의로 커밋하거나 브랜치를 병합하지 않는다.
+- `HANDOFF.md`와 비밀정보 스캔 예시 정정은 각각 `5ed0741`, `bd3818d`에 커밋되어 있다.
+- `.superpowers/sdd/` 아래 진행 기록과 리뷰 자료는 인계 보조 자료로 유지하되 커밋하지 않는다.
 
 현재 상태 확인:
 
