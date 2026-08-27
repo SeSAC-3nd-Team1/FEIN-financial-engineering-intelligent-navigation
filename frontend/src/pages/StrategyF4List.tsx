@@ -7,7 +7,7 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
-  /** status가 'available'인 전략만 실제 상세(Coming Soon)로 이동한다 — 현재는 모멘텀 전략 하나뿐이고,
+  /** status가 'available'인 전략만 실제 상세로 이동한다 — 현재는 모멘텀 전략 하나뿐이고,
    * 나머지 3개(가치주/통계적 차익거래/이벤트 드리븐)는 테스트 중 상태만 안내한다. */
   onSelectAvailableStrategy: () => void;
 }
@@ -18,7 +18,9 @@ interface Props {
  * status가 'available'인 전략(현재 모멘텀) 하나만 "이용 가능" 배지 + CTA를 갖고, 나머지는 muted
  * "테스트 중" 배지 + TermTooltip 안내 + 비활성 버튼으로 처리한다(새 modal/복잡한 interaction 없음).
  * MVP 대상이 바뀌어도(예: 모멘텀 → 다른 전략) data 배열의 status만 바꾸면 되도록 status 기반으로
- * 렌더링한다 — 특정 전략 id를 하드코딩해 분기하지 않는다.
+ * 렌더링한다 — 특정 전략 id를 하드코딩해 분기하지 않는다. 모멘텀은 canonical 백엔드 `momentum`
+ * 전략에 실제로 연결되어 있어(App.tsx의 onSelectAvailableStrategy 구현 참고), 이 컴포넌트가
+ * 어디로 이동하는지는 몰라도 된다.
  *
  * 3차 디자인 QA: "이용 가능" 강조는 FE!N lime accent 하나로 통일한다(카드 테두리 색 구분은 걷어냄) —
  * badge를 lime으로, CTA를 Strategy Main과 동일한 lime circular arrow로 맞춰 색을 여러 개

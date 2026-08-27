@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -29,10 +29,13 @@ class RecommendationItem:
 @dataclass(frozen=True)
 class RecommendationSnapshot:
     as_of: str
+    generated_at: str
     model_version: str
     data_version: str
     status: str
     market_regime: str
+    source: str
+    is_stale: bool
     recommendations: tuple[RecommendationItem, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -103,10 +106,13 @@ def build_recommendation_snapshot(
             if isinstance(latest_date, pd.Timestamp)
             else date.fromisoformat(str(latest_date)).isoformat()
         ),
+        generated_at=datetime.now(timezone.utc).isoformat(),
         model_version="price-momentum-v1",
         data_version=data_version,
         status="ready",
         market_regime=market_regime,
+        source="generated",
+        is_stale=False,
         recommendations=items,
     )
 

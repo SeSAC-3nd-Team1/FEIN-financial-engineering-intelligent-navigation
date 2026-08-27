@@ -633,7 +633,7 @@ export default function Portfolio({
             <section className="flex flex-col gap-3 rounded-card bg-surface p-8 lg:min-h-0 lg:flex-1">
               <div className="flex shrink-0 items-start justify-between gap-6">
                 <div className="flex flex-col gap-1">
-                  <h1 className="text-2xl font-bold tracking-[-0.02em]">
+                  <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">
                     나의 포트폴리오
                   </h1>
                 </div>

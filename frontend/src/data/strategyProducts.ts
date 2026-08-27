@@ -2,8 +2,8 @@
  * 물·방·개 전략 체계 — Strategy Main(구 Strategy List)/F4 선택 화면/Coming Soon 화면 전용 정적 카피.
  *
  * 이 파일의 id/이름/설명은 모두 프론트엔드 전용 UI 식별자이며, 백엔드 `strategies` 테이블의 canonical
- * strategy id(`low`/`value`/`momentum`)와 무관하다. 실제 Model/Backend contract가 확정되기 전까지는
- * 어떤 API 호출에도 이 값을 사용하지 않는다 — "저변동성 = 물림방지" 같은 임의 매핑을 하지 않기 위함이다.
+ * strategy id(`low`/`value`/`momentum`)와 기본적으로 무관하다. 단, `f4-momentum`은 실제 Model/Backend
+ * contract가 확정된 canonical `momentum` 전략으로 명시적으로 연결한다.
  */
 
 export interface StrategyProductCard {
@@ -64,9 +64,11 @@ export interface F4SubStrategy {
 }
 
 /**
- * 방탄 F4 전략집 하위 4개 — MVP 실제 연결 대상이 이벤트 드리븐 → 모멘텀으로 변경됨(상세는
- * StrategyComingSoon 참고). 모멘텀을 배열 맨 앞으로, 이벤트 드리븐은 다른 테스트 중 전략과
- * 같은 자리로 이동했다 — canonical id/데이터 구조는 그대로, status·display order만 변경.
+ * 방탄 F4 전략집 하위 4개 — MVP 실제 연결 대상이 이벤트 드리븐 → 모멘텀으로 변경됨. 모멘텀은
+ * canonical 백엔드 `momentum` 전략/백테스트/추천 API에 실제로 연결되어 있어(App.tsx의
+ * onSelectAvailableStrategy 구현 참고) StrategyComingSoon을 거치지 않고 바로 실 StrategyDetail로
+ * 이동한다. 모멘텀을 배열 맨 앞으로, 이벤트 드리븐은 다른 테스트 중 전략과 같은 자리로 이동했다 —
+ * canonical id/데이터 구조는 그대로, status·display order만 변경.
  */
 export const F4_SUB_STRATEGIES: F4SubStrategy[] = [
   {
@@ -93,15 +95,13 @@ export const F4_COLLECTION_INTRO = {
 };
 
 /**
- * StrategyComingSoon 전용 카피 — 물림방지/모멘텀 모두 아직 실제 Model/API가 연결되지 않아
- * 실제 백테스트 대신 이 정적 안내 문구를 보여준다.
+ * StrategyComingSoon 전용 카피 — 아직 실제 Model/API가 연결되지 않은 전략만 여기 등록한다.
  * TODO(Mock/실제 Model contract 확정 후): canonical strategy id가 정해지면 이 화면 대신 기존
  * StrategyDetail(실 backtest 연동)로 교체한다.
  *
- * F4 MVP 대상이 이벤트 드리븐 → 모멘텀으로 바뀌면서 이 키도 함께 옮겼다. 모멘텀은 F4 화면에서
- * "이용 가능"으로 보여주면서 이 화면에서는 "Coming Soon/준비 중"으로 읽히면 모순되므로,
- * panel/AI/CTA 카피를 "MVP 연동을 준비 중"이라는 의미로 다듬었다(전략 자체가 없는 게 아니라
- * 이 화면의 연동 작업이 진행 중이라는 뉘앙스). 물림방지는 이런 모순이 없어 기존 카피를 유지한다.
+ * 모멘텀은 F4 MVP 대상이 되면서 canonical 백엔드 `momentum` 전략에 실제로 연결됐고(App.tsx의
+ * onSelectAvailableStrategy 구현), StrategyDetail로 바로 이동하므로 더 이상 이 placeholder가
+ * 필요 없어 항목을 제거했다 — 지금은 물림방지만 실제 연동 전이라 이 placeholder를 쓴다.
  */
 export const COMING_SOON_COPY = {
   'loss-avoidance': {
@@ -116,18 +116,5 @@ export const COMING_SOON_COPY = {
     ctaBody: '모델이 연결되면 이 전략으로 투자를 시작할 수 있어요.',
     ctaBadge: '준비 중',
     disclaimer: '※ 이 전략은 아직 실제 모델과 연결되지 않았어요. 위 화면은 정보구조 확인을 위한 준비 화면입니다.',
-  },
-  momentum: {
-    name: '모멘텀 전략',
-    meta: '방탄 F4 전략집 · MVP에서 실제 이용 가능 예정',
-    description: '최근 가격 흐름이 강한 종목의 움직임을 활용하는 전략이에요.',
-    backLabel: '← 방탄 F4 전략집',
-    panelHeading: '모멘텀 전략의 MVP 연동을 준비하고 있어요',
-    panelBody: '연동이 끝나면 이 화면에서 백테스트 결과를 확인할 수 있어요.',
-    aiBody: '모델 연동이 끝나면 물방개가 모멘텀 전략의 결과를 설명해드릴게요.',
-    ctaHeading: '투자 시작은 연동이 끝난 뒤 열려요',
-    ctaBody: '모델 연결이 끝나면 이 화면에서 바로 투자를 시작할 수 있어요.',
-    ctaBadge: '연동 준비 중',
-    disclaimer: '※ 모멘텀 전략은 실제 모델과 연결될 예정이에요. 지금 화면은 연동 전 정보구조 확인용입니다.',
   },
 } as const;
