@@ -1,4 +1,5 @@
 import httpx
+from azure.core.exceptions import ClientAuthenticationError
 from azure.core.credentials_async import AsyncTokenCredential
 from pydantic import ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -20,6 +21,10 @@ class AgentRequestError(AgentClientError):
         if status_code is not None:
             message = f"{message} (status={status_code})"
         super().__init__(message)
+
+
+class AgentAuthenticationError(AgentClientError):
+    pass
 
 
 class AgentResponseError(AgentClientError):
@@ -63,6 +68,8 @@ class ResponsesAgentClient:
                 timeout_seconds=timeout_seconds,
                 idempotency_key=idempotency_key,
             )
+        except ClientAuthenticationError:
+            pass
         except RetryableAgentError as error:
             raise AgentRequestError(error.status_code) from None
         except httpx.HTTPStatusError as error:
@@ -73,6 +80,8 @@ class ResponsesAgentClient:
             raise
         except (AttributeError, TypeError, ValidationError, ValueError):
             raise AgentResponseError("agent response was invalid") from None
+
+        raise AgentAuthenticationError("agent authentication failed")
 
     @retry(
         retry=retry_if_exception_type(

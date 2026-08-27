@@ -5,8 +5,9 @@ from types import SimpleNamespace
 import httpx
 import pytest
 import respx
+from azure.core.exceptions import ClientAuthenticationError
 
-from agent_orchestration.clients.responses import ResponsesAgentClient
+from agent_orchestration.clients.responses import AgentClientError, ResponsesAgentClient
 from agent_orchestration.contracts import AgentRequest
 
 
@@ -17,6 +18,17 @@ class FakeCredential:
     async def get_token(self, *scopes, **kwargs):
         self.scopes.append(scopes)
         return SimpleNamespace(token="test-token")
+
+
+class FailingCredential:
+    def __init__(self):
+        self.attempts = 0
+
+    async def get_token(self, *scopes, **kwargs):
+        self.attempts += 1
+        raise ClientAuthenticationError(
+            "private tenant placeholder and credential diagnostic"
+        )
 
 
 @pytest.mark.asyncio
@@ -74,6 +86,32 @@ def assert_sanitized_error(
     for unsafe_value in unsafe_values:
         assert unsafe_value not in str(error.value)
         assert unsafe_value not in rendered
+
+
+@pytest.mark.asyncio
+async def test_responses_client_sanitizes_credential_acquisition_failure():
+    credential = FailingCredential()
+    async with httpx.AsyncClient() as http:
+        client = ResponsesAgentClient(
+            "https://example.invalid/agents/News/endpoint/protocols/openai/responses",
+            credential,
+            http,
+        )
+        with pytest.raises(AgentClientError) as error:
+            await client.invoke(
+                AgentRequest(request_id="req-1", role="News", user_query="query"),
+                timeout_seconds=5,
+                idempotency_key="idem-1",
+            )
+
+    assert credential.attempts == 1
+    assert str(error.value) == "agent authentication failed"
+    assert error.value.__context__ is None
+    assert_sanitized_error(
+        error,
+        "private tenant placeholder",
+        "credential diagnostic",
+    )
 
 
 @pytest.mark.asyncio
