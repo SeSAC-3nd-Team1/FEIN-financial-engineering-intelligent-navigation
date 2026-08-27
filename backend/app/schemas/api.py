@@ -780,10 +780,13 @@ class ModelRecommendationSnapshotResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     as_of: date
+    generated_at: datetime
     model_version: str = Field(min_length=1, max_length=100)
     data_version: str = Field(min_length=1, max_length=100)
     status: Literal["ready", "unavailable"]
     market_regime: Literal["risk_on", "neutral", "risk_off"]
+    source: Literal["generated", "fallback"]
+    is_stale: bool
     recommendations: list[ModelRecommendationItemResponse] = Field(max_length=20)
 
 

@@ -49,6 +49,8 @@ services:
       AI_COMPARISON_TIMEOUT_SECONDS: ${AI_COMPARISON_TIMEOUT_SECONDS:-15}
       AI_COMPARISON_MODEL_VERSION: ${AI_COMPARISON_MODEL_VERSION:-portfolio-comparison-v1}
       MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+      MODEL_RECOMMENDATION_ALLOW_FALLBACK: ${MODEL_RECOMMENDATION_ALLOW_FALLBACK:-true}
+      MODEL_RECOMMENDATION_STALE_AFTER_DAYS: ${MODEL_RECOMMENDATION_STALE_AFTER_DAYS:-3}
       STRATEGY_CATALOG_VERSION: ${STRATEGY_CATALOG_VERSION:-v1}
       KIS_APP_KEY: ${KIS_APP_KEY:-}
       KIS_APP_SECRET: ${KIS_APP_SECRET:-}
@@ -186,6 +188,35 @@ services:
       redis:
         condition: service_healthy
     command: ["sleep", "infinity"]
+
+  recommendation-generator:
+    build:
+      context: ./ai
+    profiles:
+      - ai
+    environment:
+      PYTHONPATH: /app
+      AZURE_CONFIG_DIR: /root/.azure
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+    volumes:
+      - ./ai:/app
+      - model_recommendation_artifacts:/model-artifacts
+      - azure_cli_data:/root/.azure
+    command:
+      - python
+      - -m
+      - inference.generate_latest_recommendations
+      - --model-version
+      - ${MODEL_FEATURE_VERSION:-2}
+      - --algorithm-version
+      - ${ALGORITHM_FEATURE_VERSION:-2}
+      - --master-version
+      - ${SECURITY_MASTER_FEATURE_VERSION:-1}
+      - --top-n
+      - ${MODEL_RECOMMENDATION_TOP_N:-5}
+    restart: "no"
 
   redis:
     image: redis:8-alpine

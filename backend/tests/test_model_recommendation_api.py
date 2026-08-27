@@ -30,6 +30,7 @@ def test_latest_model_recommendation_returns_snapshot_for_authenticated_user() -
 
     assert response.status_code == 200
     assert response.json()["model_version"] == "price-momentum-v1"
+    assert response.json()["source"] == "fallback"
     assert response.json()["recommendations"][0]["symbol"] == "005930"
     assert sum(
         item["target_weight"] for item in response.json()["recommendations"]
@@ -54,6 +55,8 @@ def test_service_prefers_generated_artifact_from_environment(
     snapshot = ModelRecommendationService().latest()
 
     assert snapshot.as_of.isoformat() == "2026-08-27"
+    assert snapshot.source == "generated"
+    assert not snapshot.is_stale
     assert ModelRecommendationService().snapshot_paths[0] == path
 
 
@@ -67,6 +70,37 @@ def test_service_uses_packaged_fallback_when_generated_artifact_is_missing(
     snapshot = ModelRecommendationService().latest()
 
     assert snapshot.as_of.isoformat() == "2026-08-26"
+    assert snapshot.source == "fallback"
+
+
+def test_service_can_disable_packaged_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "MODEL_RECOMMENDATION_SNAPSHOT_PATH", str(tmp_path / "missing.json")
+    )
+    monkeypatch.setenv("MODEL_RECOMMENDATION_ALLOW_FALLBACK", "false")
+
+    with pytest.raises(ServiceError) as error:
+        ModelRecommendationService().latest()
+
+    assert error.value.code == "MODEL_RECOMMENDATION_UNAVAILABLE"
+    assert error.value.status_code == 503
+
+
+def test_service_marks_old_generated_snapshot_as_stale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    generated = json.loads(DEFAULT_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    generated["as_of"] = "2020-01-02"
+    path = tmp_path / "generated.json"
+    path.write_text(json.dumps(generated), encoding="utf-8")
+    monkeypatch.setenv("MODEL_RECOMMENDATION_STALE_AFTER_DAYS", "3")
+
+    snapshot = ModelRecommendationService(path).latest()
+
+    assert snapshot.source == "generated"
+    assert snapshot.is_stale
 
 
 def test_invalid_snapshot_fails_safely(tmp_path: Path) -> None:

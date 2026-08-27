@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import Header from '../components/Header';
+import ModelRecommendations from '../components/ModelRecommendations';
 import TermTooltip from '../components/TermTooltip';
 import { fetchAiExplanation, getBacktestAvailableRange, runBacktest, USE_MOCK_BACKTEST } from '../data/backtestApi';
 import type { BacktestAvailableRange } from '../data/backtestApi';
@@ -20,6 +21,7 @@ interface Props {
   recommendation?: StrategyRecommendationItemResponse | null;
   userName: string;
   onNavigate: (s: Screen) => void;
+  onBack: () => void;
   onStart: () => void;
   /** 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보낼 때 사용 —
    * 로그인 후 Portfolio가 아니라 이 화면으로 복귀시키기 위해 App.tsx가 별도로 처리한다 */
@@ -61,12 +63,13 @@ const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 /** 03 전략 상세 — 추천 기간(또는 직접 설정한 기간)으로 전략을 직접 체험한 뒤 바로 투자 시작으로 이어진다 */
 export default function StrategyDetail({
   strategy, strategyCatalog, recommendation, userName, onNavigate, onStart, onRequestLoginForBacktest,
-  onConfirmStrategyChange, pendingDeposit, onResumeDeposit,
+  onBack, onConfirmStrategyChange, pendingDeposit, onResumeDeposit,
 }: Props) {
   const strategyId = strategy.id;
   // 비회원 공개 정책: 전략을 읽고 백테스트 기본 결과를 보는 것은 PUBLIC이지만, "나와 몇% 잘
   // 맞는지" 같은 개인화 적합도는 로그인 + 투자성향 진단 완료 사용자에게만 보여준다.
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const investorProfileCompleted = useAuthStore((s) => s.investorProfileCompleted);
   const showSuitability = isLoggedIn && investorProfileCompleted;
 
@@ -261,7 +264,7 @@ export default function StrategyDetail({
         <div className="flex w-[1040px] flex-col gap-10">
           <section className="flex flex-col gap-4">
             <button
-              onClick={() => onNavigate('strategy-list')}
+              onClick={onBack}
               className="self-start text-[15px] font-semibold text-muted transition-colors hover:text-navy"
             >
               ← 투자전략 목록
@@ -290,6 +293,16 @@ export default function StrategyDetail({
               >
                 입금하러 가기 →
               </button>
+            </section>
+          )}
+
+          {strategyId === 'momentum' && (
+            <section className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-[26px] font-bold tracking-[-0.025em]">최신 모멘텀 편입 후보</h2>
+                <p className="text-[17px] text-muted">120일 가격 흐름과 거래 가능·위험 기준을 통과한 종목이에요.</p>
+              </div>
+              <ModelRecommendations token={accessToken} limit={5} />
             </section>
           )}
 

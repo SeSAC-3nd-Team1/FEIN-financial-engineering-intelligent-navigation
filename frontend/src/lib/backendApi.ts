@@ -337,10 +337,13 @@ export interface ModelRecommendationItemResponse {
 
 export interface ModelRecommendationSnapshotResponse {
   as_of: string;
+  generated_at: string;
   model_version: string;
   data_version: string;
   status: "ready" | "unavailable";
   market_regime: "risk_on" | "neutral" | "risk_off";
+  source: "generated" | "fallback";
+  is_stale: boolean;
   recommendations: ModelRecommendationItemResponse[];
 }
 
