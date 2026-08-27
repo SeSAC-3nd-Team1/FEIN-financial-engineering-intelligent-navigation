@@ -907,6 +907,7 @@ export default function App() {
             userName={userName}
             onNavigate={navigate}
             onOpenDetail={() => setScreen('portfolio-detail')}
+            onOpenRebalanceAlerts={() => { setRebalanceBackTarget('portfolio'); setScreen('rebalance-alerts'); }}
             onStartRiskProfile={() => startInvestorProfile('risk-result')}
           />
         )
