@@ -6,7 +6,10 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.api.deps import current_user
-from app.api.routes.model_recommendations import get_model_recommendation_service
+from app.api.routes.model_recommendations import (
+    get_model_recommendation_service,
+    get_momentum_investment_service,
+)
 from app.core.errors import ServiceError
 from app.main import app
 from app.services.model_recommendation import (
@@ -18,6 +21,22 @@ from app.services.model_recommendation import (
 class FakeService:
     def latest(self):
         return ModelRecommendationService().latest()
+
+
+class FakeMomentumInvestmentService:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def apply(self, user_id, account_id):
+        self.calls.append((user_id, account_id))
+        return {
+            "account_id": account_id,
+            "strategy_id": "momentum",
+            "as_of": "2026-08-25",
+            "target_count": 5,
+            "orders_created": 5,
+            "status": "APPLIED",
+        }
 
 
 def test_latest_model_recommendation_returns_snapshot_for_authenticated_user() -> None:
@@ -41,6 +60,25 @@ def test_latest_model_recommendation_requires_authentication() -> None:
     response = TestClient(app).get("/api/v1/model-recommendations/latest")
     assert response.status_code == 401
     assert response.json()["code"] == "AUTHENTICATION_REQUIRED"
+
+
+def test_apply_latest_model_recommendation_uses_authenticated_account() -> None:
+    account_id = "b728b4b0-4678-4a38-b476-3d2aa536310f"
+    service = FakeMomentumInvestmentService()
+    app.dependency_overrides[current_user] = lambda: SimpleNamespace(id=7)
+    app.dependency_overrides[get_momentum_investment_service] = lambda: service
+    try:
+        response = TestClient(app).post(
+            "/api/v1/model-recommendations/latest/apply",
+            json={"account_id": account_id},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["orders_created"] == 5
+    assert response.json()["status"] == "APPLIED"
+    assert str(service.calls[0][1]) == account_id
 
 
 def test_service_prefers_generated_artifact_from_environment(

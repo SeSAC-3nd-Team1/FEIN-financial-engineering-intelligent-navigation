@@ -57,6 +57,47 @@ export interface AccountResponse {
   created_at: string;
 }
 
+export interface InvestmentTermResponse extends SignupTerm {
+  content_reference: string | null;
+}
+
+export type InvestmentOnboardingStatus =
+  | "TERMS_PENDING"
+  | "ACCOUNT_PENDING"
+  | "DEPOSIT_PENDING"
+  | "READY"
+  | "COMPLETED";
+
+export interface InvestmentOnboardingResponse {
+  id: string;
+  strategy_id: string;
+  investment_amount: DecimalString;
+  operation_mode: AccountOperationMode;
+  status: InvestmentOnboardingStatus;
+  account_id: string | null;
+  terms_completed: boolean;
+  account_exists: boolean;
+  next_step: "TERMS" | "ACCOUNT" | "DEPOSIT" | "CONFIRM" | "PORTFOLIO";
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvestmentAccountPrepareResponse {
+  account: AccountResponse;
+  created: boolean;
+  required_deposit_amount: DecimalString;
+  onboarding: InvestmentOnboardingResponse;
+}
+
+export interface InvestmentDepositResponse {
+  deposit_id: string;
+  amount: DecimalString;
+  balance_after: DecimalString;
+  required_deposit_amount: DecimalString;
+  onboarding: InvestmentOnboardingResponse;
+}
+
 export interface PriceResponse {
   stock_code: string;
   price: DecimalString;
@@ -347,6 +388,15 @@ export interface ModelRecommendationSnapshotResponse {
   recommendations: ModelRecommendationItemResponse[];
 }
 
+export interface ModelRecommendationApplyResponse {
+  account_id: string;
+  strategy_id: "momentum";
+  as_of: string;
+  target_count: number;
+  orders_created: number;
+  status: "APPLIED" | "PROPOSAL_ONLY" | "ALREADY_APPLIED";
+}
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -499,6 +549,144 @@ export function selectStrategyApi(
     },
     token,
   );
+}
+
+export function getInvestmentTermsApi(
+  strategyId: string,
+  token: string,
+): Promise<InvestmentTermResponse[]> {
+  return request<InvestmentTermResponse[]>(
+    `/investment/terms?strategy_id=${encodeURIComponent(strategyId)}`,
+    {},
+    token,
+  );
+}
+
+export function createInvestmentOnboardingApi(
+  strategyId: string,
+  investmentAmount: number,
+  operationMode: AccountOperationMode,
+  token: string,
+): Promise<InvestmentOnboardingResponse> {
+  return request<InvestmentOnboardingResponse>(
+    "/investment/onboardings",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        strategy_id: strategyId,
+        investment_amount: investmentAmount,
+        operation_mode: operationMode,
+      }),
+    },
+    token,
+  );
+}
+
+export function agreeInvestmentTermsApi(
+  onboardingId: string,
+  agreements: SignupPayload["agreements"],
+  token: string,
+): Promise<InvestmentOnboardingResponse> {
+  return request<InvestmentOnboardingResponse>(
+    `/investment/onboardings/${encodeURIComponent(onboardingId)}/agreements`,
+    { method: "POST", body: JSON.stringify({ agreements }) },
+    token,
+  );
+}
+
+export function prepareInvestmentAccountApi(
+  onboardingId: string,
+  token: string,
+): Promise<InvestmentAccountPrepareResponse> {
+  return request<InvestmentAccountPrepareResponse>(
+    `/investment/onboardings/${encodeURIComponent(onboardingId)}/account`,
+    {
+      method: "POST",
+      body: JSON.stringify({ account_name: "나의 가상 투자계좌" }),
+    },
+    token,
+  );
+}
+
+export function depositInvestmentCashApi(
+  onboardingId: string,
+  amount: number,
+  idempotencyKey: string,
+  token: string,
+): Promise<InvestmentDepositResponse> {
+  return request<InvestmentDepositResponse>(
+    `/investment/onboardings/${encodeURIComponent(onboardingId)}/deposit`,
+    {
+      method: "POST",
+      body: JSON.stringify({ amount, idempotency_key: idempotencyKey }),
+    },
+    token,
+  );
+}
+
+export function completeInvestmentOnboardingApi(
+  onboardingId: string,
+  token: string,
+): Promise<InvestmentOnboardingResponse> {
+  return request<InvestmentOnboardingResponse>(
+    `/investment/onboardings/${encodeURIComponent(onboardingId)}/complete`,
+    { method: "POST" },
+    token,
+  );
+}
+
+/** Complete the Backend onboarding state machine with retry-safe deposits. */
+export async function startInvestmentApi(
+  strategyId: string,
+  investmentAmount: number,
+  operationMode: AccountOperationMode,
+  agreements: SignupPayload["agreements"],
+  token: string,
+): Promise<InvestmentOnboardingResponse> {
+  let onboarding = await createInvestmentOnboardingApi(
+    strategyId,
+    investmentAmount,
+    operationMode,
+    token,
+  );
+  if (onboarding.status === "COMPLETED") return onboarding;
+
+  if (!onboarding.terms_completed) {
+    const requiredAgreements = agreements.filter(
+      (agreement) => agreement.agreed,
+    );
+    if (requiredAgreements.length === 0) {
+      throw new ApiError(
+        "INVESTMENT_TERMS_UNAVAILABLE",
+        "확인한 투자 필수 약관이 없습니다.",
+        400,
+      );
+    }
+    onboarding = await agreeInvestmentTermsApi(
+      onboarding.id,
+      requiredAgreements,
+      token,
+    );
+  }
+
+  const prepared = await prepareInvestmentAccountApi(onboarding.id, token);
+  const requiredDeposit = Number(prepared.required_deposit_amount);
+  if (!Number.isFinite(requiredDeposit) || requiredDeposit < 0) {
+    throw new ApiError(
+      "INVALID_REQUIRED_DEPOSIT",
+      "필요 입금액을 확인할 수 없습니다.",
+      500,
+    );
+  }
+  if (requiredDeposit > 0) {
+    await depositInvestmentCashApi(
+      onboarding.id,
+      requiredDeposit,
+      `investment-${onboarding.id}-${requiredDeposit}`,
+      token,
+    );
+  }
+  return completeInvestmentOnboardingApi(onboarding.id, token);
 }
 
 const priceResponseCache = new Map<
@@ -741,6 +929,20 @@ export function getLatestModelRecommendationsApi(
   return request<ModelRecommendationSnapshotResponse>(
     "/model-recommendations/latest",
     {},
+    token,
+  );
+}
+
+export function applyLatestModelRecommendationsApi(
+  accountId: string,
+  token: string,
+): Promise<ModelRecommendationApplyResponse> {
+  return request<ModelRecommendationApplyResponse>(
+    "/model-recommendations/latest/apply",
+    {
+      method: "POST",
+      body: JSON.stringify({ account_id: accountId }),
+    },
     token,
   );
 }

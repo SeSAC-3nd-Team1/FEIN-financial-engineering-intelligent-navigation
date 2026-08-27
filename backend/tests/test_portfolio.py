@@ -45,22 +45,31 @@ def test_rebalancing_uses_only_explicit_target_weights() -> None:
         {"005930": "삼성전자", "000660": "SK하이닉스"},
     )
 
-    assert [(item.stock_code, item.action, item.recommended_amount) for item in proposals] == [
+    assert [
+        (item.stock_code, item.action, item.recommended_amount) for item in proposals
+    ] == [
         ("000660", "BUY", Decimal("100000.00")),
         ("005930", "SELL", Decimal("40000.00")),
     ]
 
 
 def test_rebalancing_is_unavailable_without_targets() -> None:
-    assert calculate_rebalancing(
-        Decimal("1000000"), {"005930": Decimal("18")}, {}, {"005930": "삼성전자"}
-    ) == []
+    assert (
+        calculate_rebalancing(
+            Decimal("1000000"), {"005930": Decimal("18")}, {}, {"005930": "삼성전자"}
+        )
+        == []
+    )
 
 
 def test_history_aligns_snapshot_with_latest_kospi_close() -> None:
     snapshots = [
-        SimpleNamespace(snapshot_date=date(2026, 8, 20), total_assets=Decimal("1000000")),
-        SimpleNamespace(snapshot_date=date(2026, 8, 22), total_assets=Decimal("1050000")),
+        SimpleNamespace(
+            snapshot_date=date(2026, 8, 20), total_assets=Decimal("1000000")
+        ),
+        SimpleNamespace(
+            snapshot_date=date(2026, 8, 22), total_assets=Decimal("1050000")
+        ),
     ]
     indices = [
         SimpleNamespace(trade_date=date(2026, 8, 20), close_value=Decimal("3000")),
@@ -74,10 +83,16 @@ def test_history_aligns_snapshot_with_latest_kospi_close() -> None:
     assert points[1].benchmark_return_rate == Decimal("1.00")
 
 
-def test_history_uses_first_snapshot_date_as_benchmark_base_and_deduplicates_dates() -> None:
+def test_history_uses_first_snapshot_date_as_benchmark_base_and_deduplicates_dates() -> (
+    None
+):
     snapshots = [
-        SimpleNamespace(snapshot_date=date(2026, 8, 20), total_assets=Decimal("1000000")),
-        SimpleNamespace(snapshot_date=date(2026, 8, 22), total_assets=Decimal("1050000")),
+        SimpleNamespace(
+            snapshot_date=date(2026, 8, 20), total_assets=Decimal("1000000")
+        ),
+        SimpleNamespace(
+            snapshot_date=date(2026, 8, 22), total_assets=Decimal("1050000")
+        ),
     ]
     indices = [
         SimpleNamespace(trade_date=date(2026, 8, 13), close_value=Decimal("2900")),
@@ -94,7 +109,24 @@ def test_history_uses_first_snapshot_date_as_benchmark_base_and_deduplicates_dat
 
 def test_invalid_target_weight_sum_is_rejected() -> None:
     with pytest.raises(ServiceError) as error:
-        validate_target_weights({"005930": Decimal("0.5"), "000660": Decimal("0.4")})
+        validate_target_weights({"005930": Decimal("0.7"), "000660": Decimal("0.4")})
+
+    assert error.value.code == "INVALID_STRATEGY_TARGET_WEIGHTS"
+
+
+def test_target_weights_allow_explicit_cash_buffer() -> None:
+    validate_target_weights(
+        {"005930": Decimal("0.475"), "000660": Decimal("0.475")},
+        allow_cash_buffer=True,
+    )
+
+
+def test_cash_buffer_requires_exactly_five_percent_cash() -> None:
+    with pytest.raises(ServiceError) as error:
+        validate_target_weights(
+            {"005930": Decimal("0.40"), "000660": Decimal("0.40")},
+            allow_cash_buffer=True,
+        )
 
     assert error.value.code == "INVALID_STRATEGY_TARGET_WEIGHTS"
 
@@ -139,8 +171,16 @@ def portfolio_position(
 )
 def test_home_positions_support_allowed_sort_columns(sort_by, order, expected) -> None:
     positions = [
-        portfolio_position("005930", "삼성전자", weight="60", purchase_amount="70000", return_rate="1"),
-        portfolio_position("000660", "SK하이닉스", weight="30", purchase_amount="50000", return_rate="2"),
+        portfolio_position(
+            "005930", "삼성전자", weight="60", purchase_amount="70000", return_rate="1"
+        ),
+        portfolio_position(
+            "000660",
+            "SK하이닉스",
+            weight="30",
+            purchase_amount="50000",
+            return_rate="2",
+        ),
     ]
 
     result = sort_positions(positions, sort_by, order)
@@ -177,7 +217,9 @@ def test_home_allocations_include_cash_as_an_explicit_slice() -> None:
     ]
 
 
-def test_home_combines_account_evaluation_history_and_sorting_without_second_owner_lookup() -> None:
+def test_home_combines_account_evaluation_history_and_sorting_without_second_owner_lookup() -> (
+    None
+):
     account_id = uuid4()
     account = SimpleNamespace(
         id=account_id,
@@ -187,8 +229,16 @@ def test_home_combines_account_evaluation_history_and_sorting_without_second_own
         selected_strategy_id="low",
     )
     positions = [
-        portfolio_position("005930", "삼성전자", weight="60", purchase_amount="600000", return_rate="1"),
-        portfolio_position("000660", "SK하이닉스", weight="30", purchase_amount="300000", return_rate="2"),
+        portfolio_position(
+            "005930", "삼성전자", weight="60", purchase_amount="600000", return_rate="1"
+        ),
+        portfolio_position(
+            "000660",
+            "SK하이닉스",
+            weight="30",
+            purchase_amount="300000",
+            return_rate="2",
+        ),
     ]
     portfolio = PortfolioResponse(
         account_id=account_id,
@@ -216,7 +266,11 @@ def test_home_combines_account_evaluation_history_and_sorting_without_second_own
             return account
 
         def snapshots_since(self, *_args):
-            return [SimpleNamespace(snapshot_date=date(2026, 8, 25), total_assets=Decimal("1000000"))]
+            return [
+                SimpleNamespace(
+                    snapshot_date=date(2026, 8, 25), total_assets=Decimal("1000000")
+                )
+            ]
 
     service = PortfolioService.__new__(PortfolioService)
     service.repo = FakeRepo()
@@ -282,17 +336,19 @@ def test_home_offloads_sync_work_before_awaiting_ai_rebalancing(monkeypatch) -> 
             self.context = context
             return AIRebalancingResult(
                 summary="목표 비중과 5%p 차이가 발생했습니다.",
-                proposals=[{
-                    "stock_code": "005930",
-                    "priority": 1,
-                    "current_weight": "20.00",
-                    "target_weight": "15.00",
-                    "weight_diff": "5.00",
-                    "action": "SELL",
-                    "recommended_amount": "50000.00",
-                    "reason": "전략 목표보다 보유 비중이 높습니다.",
-                    "why_now": "현재 목표 비중과의 차이가 5%p로 확대됐습니다.",
-                }],
+                proposals=[
+                    {
+                        "stock_code": "005930",
+                        "priority": 1,
+                        "current_weight": "20.00",
+                        "target_weight": "15.00",
+                        "weight_diff": "5.00",
+                        "action": "SELL",
+                        "recommended_amount": "50000.00",
+                        "reason": "전략 목표보다 보유 비중이 높습니다.",
+                        "why_now": "현재 목표 비중과의 차이가 5%p로 확대됐습니다.",
+                    }
+                ],
             )
 
     class FakeRepo:
@@ -309,7 +365,9 @@ def test_home_offloads_sync_work_before_awaiting_ai_rebalancing(monkeypatch) -> 
     service.rebalancing_client = client
     service.rebalancing_model_version = "rebalancing-v1"
     service._evaluate_account = lambda _account: portfolio
-    monkeypatch.setattr(portfolio_service_module, "run_in_threadpool", fake_run_in_threadpool)
+    monkeypatch.setattr(
+        portfolio_service_module, "run_in_threadpool", fake_run_in_threadpool
+    )
 
     result = asyncio.run(service.home(7, account_id, "3M", "weight", "desc"))
 
@@ -317,8 +375,13 @@ def test_home_offloads_sync_work_before_awaiting_ai_rebalancing(monkeypatch) -> 
     assert result.rebalancing_insight.status == "AVAILABLE"
     assert result.rebalancing_insight.model_version == "rebalancing-v1"
     assert result.rebalancing_proposals[0].source == "AI"
-    assert result.rebalancing_proposals[0].why_now == "현재 목표 비중과의 차이가 5%p로 확대됐습니다."
-    assert client.context.validated_candidates[0].recommended_amount == Decimal("50000.00")
+    assert (
+        result.rebalancing_proposals[0].why_now
+        == "현재 목표 비중과의 차이가 5%p로 확대됐습니다."
+    )
+    assert client.context.validated_candidates[0].recommended_amount == Decimal(
+        "50000.00"
+    )
 
 
 def test_home_does_not_forward_fabricated_ai_rebalancing_values() -> None:
@@ -350,17 +413,19 @@ def test_home_does_not_forward_fabricated_ai_rebalancing_values() -> None:
         async def analyze(self, _context):
             return AIRebalancingResult(
                 summary="잘못된 금액을 포함합니다.",
-                proposals=[{
-                    "stock_code": "005930",
-                    "priority": 1,
-                    "current_weight": "20.00",
-                    "target_weight": "15.00",
-                    "weight_diff": "5.00",
-                    "action": "SELL",
-                    "recommended_amount": "999999.00",
-                    "reason": "제안 이유",
-                    "why_now": "현재 제안 이유",
-                }],
+                proposals=[
+                    {
+                        "stock_code": "005930",
+                        "priority": 1,
+                        "current_weight": "20.00",
+                        "target_weight": "15.00",
+                        "weight_diff": "5.00",
+                        "action": "SELL",
+                        "recommended_amount": "999999.00",
+                        "reason": "제안 이유",
+                        "why_now": "현재 제안 이유",
+                    }
+                ],
             )
 
     service = PortfolioService.__new__(PortfolioService)
@@ -368,11 +433,13 @@ def test_home_does_not_forward_fabricated_ai_rebalancing_values() -> None:
     service.rebalancing_model_version = "rebalancing-v1"
     account = SimpleNamespace(operation_mode="SEMI_AUTO", selected_strategy_id="low")
 
-    insight, proposals = asyncio.run(service._ai_rebalancing(
-        account,
-        portfolio,
-        valuation_as_of=None,
-    ))
+    insight, proposals = asyncio.run(
+        service._ai_rebalancing(
+            account,
+            portfolio,
+            valuation_as_of=None,
+        )
+    )
 
     assert insight.status == "UNAVAILABLE"
     assert proposals == []
@@ -409,19 +476,21 @@ def test_evaluate_combines_real_metadata_quote_and_daily_contribution() -> None:
     service = PortfolioService.__new__(PortfolioService)
     service.session = FakeSession()
     service.repo = FakeRepo()
-    service.market_repo = SimpleNamespace(stock=lambda _code: SimpleNamespace(
-        stock_name="삼성전자", sector="반도체"
-    ))
-    service.market = SimpleNamespace(get_quote=lambda _code: CurrentQuote(
-        stock_code="005930",
-        price=Decimal("71000"),
-        previous_close=Decimal("70500"),
-        change_amount=Decimal("500"),
-        change_rate=Decimal("0.71"),
-        volume=100,
-        as_of=datetime(2026, 8, 25, tzinfo=UTC),
-        source="KIS",
-    ))
+    service.market_repo = SimpleNamespace(
+        stock=lambda _code: SimpleNamespace(stock_name="삼성전자", sector="반도체")
+    )
+    service.market = SimpleNamespace(
+        get_quote=lambda _code: CurrentQuote(
+            stock_code="005930",
+            price=Decimal("71000"),
+            previous_close=Decimal("70500"),
+            change_amount=Decimal("500"),
+            change_rate=Decimal("0.71"),
+            volume=100,
+            as_of=datetime(2026, 8, 25, tzinfo=UTC),
+            source="KIS",
+        )
+    )
 
     result = service.evaluate(1, account_id)
 
@@ -434,19 +503,43 @@ def test_evaluate_combines_real_metadata_quote_and_daily_contribution() -> None:
 
 def test_evaluate_does_not_report_partial_today_profit_as_complete() -> None:
     account_id = uuid4()
-    account = SimpleNamespace(id=account_id, cash_balance=Decimal("0"), selected_strategy_id=None)
+    account = SimpleNamespace(
+        id=account_id, cash_balance=Decimal("0"), selected_strategy_id=None
+    )
     positions = [
-        SimpleNamespace(stock_code="005930", quantity=1, average_price=Decimal("70000"), realized_profit=Decimal("0")),
-        SimpleNamespace(stock_code="000660", quantity=1, average_price=Decimal("120000"), realized_profit=Decimal("0")),
+        SimpleNamespace(
+            stock_code="005930",
+            quantity=1,
+            average_price=Decimal("70000"),
+            realized_profit=Decimal("0"),
+        ),
+        SimpleNamespace(
+            stock_code="000660",
+            quantity=1,
+            average_price=Decimal("120000"),
+            realized_profit=Decimal("0"),
+        ),
     ]
     quotes = {
-        "005930": CurrentQuote("005930", Decimal("71000"), Decimal("70500"), Decimal("500"), Decimal("0.71"), 100, datetime.now(UTC)),
-        "000660": CurrentQuote("000660", Decimal("121000"), None, None, None, 100, datetime.now(UTC)),
+        "005930": CurrentQuote(
+            "005930",
+            Decimal("71000"),
+            Decimal("70500"),
+            Decimal("500"),
+            Decimal("0.71"),
+            100,
+            datetime.now(UTC),
+        ),
+        "000660": CurrentQuote(
+            "000660", Decimal("121000"), None, None, None, 100, datetime.now(UTC)
+        ),
     }
 
     service = PortfolioService.__new__(PortfolioService)
     service.session = SimpleNamespace()
-    service.repo = SimpleNamespace(owned_account=lambda *_args: account, positions=lambda *_args: positions)
+    service.repo = SimpleNamespace(
+        owned_account=lambda *_args: account, positions=lambda *_args: positions
+    )
     service.market_repo = SimpleNamespace(stock=lambda _code: None)
     service.market = SimpleNamespace(get_quote=lambda code: quotes[code])
 
@@ -459,26 +552,37 @@ def test_evaluate_does_not_report_partial_today_profit_as_complete() -> None:
 
 def test_evaluate_falls_back_to_latest_krx_close_when_live_quote_fails() -> None:
     account_id = uuid4()
-    account = SimpleNamespace(id=account_id, cash_balance=Decimal("300000"), selected_strategy_id=None)
+    account = SimpleNamespace(
+        id=account_id, cash_balance=Decimal("300000"), selected_strategy_id=None
+    )
     position = SimpleNamespace(
-        stock_code="005930", quantity=Decimal("1.5"),
-        average_price=Decimal("70000"), realized_profit=Decimal("0"),
+        stock_code="005930",
+        quantity=Decimal("1.5"),
+        average_price=Decimal("70000"),
+        realized_profit=Decimal("0"),
     )
     prices = [
         SimpleNamespace(
-            trade_date=date(2026, 8, 25), close_price=Decimal("71000"),
-            change_amount=Decimal("500"), change_rate=Decimal("0.71"),
-            volume=1000, source="KRX",
+            trade_date=date(2026, 8, 25),
+            close_price=Decimal("71000"),
+            change_amount=Decimal("500"),
+            change_rate=Decimal("0.71"),
+            volume=1000,
+            source="KRX",
         ),
         SimpleNamespace(trade_date=date(2026, 8, 24), close_price=Decimal("70500")),
     ]
 
     def fail_live_quote(_stock_code: str) -> CurrentQuote:
-        raise ServiceError("KIS_UNAVAILABLE", "현재 시장가격을 조회하지 못했습니다.", 503)
+        raise ServiceError(
+            "KIS_UNAVAILABLE", "현재 시장가격을 조회하지 못했습니다.", 503
+        )
 
     service = PortfolioService.__new__(PortfolioService)
     service.session = SimpleNamespace()
-    service.repo = SimpleNamespace(owned_account=lambda *_args: account, positions=lambda *_args: [position])
+    service.repo = SimpleNamespace(
+        owned_account=lambda *_args: account, positions=lambda *_args: [position]
+    )
     service.market_repo = SimpleNamespace(
         stock=lambda _code: SimpleNamespace(stock_name="삼성전자", sector="반도체"),
         latest_price=lambda _code: prices[0],
@@ -498,9 +602,12 @@ def test_evaluate_falls_back_to_latest_krx_close_when_live_quote_fails() -> None
 def test_daily_snapshot_task_writes_and_commits_once() -> None:
     account = SimpleNamespace(id=uuid4())
     response = SimpleNamespace(
-        cash_balance=Decimal("100"), total_purchase_amount=Decimal("200"),
-        total_evaluation_amount=Decimal("220"), total_assets=Decimal("320"),
-        unrealized_profit=Decimal("20"), realized_profit=Decimal("10"),
+        cash_balance=Decimal("100"),
+        total_purchase_amount=Decimal("200"),
+        total_evaluation_amount=Decimal("220"),
+        total_assets=Decimal("320"),
+        unrealized_profit=Decimal("20"),
+        realized_profit=Decimal("10"),
         return_rate=Decimal("10"),
     )
 
@@ -534,9 +641,12 @@ def test_daily_snapshot_task_writes_and_commits_once() -> None:
 def test_daily_snapshot_quote_uses_krx_close_and_previous_trading_day() -> None:
     prices = [
         SimpleNamespace(
-            trade_date=date(2026, 8, 25), close_price=Decimal("71000"),
-            change_amount=Decimal("500"), change_rate=Decimal("0.71"),
-            volume=1000, source="KRX",
+            trade_date=date(2026, 8, 25),
+            close_price=Decimal("71000"),
+            change_amount=Decimal("500"),
+            change_rate=Decimal("0.71"),
+            volume=1000,
+            source="KRX",
         ),
         SimpleNamespace(trade_date=date(2026, 8, 24), close_price=Decimal("70500")),
     ]

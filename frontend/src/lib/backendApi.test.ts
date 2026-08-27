@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  applyLatestModelRecommendationsApi,
   createStrategyRecommendationApi,
   getLatestModelRecommendationsApi,
+  startInvestmentApi,
   type ModelRecommendationSnapshotResponse,
   type StrategyRecommendationResponse,
 } from "./backendApi";
@@ -95,6 +97,32 @@ describe("strategy recommendation API", () => {
     );
   });
 
+  it("선택 계좌에 최신 모멘텀 추천 적용을 요청한다", async () => {
+    const applied = {
+      account_id: "account-1",
+      strategy_id: "momentum",
+      as_of: "2026-08-25",
+      target_count: 5,
+      orders_created: 5,
+      status: "APPLIED",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(applied)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      applyLatestModelRecommendationsApi("account-1", "token-a"),
+    ).resolves.toEqual(applied);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/model-recommendations/latest/apply",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ account_id: "account-1" }),
+      }),
+    );
+  });
+
   it("선택 동의 오류의 backend code를 ApiError에 보존한다", async () => {
     vi.stubGlobal(
       "fetch",
@@ -118,6 +146,109 @@ describe("strategy recommendation API", () => {
     expect(error).toMatchObject({
       code: "AI_PERSONALIZATION_CONSENT_REQUIRED",
       status: 403,
+    });
+  });
+});
+
+describe("investment onboarding API", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("실제 약관·계좌·입금·완료 API를 순서대로 호출한다", async () => {
+    const baseOnboarding = {
+      id: "onboarding-1",
+      strategy_id: "momentum",
+      investment_amount: "10000000",
+      operation_mode: "AUTO" as const,
+      status: "TERMS_PENDING" as const,
+      account_id: null,
+      terms_completed: false,
+      account_exists: false,
+      next_step: "TERMS" as const,
+      completed_at: null,
+      created_at: "2026-08-27T00:00:00Z",
+      updated_at: "2026-08-27T00:00:00Z",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(baseOnboarding)))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...baseOnboarding,
+            status: "ACCOUNT_PENDING",
+            terms_completed: true,
+            next_step: "ACCOUNT",
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            account: {
+              id: "account-1",
+              account_name: "나의 가상 투자계좌",
+              operation_mode: "AUTO",
+              initial_cash: "0",
+              cash_balance: "0",
+              status: "ACTIVE",
+              selected_strategy_id: null,
+              created_at: "2026-08-27T00:00:00Z",
+            },
+            created: true,
+            required_deposit_amount: "10000000",
+            onboarding: { ...baseOnboarding, status: "DEPOSIT_PENDING" },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            deposit_id: "deposit-1",
+            amount: "10000000",
+            balance_after: "10000000",
+            required_deposit_amount: "0",
+            onboarding: { ...baseOnboarding, status: "READY" },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...baseOnboarding,
+            status: "COMPLETED",
+            account_id: "account-1",
+            terms_completed: true,
+            account_exists: true,
+            next_step: "PORTFOLIO",
+            completed_at: "2026-08-27T00:00:01Z",
+          }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await startInvestmentApi(
+      "momentum",
+      10_000_000,
+      "AUTO",
+      [{ term_code: "INVEST_PRODUCT_MOMENTUM", version: "v1", agreed: true }],
+      "token-a",
+    );
+
+    expect(result.status).toBe("COMPLETED");
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/v1/investment/onboardings",
+      "/api/v1/investment/onboardings/onboarding-1/agreements",
+      "/api/v1/investment/onboardings/onboarding-1/account",
+      "/api/v1/investment/onboardings/onboarding-1/deposit",
+      "/api/v1/investment/onboardings/onboarding-1/complete",
+    ]);
+    const depositBody = JSON.parse(
+      String((fetchMock.mock.calls[3][1] as RequestInit).body),
+    );
+    expect(depositBody).toEqual({
+      amount: 10_000_000,
+      idempotency_key: "investment-onboarding-1-10000000",
     });
   });
 });

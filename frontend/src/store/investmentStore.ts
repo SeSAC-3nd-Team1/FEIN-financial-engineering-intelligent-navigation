@@ -1,7 +1,9 @@
-import { create } from 'zustand';
-import type { OperationMode } from '../data/fees';
+import { create } from "zustand";
+import type { OperationMode } from "../data/fees";
+import type { SignupPayload } from "../lib/backendApi";
 
-export const INVESTMENT_ONBOARDING_STORAGE_PREFIX = 'fein_investment_onboarding';
+export const INVESTMENT_ONBOARDING_STORAGE_PREFIX =
+  "fein_investment_onboarding";
 
 function storageKey(userId: string): string {
   return `${INVESTMENT_ONBOARDING_STORAGE_PREFIX}:${userId}`;
@@ -34,7 +36,11 @@ export interface PendingInvestment {
   mode: OperationMode;
 }
 
-export type InvestmentFlowStep = 'invest-terms' | 'invest-account' | 'invest-deposit' | 'invest-confirm';
+export type InvestmentFlowStep =
+  | "invest-terms"
+  | "invest-account"
+  | "invest-deposit"
+  | "invest-confirm";
 
 /** 투자 시작 Flow(약관~최종확인) 중 어디까지 왔는지 — 새로고침 후 화면/선택값 복원에 사용 */
 export interface InFlightInvestment {
@@ -42,6 +48,7 @@ export interface InFlightInvestment {
   strategyId: string;
   amount: number;
   mode: OperationMode;
+  agreements: SignupPayload["agreements"];
 }
 
 interface PersistedOnboarding {
@@ -83,15 +90,24 @@ function loadPersisted(userId: string | null): PersistedOnboarding {
   try {
     const raw = localStorage.getItem(storageKey(userId));
     if (!raw) return EMPTY_ONBOARDING;
-    const parsed = JSON.parse(raw) as Partial<PersistedOnboarding> & LegacyPersistedOnboardingV1;
-    const merged: PersistedOnboarding = { ...EMPTY_ONBOARDING, ...parsed, accountsByMode: parsed.accountsByMode ?? {} };
+    const parsed = JSON.parse(raw) as Partial<PersistedOnboarding> &
+      LegacyPersistedOnboardingV1;
+    const merged: PersistedOnboarding = {
+      ...EMPTY_ONBOARDING,
+      ...parsed,
+      accountsByMode: parsed.accountsByMode ?? {},
+    };
 
     // 이 변경 전에는 sesacAccount 하나만 저장했다 — 그 계좌가 어느 운용방식이었는지는 저장돼 있지
     // 않으므로, pendingInvestment/inFlight에 남은 mode를 우선 쓰고 없으면 이 변경 전 기본값이던
     // 'manual'로 간주한다. 마이그레이션하지 않으면 invest-deposit 등에서 해당 mode의 계좌를 찾지
     // 못해 화면이 비어 보이는 문제가 생긴다.
-    if (parsed.sesacAccount && Object.keys(merged.accountsByMode).length === 0) {
-      const inferredMode: OperationMode = parsed.pendingInvestment?.mode ?? parsed.inFlight?.mode ?? 'manual';
+    if (
+      parsed.sesacAccount &&
+      Object.keys(merged.accountsByMode).length === 0
+    ) {
+      const inferredMode: OperationMode =
+        parsed.pendingInvestment?.mode ?? parsed.inFlight?.mode ?? "manual";
       merged.accountsByMode = { [inferredMode]: parsed.sesacAccount };
     }
 
@@ -100,7 +116,9 @@ function loadPersisted(userId: string | null): PersistedOnboarding {
     // 다시 보일 수 있지만, 이 필드가 추가되기 전에는 어떤 전략이 활성이었는지 저장돼 있지 않아 안전한
     // 기본값(null)으로만 채운다.
     merged.accountsByMode = Object.fromEntries(
-      (Object.entries(merged.accountsByMode) as [OperationMode, SesacAccount][]).map(([mode, account]) => [
+      (
+        Object.entries(merged.accountsByMode) as [OperationMode, SesacAccount][]
+      ).map(([mode, account]) => [
         mode,
         { ...account, activeStrategyId: account.activeStrategyId ?? null },
       ]),
@@ -159,97 +177,136 @@ interface InvestmentOnboardingState extends PersistedOnboarding {
   setAccountActiveStrategy: (mode: OperationMode, strategyId: string) => void;
 }
 
-export const useInvestmentStore = create<InvestmentOnboardingState>((set, get) => {
-  const persistCurrent = () => {
-    const { currentUserId, termsAcceptedStrategyIds, accountsByMode, pendingInvestment, inFlight, activeMode } = get();
-    persist(currentUserId, { termsAcceptedStrategyIds, accountsByMode, pendingInvestment, inFlight, activeMode });
-  };
-
-  return {
-    currentUserId: null,
-    activeModeChecked: true,
-    ...EMPTY_ONBOARDING,
-
-    hydrateForUser: (userId) => {
-      const persisted = loadPersisted(userId);
-      // activeMode를 이미 알고 있거나(로컬에 기록됨) 비로그인이면 더 확인할 게 없다 — 로그인
-      // 사용자인데 activeMode가 없을 때만 App.tsx가 실제 계좌 조회를 끝낼 때까지 보류 상태로 둔다.
-      set({ currentUserId: userId, ...persisted, activeModeChecked: !userId || persisted.activeMode !== null });
-    },
-
-    acceptStrategyTerms: (strategyId) => {
-      set((s) => ({
-        termsAcceptedStrategyIds: s.termsAcceptedStrategyIds.includes(strategyId)
-          ? s.termsAcceptedStrategyIds
-          : [...s.termsAcceptedStrategyIds, strategyId],
-      }));
-      persistCurrent();
-    },
-
-    connectSesacAccount: (mode, account) => {
-      set((s) => {
-        // 최종 방어선 — "같은 계좌로는 운용방식을 바꿀 수 없다"는 정책은 UI(InvestAccount)에서도
-        // 막지만, 화면 쪽 경로 하나를 놓치더라도 스토어에서 다른 운용방식과 계좌번호가 겹치는
-        // 저장 자체를 거부해 정책이 깨지지 않게 한다.
-        const usedByOtherMode = (Object.entries(s.accountsByMode) as [OperationMode, SesacAccount][])
-          .some(([m, acc]) => m !== mode && acc.accountNumber === account.accountNumber);
-        if (usedByOtherMode) {
-          console.warn(`[investmentStore] ${account.accountNumber}는 이미 다른 운용방식에 연결된 계좌라 ${mode}에 연결하지 않았습니다.`);
-          return s;
-        }
-        return { accountsByMode: { ...s.accountsByMode, [mode]: account } };
+export const useInvestmentStore = create<InvestmentOnboardingState>(
+  (set, get) => {
+    const persistCurrent = () => {
+      const {
+        currentUserId,
+        termsAcceptedStrategyIds,
+        accountsByMode,
+        pendingInvestment,
+        inFlight,
+        activeMode,
+      } = get();
+      persist(currentUserId, {
+        termsAcceptedStrategyIds,
+        accountsByMode,
+        pendingInvestment,
+        inFlight,
+        activeMode,
       });
-      persistCurrent();
-    },
+    };
 
-    deposit: (mode, amount) => {
-      // 입금은 DEPOSIT_PENDING을 해소하지 않는다 — 최종 확인(투자 시작)까지 남아있어야 이 사이에
-      // 이탈해도 입금 단계부터 이어갈 수 있다. clearPendingInvestment는 투자 시작 성공 시에만 호출한다.
-      set((s) => {
-        const account = s.accountsByMode[mode];
-        if (!account) return s;
-        return { accountsByMode: { ...s.accountsByMode, [mode]: { ...account, balance: account.balance + amount } } };
-      });
-      persistCurrent();
-    },
+    return {
+      currentUserId: null,
+      activeModeChecked: true,
+      ...EMPTY_ONBOARDING,
 
-    deferDeposit: (investment) => {
-      set({ pendingInvestment: investment });
-      persistCurrent();
-    },
+      hydrateForUser: (userId) => {
+        const persisted = loadPersisted(userId);
+        // activeMode를 이미 알고 있거나(로컬에 기록됨) 비로그인이면 더 확인할 게 없다 — 로그인
+        // 사용자인데 activeMode가 없을 때만 App.tsx가 실제 계좌 조회를 끝낼 때까지 보류 상태로 둔다.
+        set({
+          currentUserId: userId,
+          ...persisted,
+          activeModeChecked: !userId || persisted.activeMode !== null,
+        });
+      },
 
-    clearPendingInvestment: () => {
-      set({ pendingInvestment: null });
-      persistCurrent();
-    },
+      acceptStrategyTerms: (strategyId) => {
+        set((s) => ({
+          termsAcceptedStrategyIds: s.termsAcceptedStrategyIds.includes(
+            strategyId,
+          )
+            ? s.termsAcceptedStrategyIds
+            : [...s.termsAcceptedStrategyIds, strategyId],
+        }));
+        persistCurrent();
+      },
 
-    setInFlightStep: (inFlight) => {
-      set({ inFlight });
-      persistCurrent();
-    },
+      connectSesacAccount: (mode, account) => {
+        set((s) => {
+          // 최종 방어선 — "같은 계좌로는 운용방식을 바꿀 수 없다"는 정책은 UI(InvestAccount)에서도
+          // 막지만, 화면 쪽 경로 하나를 놓치더라도 스토어에서 다른 운용방식과 계좌번호가 겹치는
+          // 저장 자체를 거부해 정책이 깨지지 않게 한다.
+          const usedByOtherMode = (
+            Object.entries(s.accountsByMode) as [OperationMode, SesacAccount][]
+          ).some(
+            ([m, acc]) =>
+              m !== mode && acc.accountNumber === account.accountNumber,
+          );
+          if (usedByOtherMode) {
+            console.warn(
+              `[investmentStore] ${account.accountNumber}는 이미 다른 운용방식에 연결된 계좌라 ${mode}에 연결하지 않았습니다.`,
+            );
+            return s;
+          }
+          return { accountsByMode: { ...s.accountsByMode, [mode]: account } };
+        });
+        persistCurrent();
+      },
 
-    clearInFlight: () => {
-      set({ inFlight: null });
-      persistCurrent();
-    },
+      deposit: (mode, amount) => {
+        // 입금은 DEPOSIT_PENDING을 해소하지 않는다 — 최종 확인(투자 시작)까지 남아있어야 이 사이에
+        // 이탈해도 입금 단계부터 이어갈 수 있다. clearPendingInvestment는 투자 시작 성공 시에만 호출한다.
+        set((s) => {
+          const account = s.accountsByMode[mode];
+          if (!account) return s;
+          return {
+            accountsByMode: {
+              ...s.accountsByMode,
+              [mode]: { ...account, balance: account.balance + amount },
+            },
+          };
+        });
+        persistCurrent();
+      },
 
-    setActiveMode: (mode) => {
-      set({ activeMode: mode, activeModeChecked: true });
-      persistCurrent();
-    },
+      deferDeposit: (investment) => {
+        set({ pendingInvestment: investment });
+        persistCurrent();
+      },
 
-    markActiveModeChecked: () => set({ activeModeChecked: true }),
+      clearPendingInvestment: () => {
+        set({ pendingInvestment: null });
+        persistCurrent();
+      },
 
-    setAccountActiveStrategy: (mode, strategyId) => {
-      set((s) => {
-        const account = s.accountsByMode[mode];
-        if (!account) {
-          console.warn(`[investmentStore] ${mode} 계좌가 없어 activeStrategy를 설정하지 않았습니다.`);
-          return s;
-        }
-        return { accountsByMode: { ...s.accountsByMode, [mode]: { ...account, activeStrategyId: strategyId } } };
-      });
-      persistCurrent();
-    },
-  };
-});
+      setInFlightStep: (inFlight) => {
+        set({ inFlight });
+        persistCurrent();
+      },
+
+      clearInFlight: () => {
+        set({ inFlight: null });
+        persistCurrent();
+      },
+
+      setActiveMode: (mode) => {
+        set({ activeMode: mode, activeModeChecked: true });
+        persistCurrent();
+      },
+
+      markActiveModeChecked: () => set({ activeModeChecked: true }),
+
+      setAccountActiveStrategy: (mode, strategyId) => {
+        set((s) => {
+          const account = s.accountsByMode[mode];
+          if (!account) {
+            console.warn(
+              `[investmentStore] ${mode} 계좌가 없어 activeStrategy를 설정하지 않았습니다.`,
+            );
+            return s;
+          }
+          return {
+            accountsByMode: {
+              ...s.accountsByMode,
+              [mode]: { ...account, activeStrategyId: strategyId },
+            },
+          };
+        });
+        persistCurrent();
+      },
+    };
+  },
+);
