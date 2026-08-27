@@ -179,6 +179,33 @@ def test_additional_investment_buys_only_new_money_by_target_weight() -> None:
     assert session.commits == 1
 
 
+def test_additional_investment_rejects_strategy_changed_during_price_lookup() -> None:
+    service, session, account, _ = build_service(
+        targets={"005930": Decimal("1")}
+    )
+    original_owned_account = service.repo.owned_account
+
+    def change_strategy_before_lock(account_id, user_id, *, lock=False):
+        if lock:
+            account.selected_strategy_id = "high"
+        return original_owned_account(account_id, user_id, lock=lock)
+
+    service.repo.owned_account = change_strategy_before_lock
+
+    with pytest.raises(ServiceError) as error:
+        service.add_investment(
+            7,
+            account.id,
+            FundOperationRequest(amount="1000", idempotency_key="strategy-race-01"),
+        )
+
+    assert error.value.code == "STRATEGY_CHANGED"
+    assert error.value.status_code == 409
+    assert not any(isinstance(item, FundOperation) for item in session.added)
+    assert session.commits == 0
+    assert session.rollbacks == 2
+
+
 def test_withdrawal_sells_current_positions_proportionally_and_reduces_assets() -> None:
     positions = [
         SimpleNamespace(

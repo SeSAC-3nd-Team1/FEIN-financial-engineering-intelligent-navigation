@@ -76,11 +76,10 @@ class FundOperationService:
                 "추가투자에 사용할 전략이 선택되지 않았습니다.",
                 409,
             )
+        strategy_id = account.selected_strategy_id
 
         effective_on = datetime.now(KST).date()
-        target_weights = self.repo.target_weights(
-            account.selected_strategy_id, effective_on
-        )
+        target_weights = self.repo.target_weights(strategy_id, effective_on)
         if not target_weights:
             raise ServiceError(
                 "STRATEGY_TARGET_WEIGHTS_UNAVAILABLE",
@@ -89,7 +88,7 @@ class FundOperationService:
             )
         validate_target_weights(
             target_weights,
-            allow_cash_buffer=account.selected_strategy_id == "momentum",
+            allow_cash_buffer=strategy_id == "momentum",
         )
         current_positions = [
             position for position in self.repo.positions(account.id) if position.quantity > 0
@@ -112,6 +111,13 @@ class FundOperationService:
                 )
                 self.session.rollback()
                 return self._operation_response(existing, account)
+            # 가격 조회 중 전략이 바뀌면 이전 전략의 비중으로 체결하지 않고 재시도시킨다.
+            if account.selected_strategy_id != strategy_id:
+                raise ServiceError(
+                    "STRATEGY_CHANGED",
+                    "가격 조회 중 선택 전략이 변경되었습니다. 다시 시도해 주세요.",
+                    409,
+                )
             positions = [
                 position
                 for position in self.repo.positions(account.id)
