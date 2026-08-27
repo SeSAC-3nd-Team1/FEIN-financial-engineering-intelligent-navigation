@@ -13,12 +13,12 @@ from app.models import User
 bearer = HTTPBearer(auto_error=False)
 
 
-def current_user(
+def optional_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     session: Session = Depends(get_session),
-) -> User:
+) -> User | None:
     if not credentials:
-        raise ServiceError("AUTHENTICATION_REQUIRED", "로그인이 필요합니다.", 401)
+        return None
     try:
         user_id = decode_access_token(credentials.credentials)
     except (jwt.PyJWTError, ValueError, KeyError) as exc:
@@ -26,4 +26,10 @@ def current_user(
     user = session.get(User, user_id)
     if not user or user.account_status != "ACTIVE":
         raise ServiceError("INVALID_TOKEN", "유효하지 않은 인증 토큰입니다.", 401)
+    return user
+
+
+def current_user(user: User | None = Depends(optional_current_user)) -> User:
+    if user is None:
+        raise ServiceError("AUTHENTICATION_REQUIRED", "로그인이 필요합니다.", 401)
     return user

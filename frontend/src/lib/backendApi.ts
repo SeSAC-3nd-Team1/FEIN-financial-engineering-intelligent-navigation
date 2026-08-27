@@ -445,6 +445,28 @@ export interface ModelRecommendationApplyResponse {
   status: "APPLIED" | "PROPOSAL_ONLY" | "ALREADY_APPLIED";
 }
 
+export interface ChatHistoryMessageRequest {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatScreenContextRequest {
+  screen: string;
+  stock_code?: string;
+  strategy_id?: string;
+  account_id?: string;
+}
+
+export interface ChatMessageResponse {
+  message_id: string;
+  status: "COMPLETED" | "NEEDS_CLARIFICATION" | "REFUSED";
+  text: string;
+  caution: string | null;
+  suggested_questions: string[];
+  model_version: string;
+  generated_at: string;
+}
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -466,9 +488,10 @@ async function request<T>(
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   let response: Response;
-  try {
+    try {
     response = await fetch(`${API_BASE}${path}`, { ...init, headers });
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiError(
       "NETWORK_ERROR",
       "서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.",
@@ -488,6 +511,24 @@ async function request<T>(
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export function createChatMessageApi(
+  message: string,
+  history: ChatHistoryMessageRequest[],
+  context: ChatScreenContextRequest,
+  token?: string | null,
+  signal?: AbortSignal,
+): Promise<ChatMessageResponse> {
+  return request<ChatMessageResponse>(
+    "/chat/messages",
+    {
+      method: "POST",
+      body: JSON.stringify({ message, history: history.slice(-10), context }),
+      signal,
+    },
+    token,
+  );
 }
 
 export async function loginApi(
