@@ -438,14 +438,14 @@ export default function StrategyDetail({
                       <CartesianGrid stroke="#F0F2ED" vertical={false} />
                       <XAxis
                         dataKey="t"
-                        tick={{ fill: '#8A948C', fontSize: 12 }}
+                        tick={{ fill: '#6E7670', fontSize: 12 }}
                         axisLine={false}
                         tickLine={false}
                         tickFormatter={fmtAxisDate}
                         interval={tickInterval}
                       />
                       <YAxis
-                        tick={{ fill: '#8A948C', fontSize: 13 }}
+                        tick={{ fill: '#6E7670', fontSize: 13 }}
                         axisLine={false}
                         tickLine={false}
                         width={56}

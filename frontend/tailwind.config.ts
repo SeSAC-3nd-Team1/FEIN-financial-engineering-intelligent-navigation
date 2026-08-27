@@ -12,7 +12,7 @@ export default {
         surface: '#FFFFFF',
         ink: '#17211C',
         muted: '#5C665F',
-        subtle: '#8A948C',
+        subtle: '#6E7670',    // 흰 배경(surface) 대비 4.5:1 이상(WCAG AA) 확보 — 이전 값은 3.14:1로 미달이었다
         line: '#E5E9E3',
         up: '#E5484D',        // 상승 (semantic)
         down: '#3578E5',      // 하락 (semantic)

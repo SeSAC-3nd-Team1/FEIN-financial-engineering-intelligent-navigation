@@ -40,7 +40,7 @@ import { resolvePortfolioStrategy } from './lib/strategyCatalog';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
 import { useTradingStore } from './store/tradingStore';
-import type { Screen, SignupPersonal } from './types';
+import { isScreen, type Screen, type SignupPersonal } from './types';
 
 /** 새로고침해도 유지할 최소한의 내비게이션 상태 — sessionStorage 에 저장한다(탭을 닫으면 사라짐).
  *  회원가입 입력값처럼 민감하거나 오래 들고 있을 필요 없는 값은 여기 포함하지 않는다.
@@ -51,10 +51,23 @@ interface PersistedNav {
   screen: Screen; strategyId: string; stockCode: string; stockBackTarget: Screen;
   selectedTransactionId: string; transactionBackTarget: Screen; rebalanceBackTarget: Screen;
 }
+/** PersistedNav 중 Screen 값을 담는 필드들 — 이전 배포본에서 저장된 뒤 Screen 유니온에서
+ *  이름이 바뀌거나 삭제된 낡은 값이 여기 남아있으면, 어떤 화면 분기에도 매치되지 않아 Header조차
+ *  없는 완전한 빈 화면이 된다. loadPersistedNav가 읽는 시점에 걸러내 그런 값은 그냥 없는 값으로
+ *  취급하면(각 필드의 ?? 기본값이 대신 쓰인다) 항상 유효한 화면으로 떨어진다. */
+const PERSISTED_SCREEN_KEYS = ['screen', 'stockBackTarget', 'transactionBackTarget', 'rebalanceBackTarget'] as const;
+
 function loadPersistedNav(): Partial<PersistedNav> {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as Partial<PersistedNav>) : {};
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Partial<PersistedNav>;
+    for (const key of PERSISTED_SCREEN_KEYS) {
+      if (parsed[key] !== undefined && !isScreen(parsed[key])) {
+        delete parsed[key];
+      }
+    }
+    return parsed;
   } catch {
     return {};
   }

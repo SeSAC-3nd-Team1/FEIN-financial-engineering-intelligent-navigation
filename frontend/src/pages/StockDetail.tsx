@@ -382,7 +382,7 @@ export default function StockDetail({
                     {chartMode === "detail" && (
                       <YAxis
                         domain={["dataMin", "dataMax"]}
-                        tick={{ fill: "#8A948C", fontSize: 13 }}
+                        tick={{ fill: "#6E7670", fontSize: 13 }}
                         axisLine={false}
                         tickLine={false}
                         width={70}
