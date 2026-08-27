@@ -33,6 +33,7 @@ import {
 } from './lib/backendApi';
 import { buildInvestorAnswerPayload, mapInvestorProfileResponse } from './lib/investorProfile';
 import { resolveInvestmentEntryStep, resolvePreviousStep, type InvestmentEntryStep } from './lib/investmentFlow';
+import { resolvePortfolioStrategy } from './lib/strategyCatalog';
 import { useAuthStore } from './store/authStore';
 import { useInvestmentStore } from './store/investmentStore';
 import { useTradingStore } from './store/tradingStore';
@@ -71,7 +72,11 @@ const INVEST_FLOW_SCREENS: Screen[] = ['invest-terms', 'invest-account', 'invest
 /** 실제 전략 카탈로그 객체가 있어야 내용을 안전하게 렌더링할 수 있는 화면들. */
 const STRATEGY_DATA_SCREENS: Screen[] = [
   'strategy', 'start', 'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm', 'dashboard',
+  'portfolio-detail', 'rebalance-alerts',
 ];
+
+/** 실제 계좌의 selected_strategy_id를 Source of Truth로 써야 하는 포트폴리오 화면들. */
+const PORTFOLIO_STRATEGY_SCREENS: Screen[] = ['dashboard', 'portfolio-detail', 'rebalance-alerts'];
 
 /**
  * 라우팅 상태 머신 — 전체 사용자 흐름
@@ -191,6 +196,13 @@ export default function App() {
   const completeInvestorProfile = useAuthStore((s) => s.completeInvestorProfile);
   const accessToken = useAuthStore((s) => s.accessToken);
   const ensureAccount = useTradingStore((s) => s.ensureAccount);
+  const tradingAccount = useTradingStore((s) => s.account);
+  const portfolioStrategy = resolvePortfolioStrategy(
+    strategyCatalog,
+    strategy,
+    tradingAccount ? tradingAccount.selected_strategy_id : undefined,
+  );
+  const screenStrategy = PORTFOLIO_STRATEGY_SCREENS.includes(screen) ? portfolioStrategy : strategy;
   const termsAcceptedStrategyIds = useInvestmentStore((s) => s.termsAcceptedStrategyIds);
   const accountsByMode = useInvestmentStore((s) => s.accountsByMode);
   // 운용방식은 같은 계좌를 공유할 수 없어(정책), "지금 선택된 운용방식의 계좌"만 이 이름으로 다룬다
@@ -747,7 +759,7 @@ export default function App() {
           }}
         />
       )}
-      {STRATEGY_DATA_SCREENS.includes(screen) && !strategy && (
+      {STRATEGY_DATA_SCREENS.includes(screen) && !screenStrategy && (
         <main className="flex min-h-screen flex-col items-center justify-center gap-5 bg-canvas px-8 text-center" role="alert">
           <h1 className="text-[28px] font-bold">
             {isStrategyCatalogLoading ? '전략 정보를 불러오고 있어요' : '전략 정보를 불러오지 못했어요'}
@@ -868,10 +880,10 @@ export default function App() {
 
       {screen === 'information' && <InformationExam userName={userName} onNavigate={navigate} />}
 
-      {screen === 'dashboard' && strategy && (
+      {screen === 'dashboard' && portfolioStrategy && (
         <Dashboard
           userName={userName}
-          strategyName={strategy.name}
+          strategy={portfolioStrategy}
           mode={activeMode}
           onNavigate={navigate}
           onOpenHoldings={() => navigate('portfolio-detail')}
@@ -901,10 +913,11 @@ export default function App() {
         )
       )}
 
-      {screen === 'portfolio-detail' && (
+      {screen === 'portfolio-detail' && portfolioStrategy && (
         <PortfolioDetail
           userName={userName}
-          strategyId={strategyId}
+          strategy={portfolioStrategy}
+          strategies={strategyCatalog}
           onStrategyChange={setStrategyId}
           onNavigate={navigate}
           onSelectStock={(code) => { setStockCode(code); setStockBackTarget('portfolio-detail'); setScreen('stock'); }}
@@ -919,10 +932,10 @@ export default function App() {
         />
       )}
 
-      {screen === 'rebalance-alerts' && (
+      {screen === 'rebalance-alerts' && portfolioStrategy && (
         <RebalanceAlerts
           userName={userName}
-          strategyId={strategyId}
+          strategy={portfolioStrategy}
           onNavigate={navigate}
           onBack={() => setScreen(rebalanceBackTarget)}
           isAutoMode={activeMode === 'auto'}

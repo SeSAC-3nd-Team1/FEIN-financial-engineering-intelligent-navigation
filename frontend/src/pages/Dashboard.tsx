@@ -5,13 +5,14 @@ import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
 import type { OperationMode } from '../data/fees';
 import { STOCK_CONTRIBUTION } from '../data/holdings';
-import { STRATEGIES } from '../data/strategies';
+import type { StrategyResponse } from '../lib/backendApi';
+import { strategyRebalanceLabel, strategyRiskLabel } from '../lib/strategyCatalog';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
 
 interface Props {
   userName: string;
-  strategyName: string;
+  strategy: StrategyResponse;
   /** 실제 투자 시작 시점의 운용방식 — null이면 판단할 수 없는 상태로, 안전하게 "확인하고 실행" 쪽 UI를 기본값으로 쓴다 */
   mode: OperationMode | null;
   onNavigate: (s: Screen) => void;
@@ -20,7 +21,7 @@ interface Props {
 }
 
 /** 05 포트폴리오 대시보드 — 스토리 → 리밸런싱 제안(운용방식별 분기) → 판단 성적표 → 전략 */
-export default function Dashboard({ userName, strategyName, mode, onNavigate, onOpenHoldings, onChangeStrategy }: Props) {
+export default function Dashboard({ userName, strategy, mode, onNavigate, onOpenHoldings, onChangeStrategy }: Props) {
   const isAuto = mode === 'auto';
   const token = useTradingData();
   const account = useTradingStore((state) => state.account);
@@ -40,7 +41,6 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
   const fallbackTop = top ? null : STOCK_CONTRIBUTION[0] ?? null;
   const topName = top?.stock_name ?? top?.stock_code ?? fallbackTop?.name ?? null;
   const topAmount = top ? Number(top.amount) : fallbackTop?.amount ?? null;
-  const selectedStrategy = STRATEGIES.find((item) => item.name === strategyName);
   const proposal = portfolio?.rebalancing_proposals[0] ?? null;
   const holdTotal = portfolio ? Number(portfolio.total_assets) : null;
   const initialCash = account ? Number(account.initial_cash) : 0;
@@ -98,7 +98,7 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
                 ● 전략 정상
               </span>
               <span className="text-[17px] text-muted">
-                {portfolio?.strategy_targets_available ? `현재 포트폴리오를 ${strategyName} 목표 비중과 비교했어요.` : '전략 목표 비중 데이터가 아직 없어요.'}
+                {portfolio?.strategy_targets_available ? `현재 포트폴리오를 ${strategy.name} 목표 비중과 비교했어요.` : '전략 목표 비중 데이터가 아직 없어요.'}
               </span>
             </div>
           </section>
@@ -211,8 +211,10 @@ export default function Dashboard({ userName, strategyName, mode, onNavigate, on
           <section className="flex items-center justify-between gap-8 rounded-card bg-surface px-12 py-11">
             <div className="flex flex-col gap-2.5">
               <span className="text-[15px] text-muted">현재 전략</span>
-              <span className="text-2xl font-bold tracking-[-0.025em]">{strategyName}</span>
-              <span className="text-base text-muted">전략 적합도 {selectedStrategy ? `${selectedStrategy.match}%` : '-'}</span>
+              <span className="text-2xl font-bold tracking-[-0.025em]">{strategy.name}</span>
+              <span className="text-base text-muted">
+                위험도 {strategyRiskLabel(strategy.risk_level)} · 리밸런싱 {strategyRebalanceLabel(strategy.rebalance_cycle)}
+              </span>
             </div>
             <button onClick={onChangeStrategy} className="shrink-0 rounded-field bg-[#F4F6F1] px-7 py-4 text-[17px] font-semibold text-[#3F4A43]">
               전략 변경하기
