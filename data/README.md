@@ -107,6 +107,11 @@ docker compose --profile data run --rm --no-deps data python -m scripts.audit_ra
 공휴일과 지연 갱신을 보완하기 위해 최근 7일을 일자별로 확인하며, GitHub Actions Secret
 `DATA_GO_KR_API_KEY`와 기존 Azure OIDC Secret/Blob 쓰기 권한이 필요하다.
 
+모든 operation은 같은 data.go.kr host를 사용하므로 연결 timeout이 발생하면 해당 실행의
+남은 operation을 즉시 중단한다. 연결은 10초 제한으로 한 번만 재시도하고, 다음 schedule이나
+수동 재실행에서 최근 7일을 다시 확인해 누락을 멱등 복구한다. 429/5xx 응답은 제한된
+backoff를 계속 적용한다.
+
 장기 범위 요청이 시간 초과되는 operation은 `scripts.backfill_public_data_by_date`로 날짜별
 병렬 백필한다. 개별 날짜가 완료될 때마다 Raw Blob이 남으므로 일부 요청 실패 후에도 성공
 날짜를 다시 잃지 않는다.

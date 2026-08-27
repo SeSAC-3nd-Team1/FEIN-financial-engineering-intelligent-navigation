@@ -9,8 +9,13 @@ from __future__ import annotations
 
 import argparse
 from datetime import date, timedelta
+import os
 
-from collectors.public_data_client import PublicDataApiError, PublicDataClient
+from collectors.public_data_client import (
+    PublicDataApiError,
+    PublicDataClient,
+    PublicDataUnavailableError,
+)
 from collectors.public_data_config import OPERATIONS, select_operations
 from storage import RawBlobWriter
 
@@ -45,6 +50,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-pages", type=int, default=1)
     parser.add_argument("--all-pages", action="store_true")
     parser.add_argument("--progress-every", type=int, default=10)
+    parser.add_argument(
+        "--fail-fast-unavailable",
+        action="store_true",
+        help="Abort remaining operations when data.go.kr connection is unavailable",
+    )
     return parser.parse_args()
 
 
@@ -188,7 +198,10 @@ def main() -> None:
     else:
         filters = None
 
-    client = PublicDataClient()
+    client = PublicDataClient(
+        connect_timeout=float(os.getenv("DATA_GO_KR_CONNECT_TIMEOUT_SECONDS", "10")),
+        read_timeout=float(os.getenv("DATA_GO_KR_READ_TIMEOUT_SECONDS", "30")),
+    )
     raw_writer = RawBlobWriter.from_env()
     failures: list[str] = []
     total_received = 0
@@ -269,6 +282,14 @@ def main() -> None:
             failure = f"{operation.dataset}/{operation.name}: {message}"
             failures.append(failure)
             print(f"FAILED {failure}")
+            if args.fail_fast_unavailable and isinstance(
+                error, PublicDataUnavailableError
+            ):
+                # 모든 operation이 같은 data.go.kr host를 사용하므로 연결 장애 중 나머지
+                # endpoint를 순차 재시도하면 장애 알림만 1시간 이상 늦어진다.
+                raise PublicDataUnavailableError(
+                    "data.go.kr unavailable; aborting remaining operations"
+                ) from None
 
     print(
         f"collection complete: operations={len(operations)} "

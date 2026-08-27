@@ -28,6 +28,8 @@ jobs:
       AZURE_STORAGE_ACCOUNT_NAME: stfeindata
       AZURE_STORAGE_CONTAINER_RAW: raw
       DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+      DATA_GO_KR_CONNECT_TIMEOUT_SECONDS: "10"
+      DATA_GO_KR_READ_TIMEOUT_SECONDS: "30"
       PYTHONPATH: .
       LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '7' }}
     steps:
@@ -78,6 +80,7 @@ jobs:
               --date "${target_date}" \
               --all-pages \
               --rows 10000 \
+              --fail-fast-unavailable \
               --progress-every 25
           done
 
@@ -90,6 +93,7 @@ jobs:
             --operation getDiviInfo_V2 \
             --all-pages \
             --rows 10000 \
+            --fail-fast-unavailable \
             --progress-every 25
 
           python -m scripts.collect_public_data \
@@ -97,6 +101,7 @@ jobs:
             --operation getItemBasiInfo_V3 \
             --all-pages \
             --rows 10000 \
+            --fail-fast-unavailable \
             --progress-every 25
 
       - name: Verify minimum Raw coverage
