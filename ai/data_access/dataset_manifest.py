@@ -53,6 +53,7 @@ class DatasetContract:
     target_horizons: tuple[int, ...] = TARGET_HORIZONS
     split_column: str = "split"
     warmup_column: str = "history_120d_ready"
+    warmup_reference_column: str = "momentum_120d"
     max_feature_missing_rate: float = 0.25
     max_target_missing_rate: float = 0.25
 
@@ -63,6 +64,8 @@ class DatasetContract:
             raise ValueError("feature_columns must be non-empty and unique")
         if not self.target_horizons or any(value <= 0 for value in self.target_horizons):
             raise ValueError("target_horizons must contain positive values")
+        if not self.warmup_reference_column:
+            raise ValueError("warmup_reference_column is required")
         for value in (self.max_feature_missing_rate, self.max_target_missing_rate):
             if not 0 <= value <= 1:
                 raise ValueError("missing-rate limits must be in [0, 1]")
@@ -81,14 +84,19 @@ class DatasetContract:
 
     @property
     def required_columns(self) -> tuple[str, ...]:
-        return (
-            *self.key_columns,
-            *self.feature_columns,
-            *self.target_columns,
-            *self.target_date_columns,
-            *self.eligible_columns,
-            self.split_column,
-            self.warmup_column,
+        return tuple(
+            dict.fromkeys(
+                (
+                    *self.key_columns,
+                    *self.feature_columns,
+                    *self.target_columns,
+                    *self.target_date_columns,
+                    *self.eligible_columns,
+                    self.split_column,
+                    self.warmup_column,
+                    self.warmup_reference_column,
+                )
+            )
         )
 
 
@@ -174,6 +182,48 @@ def _validate_numeric_finite(
             issues.append(f"{column} contains infinite values")
 
 
+def _validate_chronological_split(
+    data: pd.DataFrame,
+    trade_dates: pd.Series,
+    split_column: str,
+    issues: list[str],
+) -> None:
+    observed = set(data[split_column].dropna().astype(str).unique())
+    missing_splits = [split for split in SPLIT_VALUES if split not in observed]
+    if missing_splits:
+        issues.append(f"split is missing required values: {missing_splits}")
+
+    if trade_dates.isna().any():
+        return
+    dates = pd.Index(sorted(trade_dates.unique()))
+    if len(dates) < 3:
+        issues.append("split requires at least 3 unique trade dates")
+        return
+
+    train_index = int(len(dates) * 0.70) - 1
+    validation_index = int(len(dates) * 0.85) - 1
+    if (
+        train_index < 0
+        or validation_index <= train_index
+        or validation_index >= len(dates) - 1
+    ):
+        issues.append("split cannot satisfy chronological 70/15/15 boundaries")
+        return
+
+    train_end = pd.Timestamp(dates[train_index])
+    validation_end = pd.Timestamp(dates[validation_index])
+    expected = pd.Series("test", index=data.index, dtype="string")
+    expected.loc[trade_dates.le(train_end)] = "train"
+    expected.loc[trade_dates.gt(train_end) & trade_dates.le(validation_end)] = "validation"
+    actual = data[split_column].astype("string")
+    mismatch = actual.notna() & actual.ne(expected)
+    if mismatch.any():
+        issues.append(
+            "split is inconsistent with chronological 70/15/15 contract: "
+            f"{int(mismatch.sum())} rows"
+        )
+
+
 def validate_feature_dataset(
     frame: pd.DataFrame,
     contract: DatasetContract = DatasetContract(),
@@ -207,8 +257,17 @@ def validate_feature_dataset(
     invalid_splits = sorted(split_values - set(SPLIT_VALUES))
     if data[contract.split_column].isna().any() or invalid_splits:
         issues.append(f"split contains invalid values: {invalid_splits}")
+    _validate_chronological_split(data, trade_dates, contract.split_column, issues)
 
-    numeric_columns = (*contract.feature_columns, *contract.target_columns)
+    numeric_columns = tuple(
+        dict.fromkeys(
+            (
+                *contract.feature_columns,
+                *contract.target_columns,
+                contract.warmup_reference_column,
+            )
+        )
+    )
     _validate_numeric_finite(data, numeric_columns, issues)
     feature_missing = _missing_rates(data, contract.feature_columns)
     target_missing = _missing_rates(data, contract.target_columns)
@@ -229,7 +288,19 @@ def validate_feature_dataset(
     ]
     if invalid_boolean_columns:
         issues.append(f"boolean contract columns have invalid dtype: {invalid_boolean_columns}")
+    null_boolean_columns = [column for column in boolean_columns if data[column].isna().any()]
+    if null_boolean_columns:
+        issues.append(f"boolean contract columns contain null values: {null_boolean_columns}")
+
     warmup = data[contract.warmup_column].fillna(False).astype(bool)
+    expected_warmup = data[contract.warmup_reference_column].notna()
+    inconsistent_warmup = warmup.ne(expected_warmup)
+    if inconsistent_warmup.any():
+        issues.append(
+            f"{contract.warmup_column} is inconsistent with "
+            f"{contract.warmup_reference_column} availability: "
+            f"{int(inconsistent_warmup.sum())} rows"
+        )
     ready_missing = data.loc[warmup, list(contract.feature_columns)].isna().any(axis=1)
     if ready_missing.any():
         issues.append(f"warm-up ready rows contain missing features: {int(ready_missing.sum())}")
