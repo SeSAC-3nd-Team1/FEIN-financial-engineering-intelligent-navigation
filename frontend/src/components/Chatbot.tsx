@@ -126,7 +126,7 @@ export default function Chatbot() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && submit()}
                 placeholder="질문을 입력하세요..."
-                className="flex-1 rounded-field bg-canvas px-3.5 py-3 text-[15px] outline-none"
+                className="flex-1 rounded-field bg-canvas px-3.5 py-3 text-[15px] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
               />
               <button
                 aria-label="전송"

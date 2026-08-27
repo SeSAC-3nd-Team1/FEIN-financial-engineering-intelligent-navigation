@@ -516,12 +516,12 @@ export default function Portfolio({
             <CartesianGrid stroke="#F0F2ED" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fill: "#8A948C", fontSize: 12 }}
+              tick={{ fill: "#6E7670", fontSize: 12 }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
-              tick={{ fill: "#8A948C", fontSize: 13 }}
+              tick={{ fill: "#6E7670", fontSize: 13 }}
               axisLine={false}
               tickLine={false}
               width={52}
@@ -586,7 +586,7 @@ export default function Portfolio({
             <XAxis
               type="number"
               tickFormatter={(v: number) => won(v)}
-              tick={{ fill: "#8A948C", fontSize: 12 }}
+              tick={{ fill: "#6E7670", fontSize: 12 }}
               axisLine={false}
               tickLine={false}
             />

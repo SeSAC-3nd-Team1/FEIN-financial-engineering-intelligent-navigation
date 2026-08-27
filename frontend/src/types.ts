@@ -13,6 +13,24 @@ export type Screen =
   | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail'
   | 'rebalance-alerts' | 'all-holdings';
 
+/** Screen의 모든 값을 나열한 런타임 목록 — 타입은 컴파일 타임에만 존재하므로, sessionStorage 등
+ *  외부에서 읽어온 값이 유효한 Screen인지 실행 중에 검사하려면 이 목록이 필요하다. Screen 유니온에
+ *  값을 추가/제거할 때는 이 배열도 함께 맞춰야 한다. */
+export const SCREENS: readonly Screen[] = [
+  'home', 'login',
+  'signup-1', 'signup-2', 'signup-3',
+  'risk', 'risk-result', 'investor-check',
+  'strategy-list', 'strategy', 'start',
+  'strategy-f4', 'strategy-coming-soon-loss-avoidance', 'strategy-preview',
+  'invest-terms', 'invest-account', 'invest-deposit', 'invest-confirm',
+  'information', 'dashboard', 'portfolio', 'portfolio-detail', 'stock', 'transactions', 'transaction-detail',
+  'rebalance-alerts', 'all-holdings',
+];
+
+export function isScreen(value: unknown): value is Screen {
+  return typeof value === 'string' && (SCREENS as readonly string[]).includes(value);
+}
+
 /** 온보딩 Step 01 폼 값 — 이메일 인증만 쓰는 정책으로, email도 여기서 함께 입력받는다(인증 자체는 Step 02) */
 export interface SignupPersonal {
   name: string;

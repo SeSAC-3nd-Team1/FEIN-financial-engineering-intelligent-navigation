@@ -362,9 +362,9 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={trendData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="#F0F2ED" vertical={false} />
-            <XAxis dataKey="label" tick={{ fill: '#8A948C', fontSize: 12 }} axisLine={false} tickLine={false} />
+            <XAxis dataKey="label" tick={{ fill: '#6E7670', fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis
-              tick={{ fill: '#8A948C', fontSize: 13 }}
+              tick={{ fill: '#6E7670', fontSize: 13 }}
               axisLine={false}
               tickLine={false}
               width={52}
@@ -400,7 +400,7 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={contributionData} layout="vertical" margin={{ left: 24, right: 24 }}>
             <CartesianGrid stroke="#F0F2ED" horizontal={false} />
-            <XAxis type="number" tickFormatter={(v: number) => won(v)} tick={{ fill: '#8A948C', fontSize: 12 }} axisLine={false} tickLine={false} />
+            <XAxis type="number" tickFormatter={(v: number) => won(v)} tick={{ fill: '#6E7670', fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis type="category" dataKey="name" width={90} tick={{ fill: '#5C665F', fontSize: 13 }} axisLine={false} tickLine={false} />
             <Tooltip formatter={(v: number) => won(v)} />
             <Bar dataKey="amount" radius={8} barSize={16}>
