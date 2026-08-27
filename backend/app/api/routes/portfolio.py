@@ -11,6 +11,7 @@ from app.integrations.ai import AzureOpenAIPortfolioComparisonClient, AzureOpenA
 from app.models import User
 from app.schemas.api import (
     PortfolioHomeResponse,
+    PortfolioActivityListResponse,
     PortfolioHistoryResponse,
     PortfolioComparisonResponse,
     PortfolioResponse,
@@ -23,7 +24,7 @@ from app.schemas.api import (
 from app.services.portfolio_analytics import PortfolioAnalyticsService
 from app.services.portfolio_comparison import PortfolioComparisonService
 from app.services.portfolio import PortfolioService
-from app.services.transactions import TransactionHistoryService
+from app.services.transactions import ActivityHistoryService, TransactionHistoryService
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -70,6 +71,12 @@ def get_transaction_history_service(
     return TransactionHistoryService(session)
 
 
+def get_activity_history_service(
+    session: Session = Depends(get_session),
+) -> ActivityHistoryService:
+    return ActivityHistoryService(session)
+
+
 @router.get("/transactions", response_model=PortfolioTransactionListResponse)
 def portfolio_transactions(
     account_id: UUID = Query(),
@@ -78,6 +85,17 @@ def portfolio_transactions(
     user: User = Depends(current_user),
     service: TransactionHistoryService = Depends(get_transaction_history_service),
 ) -> PortfolioTransactionListResponse:
+    return service.list(user.id, account_id, limit=limit, cursor=cursor)
+
+
+@router.get("/activities", response_model=PortfolioActivityListResponse)
+def portfolio_activities(
+    account_id: UUID = Query(),
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = Query(default=None, min_length=1, max_length=500),
+    user: User = Depends(current_user),
+    service: ActivityHistoryService = Depends(get_activity_history_service),
+) -> PortfolioActivityListResponse:
     return service.list(user.id, account_id, limit=limit, cursor=cursor)
 
 

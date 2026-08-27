@@ -37,6 +37,7 @@ class AccountService:
                 operation_mode=operation_mode,
                 initial_cash=Decimal("0"),
                 cash_balance=Decimal("0"),
+                invested_principal=Decimal("0"),
                 status="ACTIVE",
             )
             self.session.add(account)

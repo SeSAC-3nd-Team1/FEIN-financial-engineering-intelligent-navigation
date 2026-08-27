@@ -32,6 +32,9 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 내 계좌 전체              | GET    | `/accounts/me/all`                                                                  | 필요        | 200                               | Portfolio                                                 |
 | 활성 운용방식 전환        | PUT    | `/accounts/me/active-operation-mode`                                                | 필요/소유권 | 200, 409, 422                     | Portfolio/Dashboard                                       |
 | 전략 선택                 | PUT    | `/accounts/{account_id}/strategy`                                                   | 필요/소유권 | 200, 404                          | StartInvesting                                            |
+| 가상 자금 현황            | GET    | `/accounts/{account_id}/funds`                                                      | 필요/소유권 | 200, 404, 503                     | 원금·현재자산·출금가능액                                  |
+| 가상 추가투자             | POST   | `/accounts/{account_id}/additional-investments`                                     | 필요/소유권 | 201, 404, 409, 422, 503           | 기존 포지션 유지·전략 목표비중 매수                       |
+| 가상 출금                 | POST   | `/accounts/{account_id}/withdrawals`                                                | 필요/소유권 | 201, 404, 409, 422, 503           | 현재 보유비중 비례매도·내부 자산 감소                     |
 | 전략 목록                 | GET    | `/strategies`                                                                       | 불필요      | 200                               | RiskResult/StrategyDetail                                 |
 | 실제 시세 백테스트        | POST   | `/backtest/run`                                                                     | 불필요      | 200, 404, 422                     | StrategyDetail                                            |
 | 백테스트 가용 기간        | GET    | `/backtest/available-range`                                                         | 불필요      | 200, 404                          | StrategyDetail                                            |
@@ -43,6 +46,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 주문 목록                 | GET    | `/orders?account_id=`                                                               | 필요/소유권 | 200, 404                          | 거래내역                                                  |
 | 체결 목록                 | GET    | `/executions?account_id=`                                                           | 필요/소유권 | 200, 404                          | 거래내역                                                  |
 | 포트폴리오 거래내역       | GET    | `/portfolio/transactions?account_id=&limit=&cursor=`                                | 필요/소유권 | 200, 404, 422                     | 종목명·거래금액 포함 최신순 cursor pagination             |
+| 포트폴리오 통합 활동      | GET    | `/portfolio/activities?account_id=&limit=&cursor=`                                  | 필요/소유권 | 200, 404, 422                     | BUY/SELL/추가투자/출금 통합 원장                           |
 | 포트폴리오 홈 통합 조회   | GET    | `/portfolio/home?account_id=&period=&sort=&order=`                                  | 필요/소유권 | 200, 404, 422, 503                | 계좌·평가·추이·배분·정렬된 보유종목 통합                  |
 | 포트폴리오 평가           | GET    | `/portfolio?account_id=`                                                            | 필요/소유권 | 200, 404, 503                     | 실제 metadata·당일 기여·목표비중 제안 포함                |
 | 포트폴리오 이력           | GET    | `/portfolio/history?account_id=&period=`                                            | 필요/소유권 | 200, 404                          | 실제 snapshot 수익률과 KOSPI 비교                         |
@@ -179,6 +183,7 @@ API나 클라이언트 선언 인증 상태는 지원하지 않는다.
   "operation_mode": "SEMI_AUTO",
   "initial_cash": "0.00",
   "cash_balance": "0.00",
+  "invested_principal": "0.00",
   "status": "ACTIVE",
   "selected_strategy_id": null,
   "created_at": "2026-08-23T12:00:00Z"
@@ -227,6 +232,32 @@ API나 클라이언트 선언 인증 상태는 지원하지 않는다.
   }
 }
 ```
+
+### 가상 추가투자·출금
+
+`GET /accounts/{account_id}/funds`는 `invested_principal`, 현재 현금·포지션 평가액,
+`total_assets`, `valuation_profit`, 원금 기준 `return_rate`, `withdrawable_amount`를 반환한다.
+세 endpoint 모두 실제 은행 연동이 없는 내부 가상 처리이며 `settlement_mode="VIRTUAL"`이다.
+
+`POST /accounts/{account_id}/additional-investments`와
+`POST /accounts/{account_id}/withdrawals`의 공통 요청은 다음과 같다.
+
+```json
+{
+  "amount": "1000000.00",
+  "idempotency_key": "virtual-fund-20260827-0001"
+}
+```
+
+금액은 1원 이상 1억원 이하이고 멱등성 키는 계좌 내 자금 작업에서 유일하다. 추가투자는 기존
+포지션을 유지하고 최신 전략 목표 비중으로 요청 금액만 BUY한다. 출금은 매도 가능한 현재
+포지션 평가 비중대로 SELL한 뒤 같은 transaction에서 가상 현금을 차감한다. 여러 주문 중 하나라도
+실패하면 작업 전체를 rollback한다. 추가투자 가격 조회 중 선택 전략이 바뀌면 주문을 생성하지 않고
+`409 STRATEGY_CHANGED`를 반환하므로 Frontend는 최신 전략 기준으로 요청을 재시도해야 한다.
+
+응답 `201`은 작업 ID, 전후 원금, 재계산된 포트폴리오와 서버가 실제 생성한 `trades`를 포함한다.
+현재 수익률은 `(total_assets - invested_principal) / invested_principal * 100`이며, 순수 출금 때문에
+수익률이 변하지 않도록 원금은 출금 전후 자산 비율만큼 감소한다.
 
 ### POST `/orders`
 

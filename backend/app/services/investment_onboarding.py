@@ -212,6 +212,7 @@ class InvestmentOnboardingService:
                     operation_mode=onboarding.operation_mode,
                     initial_cash=Decimal("0"),
                     cash_balance=Decimal("0"),
+                    invested_principal=Decimal("0"),
                     status="ACTIVE",
                 )
                 self.session.add(account)
@@ -294,10 +295,18 @@ class InvestmentOnboardingService:
         )
         try:
             account.cash_balance = deposit.balance_after
+            current_principal = Decimal(
+                account.invested_principal
+                if account.invested_principal is not None
+                else account.initial_cash
+            )
             # 신규 0원 계좌의 첫 입금만 최초 투자금으로 기록한다. 이후 거래로 현금이 줄어도
             # initial_cash는 바꾸지 않아 계좌가 시작한 금액을 보존한다.
             if Decimal(account.initial_cash) == 0:
                 account.initial_cash = required
+            account.invested_principal = (current_principal + required).quantize(
+                Decimal("0.01")
+            )
             self.session.add(deposit)
             self.session.add(CashLedger(
                 account_id=account.id,

@@ -13,7 +13,9 @@ from app.core.errors import NotFoundError, ServiceError
 from app.repositories.trading import ExecutionHistoryRecord
 from app.services.transactions import (
     TransactionHistoryService,
+    decode_activity_cursor,
     decode_transaction_cursor,
+    encode_activity_cursor,
     encode_transaction_cursor,
 )
 
@@ -39,6 +41,14 @@ def test_transaction_cursor_round_trip() -> None:
     cursor = encode_transaction_cursor(executed_at, 42)
 
     assert decode_transaction_cursor(cursor) == (executed_at, 42)
+
+
+def test_activity_cursor_round_trip() -> None:
+    created_at = datetime(2026, 8, 27, 10, 30, tzinfo=UTC)
+
+    cursor = encode_activity_cursor(created_at, 52)
+
+    assert decode_activity_cursor(cursor) == (created_at, 52)
 
 
 @pytest.mark.parametrize("cursor", ["not-json", "e30", "eyJleGVjdXRlZF9hdCI6IjIwMjYtMDgtMjUifQ"])

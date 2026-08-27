@@ -332,6 +332,7 @@ def test_exact_deposit_updates_account_ledger_and_onboarding_once(monkeypatch) -
     ledger = next(value for value in session.added if isinstance(value, CashLedger))
     assert account.initial_cash == Decimal("1000000")
     assert account.cash_balance == Decimal("1000000")
+    assert account.invested_principal == Decimal("1000000.00")
     assert onboarding.status == "READY"
     assert deposit.amount == ledger.amount == Decimal("1000000")
     assert deposit.balance_after == ledger.balance_after == Decimal("1000000")

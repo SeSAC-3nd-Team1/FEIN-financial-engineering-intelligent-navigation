@@ -47,6 +47,7 @@ class VirtualAccount(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("user_id", "operation_mode", name="uq_virtual_accounts_user_mode"),
         CheckConstraint("initial_cash >= 0", name="initial_cash_nonnegative"),
+        CheckConstraint("invested_principal >= 0", name="invested_principal_nonnegative"),
         CheckConstraint(
             "operation_mode IN ('AUTO', 'SEMI_AUTO')",
             name="operation_mode_values",
@@ -59,6 +60,9 @@ class VirtualAccount(TimestampMixin, Base):
     account_name: Mapped[str] = mapped_column(String(100), nullable=False)
     initial_cash: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    invested_principal: Mapped[Decimal] = mapped_column(
+        Numeric(20, 2), server_default="0", nullable=False
+    )
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     selected_strategy_id: Mapped[str | None] = mapped_column(String(30), ForeignKey("strategies.id", ondelete="SET NULL"))
 
@@ -207,7 +211,8 @@ class CashLedger(Base):
     __tablename__ = "cash_ledger"
     __table_args__ = (
         CheckConstraint(
-            "transaction_type IN ('INITIAL_DEPOSIT', 'DEPOSIT', 'BUY', 'SELL', 'ADJUSTMENT')",
+            "transaction_type IN ('INITIAL_DEPOSIT', 'DEPOSIT', "
+            "'ADDITIONAL_INVESTMENT', 'WITHDRAWAL', 'BUY', 'SELL', 'ADJUSTMENT')",
             name="type_values",
         ),
         Index("ix_cash_ledger_account_created_at", "account_id", "created_at"),
@@ -221,6 +226,88 @@ class CashLedger(Base):
     reference_type: Mapped[str] = mapped_column(String(30), nullable=False)
     reference_id: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class FundOperation(Base):
+    """한 번의 가상 추가투자 또는 출금을 묶는 멱등한 자금 작업이다."""
+
+    __tablename__ = "fund_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "idempotency_key",
+            name="uq_fund_operations_account_idempotency",
+        ),
+        CheckConstraint(
+            "operation_type IN ('ADDITIONAL_INVESTMENT', 'WITHDRAWAL')",
+            name="operation_type_values",
+        ),
+        CheckConstraint(
+            "status IN ('PROCESSING', 'COMPLETED', 'FAILED')",
+            name="status_values",
+        ),
+        CheckConstraint("requested_amount > 0", name="requested_amount_positive"),
+        CheckConstraint("executed_amount >= 0", name="executed_amount_nonnegative"),
+        CheckConstraint(
+            "principal_before >= 0 AND principal_after >= 0",
+            name="principal_nonnegative",
+        ),
+        CheckConstraint(
+            "total_assets_before >= 0 AND total_assets_after >= 0",
+            name="total_assets_nonnegative",
+        ),
+        CheckConstraint(
+            "(status = 'COMPLETED' AND completed_at IS NOT NULL) OR "
+            "(status <> 'COMPLETED')",
+            name="completion_consistency",
+        ),
+        Index("ix_fund_operations_account_created", "account_id", "created_at"),
+    )
+    id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), default=uuid4, primary_key=True)
+    account_id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("virtual_accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    operation_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    requested_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    executed_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    principal_before: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    principal_after: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    total_assets_before: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    total_assets_after: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class FundOperationOrder(Base):
+    """자금 작업이 생성한 내부 주문과 당시 배분 근거를 연결한다."""
+
+    __tablename__ = "fund_operation_orders"
+    __table_args__ = (
+        UniqueConstraint("order_id", name="uq_fund_operation_orders_order_id"),
+        CheckConstraint("allocated_amount > 0", name="allocated_amount_positive"),
+        CheckConstraint(
+            "applied_weight >= 0 AND applied_weight <= 1",
+            name="applied_weight_range",
+        ),
+    )
+    fund_operation_id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("fund_operations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    order_id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    allocated_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    applied_weight: Mapped[Decimal] = mapped_column(Numeric(9, 8), nullable=False)
 
 
 class AccountDeposit(Base):
