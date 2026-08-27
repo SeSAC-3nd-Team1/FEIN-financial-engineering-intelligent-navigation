@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import Header from '../components/Header';
 import { ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL, STOCK_INFO } from '../data/holdings';
-import { STRATEGIES } from '../data/strategies';
 import { useTradingData } from '../hooks/useTradingData';
+import type { StrategyResponse } from '../lib/backendApi';
 import { getDisplayAlerts } from '../lib/rebalancing';
 import { won } from '../lib/validation';
 import { useTradingStore } from '../store/tradingStore';
@@ -11,7 +11,7 @@ import type { Screen } from '../types';
 
 interface Props {
   userName: string;
-  strategyId: string;
+  strategy: StrategyResponse;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
   /** 자동매매(activeMode==='auto') 유저가 실 계좌 없이(portfolio===null) 이 화면에 들어온 경우에만
@@ -29,10 +29,9 @@ const ALERT_BADGE: Record<'손절' | '리밸런싱', string> = {
 
 /** `/rebalance-alerts` — AI 손절·리밸런싱 제안 전체 목록. PortfolioDetail "AI의 리밸런싱 제안"의 "더보기"에서 진입한다.
  *  실 계좌에 리밸런싱 제안(규칙기반)이 있으면 그 값을, 없으면 AI_ALERTS(목업)를 그대로 쓴다 — lib/rebalancing.ts 참고. */
-export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBack, isAutoMode }: Props) {
+export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack, isAutoMode }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
-  const selectedStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
   const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
   // displayAlerts는 실 계좌가 있으면(portfolio) portfolio.rebalancing_proposals(아직 실행 전인 "제안")를,
   // 없으면 AI_ALERTS(이미 실행됐다는 설정의 스토리 목업)를 쓴다 — lib/rebalancing.ts 참고. 그래서 자동매매
@@ -182,7 +181,7 @@ export default function RebalanceAlerts({ userName, strategyId, onNavigate, onBa
                   {rebalanceAlert.kind === '리밸런싱' ? '조정하지 않으면?' : '정리하지 않으면?'}
                 </span>
                 <p className="text-[17px] leading-7 text-[#3F4A43]">
-                  특정 종목의 영향이 커져 {selectedStrategy.name}보다 포트폴리오가 더 많이 흔들릴 수 있어요.
+                  특정 종목의 영향이 커져 {strategy.name}보다 포트폴리오가 더 많이 흔들릴 수 있어요.
                 </p>
               </div>
             )}
