@@ -6,9 +6,7 @@ import TermTooltip from '../components/TermTooltip';
 import { fetchAiExplanation, getBacktestAvailableRange, runBacktest, USE_MOCK_BACKTEST } from '../data/backtestApi';
 import type { BacktestAvailableRange } from '../data/backtestApi';
 import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
-import { STRATEGIES } from '../data/strategies';
-import type { StrategyResponse } from '../lib/backendApi';
-import { applyStrategyCatalog, fetchStrategyCatalog } from '../lib/strategyCatalog';
+import type { StrategyRecommendationItemResponse, StrategyResponse } from '../lib/backendApi';
 import { won } from '../lib/validation';
 import { useTradingData } from '../hooks/useTradingData';
 import { useAuthStore } from '../store/authStore';
@@ -17,7 +15,9 @@ import { useTradingStore } from '../store/tradingStore';
 import type { BacktestAiContext, BacktestPeriod, BacktestResult, Screen } from '../types';
 
 interface Props {
-  strategyId: string;
+  strategy: StrategyResponse;
+  strategyCatalog: StrategyResponse[];
+  recommendation?: StrategyRecommendationItemResponse | null;
   userName: string;
   onNavigate: (s: Screen) => void;
   onStart: () => void;
@@ -34,6 +34,10 @@ interface Props {
 }
 
 const PRINCIPAL = 10_000_000;
+
+const REBALANCE_LABEL: Record<string, string> = {
+  WEEKLY: '주 1회', MONTHLY: '월 1회', QUARTERLY: '분기 1회', YEARLY: '연 1회',
+};
 
 const METRIC_TERMS: Record<string, string> = {
   cumulativeReturn: '투자 시작 시점부터 해당 기간 끝까지 누적된 수익률이에요.',
@@ -56,21 +60,10 @@ const signed = (v: number) => `${v > 0 ? '+' : ''}${v}%`;
 
 /** 03 전략 상세 — 추천 기간(또는 직접 설정한 기간)으로 전략을 직접 체험한 뒤 바로 투자 시작으로 이어진다 */
 export default function StrategyDetail({
-  strategyId, userName, onNavigate, onStart, onRequestLoginForBacktest, onConfirmStrategyChange, pendingDeposit, onResumeDeposit,
+  strategy, strategyCatalog, recommendation, userName, onNavigate, onStart, onRequestLoginForBacktest,
+  onConfirmStrategyChange, pendingDeposit, onResumeDeposit,
 }: Props) {
-  const baseStrategy = STRATEGIES.find((s) => s.id === strategyId) ?? STRATEGIES[0];
-  // 실 전략 카탈로그(GET /strategies, public, 모델 무관)로 name/risk/rebalance를 최신화한다 — 나머지
-  // 필드(tagline/why/백테스트 대표값 등)는 아직 실 대응 데이터가 없어 정적 STRATEGIES를 그대로 쓴다.
-  // 화면 전체가 이 조회를 기다리지 않도록(공개 화면이라 응답 전에도 바로 보여야 함) 실패/로딩 중에는
-  // 그냥 정적 값을 쓰고, 응답이 오면 해당 필드만 조용히 갱신한다.
-  const [catalog, setCatalog] = useState<StrategyResponse[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetchStrategyCatalog().then((result) => { if (!cancelled) setCatalog(result); });
-    return () => { cancelled = true; };
-  }, []);
-  const catalogEntry = catalog?.find((s) => s.id === strategyId);
-  const strategy = catalogEntry ? applyStrategyCatalog(baseStrategy, catalogEntry) : baseStrategy;
+  const strategyId = strategy.id;
   // 비회원 공개 정책: 전략을 읽고 백테스트 기본 결과를 보는 것은 PUBLIC이지만, "나와 몇% 잘
   // 맞는지" 같은 개인화 적합도는 로그인 + 투자성향 진단 완료 사용자에게만 보여준다.
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
@@ -98,7 +91,7 @@ export default function StrategyDetail({
   const ctaState: 'start' | 'current' | 'change' =
     !activeStrategyId ? 'start' : activeStrategyId === strategyId ? 'current' : 'change';
   const activeStrategyName = activeStrategyId
-    ? (STRATEGIES.find((s) => s.id === activeStrategyId)?.name ?? activeStrategyId)
+    ? (strategyCatalog.find((item) => item.id === activeStrategyId)?.name ?? activeStrategyId)
     : null;
   const [changeConfirmOpen, setChangeConfirmOpen] = useState(false);
   const [changeSubmitting, setChangeSubmitting] = useState(false);
@@ -273,13 +266,13 @@ export default function StrategyDetail({
             >
               ← 투자전략 목록
             </button>
-            {showSuitability && (
-              <span className="text-base font-semibold text-[#3F5222]">✦ 나와 {strategy.match}% 잘 맞는 전략</span>
+            {showSuitability && recommendation && (
+              <span className="text-base font-semibold text-[#3F5222]">✦ 투자성향 적합도 {Math.round(recommendation.score * 100)}%</span>
             )}
             <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">{strategy.name}</h1>
-            <p className="max-w-[820px] text-[19px] leading-8 text-muted">{strategy.why}</p>
-            {showSuitability && strategy.suitabilityNote && (
-              <p className="max-w-[820px] text-[17px] leading-7 text-[#3F5222]">✦ {strategy.suitabilityNote}</p>
+            <p className="max-w-[820px] text-[19px] leading-8 text-muted">{strategy.description}</p>
+            {showSuitability && recommendation && (
+              <p className="max-w-[820px] text-[17px] leading-7 text-[#3F5222]">✦ {recommendation.reason}</p>
             )}
           </section>
 
@@ -468,7 +461,7 @@ export default function StrategyDetail({
                   {result.metrics.sharpe != null && (
                     <MetricTile label="샤프 지수" value={`${result.metrics.sharpe}`} termKey="sharpe" />
                   )}
-                  <MetricTile label="리밸런싱" value={strategy.rebalance} />
+                  <MetricTile label="리밸런싱" value={REBALANCE_LABEL[strategy.rebalance_cycle] ?? strategy.rebalance_cycle} />
                 </div>
               </section>
 

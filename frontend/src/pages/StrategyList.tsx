@@ -1,10 +1,14 @@
 import Header from '../components/Header';
-import { STRATEGY_SUMMARIES } from '../data/strategies';
+import type { StrategyResponse } from '../lib/backendApi';
 import type { Screen } from '../types';
 
 interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
+  strategies: StrategyResponse[];
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   /** Strategy Card 선택 → 기존 Strategy Detail(strategy 화면)로 이동 */
   onSelectStrategy: (id: string) => void;
 }
@@ -14,7 +18,9 @@ interface Props {
  * Progressive Disclosure 1단계이고, 지표·백테스트 등은 기존 Strategy Detail(상세)에서 보여준다.
  * 전략 모델이 아직 확정 전이라 카드에는 최소 정보만 노출한다.
  */
-export default function StrategyList({ userName, onNavigate, onSelectStrategy }: Props) {
+export default function StrategyList({
+  userName, onNavigate, strategies, isLoading, error, onRetry, onSelectStrategy,
+}: Props) {
   return (
     <div className="min-h-screen bg-canvas">
       <Header active="strategy" userName={userName} onNavigate={onNavigate} />
@@ -31,14 +37,24 @@ export default function StrategyList({ userName, onNavigate, onSelectStrategy }:
             </p>
           </section>
 
-          {STRATEGY_SUMMARIES.length === 0 ? (
+          {isLoading ? (
+            <section className="flex flex-col items-center gap-2 rounded-card bg-surface px-10 py-20" aria-live="polite">
+              <p className="text-lg font-semibold text-ink">투자전략을 불러오고 있어요.</p>
+            </section>
+          ) : error ? (
+            <section className="flex flex-col items-center gap-4 rounded-card bg-surface px-10 py-20" role="alert">
+              <p className="text-lg font-semibold text-ink">투자전략을 불러오지 못했어요.</p>
+              <p className="text-base text-muted">{error}</p>
+              {onRetry && <button onClick={onRetry} className="rounded-field bg-lime px-7 py-3 text-base font-bold text-navy">다시 시도하기</button>}
+            </section>
+          ) : strategies.length === 0 ? (
             <section className="flex flex-col items-center gap-2 rounded-card bg-surface px-10 py-20">
               <p className="text-lg font-semibold text-ink">아직 준비된 투자전략이 없어요.</p>
               <p className="text-base text-muted">곧 새로운 전략으로 찾아올게요.</p>
             </section>
           ) : (
             <div className="grid grid-cols-3 gap-6">
-              {STRATEGY_SUMMARIES.map((s) => (
+              {strategies.map((s) => (
                 <button
                   key={s.id}
                   onClick={() => onSelectStrategy(s.id)}
@@ -46,7 +62,7 @@ export default function StrategyList({ userName, onNavigate, onSelectStrategy }:
                 >
                   <div className="flex flex-col gap-3">
                     <span className="text-[21px] font-bold tracking-[-0.02em] text-ink">{s.name}</span>
-                    <p className="text-[16px] leading-[26px] text-muted">{s.shortDescription}</p>
+                    <p className="text-[16px] leading-[26px] text-muted">{s.description}</p>
                   </div>
                   <span className="text-[15px] font-semibold text-muted transition-colors group-hover:text-navy">
                     자세히 보기 →

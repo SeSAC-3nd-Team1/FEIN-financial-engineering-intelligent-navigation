@@ -66,6 +66,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     const hydrated = useAuthStore.getState();
     expect(hydrated.investorProfileCompleted).toBe(true);
     expect(hydrated.investorType).toBe('안정추구형');
+    expect(hydrated.investorAssessmentId).toBe('assessment-1');
     // 백엔드 응답이 Source of Truth — RiskResult/InvestorProfileCheck가 쓰는 나머지 필드도 그대로 매핑돼야 한다.
     expect(hydrated.investorTendencyLine).toBe('지키는 것을 중요하게 생각해요');
     expect(hydrated.investorDescription).toBe('설명');
@@ -75,6 +76,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     const state = useAuthStore.getState();
     expect(state.investorProfileCompleted).toBe(false);
     expect(state.investorProfileCompletedAt).toBeNull();
+    expect(state.investorAssessmentId).toBeNull();
     expect(state.investorType).toBeNull();
     expect(state.investorTendencyLine).toBeNull();
     expect(state.investorDescription).toBeNull();
@@ -89,6 +91,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
       { type: '공격투자형', tendencyLine: '', description: '', traits: { stability: 1, returnSeeking: 5, horizon: 5 } },
       [0, 1, 2],
       '2026-01-01T00:00:00Z',
+      'assessment-local',
     );
     useAuthStore.setState({ accessToken: 'expired-token' });
     vi.mocked(currentUserApi).mockRejectedValue(new Error('401'));
@@ -99,6 +102,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     expect(state.isLoggedIn).toBe(false);
     expect(state.investorProfileCompleted).toBe(false);
     expect(state.investorType).toBeNull();
+    expect(state.investorAssessmentId).toBeNull();
     expect(state.investorAnswers).toBeNull();
   });
 
@@ -169,6 +173,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     const state = useAuthStore.getState();
     expect(state.user?.user_id).toBe('b');
     expect(state.investorType).toBe('공격투자형');
+    expect(state.investorAssessmentId).toBe('assessment-2');
     expect(state.investorProfileCompletedAt).toBe('2026-02-02T00:00:00Z');
   });
 });
