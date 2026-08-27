@@ -97,8 +97,8 @@ def extract_json_object(text: str) -> dict[str, Any]:
         raise ValueError("response contains an incomplete fenced JSON payload")
 
     decoder = json.JSONDecoder()
-    spans: list[tuple[int, int]] = []
-    open_braces: list[int] = []
+    spans: list[tuple[int, int, str]] = []
+    open_delimiters: list[tuple[str, int]] = []
     in_string = False
     escaped = False
     for index, character in enumerate(text):
@@ -112,30 +112,44 @@ def extract_json_object(text: str) -> dict[str, Any]:
             continue
         if character == '"':
             in_string = True
-        elif character == "{":
-            open_braces.append(index)
-        elif character == "}" and open_braces:
-            spans.append((open_braces.pop(), index + 1))
+        elif character in "[{":
+            open_delimiters.append((character, index))
+        elif character in "]}" and open_delimiters:
+            opening, start = open_delimiters[-1]
+            if (opening, character) in (("[", "]"), ("{", "}")):
+                open_delimiters.pop()
+                spans.append((start, index + 1, opening))
 
+    valid_contexts: list[tuple[int, int, str]] = []
     valid_objects: list[tuple[int, int, dict[str, Any]]] = []
-    for start, end in spans:
+    for start, end, opening in spans:
         try:
             value, decoded_end = decoder.raw_decode(text[start:])
         except json.JSONDecodeError:
             continue
-        if isinstance(value, dict) and decoded_end == end - start:
+        if decoded_end != end - start:
+            continue
+        if opening == "{" and isinstance(value, dict):
             valid_objects.append((start, end, value))
+            valid_contexts.append((start, end, opening))
+        elif opening == "[" and isinstance(value, list):
+            valid_contexts.append((start, end, opening))
 
     for start, end, _ in valid_objects:
-        if any(unclosed < start for unclosed in open_braces):
-            raise ValueError("response contains an incomplete JSON object")
+        if any(unclosed_start < start for _, unclosed_start in open_delimiters):
+            raise ValueError("response contains an incomplete JSON context")
         if any(
             outer_start < start
             and outer_end >= end
-            and not any(outer_start == valid_start and outer_end == valid_end for valid_start, valid_end, _ in valid_objects)
-            for outer_start, outer_end in spans
+            and not any(
+                outer_start == valid_start
+                and outer_end == valid_end
+                and opening == valid_opening
+                for valid_start, valid_end, valid_opening in valid_contexts
+            )
+            for outer_start, outer_end, opening in spans
         ):
-            raise ValueError("response contains an invalid enclosing JSON object")
+            raise ValueError("response contains an invalid enclosing JSON context")
 
     objects = [
         value

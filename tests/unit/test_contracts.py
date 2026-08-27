@@ -43,6 +43,13 @@ def test_extract_json_object_rejects_malformed_outer_with_nested_object():
         extract_json_object(raw)
 
 
+def test_extract_json_object_rejects_malformed_array_with_nested_object():
+    raw = 'prefix [{"agent":"News","status":"OK"}'
+
+    with pytest.raises(ValueError):
+        extract_json_object(raw)
+
+
 def test_extract_json_object_rejects_missing_object():
     with pytest.raises(ValueError, match="valid JSON object"):
         extract_json_object("응답에 JSON이 없습니다.")
