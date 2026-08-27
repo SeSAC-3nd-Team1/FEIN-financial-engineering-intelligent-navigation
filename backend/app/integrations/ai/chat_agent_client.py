@@ -186,15 +186,11 @@ class AzureOpenAIChatAgentClient:
                 status="COMPLETED",
                 text=text,
                 caution=caution,
-                suggested_questions=questions,
+                                suggested_questions=questions,
             )
         return None
 
-
-
-        
-
-        def _validate_configuration(self) -> None:
+    def _validate_configuration(self) -> None:
         if not all((self.endpoint, self.api_key, self.deployment, self.api_version)):
             raise ServiceError(
                 "CHAT_AGENT_NOT_CONFIGURED",
@@ -240,7 +236,7 @@ class AzureOpenAIChatAgentClient:
         ]
         messages.extend(item.model_dump() for item in history[-10:])
         messages.append({"role": "user", "content": message})
-                body = {
+        body = {
             "messages": messages,
             "response_format": {
                 "type": "json_schema",
