@@ -4,7 +4,12 @@ from datetime import date
 import pytest
 import requests
 
-from collectors.public_data_client import PublicDataApiError, PublicDataClient, decode_page
+from collectors.public_data_client import (
+    PublicDataApiError,
+    PublicDataClient,
+    PublicDataUnavailableError,
+    decode_page,
+)
 from collectors.public_data_config import OPERATIONS, select_operations
 from scripts.backfill_public_data_by_date import iter_dates, resolve_operation
 from scripts.audit_raw_coverage import (
@@ -59,10 +64,29 @@ def test_request_failure_does_not_leak_service_key(monkeypatch) -> None:
         raise requests.Timeout("https://apis.data.go.kr/example?serviceKey=super-secret-key")
 
     monkeypatch.setattr(client.session, "get", fail_request)
-    with pytest.raises(PublicDataApiError) as captured:
+    with pytest.raises(PublicDataUnavailableError) as captured:
         client.fetch_page(OPERATIONS["stock_price"][0], page_number=1, rows_per_page=1)
     assert "super-secret-key" not in str(captured.value)
     assert "Timeout" in str(captured.value)
+
+
+def test_client_limits_connect_retries_and_uses_split_timeout() -> None:
+    client = PublicDataClient(
+        api_key="secret",
+        connect_timeout=5,
+        read_timeout=20,
+    )
+
+    adapter = client.session.get_adapter("https://")
+    assert client.timeout == (5, 20)
+    assert adapter.max_retries.connect == 1
+    assert adapter.max_retries.read == 2
+    assert adapter.max_retries.status == 3
+
+
+def test_client_rejects_non_positive_timeout() -> None:
+    with pytest.raises(ValueError, match="timeouts must be positive"):
+        PublicDataClient(api_key="secret", connect_timeout=0)
 
 
 def test_parse_item_date() -> None:

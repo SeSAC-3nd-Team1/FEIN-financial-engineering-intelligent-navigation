@@ -24,6 +24,10 @@ class PublicDataApiError(RuntimeError):
     """공공데이터 API가 오류 header 또는 해석 불가능한 응답을 반환했을 때 사용한다."""
 
 
+class PublicDataUnavailableError(PublicDataApiError):
+    """공급자 연결 또는 응답 timeout으로 현재 수집을 진행할 수 없을 때 사용한다."""
+
+
 @dataclass(frozen=True)
 class ApiPage:
     """한 API page에서 downstream 수집 로직에 필요한 값만 보관한다."""
@@ -123,16 +127,31 @@ def decode_page(payload: dict[str, Any], requested_page: int) -> ApiPage:
 class PublicDataClient:
     """공공데이터 API 호출에 timeout과 일시적 오류 retry 정책을 공통 적용한다."""
 
-    def __init__(self, api_key: str | None = None, *, timeout: int = 30) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        connect_timeout: float = 10,
+        read_timeout: float = 30,
+    ) -> None:
         self.api_key = api_key or get_public_data_api_key()
-        self.timeout = timeout
+        if connect_timeout <= 0 or read_timeout <= 0:
+            raise ValueError("public data timeouts must be positive")
+        self.timeout = (connect_timeout, read_timeout)
         self.session = requests.Session()
-        # 429와 일시적인 5xx만 재시도한다. 잘못된 요청/인증 오류를 반복 호출하지 않는다.
+        # 연결 실패는 한 번만 재시도해 공급자 전체 장애 때 52개 endpoint가 각각 장시간
+        # 대기하지 않게 한다. 응답을 받은 뒤의 429/5xx는 기존처럼 제한적으로 재시도한다.
         retry = Retry(
             total=3,
+            connect=1,
+            read=2,
+            status=3,
+            other=0,
             backoff_factor=0.5,
+            backoff_jitter=0.25,
             status_forcelist=(429, 500, 502, 503, 504),
             allowed_methods=("GET",),
+            respect_retry_after_header=True,
         )
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
@@ -158,6 +177,14 @@ class PublicDataClient:
                 operation.url, params=params, timeout=self.timeout
             )
             response.raise_for_status()
+        except (requests.ConnectionError, requests.Timeout) as error:
+            # 같은 host의 모든 operation을 순회해도 회복 가능성이 낮으므로 caller가
+            # fail-fast 여부를 결정할 수 있게 별도 예외로 구분한다.
+            raise PublicDataUnavailableError(
+                f"data.go.kr unavailable for "
+                f"{operation.dataset}/{operation.name}: "
+                f"{type(error).__name__}"
+            ) from None
         except requests.RequestException as error:
             # requests 예외 문자열에는 serviceKey가 포함된 완성 URL이 들어갈 수 있다.
             # 따라서 원문 예외 메시지는 버리고 예외 타입만 운영 로그에 남긴다.
