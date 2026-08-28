@@ -111,6 +111,29 @@ docker compose run --rm backend python -m scripts.seed_demo_portfolio --user-id 
 docker compose run --rm backend python -m scripts.seed_demo_portfolio --user-id <개발용-로그인-id>
 ```
 
+포트폴리오의 `1M / 3M / 1Y` 수익률 화면을 바로 시연할 수 있는 가상 계정은 다음 명령으로
+생성합니다. 성장추구형 사용자가 `momentum` 전략으로 자동투자를 시작한 시나리오이며, DB에
+저장된 최근 253개 거래일의 종목 종가와 KOSPI 데이터를 사용해 매월 당시 시점에 이용할 수
+있던 데이터만으로 `price-momentum-v1` 규칙을 다시 실행하고, 그 월의 모델 종목과 목표
+비중으로 리밸런싱합니다. 최신 시점의 재현 결과가 실제 `generated` 산출물과 일치하지 않으면
+시드를 중단하며 종목을 임의로 추가하거나 제외하지 않습니다.
+주문·체결·현금 원장·최종 포지션·일별 스냅샷은 하나의 transaction으로 저장합니다. 같은
+명령을 다시 실행하면 기존 데모 계정을 반환하며 중복 거래를 생성하지 않습니다.
+
+운영 환경에서는 실행할 수 없고, 실수로 실행하는 것을 막기 위해 `DEMO_SEED_ENABLED=true`를
+매번 명시해야 합니다. 비밀번호는 파일에 저장하지 말고 실행 환경 변수로만 전달합니다.
+
+```bash
+docker compose run --rm \
+  -e DEMO_SEED_ENABLED=true \
+  -e DEMO_ACCOUNT_PASSWORD='<데모-비밀번호>' \
+  backend python -m scripts.seed_demo_account
+```
+
+기본 로그인 아이디는 `demomin32`이며 이름·생년월일·전화번호·이메일은 실사용자와 구분되는
+가상 값입니다. 기존 사용자와 아이디가 충돌하면 덮어쓰지 않고 실패합니다. 다른 아이디와
+이메일이 필요하면 `--user-id`와 `--email`을 함께 지정합니다.
+
 실제 KIS 시세→Redis 통합 테스트는 유효한 KIS 환경 변수가 있는 경우에만 명시적으로 실행합니다. 이 테스트는 현재가 조회만 수행하고 KIS 주문 API나 실제·모의 계좌 주문을 호출하지 않습니다.
 
 ```bash
