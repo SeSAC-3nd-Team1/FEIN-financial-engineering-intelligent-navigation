@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("risk_score", sa.SmallInteger(), nullable=True),
     )
     op.create_check_constraint(
-        "ck_investor_profile_assessments_risk_score_range",
+        op.f("ck_investor_profile_assessments_risk_score_range"),
         "investor_profile_assessments",
         "risk_score IS NULL OR risk_score BETWEEN 0 AND 100",
     )
@@ -35,7 +35,7 @@ def downgrade() -> None:
     """점수 제약을 먼저 제거한 뒤 컬럼을 되돌린다."""
 
     op.drop_constraint(
-        "ck_investor_profile_assessments_risk_score_range",
+        op.f("ck_investor_profile_assessments_risk_score_range"),
         "investor_profile_assessments",
         type_="check",
     )
