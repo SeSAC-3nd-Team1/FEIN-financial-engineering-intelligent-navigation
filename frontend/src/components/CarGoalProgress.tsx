@@ -364,10 +364,10 @@ export default function CarGoalProgress() {
                 이미지 살짝 겹치게, 말풍선 없이 문구만 옆에 자연스럽게 둔다. 달성 전에는
                 응원하는 말투, 달성하면 character-celebrate.png의 축하 연출과 맞춰 문구도
                 축하로 바뀐다. */}
-            <div className="-mb-2 -mt-4 flex items-center gap-2">
-              <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-20 w-auto shrink-0 object-contain" />
-              <span className="text-sm font-semibold text-muted">
-                {completed ? '물방개도 함께 축하하고 있어요!' : '물방개가 목표 달성을 응원하고 있어요!'}
+            <div className="flex items-center gap-4">
+              <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-32 w-auto shrink-0 object-contain" />
+              <span className="whitespace-pre-line text-lg font-bold leading-6 text-muted">
+                {completed ? '물방개도 함께\n축하하고 있어요!' : '물방개가 목표 달성을\n응원하고 있어요!'}
               </span>
             </div>
 
