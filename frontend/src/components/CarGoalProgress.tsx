@@ -280,30 +280,24 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
           </div>
 
           <div className="flex flex-1 flex-col justify-center gap-7">
-            {/* 3.5. 물방개 — 진행률(%) 위쪽 빈 공간을 상시 채운다. 박스로 감싸면 오히려 튀어
-                보여서, 카드 배경 위에 그대로 얹는다(Chatbot.tsx 빈 대화 상태와 같은 방식) —
-                이미지 살짝 겹치게, 말풍선 없이 문구만 옆에 자연스럽게 둔다. 달성 전에는
-                응원하는 말투, 달성하면 character-celebrate.png의 축하 연출과 맞춰 문구도
-                축하로 바뀐다. */}
-            <div className="flex items-center gap-5">
-              <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-[220px] w-[220px] shrink-0 object-contain" />
-              <span className="flex-1 text-center whitespace-pre-line text-[26px] font-bold leading-9 tracking-[-0.02em]">
-                {completed ? '물방개도 함께\n축하하고 있어요!' : '물방개가 목표 달성을\n응원 해요!'}
-              </span>
-            </div>
-
-            {/* 4. 진행률/메시지 — 이 위젯을 열었을 때 가장 먼저 눈에 들어와야 할 "결과"라서 맨 위.
-                카드가 커진 만큼 글자/바 두께도 함께 키워 빈 여백 대신 내용 자체가 채우게 한다. */}
+            {/* 3~4. 물방개 + 진행률/메시지 — 예전엔 "물방개가 응원해요" 캡션과 진행률 메시지가
+                서로 다른 말을 하며 두 블록으로 쌓여 있었다(같은 얘기를 두 번 하는 것처럼 어색했다).
+                하나의 줄로 합쳐 마스코트가 실제 진행 메시지를 전하는 것처럼 보이게 하고, 그 아래
+                진행률 바를 바로 이어 붙였다. 카드 배경 위에 그대로 얹는다(Chatbot.tsx 빈 대화
+                상태와 같은 방식) — 박스로 감싸면 오히려 튀어 보인다. */}
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between text-base font-semibold text-muted">
-                <span>
-                  {completed
-                    ? '목표 금액을 달성했어요! 🎉'
-                    : goalAmount > 0
-                      ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
-                      : '목표 금액을 입력해주세요.'}
-                </span>
-                <span className="text-xl font-bold text-navy">{Math.round(progress)}%</span>
+              <div className="flex items-center gap-5">
+                <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-[140px] w-[140px] shrink-0 object-contain" />
+                <div className="flex flex-1 items-center justify-between gap-4">
+                  <span className="text-lg font-bold tracking-[-0.02em]">
+                    {completed
+                      ? '목표 금액을 달성했어요! 🎉'
+                      : goalAmount > 0
+                        ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
+                        : '목표 금액을 입력해주세요.'}
+                  </span>
+                  <span className="shrink-0 text-2xl font-bold text-navy">{Math.round(progress)}%</span>
+                </div>
               </div>
               <div className="h-3.5 overflow-hidden rounded-full bg-line">
                 <div
