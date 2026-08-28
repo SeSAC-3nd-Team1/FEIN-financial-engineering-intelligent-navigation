@@ -1,4 +1,5 @@
 from db.models import (
+    AccountCashDeposit,
     MarketIndex,
     MarketStock,
     MarketStockPrice,
@@ -147,6 +148,19 @@ def test_account_deposit_is_append_only_idempotent_history() -> None:
         ("investment_onboardings.id",),
     }
     assert "ck_cash_ledger_type_values" in _constraint_names(CashLedger)
+
+
+def test_account_cash_deposit_is_independent_idempotent_history() -> None:
+    assert {
+        "uq_account_cash_deposits_account_idempotency",
+        "ck_account_cash_deposits_amount_positive",
+        "ck_account_cash_deposits_balance_nonnegative",
+        "ck_account_cash_deposits_status_values",
+    } <= _constraint_names(AccountCashDeposit)
+    assert ("account_id", "created_at") in _index_columns(AccountCashDeposit)
+    assert _foreign_key_targets(AccountCashDeposit) == {
+        ("virtual_accounts.id",),
+    }
 
 
 def test_virtual_fund_operations_are_idempotent_and_link_orders() -> None:
