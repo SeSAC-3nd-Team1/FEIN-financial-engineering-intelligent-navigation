@@ -28,38 +28,40 @@ export const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
     },
     {
       id: "k2",
-      title: "변동성이 낮다는 건 어떤 뜻인가요?",
+      title: "위험과 변동성은 어떻게 이해할까요?",
       excerpt:
-        "수익이 적다는 뜻이 아니라 가격이 오르내리는 폭이 상대적으로 좁다는 뜻이에요. 과거 변동성이 미래 수익을 보장하지는 않습니다.",
+        "변동성은 가격이 오르내리는 폭을 살펴보는 방법 중 하나예요. 투자 대상의 위험과 기간을 함께 확인해야 하며, 과거 변동성이 미래 수익을 보장하지는 않습니다.",
       category: "리스크",
       readingMinutes: 3,
-      sourceName: "금융감독원",
-      sourceUrl: "https://www.fss.or.kr/fss/consumer/consumer020101.do",
+      sourceName: "Investor.gov (미국 SEC)",
+      sourceUrl:
+        "https://www.investor.gov/introduction-investing/investing-basics/asset-allocation-and-diversification",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },
     {
       id: "k3",
-      title: "최대 낙폭(MDD), 왜 수익률과 함께 볼까요?",
+      title: "자산배분으로 손실 위험을 어떻게 나눌까요?",
       excerpt:
-        "과거 관측 기간 중 고점에서 저점까지의 하락 폭을 보는 지표예요. 과거 MDD가 미래 손실 한도를 의미하지는 않습니다.",
+        "주식·채권·현금처럼 성격이 다른 자산에 나누어 투자하면 한 자산의 가격 변동이 전체 자산에 미치는 영향을 줄이는 데 도움이 될 수 있어요. 손실이 사라지거나 수익이 보장되는 것은 아닙니다.",
       category: "리스크",
       readingMinutes: 5,
-      sourceName: "한국거래소",
+      sourceName: "Investor.gov (미국 SEC)",
       sourceUrl:
-        "https://global.krx.co.kr/contents/GLB/02/0203/0203010000/GLB0203010000.jsp",
+        "https://www.investor.gov/introduction-investing/investing-basics/asset-allocation-and-diversification",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },
     {
       id: "k4",
-      title: "리밸런싱은 얼마나 자주 해야 하나요?",
+      title: "리밸런싱은 왜 필요한가요?",
       excerpt:
-        "정해진 정답은 없어요. 거래 비용·세금·운용 목표와 자산 비중의 이탈 정도를 함께 확인해야 합니다.",
+        "자산 가격 변화로 목표 비중이 달라졌을 때 원래의 자산배분으로 되돌리는 방법이에요. 거래 비용과 세금, 투자 목표를 함께 확인해야 합니다.",
       category: "전략",
       readingMinutes: 4,
-      sourceName: "금융감독원",
-      sourceUrl: "https://www.fss.or.kr/fss/consumer/consumer020101.do",
+      sourceName: "Investor.gov (미국 SEC)",
+      sourceUrl:
+        "https://www.investor.gov/introduction-investing/investing-basics/asset-allocation-and-diversification#rebalancing",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },
@@ -67,12 +69,12 @@ export const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
       id: "k5",
       title: "분산투자는 무엇을 나누는 걸까요?",
       excerpt:
-        "종목 수를 늘리는 것만으로 충분하지 않아요. 자산·지역·업종처럼 위험 요인이 다른 대상을 함께 살펴야 합니다.",
+        "종목 수를 늘리는 것만으로 충분하지 않아요. 주식·채권·현금 등 자산과 지역·업종처럼 위험 요인이 다른 대상을 함께 살펴야 합니다.",
       category: "전략",
       readingMinutes: 6,
-      sourceName: "한국거래소",
+      sourceName: "Investor.gov (미국 SEC)",
       sourceUrl:
-        "https://global.krx.co.kr/contents/GLB/02/0203/0203010000/GLB0203010000.jsp",
+        "https://www.investor.gov/introduction-investing/investing-basics/asset-allocation-and-diversification",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },
