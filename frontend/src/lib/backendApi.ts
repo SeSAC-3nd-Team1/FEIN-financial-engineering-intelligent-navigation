@@ -52,10 +52,53 @@ export interface AccountResponse {
   operation_mode: AccountOperationMode;
   initial_cash: DecimalString;
   cash_balance: DecimalString;
+  invested_principal?: DecimalString;
   status: string;
   selected_strategy_id: string | null;
   created_at: string;
 }
+
+export interface FundOperationRequest {
+  amount: number;
+  idempotency_key: string;
+}
+
+export interface FundSummaryResponse {
+  account_id: string;
+  settlement_mode: "VIRTUAL";
+  invested_principal: DecimalString;
+  cash_balance: DecimalString;
+  position_evaluation_amount: DecimalString;
+  total_assets: DecimalString;
+  valuation_profit: DecimalString;
+  return_rate: DecimalString;
+  withdrawable_amount: DecimalString;
+  valuation_as_of: string | null;
+}
+
+export interface FundTradeResponse {
+  order_id: string;
+  stock_code: string;
+  side: "BUY" | "SELL";
+  applied_weight: DecimalString;
+  quantity: DecimalString;
+  execution_price: DecimalString;
+  transaction_amount: DecimalString;
+}
+
+export interface FundOperationResponse {
+  operation_id: string;
+  type: "ADDITIONAL_INVESTMENT" | "WITHDRAWAL";
+  status: "COMPLETED";
+  settlement_mode: "VIRTUAL";
+  requested_amount: DecimalString;
+  executed_amount: DecimalString;
+  principal_before: DecimalString;
+  principal_after: DecimalString;
+  portfolio: FundSummaryResponse;
+  trades: FundTradeResponse[];
+}
+
 
 export interface InvestmentTermResponse extends SignupTerm {
   content_reference: string | null;
@@ -203,8 +246,13 @@ export interface PortfolioResponse {
   contributions: PortfolioContributionResponse[];
   strategy_targets_available: boolean;
   rebalancing_proposals: RebalancingProposalResponse[];
-  positions: PositionResponse[];
+    positions: PositionResponse[];
+  invested_principal?: DecimalString;
+  valuation_profit?: DecimalString;
+  withdrawable_amount?: DecimalString;
+  settlement_mode?: "VIRTUAL";
 }
+
 
 export type PortfolioHistoryPeriod = "1M" | "3M" | "1Y" | "ALL";
 
@@ -397,6 +445,28 @@ export interface ModelRecommendationApplyResponse {
   status: "APPLIED" | "PROPOSAL_ONLY" | "ALREADY_APPLIED";
 }
 
+export interface ChatHistoryMessageRequest {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatScreenContextRequest {
+  screen: string;
+  stock_code?: string;
+  strategy_id?: string;
+  account_id?: string;
+}
+
+export interface ChatMessageResponse {
+  message_id: string;
+  status: "COMPLETED" | "NEEDS_CLARIFICATION" | "REFUSED";
+  text: string;
+  caution: string | null;
+  suggested_questions: string[];
+  model_version: string;
+  generated_at: string;
+}
+
 export class ApiError extends Error {
   constructor(
     public code: string,
@@ -418,9 +488,10 @@ async function request<T>(
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   let response: Response;
-  try {
+    try {
     response = await fetch(`${API_BASE}${path}`, { ...init, headers });
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiError(
       "NETWORK_ERROR",
       "서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.",
@@ -440,6 +511,24 @@ async function request<T>(
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export function createChatMessageApi(
+  message: string,
+  history: ChatHistoryMessageRequest[],
+  context: ChatScreenContextRequest,
+  token?: string | null,
+  signal?: AbortSignal,
+): Promise<ChatMessageResponse> {
+  return request<ChatMessageResponse>(
+    "/chat/messages",
+    {
+      method: "POST",
+      body: JSON.stringify({ message, history: history.slice(-10), context }),
+      signal,
+    },
+    token,
+  );
 }
 
 export async function loginApi(
@@ -532,6 +621,41 @@ export function createAccountApi(
       method: "POST",
       body: JSON.stringify({ account_name: accountName, operation_mode: mode }),
     },
+    token,
+  );
+}
+
+export function getFundSummaryApi(
+  accountId: string,
+  token: string,
+): Promise<FundSummaryResponse> {
+  return request<FundSummaryResponse>(
+    `/accounts/${encodeURIComponent(accountId)}/funds`,
+    {},
+    token,
+  );
+}
+
+export function createAdditionalInvestmentApi(
+  accountId: string,
+  payload: FundOperationRequest,
+  token: string,
+): Promise<FundOperationResponse> {
+  return request<FundOperationResponse>(
+    `/accounts/${encodeURIComponent(accountId)}/additional-investments`,
+    { method: "POST", body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export function createWithdrawalApi(
+  accountId: string,
+  payload: FundOperationRequest,
+  token: string,
+): Promise<FundOperationResponse> {
+  return request<FundOperationResponse>(
+    `/accounts/${encodeURIComponent(accountId)}/withdrawals`,
+    { method: "POST", body: JSON.stringify(payload) },
     token,
   );
 }

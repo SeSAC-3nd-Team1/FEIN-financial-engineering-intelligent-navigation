@@ -14,6 +14,7 @@ from app.api.routes import (
     accounts,
     auth,
     backtest,
+    chat,
     companies,
     information,
     investment,
@@ -92,6 +93,7 @@ def dependency_health():
 for router in (
     auth.router,
     backtest.router,
+    chat.router,
     accounts.router,
     strategies.router,
     market.router,

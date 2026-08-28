@@ -188,4 +188,6 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'bot';
   text: string;
+  caution?: string | null;
+  suggestedQuestions?: string[];
 }
