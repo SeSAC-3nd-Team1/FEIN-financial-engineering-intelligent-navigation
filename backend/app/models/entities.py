@@ -56,6 +56,31 @@ class User(Base):
     )
 
 
+class UserCarGoal(Base):
+    """홈 화면 "목표 차량" 위젯의 등급/목표·현재 금액 — 계정당 1행. 브라우저 세션이 아니라 서버에
+    저장해, 다른 기기·브라우저로 접속해도 같은 값을 이어서 본다. 행이 없으면 아직 등급을
+    선택한 적 없는 상태다(최초 진입 시 등급 선택을 강제하는 프런트 게이트가 이 신호를 쓴다)."""
+
+    __tablename__ = "user_car_goals"
+    __table_args__ = (
+        CheckConstraint(
+            "car_grade IN ('INEX', 'HIGHEND')",
+            name="ck_user_car_goals_car_grade_values",
+        ),
+        CheckConstraint("goal_amount >= 0", name="ck_user_car_goals_goal_amount_nonnegative"),
+        CheckConstraint("current_amount >= 0", name="ck_user_car_goals_current_amount_nonnegative"),
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    car_grade: Mapped[str] = mapped_column(String(20))
+    goal_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    current_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Term(Base):
     __tablename__ = "terms"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

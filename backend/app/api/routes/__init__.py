@@ -1,6 +1,7 @@
 from app.api.routes import (
     accounts,
     auth,
+    car_goal,
     chat,
     companies,
     information,
@@ -16,6 +17,7 @@ from app.api.routes import (
 __all__ = [
     "accounts",
     "auth",
+    "car_goal",
     "chat",
     "companies",
     "information",

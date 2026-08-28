@@ -58,6 +58,21 @@ export interface AccountResponse {
   created_at: string;
 }
 
+export type CarGrade = "INEX" | "HIGHEND";
+
+export interface CarGoalResponse {
+  car_grade: CarGrade;
+  goal_amount: DecimalString;
+  current_amount: DecimalString;
+  updated_at: string;
+}
+
+export interface CarGoalUpsertRequest {
+  car_grade: CarGrade;
+  goal_amount: number;
+  current_amount: number;
+}
+
 export interface FundOperationRequest {
   amount: number;
   idempotency_key: string;
@@ -671,6 +686,22 @@ export function selectStrategyApi(
       method: "PUT",
       body: JSON.stringify({ strategy_id: strategyId }),
     },
+    token,
+  );
+}
+
+/** 아직 등급을 한 번도 고른 적 없으면 404 CAR_GOAL_NOT_SET을 던진다 — 호출부에서 잡아 "최초 진입" 상태로 다룬다. */
+export function getCarGoalApi(token: string): Promise<CarGoalResponse> {
+  return request<CarGoalResponse>("/me/car-goal", {}, token);
+}
+
+export function upsertCarGoalApi(
+  payload: CarGoalUpsertRequest,
+  token: string,
+): Promise<CarGoalResponse> {
+  return request<CarGoalResponse>(
+    "/me/car-goal",
+    { method: "PUT", body: JSON.stringify(payload) },
     token,
   );
 }

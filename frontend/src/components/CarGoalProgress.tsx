@@ -1,46 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImageOff } from 'lucide-react';
+import {
+  ApiError, getCarGoalApi, upsertCarGoalApi, type CarGrade,
+} from '../lib/backendApi';
 import { digitsOnly, won } from '../lib/validation';
-
-type CarGrade = 'inex' | 'highend';
+import { useAuthStore } from '../store/authStore';
 
 const GRADES: { id: CarGrade; label: string; description: string }[] = [
-  { id: 'inex', label: '보급차', description: '가볍게 시작하는 실속형 목표' },
-  { id: 'highend', label: '고급차', description: '조금 더 크게 그려보는 목표' },
+  { id: 'INEX', label: '보급차', description: '가볍게 시작하는 실속형 목표' },
+  { id: 'HIGHEND', label: '고급차', description: '조금 더 크게 그려보는 목표' },
 ];
 
 /** 진행률 구간별 이미지 파일 번호(01~06) — 등급별로 같은 번호의 이미지를 쓴다.
  *  파일은 frontend/public 루트에 `Inex_01.png`~`Inex_06.png`, `highend_01.png`~`highend_06.png`로 있다. */
 const STAGE_THRESHOLDS = [0, 10, 30, 50, 70, 90] as const;
-const GRADE_FILE_PREFIX: Record<CarGrade, string> = { inex: 'Inex', highend: 'highend' };
+const GRADE_FILE_PREFIX: Record<CarGrade, string> = { INEX: 'Inex', HIGHEND: 'highend' };
 
-const STORAGE_KEY = 'fein.car-goal-progress';
 const DEFAULT_GOAL = 30_000_000;
-const MAX_AMOUNT = 2_000_000_000; // 20억원 — 입력 폭주 방지용 상한, 실사용 범위를 넉넉히 덮는다
+const MAX_AMOUNT = 2_000_000_000; // 20억원 — 백엔드 CarGoalUpsertRequest의 le 상한과 맞춘다
 const CROSSFADE_MS = 650;
-
-interface StoredState {
-  /** null = 아직 한 번도 등급을 고른 적 없음 — 처음 이용 시에는 필수로 골라야 나머지가 열린다.
-   *  한 번 고르고 나면(이후 변경 포함) 다시 null로 돌아가지 않는다. */
-  grade: CarGrade | null;
-  goalAmount: number;
-  currentAmount: number;
-}
-
-function loadStored(): StoredState {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) throw new Error('empty');
-    const parsed = JSON.parse(raw) as Partial<StoredState>;
-    return {
-      grade: parsed.grade === 'highend' || parsed.grade === 'inex' ? parsed.grade : null,
-      goalAmount: Number.isFinite(parsed.goalAmount) && (parsed.goalAmount ?? 0) > 0 ? Number(parsed.goalAmount) : DEFAULT_GOAL,
-      currentAmount: Number.isFinite(parsed.currentAmount) && (parsed.currentAmount ?? 0) >= 0 ? Number(parsed.currentAmount) : 0,
-    };
-  } catch {
-    return { grade: null, goalAmount: DEFAULT_GOAL, currentAmount: 0 };
-  }
-}
 
 function stageIndexFor(progress: number) {
   return STAGE_THRESHOLDS.reduce<number>((stage, threshold, index) => (progress >= threshold ? index : stage), 0);
@@ -134,14 +112,46 @@ function AmountField({
   );
 }
 
+type LoadStatus = 'loading' | 'ready' | 'error';
+
 export default function CarGoalProgress() {
-  const [{ grade, goalAmount, currentAmount }, setState] = useState<StoredState>(loadStored);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const reducedMotion = usePrefersReducedMotion();
   const [broken, setBroken] = useState<Record<string, boolean>>({});
+  const [status, setStatus] = useState<LoadStatus>('loading');
+  const [saveError, setSaveError] = useState(false);
+
+  // grade=null: 서버에 아직 저장된 값이 없다고 "확인된" 상태(계정당 최초 진입) — 로딩 중에는 아직
+  // 모르는 상태이므로 이 값만으로 게이트를 그리지 않고 반드시 status===\'ready\'와 함께 본다.
+  const [grade, setGradeState] = useState<CarGrade | null>(null);
+  const [goalAmount, setGoalAmountState] = useState(DEFAULT_GOAL);
+  const [currentAmount, setCurrentAmountState] = useState(0);
+
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ grade, goalAmount, currentAmount }));
-  }, [grade, goalAmount, currentAmount]);
+    if (!accessToken) return;
+    const requestId = ++requestIdRef.current;
+    setStatus('loading');
+    getCarGoalApi(accessToken)
+      .then((res) => {
+        if (requestIdRef.current !== requestId) return;
+        setGradeState(res.car_grade);
+        setGoalAmountState(Number(res.goal_amount));
+        setCurrentAmountState(Number(res.current_amount));
+        setStatus('ready');
+      })
+      .catch((error: unknown) => {
+        if (requestIdRef.current !== requestId) return;
+        if (error instanceof ApiError && error.code === 'CAR_GOAL_NOT_SET') {
+          // 계정 최초 진입 — 아직 아무것도 고른 적 없다는 게 "확인된" 상태. 계속 null로 둔다.
+          setGradeState(null);
+          setStatus('ready');
+          return;
+        }
+        setStatus('error');
+      });
+  }, [accessToken]);
 
   // 목표가 0원이면(입력 중 등) 0%로 취급한다 — 0으로 나누는 상황을 만들지 않는다.
   const progress = useMemo(
@@ -151,17 +161,59 @@ export default function CarGoalProgress() {
   const completed = progress >= 100;
 
   // 등급을 바꿔도 같은 진행률에 대응하는 이미지로 즉시 넘어간다 — 목표/현재 금액은 그대로 유지된다.
-  // grade가 아직 null(최초 미선택)이어도 훅은 항상 같은 순서로 호출되어야 하므로 무해한 기본값으로 계산해두고,
-  // 아래 렌더에서 grade가 없으면 이 이미지 섹션 자체를 보여주지 않는다.
-  const target = imagePathFor(grade ?? 'inex', progress);
+  // grade가 아직 null(최초 미선택/로딩 중)이어도 훅은 항상 같은 순서로 호출되어야 하므로 무해한
+  // 기본값으로 계산해두고, 아래 렌더에서 필요할 때만 이 이미지 섹션을 보여준다.
+  const target = imagePathFor(grade ?? 'INEX', progress);
   const { back, front, frontVisible } = useCrossfadeImage(target, CROSSFADE_MS, reducedMotion);
 
-  const setGrade = (next: CarGrade) => setState((s) => ({ ...s, grade: next }));
-  const setGoalAmount = (next: number) => setState((s) => ({ ...s, goalAmount: next }));
-  const setCurrentAmount = (next: number) => setState((s) => ({ ...s, currentAmount: next }));
+  /** 등급/금액 중 하나가 바뀔 때마다 세 값을 함께 서버에 저장한다 — upsert가 항상 세 값을 통째로 받는
+   *  구조라, 화면 상태를 먼저 반영(낙관적 업데이트)하고 실패하면 서버 값으로 다시 맞춘다. */
+  const persist = (next: { grade: CarGrade; goalAmount: number; currentAmount: number }) => {
+    if (!accessToken) return;
+    setSaveError(false);
+    const requestId = ++requestIdRef.current;
+    upsertCarGoalApi(
+      { car_grade: next.grade, goal_amount: next.goalAmount, current_amount: next.currentAmount },
+      accessToken,
+    ).catch(() => {
+      if (requestIdRef.current !== requestId) return;
+      setSaveError(true);
+    });
+  };
+
+  const setGrade = (nextGrade: CarGrade) => {
+    setGradeState(nextGrade);
+    persist({ grade: nextGrade, goalAmount, currentAmount });
+  };
+  const setGoalAmount = (next: number) => {
+    setGoalAmountState(next);
+    if (grade) persist({ grade, goalAmount: next, currentAmount });
+  };
+  const setCurrentAmount = (next: number) => {
+    setCurrentAmountState(next);
+    if (grade) persist({ grade, goalAmount, currentAmount: next });
+  };
 
   const markBroken = (src: string) => setBroken((prev) => (prev[src] ? prev : { ...prev, [src]: true }));
   const bothBroken = broken[back] && broken[front];
+
+  if (status === 'loading') {
+    return (
+      <section className="flex w-full max-w-[560px] flex-col gap-2 rounded-card bg-surface p-8 shadow-[0_0_0_1px_#E5E9E3_inset]">
+        <span className="text-sm font-semibold text-muted">목표 차량</span>
+        <div className="h-56 w-full animate-pulse rounded-[20px] bg-canvas" />
+      </section>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <section className="flex w-full max-w-[560px] flex-col gap-2 rounded-card bg-surface p-8 shadow-[0_0_0_1px_#E5E9E3_inset]">
+        <span className="text-sm font-semibold text-muted">목표 차량</span>
+        <p className="text-base font-semibold text-muted">목표 차량 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="flex w-full max-w-[560px] flex-col gap-6 rounded-card bg-surface p-8 shadow-[0_0_0_1px_#E5E9E3_inset]">
@@ -262,6 +314,9 @@ export default function CarGoalProgress() {
                 style={{ width: `${progress}%` }}
               />
             </div>
+            {saveError && (
+              <p className="text-[13px] font-semibold text-warn">저장하지 못했어요. 네트워크를 확인해주세요.</p>
+            )}
           </div>
         </>
       )}
