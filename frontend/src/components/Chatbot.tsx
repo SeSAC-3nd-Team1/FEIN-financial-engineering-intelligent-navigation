@@ -66,15 +66,14 @@ export default function Chatbot({
     setLoading(false);
   };
 
-  // 인증 토큰이 바뀌면 로그아웃 또는 계정 전환이므로 이전 사용자의 대화와
-  // 재시도 대상 질문을 폐기한다. 진행 중인 요청도 취소해 이전 history가
-  // 새 사용자 화면에 다시 반영되지 않도록 한다.
+  // 인증 토큰 또는 계좌가 바뀌면 사용자/계좌 대화 경계가 바뀐 것이다.
+  // 이전 history가 새 context와 결합되지 않도록 진행 중인 요청과 UI 상태를 함께 폐기한다.
   useEffect(() => {
     cancelRequest();
     setMessages([]);
     setError(null);
     setInput("");
-  }, [accessToken]);
+  }, [accessToken, accountId]);
 
   const screenContext = (): ChatScreenContextRequest => ({
     screen,
