@@ -43,7 +43,8 @@ export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
 function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: (s: Screen) => void }) {
   return (
     <main className="flex flex-col items-center px-16 pt-8">
-      <div className="flex w-full max-w-[600px] flex-col items-center gap-7">
+      {/* Portfolio/PortfolioAuto의 "한 화면" 메인 컨텐츠 폭(max-w-[1040px])과 통일한다. */}
+      <div className="flex w-full max-w-[1040px] flex-col items-center gap-7">
         <div className="flex items-center gap-6">
           <img src="/character-recommend.png" alt="물방개" className="h-24 w-auto shrink-0 object-contain" />
           <div className="flex flex-col gap-1.5">

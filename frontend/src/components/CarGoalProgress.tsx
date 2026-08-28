@@ -302,13 +302,15 @@ export default function CarGoalProgress() {
         </div>
       )}
 
-      {/* 2~4. 이미지/금액 입력/진행률 — 등급을 아직 한 번도 고르지 않았으면(grade=null) 통째로 숨긴다.
-          최초 선택 이후에는 항상 그려진다(등급 변경은 이미지 좌측 상단 라벨 옆 "변경"으로 계속 가능). */}
+      {/* 2~4. 카드 폭이 Portfolio 메인 컨텐츠(1040px)와 통일되면서 세로로만 쌓으면 이미지가 넓고
+          납작해진다 — 이미지(왼쪽 고정폭)와 진행률/금액 정보(오른쪽)를 한 카드 안에서 좌우로
+          나눠 넓은 폭을 자연스럽게 쓴다. 등급을 아직 한 번도 고르지 않았으면(grade=null) 통째로
+          숨긴다. */}
       {grade !== null && (
-        <>
-          {/* 2~3. 차량 이미지 — 두 레이어를 겹쳐 크로스페이드한다. 컨테이너 크기는 고정이라 전환 중에도
-              이미지 크기/위치가 흔들리지 않는다. 등급 이름은 이미지 좌측 상단에, "변경"은 우측 상단에 얹는다. */}
-          <div className="relative h-40 w-full overflow-hidden rounded-[20px] bg-canvas">
+        <div className="flex flex-col gap-6 sm:flex-row">
+          {/* 2~3. 차량 이미지 — 두 레이어를 겹쳐 크로스페이드한다. 컨테이너 크기는 고정이라 전환
+              중에도 이미지 크기/위치가 흔들리지 않는다. 등급 이름은 좌측 상단, "변경"은 우측 상단. */}
+          <div className="relative h-56 w-full shrink-0 overflow-hidden rounded-[20px] bg-canvas sm:w-[380px]">
             <div className="absolute left-3 top-3 z-20 rounded-full bg-surface/90 px-3 py-1.5 text-[13px] font-bold text-navy shadow-[0_0_0_1px_#E5E9E3_inset]">
               {GRADES.find((g) => g.id === grade)?.label}
             </div>
@@ -331,7 +333,7 @@ export default function CarGoalProgress() {
                   alt=""
                   aria-hidden="true"
                   onError={() => markBroken(back)}
-                  className="absolute inset-0 h-full w-full object-contain p-4"
+                  className="absolute inset-0 h-full w-full object-contain p-6"
                 />
                 {front !== back && (
                   <img
@@ -339,7 +341,7 @@ export default function CarGoalProgress() {
                     src={front}
                     alt={`${GRADES.find((g) => g.id === grade)?.label} 목표 달성 진행 이미지`}
                     onError={() => markBroken(front)}
-                    className="absolute inset-0 h-full w-full object-contain p-4 transition-[opacity,transform] ease-out"
+                    className="absolute inset-0 h-full w-full object-contain p-6 transition-[opacity,transform] ease-out"
                     style={{
                       opacity: frontVisible ? 1 : 0,
                       transform: frontVisible ? 'translateY(0) scale(1)' : 'translateY(6px) scale(0.98)',
@@ -351,58 +353,59 @@ export default function CarGoalProgress() {
             )}
           </div>
 
-          {/* 4. 진행률/메시지를 이미지 바로 아래로 — 이 위젯을 열었을 때 가장 먼저 눈에 들어와야
-              할 "결과"라서, 자주 안 바뀌는 목표 금액 입력보다 위에 둔다. */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between text-sm font-semibold text-muted">
-              <span>
-                {completed
-                  ? '목표 금액을 달성했어요! 🎉'
-                  : goalAmount > 0
-                    ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
-                    : '목표 금액을 입력해주세요.'}
-              </span>
-              <span className="text-navy">{Math.round(progress)}%</span>
-            </div>
-            <div className="h-2.5 overflow-hidden rounded-full bg-line">
-              <div
-                className="h-full rounded-full bg-lime transition-[width] duration-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            {saveError && (
-              <p className="text-[13px] font-semibold text-warn">저장하지 못했어요. 네트워크를 확인해주세요.</p>
-            )}
-          </div>
-
-          {/* 5. 목표 금액 — 평소엔 "목표: OO원 · 수정" 한 줄만 보이고, "수정"을 눌렀을 때만
-              입력창을 연다(값을 정하면 다시 한 줄로 접힌다). */}
-          {goalEditing ? (
-            <GoalAmountField value={goalAmount} onChange={setGoalAmount} />
-          ) : (
-            <div className="flex items-center justify-between rounded-field bg-canvas px-4 py-3.5">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[13px] text-muted">목표 금액</span>
-                <span className="text-base font-bold tracking-[-0.02em]">{won(goalAmount)}</span>
+          <div className="flex flex-1 flex-col justify-center gap-5">
+            {/* 4. 진행률/메시지 — 이 위젯을 열었을 때 가장 먼저 눈에 들어와야 할 "결과"라서 맨 위. */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between text-sm font-semibold text-muted">
+                <span>
+                  {completed
+                    ? '목표 금액을 달성했어요! 🎉'
+                    : goalAmount > 0
+                      ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
+                      : '목표 금액을 입력해주세요.'}
+                </span>
+                <span className="text-navy">{Math.round(progress)}%</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setGoalEditing(true)}
-                className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
-              >
-                수정
-              </button>
+              <div className="h-2.5 overflow-hidden rounded-full bg-line">
+                <div
+                  className="h-full rounded-full bg-lime transition-[width] duration-500"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              {saveError && (
+                <p className="text-[13px] font-semibold text-warn">저장하지 못했어요. 네트워크를 확인해주세요.</p>
+              )}
             </div>
-          )}
 
-          {/* 6. 현재 투자 금액 — 직접 손댈 수 없는 값이라 입력창처럼 보이지 않게 가볍게 한 줄로만 둔다. */}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted">현재 투자 금액</span>
-            <span className="font-semibold text-ink">
-              {won(currentAmount)} <span className="text-[12px] font-medium text-subtle">(포트폴리오 연동)</span>
-            </span>
+            {/* 5. 목표 금액 — 평소엔 "목표: OO원 · 수정" 한 줄만 보이고, "수정"을 눌렀을 때만
+                입력창을 연다(값을 정하면 다시 한 줄로 접힌다). */}
+            {goalEditing ? (
+              <GoalAmountField value={goalAmount} onChange={setGoalAmount} />
+            ) : (
+              <div className="flex items-center justify-between rounded-field bg-canvas px-4 py-3.5">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[13px] text-muted">목표 금액</span>
+                  <span className="text-base font-bold tracking-[-0.02em]">{won(goalAmount)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGoalEditing(true)}
+                  className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
+                >
+                  수정
+                </button>
+              </div>
+            )}
+
+            {/* 6. 현재 투자 금액 — 직접 손댈 수 없는 값이라 입력창처럼 보이지 않게 가볍게 한 줄로만 둔다. */}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted">현재 투자 금액</span>
+              <span className="font-semibold text-ink">
+                {won(currentAmount)} <span className="text-[12px] font-medium text-subtle">(포트폴리오 연동)</span>
+              </span>
+            </div>
           </div>
-        </>
+        </div>
       )}
     </section>
   );
