@@ -98,6 +98,12 @@ E2E는 `GET /auth/terms`부터 회원가입 동의 저장, AUTO/SEMI_AUTO별 계
 전체를 삭제하지 않습니다. 전체 schema drop/recreate, 전체 truncate, migration rollback 같은
 파괴적 테스트는 별도 임시 PostgreSQL에서만 수행합니다.
 
+### 개발 전용 Mock/데모 정책
+
+Mock 백테스트와 데모 포트폴리오는 개발·시연 환경에서만 사용할 수 있습니다. 운영 빌드는 `VITE_USE_MOCK_BACKTEST=true` 설정을 감지하면 실패하며, Mock 백테스트를 사용하는 개발 화면에는 `DEMO` 배지가 표시됩니다. 실제 API 오류가 Mock 결과로 대체되지는 않습니다.
+
+`seed_demo_portfolio`와 `seed_demo_account`는 모두 `DEMO_SEED_ENABLED=true`가 명시되고 `APP_ENV`가 production이 아닌 경우에만 실행할 수 있습니다. 운영 환경에서 데모 계정·주문을 생성하지 마세요.
+
 기존 Frontend Mock의 20개 종목·비중을 특정 개발용 가상계좌에 PostgreSQL 최신 KRX 종가
 기준의 실제 가상 주문으로 한 번만
 적용하려면 다음 명령을 사용합니다. 소수점 8자리 수량으로 각 Mock 목표 비중을 맞추고,
