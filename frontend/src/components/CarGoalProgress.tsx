@@ -20,7 +20,9 @@ const MAX_AMOUNT = 2_000_000_000; // 20억원 — 입력 폭주 방지용 상한
 const CROSSFADE_MS = 650;
 
 interface StoredState {
-  grade: CarGrade;
+  /** null = 아직 한 번도 등급을 고른 적 없음 — 처음 이용 시에는 필수로 골라야 나머지가 열린다.
+   *  한 번 고르고 나면(이후 변경 포함) 다시 null로 돌아가지 않는다. */
+  grade: CarGrade | null;
   goalAmount: number;
   currentAmount: number;
 }
@@ -31,12 +33,12 @@ function loadStored(): StoredState {
     if (!raw) throw new Error('empty');
     const parsed = JSON.parse(raw) as Partial<StoredState>;
     return {
-      grade: parsed.grade === 'highend' ? 'highend' : 'inex',
+      grade: parsed.grade === 'highend' || parsed.grade === 'inex' ? parsed.grade : null,
       goalAmount: Number.isFinite(parsed.goalAmount) && (parsed.goalAmount ?? 0) > 0 ? Number(parsed.goalAmount) : DEFAULT_GOAL,
       currentAmount: Number.isFinite(parsed.currentAmount) && (parsed.currentAmount ?? 0) >= 0 ? Number(parsed.currentAmount) : 0,
     };
   } catch {
-    return { grade: 'inex', goalAmount: DEFAULT_GOAL, currentAmount: 0 };
+    return { grade: null, goalAmount: DEFAULT_GOAL, currentAmount: 0 };
   }
 }
 
@@ -149,7 +151,9 @@ export default function CarGoalProgress() {
   const completed = progress >= 100;
 
   // 등급을 바꿔도 같은 진행률에 대응하는 이미지로 즉시 넘어간다 — 목표/현재 금액은 그대로 유지된다.
-  const target = imagePathFor(grade, progress);
+  // grade가 아직 null(최초 미선택)이어도 훅은 항상 같은 순서로 호출되어야 하므로 무해한 기본값으로 계산해두고,
+  // 아래 렌더에서 grade가 없으면 이 이미지 섹션 자체를 보여주지 않는다.
+  const target = imagePathFor(grade ?? 'inex', progress);
   const { back, front, frontVisible } = useCrossfadeImage(target, CROSSFADE_MS, reducedMotion);
 
   const setGrade = (next: CarGrade) => setState((s) => ({ ...s, grade: next }));
@@ -164,10 +168,14 @@ export default function CarGoalProgress() {
       <div className="flex flex-col gap-1">
         <span className="text-sm font-semibold text-muted">목표 차량</span>
         <h2 className="text-2xl font-bold tracking-[-0.025em]">투자가 쌓일수록 목표 차량에 가까워져요</h2>
+        {grade === null && (
+          <p className="text-sm font-semibold text-[#7A5A1E]">차량 등급을 먼저 선택해주세요. (최초 1회 필수, 이후 언제든 변경할 수 있어요)</p>
+        )}
       </div>
 
-      {/* 1. 차량 등급 선택 — 카드 2개 중 하나를 고르는 방식 */}
-      <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="차량 등급 선택">
+      {/* 1. 차량 등급 선택 — 카드 2개 중 하나를 고르는 방식. 처음 이용 시(grade=null)에는 반드시
+          하나를 골라야 아래 금액 입력/이미지/진행률이 열린다 — 이후에는 같은 카드로 자유롭게 변경한다. */}
+      <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-required={grade === null} aria-label="차량 등급 선택">
         {GRADES.map((g) => {
           const active = grade === g.id;
           return (
@@ -192,65 +200,71 @@ export default function CarGoalProgress() {
         })}
       </div>
 
-      {/* 2~3. 차량 이미지 — 두 레이어를 겹쳐 크로스페이드한다. 컨테이너 크기는 고정이라 전환 중에도
-          이미지 크기/위치가 흔들리지 않는다. */}
-      <div className="relative h-56 w-full overflow-hidden rounded-[20px] bg-canvas">
-        {bothBroken ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-subtle">
-            <ImageOff size={28} />
-            <span className="text-sm font-semibold">차량 이미지를 불러오지 못했어요</span>
-          </div>
-        ) : (
-          <>
-            <img
-              src={back}
-              alt=""
-              aria-hidden="true"
-              onError={() => markBroken(back)}
-              className="absolute inset-0 h-full w-full object-contain p-6"
-            />
-            {front !== back && (
-              <img
-                key={front}
-                src={front}
-                alt={`${GRADES.find((g) => g.id === grade)?.label} 목표 달성 진행 이미지`}
-                onError={() => markBroken(front)}
-                className="absolute inset-0 h-full w-full object-contain p-6 transition-[opacity,transform] ease-out"
-                style={{
-                  opacity: frontVisible ? 1 : 0,
-                  transform: frontVisible ? 'translateY(0) scale(1)' : 'translateY(6px) scale(0.98)',
-                  transitionDuration: reducedMotion ? '0ms' : `${CROSSFADE_MS}ms`,
-                }}
-              />
+      {/* 2~4. 이미지/금액 입력/진행률 — 등급을 아직 한 번도 고르지 않았으면(grade=null) 통째로 숨긴다.
+          최초 선택 이후에는 항상 그려진다(등급 변경은 위 카드에서 계속 가능). */}
+      {grade !== null && (
+        <>
+          {/* 2~3. 차량 이미지 — 두 레이어를 겹쳐 크로스페이드한다. 컨테이너 크기는 고정이라 전환 중에도
+              이미지 크기/위치가 흔들리지 않는다. */}
+          <div className="relative h-56 w-full overflow-hidden rounded-[20px] bg-canvas">
+            {bothBroken ? (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-subtle">
+                <ImageOff size={28} />
+                <span className="text-sm font-semibold">차량 이미지를 불러오지 못했어요</span>
+              </div>
+            ) : (
+              <>
+                <img
+                  src={back}
+                  alt=""
+                  aria-hidden="true"
+                  onError={() => markBroken(back)}
+                  className="absolute inset-0 h-full w-full object-contain p-6"
+                />
+                {front !== back && (
+                  <img
+                    key={front}
+                    src={front}
+                    alt={`${GRADES.find((g) => g.id === grade)?.label} 목표 달성 진행 이미지`}
+                    onError={() => markBroken(front)}
+                    className="absolute inset-0 h-full w-full object-contain p-6 transition-[opacity,transform] ease-out"
+                    style={{
+                      opacity: frontVisible ? 1 : 0,
+                      transform: frontVisible ? 'translateY(0) scale(1)' : 'translateY(6px) scale(0.98)',
+                      transitionDuration: reducedMotion ? '0ms' : `${CROSSFADE_MS}ms`,
+                    }}
+                  />
+                )}
+              </>
             )}
-          </>
-        )}
-      </div>
+          </div>
 
-      {/* 4. 목표/현재 금액 입력 */}
-      <div className="flex gap-4">
-        <AmountField label="목표 금액" value={goalAmount} onChange={setGoalAmount} />
-        <AmountField label="현재 투자 금액" value={currentAmount} onChange={setCurrentAmount} />
-      </div>
+          {/* 4. 목표/현재 금액 입력 */}
+          <div className="flex gap-4">
+            <AmountField label="목표 금액" value={goalAmount} onChange={setGoalAmount} />
+            <AmountField label="현재 투자 금액" value={currentAmount} onChange={setCurrentAmount} />
+          </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between text-sm font-semibold text-muted">
-          <span>
-            {completed
-              ? '목표 금액을 달성했어요! 🎉'
-              : goalAmount > 0
-                ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
-                : '목표 금액을 입력해주세요.'}
-          </span>
-          <span className="text-navy">{Math.round(progress)}%</span>
-        </div>
-        <div className="h-2.5 overflow-hidden rounded-full bg-line">
-          <div
-            className="h-full rounded-full bg-lime transition-[width] duration-500"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between text-sm font-semibold text-muted">
+              <span>
+                {completed
+                  ? '목표 금액을 달성했어요! 🎉'
+                  : goalAmount > 0
+                    ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
+                    : '목표 금액을 입력해주세요.'}
+              </span>
+              <span className="text-navy">{Math.round(progress)}%</span>
+            </div>
+            <div className="h-2.5 overflow-hidden rounded-full bg-line">
+              <div
+                className="h-full rounded-full bg-lime transition-[width] duration-500"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }
