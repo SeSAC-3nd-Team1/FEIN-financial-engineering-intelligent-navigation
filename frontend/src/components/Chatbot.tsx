@@ -365,12 +365,16 @@ export default function Chatbot({
       <button
         title="물방개에게 물어보기"
         onClick={() => (open ? close() : setOpen(true))}
-        className="fixed bottom-8 right-8 z-[600] flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-lime shadow-[0_10px_28px_rgba(24,36,58,0.24)]"
+        // group: hover 시 아래 강아지 이미지의 group-hover:animate-dog-greet를 함께 트리거한다.
+        // 버튼 자체는 아주 살짝 scale-up만 하고(1.04), 통통 튀는 움직임은 이미지에만 준다(요구사항 5).
+        className="group fixed bottom-8 right-8 z-[600] flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-lime shadow-[0_10px_28px_rgba(24,36,58,0.24)] transition-transform duration-300 ease-out hover:scale-[1.04] motion-reduce:transition-none motion-reduce:hover:scale-100"
       >
         <img
           src="/character-master.png"
           alt="물방개"
-          className="h-12 w-12 object-contain"
+          // 한 번만 재생되는 keyframe(dog-greet, tailwind.config.ts) — hover가 풀리면 다시 hover할
+          // 때만 재생된다(무한 반복 아님). prefers-reduced-motion에서는 아예 재생하지 않는다.
+          className="h-12 w-12 object-contain group-hover:animate-dog-greet motion-reduce:group-hover:animate-none"
         />
       </button>
     </>

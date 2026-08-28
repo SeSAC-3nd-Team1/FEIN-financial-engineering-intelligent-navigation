@@ -91,6 +91,21 @@ export default {
         'heading-sm': ['38px', { lineHeight: '52px', letterSpacing: '-0.035em' }],
         subheading: ['34px', { lineHeight: '46px', letterSpacing: '-0.03em' }],     // 상세 화면 페이지 제목
       },
+      // Chatbot FAB의 강아지 캐릭터 hover 인터랙션 전용 — 위로 살짝 튀며 좌우로 아주 미세하게
+      // 흔들리는 한 번짜리(non-infinite) motion. group-hover에서만 트리거되고 끝은 다시 0으로
+      // 돌아오게 만들어 hover가 애니메이션 도중 끝나도 스냅이 두드러지지 않는다.
+      keyframes: {
+        'dog-greet': {
+          '0%': { transform: 'translateY(0) rotate(0deg)' },
+          '25%': { transform: 'translateY(-4px) rotate(-2deg)' },
+          '55%': { transform: 'translateY(-4px) rotate(2deg)' },
+          '80%': { transform: 'translateY(-2px) rotate(0deg)' },
+          '100%': { transform: 'translateY(0) rotate(0deg)' },
+        },
+      },
+      animation: {
+        'dog-greet': 'dog-greet 450ms ease-out',
+      },
     },
   },
   plugins: [],
