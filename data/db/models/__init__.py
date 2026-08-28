@@ -13,6 +13,7 @@ from db.models.membership import (
     UserAgreement,
 )
 from db.models.trading import (
+    AccountCashDeposit,
     AccountDeposit,
     CashLedger,
     Execution,
@@ -48,6 +49,7 @@ __all__ = [
     "User",
     "UserAgreement",
     "CashLedger",
+    "AccountCashDeposit",
     "AccountDeposit",
     "Execution",
     "FundOperation",

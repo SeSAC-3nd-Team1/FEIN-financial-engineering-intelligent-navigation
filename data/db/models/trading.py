@@ -354,3 +354,42 @@ class AccountDeposit(Base):
     idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AccountCashDeposit(Base):
+    """전략 선택과 무관한 계좌 현금 입금의 멱등 이력이다."""
+
+    __tablename__ = "account_cash_deposits"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "idempotency_key",
+            name="uq_account_cash_deposits_account_idempotency",
+        ),
+        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint("balance_after >= 0", name="balance_nonnegative"),
+        CheckConstraint("status = 'COMPLETED'", name="status_values"),
+        Index(
+            "ix_account_cash_deposits_account_created",
+            "account_id",
+            "created_at",
+        ),
+    )
+    id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True), default=uuid4, primary_key=True
+    )
+    account_id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("virtual_accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    balance_after: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

@@ -48,16 +48,17 @@ interface Props {
    *  해서 App.tsx가 이동과 함께 back target을 같이 기록해야 하기 때문이다. */
   onOpenRebalanceAlerts: () => void;
   /** 미설정 유저 안내 모달의 "투자성향 진단하러 가기" — 투자자 정보 확인(risk) Flow로 보낸다.
-   *  'strategy'/'start'(전략 둘러보기/계좌 연동·입금)는 이미 있는 onNavigate 로 충분해 별도 prop 을 두지 않았다. */
+   *  계좌 준비는 전략 온보딩과 분리된 전용 Flow라 별도 callback으로 받는다. */
   onStartRiskProfile: () => void;
+  onSetupAccount: () => void;
   /** "+ 추가 투자" / "투자금 출금" — 현재는 placeholder 화면(FundManagementComingSoon)으로만 이동한다.
    *  실제 금액 입력~실행 Flow는 Backend/Model contract 확정 후 별도 작업. */
   onOpenFundManagement: (kind: 'deposit' | 'withdraw') => void;
 }
 
-/** 미설정 유저 안내 모달 — 어떤 항목이 비어있는지에 따라 문구/버튼이 달라진다.
- *  세 항목을 동시에 검사해서 "먼저 걸리는 것" 하나만 보여준다(투자성향 → 계좌/입금 → 전략 순). */
-type UnconfiguredReason = "risk" | "account" | "strategy";
+/** 미설정 유저 안내 모달 — 투자성향과 계좌 중 먼저 준비해야 할 항목 하나만 보여준다.
+ *  전략이 없는 현금 계좌는 포트폴리오 접근을 막지 않고 페이지 안의 별도 안내로 다룬다. */
+type UnconfiguredReason = "risk" | "account";
 const UNCONFIGURED_COPY: Record<
   UnconfiguredReason,
   { title: string; message: string; cta: string }
@@ -73,12 +74,6 @@ const UNCONFIGURED_COPY: Record<
     message:
       "자산 분석 및 AI 투자를 진행하기 위해 계좌 연동 및 입금을 진행해주세요.",
     cta: "계좌 연동 / 입금하기",
-  },
-  strategy: {
-    title: "아직 투자 전략을 선택하지 않으셨어요!",
-    message:
-      "맞춤형 AI 포트폴리오를 구성하기 위해 원하시는 투자 전략을 선택해주세요.",
-    cta: "전략 둘러보기",
   },
 };
 
@@ -171,6 +166,7 @@ export default function Portfolio({
   onOpenDetail,
   onOpenRebalanceAlerts,
   onStartRiskProfile,
+  onSetupAccount,
   onOpenFundManagement,
 }: Props) {
   useTradingData();
@@ -180,10 +176,10 @@ export default function Portfolio({
   // 미설정 유저 감지 — investorProfileCompleted(투자성향)는 로그인/새로고침마다 백엔드
   // (/investor-profile/me/latest)에서 다시 복원하는 값이라, 조회가 끝나기 전(isInvestorProfileHydrating)에는
   // 아직 false 인 게 "진짜 미진단"인지 "복원 중이라 아직 모르는 것"인지 구분할 수 없다. 그래서
-  // "계좌에 전략이 이미 선택돼 있다(account.selected_strategy_id)"를 가장 먼저 확인한다 — 실제 투자 시작
-  // Flow는 반드시 투자성향 진단 → 계좌/입금 → 전략 선택 순서를 강제하므로, 전략이 선택돼 있다는 것 자체가
-  // 앞 단계를 모두 마쳤다는 더 확실한 증거다. 이 신호가 없을 때만 세션 상태로 투자성향 → 계좌/입금 → 전략
-  // 순서를 확인한다. 계좌 데이터를 아직 못 불러온 로딩 중(isAccountLoading)에는 account/accountMissing 이
+  // "계좌에 전략이 이미 선택돼 있다(account.selected_strategy_id)"를 가장 먼저 확인한다 — 기존 투자자는
+  // 투자자 정보 복원이 끝나기 전에도 포트폴리오를 막지 않기 위한 신호다. 이 신호가 없을 때는 투자성향과
+  // 계좌 준비 상태만 확인하고, 전략이 없는 현금 계좌는 정상 상태로 허용한다. 계좌 데이터를 아직 못 불러온
+  // 로딩 중(isAccountLoading)에는 account/accountMissing 이
   // 둘 다 초기값(null/false)이라 오판할 수 있어, 두 로딩이 모두 끝난 뒤에만 판정한다.
   const investorProfileCompleted = useAuthStore(
     (state) => state.investorProfileCompleted,
@@ -203,7 +199,7 @@ export default function Portfolio({
           ? "risk"
           : accountMissing
             ? "account"
-            : "strategy";
+            : null;
 
   // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는
   // 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 —
@@ -632,6 +628,23 @@ export default function Portfolio({
         {/* 헤더를 뺀 나머지 영역 전부를 차지한다(min-h-0 이 없으면 flex 자식이 넘칠 때 부모를 밀어낸다). */}
         <main className="flex min-h-0 flex-1 flex-col items-center px-4 pb-6 pt-4 sm:px-8 lg:px-16">
           <div className="flex min-h-0 w-full max-w-[1040px] flex-1 flex-col">
+            {account && !account.selected_strategy_id && (
+              <section className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-card bg-surface-soft px-7 py-5">
+                <div className="flex flex-col gap-1">
+                  <strong className="text-lg">계좌 준비가 완료됐어요</strong>
+                  <p className="text-sm text-muted">
+                    현재 현금 {won(Number(account.cash_balance))}을 보관 중이에요.
+                    전략은 원할 때 별도로 선택할 수 있어요.
+                  </p>
+                </div>
+                <button
+                  onClick={() => onNavigate("strategy-list")}
+                  className="rounded-field bg-navy px-6 py-3 text-sm font-bold text-white"
+                >
+                  전략 둘러보기 →
+                </button>
+              </section>
+            )}
             {/* "나의 포트폴리오" 카드 — 제목/탭은 카드 상단에 걸치고, 그 아래는 넓은 화면(lg 이상)에서
               좌(차트) : 우(투자 정보) = 1:1 그리드(grid-cols-2), 좁은 화면에서는 세로로 쌓는다(grid-cols-1). */}
             <section className="flex flex-col gap-3 rounded-card bg-surface p-8 lg:min-h-0 lg:flex-1">
@@ -771,14 +784,25 @@ export default function Portfolio({
                         onClick={() => onOpenFundManagement('deposit')}
                         className="flex-1 rounded-field bg-navy px-4 py-2 text-xs font-bold text-white"
                       >
-                        + 추가 투자
+                        {account && !account.selected_strategy_id
+                          ? "+ 현금 입금"
+                          : "+ 추가 투자"}
                       </button>
-                      <button
-                        onClick={() => onOpenFundManagement('withdraw')}
-                        className="flex-1 rounded-field bg-surface-soft px-4 py-2 text-xs font-bold text-ink-soft"
-                      >
-                        투자금 출금
-                      </button>
+                      {account && !account.selected_strategy_id ? (
+                        <button
+                          onClick={() => onNavigate("strategy-list")}
+                          className="flex-1 rounded-field bg-surface-soft px-4 py-2 text-xs font-bold text-ink-soft"
+                        >
+                          전략 선택하기
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onOpenFundManagement('withdraw')}
+                          className="flex-1 rounded-field bg-surface-soft px-4 py-2 text-xs font-bold text-ink-soft"
+                        >
+                          투자금 출금
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -881,7 +905,7 @@ export default function Portfolio({
         </main>
       </div>
 
-      {/* 미설정 유저 안내 — 투자성향 진단/계좌 연동·입금/전략 선택 중 하나라도 비어있으면 배경 대시보드
+      {/* 미설정 유저 안내 — 투자성향 진단/계좌 준비 중 하나라도 비어있으면 배경 대시보드
         (목업 데이터 포함)를 블러 처리하고 중앙에 설정을 유도하는 모달을 띄운다. 대시보드 자체엔 블러
         클래스를 추가하지 않아도 backdrop-blur 가 이 오버레이 뒤에 있는 걸 그대로 블러해준다.
         닫기 버튼 없이 CTA 로만 빠져나갈 수 있게 해서 설정을 미루지 않도록 유도한다.
@@ -906,10 +930,7 @@ export default function Portfolio({
                     onStartRiskProfile();
                     break;
                   case "account":
-                    onNavigate("start");
-                    break;
-                  case "strategy":
-                    onNavigate("strategy");
+                    onSetupAccount();
                     break;
                 }
               }}

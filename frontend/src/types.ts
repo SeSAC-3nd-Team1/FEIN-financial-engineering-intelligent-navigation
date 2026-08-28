@@ -26,6 +26,9 @@ export type Screen =
   | "invest-account"
   | "invest-deposit"
   | "invest-confirm"
+  // 계좌 준비 Flow — 전략 선택과 무관하게 계좌를 만들고 현금만 입금할 수 있다.
+  | "account-setup"
+  | "account-deposit"
   | "information"
   | "dashboard"
   | "portfolio"
