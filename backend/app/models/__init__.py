@@ -1,4 +1,5 @@
 from app.models.entities import (
+    AccountCashDeposit,
     AccountDeposit,
     CashLedger,
     Company,
@@ -26,6 +27,7 @@ from app.models.entities import (
 from app.models.market_data import MarketIndex, MarketStock, MarketStockPrice
 
 __all__ = [
+    "AccountCashDeposit",
     "AccountDeposit",
     "CashLedger",
     "Company",

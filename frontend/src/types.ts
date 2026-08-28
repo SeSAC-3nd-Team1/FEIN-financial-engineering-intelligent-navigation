@@ -14,6 +14,8 @@ export type Screen =
   | 'strategy-f4' | 'strategy-coming-soon-loss-avoidance' | 'strategy-preview'
   // 투자 시작 Flow — "이 전략으로 시작하기" 이후, 사용자 준비 상태에 따라 필요한 화면으로만 분기
   | 'invest-terms' | 'invest-account' | 'invest-deposit' | 'invest-confirm'
+  // 계좌 준비 Flow — 전략 선택과 무관하게 계좌를 만들고 현금만 입금할 수 있다.
+  | 'account-setup' | 'account-deposit'
   | 'information' | 'dashboard' | 'portfolio' | 'portfolio-detail' | 'stock' | 'transactions' | 'transaction-detail'
   | 'rebalance-alerts' | 'all-holdings'
   // 자금관리: 추가 투자/출금 모두 금액 입력 → 확인 → 실행 대기(*-pending, FundManagementComingSoon

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import AllHoldings from "./pages/AllHoldings";
+import AccountDeposit from "./pages/AccountDeposit";
+import AccountSetup from "./pages/AccountSetup";
 import Chatbot from "./components/Chatbot";
 import Dashboard from "./pages/Dashboard";
 import FundAddAmount from "./pages/FundAddAmount";
@@ -103,6 +105,8 @@ const PROTECTED_SCREENS: Screen[] = [
   "dashboard",
   "portfolio",
   "portfolio-detail",
+  "account-setup",
+  "account-deposit",
   "stock",
   "start",
   "transactions",
@@ -234,6 +238,14 @@ export default function App() {
   const strategy =
     strategyCatalog.find((item) => item.id === strategyId) ?? null;
   useEffect(() => {
+    if (!STRATEGY_DATA_SCREENS.includes(screen)) {
+      setIsStrategyCatalogLoading(false);
+      return;
+    }
+    if (strategyCatalog.length > 0) {
+      setIsStrategyCatalogLoading(false);
+      return;
+    }
     let cancelled = false;
     setIsStrategyCatalogLoading(true);
     setStrategyCatalogError(null);
@@ -260,7 +272,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [strategyCatalogRetry]);
+  }, [screen, strategyCatalog.length, strategyCatalogRetry]);
   const [stockCode, setStockCode] = useState(
     persistedNav.stockCode ?? "005930",
   );
@@ -310,6 +322,8 @@ export default function App() {
   // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
   const [investmentAmount, setInvestmentAmount] = useState(1_000_000);
   const [investmentMode, setInvestmentMode] = useState<OperationMode>("auto");
+  const [accountSetupMode, setAccountSetupMode] =
+    useState<OperationMode>("manual");
   const [investmentAgreements, setInvestmentAgreements] = useState<
     SignupPayload["agreements"]
   >([]);
@@ -326,6 +340,8 @@ export default function App() {
   );
   const accessToken = useAuthStore((s) => s.accessToken);
   const ensureAccount = useTradingStore((s) => s.ensureAccount);
+  const prepareAccount = useTradingStore((s) => s.prepareAccount);
+  const depositCash = useTradingStore((s) => s.depositCash);
   const tradingAccount = useTradingStore((s) => s.account);
   const portfolioStrategy = resolvePortfolioStrategy(
     strategyCatalog,
@@ -575,6 +591,12 @@ export default function App() {
         setActiveMode("auto");
       } else if (semiAutoActive && autoActive) {
         setActiveMode("manual"); // 위 주석 참고 — 둘 다 활성이면 기존 앱 기본값(반자동)으로 수렴
+      } else if (semiAuto && !auto) {
+        setActiveMode("manual");
+      } else if (auto && !semiAuto) {
+        setActiveMode("auto");
+      } else if (semiAuto && auto) {
+        setActiveMode("manual");
       } else {
         markActiveModeChecked();
       }
@@ -743,6 +765,30 @@ export default function App() {
     setAccountActiveStrategy(mode, strategyId);
     setActiveMode(mode);
     navigate("portfolio");
+  };
+
+  const prepareStandaloneAccount = async (mode: OperationMode) => {
+    if (!accessToken) throw new Error("로그인이 필요합니다.");
+    setAccountSetupMode(mode);
+    setActiveMode(mode);
+    await prepareAccount(accessToken, toAccountOperationMode(mode));
+    setScreen("account-deposit");
+  };
+
+  const depositStandaloneCash = async (
+    amount: number,
+    idempotencyKey: string,
+  ) => {
+    if (!accessToken || !tradingAccount) {
+      throw new Error("입금할 계좌를 확인할 수 없습니다.");
+    }
+    await depositCash(
+      accessToken,
+      tradingAccount.id,
+      amount,
+      idempotencyKey,
+    );
+    setScreen("portfolio");
   };
 
   return (
@@ -1265,6 +1311,32 @@ export default function App() {
         />
       )}
 
+      {screen === "account-setup" && (
+        <AccountSetup
+          userName={userName}
+          initialMode={activeMode ?? accountSetupMode}
+          onNavigate={navigate}
+          onBack={() => setScreen("portfolio")}
+          onComplete={prepareStandaloneAccount}
+        />
+      )}
+
+      {screen === "account-deposit" && (
+        <AccountDeposit
+          userName={userName}
+          mode={
+            tradingAccount
+              ? toOperationMode(tradingAccount.operation_mode)
+              : accountSetupMode
+          }
+          account={tradingAccount}
+          onNavigate={navigate}
+          onBack={() => setScreen("account-setup")}
+          onDeposit={depositStandaloneCash}
+          onDefer={() => setScreen("portfolio")}
+        />
+      )}
+
       {screen === "information" && (
         <InformationExam userName={userName} onNavigate={navigate} />
       )}
@@ -1284,7 +1356,7 @@ export default function App() {
           Portfolio.tsx, 자동매매는 AI가 이미 실행을 마친 PortfolioAuto.tsx. 계좌를 아직 안 만든 경우(null)는
           기존 기본값인 반자동으로 보여준다. */}
       {screen === "portfolio" &&
-        (activeMode === "auto" ? (
+        (activeMode === "auto" && tradingAccount?.selected_strategy_id ? (
           <PortfolioAuto
             userName={userName}
             onNavigate={navigate}
@@ -1315,12 +1387,21 @@ export default function App() {
               setScreen("rebalance-alerts");
             }}
             onStartRiskProfile={() => startInvestorProfile("risk-result")}
+            onSetupAccount={() => {
+              setAccountSetupMode(activeMode ?? "manual");
+              setScreen("account-setup");
+            }}
             onOpenFundManagement={(kind) => {
               // STEP1↔STEP2 사이에서만 쓰는 일회성 draft 금액 — 이전에 종료한 Flow에서 남은 값이
               // 새 Flow 진입 시 그대로 미리 채워져 보이지 않도록 매번 새로 시작할 때 0으로 되돌린다.
               if (kind === "deposit") {
-                setFundAddAmount(0);
-                setScreen("fund-add");
+                if (!tradingAccount?.selected_strategy_id) {
+                  setAccountSetupMode(activeMode ?? "manual");
+                  setScreen("account-deposit");
+                } else {
+                  setFundAddAmount(0);
+                  setScreen("fund-add");
+                }
               } else {
                 setFundWithdrawAmount(0);
                 setScreen("fund-withdraw");

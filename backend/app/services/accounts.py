@@ -2,13 +2,16 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ServiceError
-from app.models import VirtualAccount
+from app.models import AccountCashDeposit, CashLedger, VirtualAccount
 from app.repositories import TradingRepository
 from app.schemas.api import (
+    AccountCashDepositRequest,
+    AccountCashDepositResponse,
     OperationMode,
     OperationModeChangeNoticeResponse,
     OperationModeSwitchResponse,
@@ -55,6 +58,92 @@ class AccountService:
 
     def get_all_mine(self, user_id: int) -> list[VirtualAccount]:
         return self.repo.accounts_for_user(user_id)
+
+    def deposit_cash(
+        self,
+        user_id: int,
+        account_id: UUID,
+        request: AccountCashDepositRequest,
+    ) -> AccountCashDepositResponse:
+        """전략을 선택하지 않은 계좌에도 가상 현금을 멱등하게 입금한다."""
+
+        try:
+            account = self.repo.owned_account(account_id, user_id, lock=True)
+            if account is None:
+                raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
+            if account.status != "ACTIVE":
+                raise ServiceError(
+                    "ACCOUNT_NOT_ACTIVE",
+                    "사용할 수 없는 가상계좌입니다.",
+                    409,
+                )
+
+            existing = self.repo.account_cash_deposit_by_idempotency(
+                account.id,
+                request.idempotency_key,
+            )
+            if existing is not None:
+                if Decimal(existing.amount) != Decimal(request.amount):
+                    raise ServiceError(
+                        "DEPOSIT_IDEMPOTENCY_CONFLICT",
+                        "같은 멱등성 키를 다른 입금 요청에 사용할 수 없습니다.",
+                        409,
+                    )
+                self.session.commit()
+                return AccountCashDepositResponse(
+                    deposit_id=existing.id,
+                    account=account,
+                    amount=existing.amount,
+                    balance_after=existing.balance_after,
+                )
+
+            amount = Decimal(request.amount).quantize(Decimal("0.01"))
+            balance_after = (Decimal(account.cash_balance) + amount).quantize(
+                Decimal("0.01")
+            )
+            current_principal = Decimal(
+                account.invested_principal
+                if account.invested_principal is not None
+                else account.initial_cash
+            )
+            deposit = AccountCashDeposit(
+                id=uuid4(),
+                account_id=account.id,
+                amount=amount,
+                balance_after=balance_after,
+                status="COMPLETED",
+                idempotency_key=request.idempotency_key,
+                completed_at=datetime.now(UTC),
+            )
+            account.cash_balance = balance_after
+            if Decimal(account.initial_cash) == 0:
+                account.initial_cash = amount
+            account.invested_principal = (current_principal + amount).quantize(
+                Decimal("0.01")
+            )
+            self.session.add(deposit)
+            self.session.add(
+                CashLedger(
+                    account_id=account.id,
+                    transaction_type="DEPOSIT",
+                    amount=amount,
+                    balance_after=balance_after,
+                    reference_type="ACCOUNT_CASH_DEPOSIT",
+                    reference_id=str(deposit.id),
+                )
+            )
+            self.session.commit()
+            self.session.refresh(account)
+            self.session.refresh(deposit)
+            return AccountCashDepositResponse(
+                deposit_id=deposit.id,
+                account=account,
+                amount=deposit.amount,
+                balance_after=deposit.balance_after,
+            )
+        except Exception:
+            self.session.rollback()
+            raise
 
     def switch_active_operation_mode(
         self,
