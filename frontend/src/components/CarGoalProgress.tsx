@@ -3,8 +3,10 @@ import { ImageOff, X } from 'lucide-react';
 import {
   ApiError, getCarGoalApi, upsertCarGoalApi, type CarGrade,
 } from '../lib/backendApi';
+import { useTradingData } from '../hooks/useTradingData';
 import { digitsOnly, won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
+import { useTradingStore } from '../store/tradingStore';
 
 const GRADES: { id: CarGrade; label: string; description: string }[] = [
   { id: 'INEX', label: '보급차', description: '가볍게 시작하는 실속형 목표' },
@@ -116,6 +118,10 @@ type LoadStatus = 'loading' | 'ready' | 'error';
 
 export default function CarGoalProgress() {
   const accessToken = useAuthStore((s) => s.accessToken);
+  // Portfolio/Dashboard와 같은 훅·스토어를 그대로 써서 "나의 투자"(portfolio.total_assets)를
+  // 그대로 가져온다 — "현재 투자 금액"은 여기서 직접 입력받지 않고 항상 이 값을 따라간다.
+  useTradingData();
+  const portfolio = useTradingStore((s) => s.portfolio);
   const reducedMotion = usePrefersReducedMotion();
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<LoadStatus>('loading');
@@ -198,6 +204,15 @@ export default function CarGoalProgress() {
     setCurrentAmountState(next);
     if (grade) persist({ grade, goalAmount, currentAmount: next });
   };
+
+  // 계좌가 없거나 아직 포지션이 없으면 total_assets 도 0이다 — 그대로 0으로 둔다(별도 목업 없음).
+  const livePortfolioAmount = portfolio ? Number(portfolio.total_assets) : 0;
+  useEffect(() => {
+    if (status !== 'ready') return;
+    if (livePortfolioAmount === currentAmount) return;
+    setCurrentAmount(livePortfolioAmount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [livePortfolioAmount, status]);
 
   const markBroken = (src: string) => setBroken((prev) => (prev[src] ? prev : { ...prev, [src]: true }));
   const bothBroken = broken[back] && broken[front];
@@ -333,10 +348,18 @@ export default function CarGoalProgress() {
             )}
           </div>
 
-          {/* 4. 목표/현재 금액 입력 */}
+          {/* 4. 목표 금액은 직접 입력, 현재 투자 금액은 포트폴리오의 "나의 투자"(총자산)를 그대로
+              보여준다 — 여기서 따로 입력받지 않는다(위 sync effect가 항상 최신값으로 맞춰둔다). */}
           <div className="flex gap-4">
             <AmountField label="목표 금액" value={goalAmount} onChange={setGoalAmount} />
-            <AmountField label="현재 투자 금액" value={currentAmount} onChange={setCurrentAmount} />
+            <div className="flex flex-1 flex-col gap-2">
+              <span className="text-sm font-semibold text-muted">현재 투자 금액</span>
+              <div className="flex items-center gap-2 rounded-field bg-canvas px-4 py-3.5 shadow-[0_0_0_1px_#E5E9E3_inset]">
+                <span className="w-full text-lg font-bold tracking-[-0.02em]">{currentAmount.toLocaleString('ko-KR')}</span>
+                <span className="shrink-0 text-base font-semibold text-muted">원</span>
+              </div>
+              <span className="text-[12px] text-subtle">포트폴리오의 나의 투자 금액과 자동으로 맞춰져요.</span>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
