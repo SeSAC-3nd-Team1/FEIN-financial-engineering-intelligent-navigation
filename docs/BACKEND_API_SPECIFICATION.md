@@ -58,7 +58,7 @@ Base URL: `/api/v1` · Content-Type: `application/json` · 인증: `Authorizatio
 | 기업 기본정보             | GET    | `/companies/{stock_code}`                                                           | 불필요      | 200, 404                          | Agent/향후 기업 화면                                      |
 | 기업 재무정보             | GET    | `/companies/{stock_code}/financials?year=&quarter=`                                 | 불필요      | 200, 404, 422                     | Agent/향후 기업 화면                                      |
 | 기업 공시                 | GET    | `/companies/{stock_code}/disclosures?start_date=&end_date=&disclosure_type=&limit=` | 불필요      | 200, 404, 422                     | Disclosure Agent                                          |
-| 투자성향 AI 분석          | POST   | `/investor-profile/analyze`                                                         | 필요        | 200, 400, 401, 422, 502, 503, 504 | RiskProfile/RiskResult                                    |
+| 투자성향 점수 분석        | POST   | `/investor-profile/analyze`                                                         | 필요        | 200, 400, 401, 403, 422           | RiskProfile/RiskResult                                    |
 | 최신 투자성향             | GET    | `/investor-profile/me/latest`                                                       | 필요        | 200, 401, 404                     | RiskResult                                                |
 | AI 전략 추천              | POST   | `/strategy-recommendations`                                                         | 필요/소유권 | 201, 401, 403, 404, 502, 503, 504 | RiskResult                                                |
 | 최신 AI 전략 추천         | GET    | `/strategy-recommendations/me/latest`                                               | 필요        | 200, 401, 404                     | RiskResult                                                |
@@ -622,9 +622,9 @@ Query parameter는 `start_date`, `end_date`(선택, `YYYY-MM-DD`), `disclosure_t
 
 ### POST `/investor-profile/analyze`
 
-인증된 사용자가 `v1` 설문의 8개 `question_id`와 `option_id`를 제출하면 Backend가 서버 카탈로그로 검증·정규화하고 Azure OpenAI 분석 결과를 PostgreSQL에 저장한 뒤 `assessment_id`와 함께 반환한다. 원본 답변은 저장하지 않는다.
+인증된 사용자가 `v1` 설문의 8개 `question_id`와 `option_id`를 제출하면 Backend가 서버 카탈로그로 검증·정규화하고 `risk-score-v1` 고정 점수표로 0~100점과 5단계 성향을 계산한다. 점수와 분류 결과를 PostgreSQL에 저장한 뒤 `assessment_id`와 함께 반환하며 원본 답변은 저장하지 않는다.
 
-상세 request/response, 전체 문항 ID, 선택지 ID와 오류 계약은 [투자성향 AI 분석 API 명세](INVESTOR_PROFILE_API_SPECIFICATION.md)를 따른다.
+상세 request/response, 전체 문항 ID, 선택지 ID와 오류 계약은 [투자성향 점수 분석 API 명세](INVESTOR_PROFILE_API_SPECIFICATION.md)를 따른다.
 
 ### POST `/strategy-recommendations`
 

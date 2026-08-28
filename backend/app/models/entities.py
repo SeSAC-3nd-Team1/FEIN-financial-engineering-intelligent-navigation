@@ -587,6 +587,10 @@ class InvestorProfileAssessment(Base):
             "horizon BETWEEN 1 AND 5",
             name="ck_investor_profile_assessments_horizon_range",
         ),
+        CheckConstraint(
+            "risk_score IS NULL OR risk_score BETWEEN 0 AND 100",
+            name="ck_investor_profile_assessments_risk_score_range",
+        ),
         Index("ix_investor_profile_assessments_user_created", "user_id", "created_at"),
     )
     id: Mapped[UUID] = mapped_column(
@@ -597,6 +601,7 @@ class InvestorProfileAssessment(Base):
     )
     questionnaire_version: Mapped[str] = mapped_column(String(20))
     analysis_version: Mapped[str] = mapped_column(String(20))
+    risk_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     profile_type: Mapped[str] = mapped_column(String(20))
     stability: Mapped[int] = mapped_column(SmallInteger)
     return_seeking: Mapped[int] = mapped_column(SmallInteger)
