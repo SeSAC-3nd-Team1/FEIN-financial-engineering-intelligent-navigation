@@ -359,11 +359,14 @@ export default function CarGoalProgress() {
           </div>
 
           <div className="flex flex-1 flex-col justify-center gap-7">
-            {/* 3.5. 물방개 — 진행률(%) 위쪽 빈 공간을 상시 채운다. 달성 전에는 응원하는 말투,
-                달성하면 character-celebrate.png의 축하 연출과 맞춰 문구도 축하로 바뀐다. */}
-            <div className="flex items-center gap-3 rounded-field bg-[#F8FCEE] px-4 py-3">
-              <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-16 w-auto shrink-0 object-contain" />
-              <span className="text-sm font-semibold text-[#3F5222]">
+            {/* 3.5. 물방개 — 진행률(%) 위쪽 빈 공간을 상시 채운다. 박스로 감싸면 오히려 튀어
+                보여서, 카드 배경 위에 그대로 얹는다(Chatbot.tsx 빈 대화 상태와 같은 방식) —
+                이미지 살짝 겹치게, 말풍선 없이 문구만 옆에 자연스럽게 둔다. 달성 전에는
+                응원하는 말투, 달성하면 character-celebrate.png의 축하 연출과 맞춰 문구도
+                축하로 바뀐다. */}
+            <div className="-mb-2 -mt-4 flex items-center gap-2">
+              <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-20 w-auto shrink-0 object-contain" />
+              <span className="text-sm font-semibold text-muted">
                 {completed ? '물방개도 함께 축하하고 있어요!' : '물방개가 목표 달성을 응원하고 있어요!'}
               </span>
             </div>
