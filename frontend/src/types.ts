@@ -158,6 +158,10 @@ export interface KnowledgeArticle {
   category: string;
   readingMinutes: number;
   link: string;
+  sourceName: string;
+  sourceUrl: string;
+  reviewedAt: string;
+  contentVersion: string;
 }
 export interface ListResponse<T> {
   items: T[];
