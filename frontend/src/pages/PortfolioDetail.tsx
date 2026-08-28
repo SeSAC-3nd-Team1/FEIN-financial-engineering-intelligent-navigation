@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import Header from '../components/Header';
-import {
-  ALL_HOLDINGS as MOCK_HOLDINGS,
-  HOLD_TOTAL as MOCK_HOLD_TOTAL, STOCK_INFO,
-} from '../data/holdings';
+import { buildDetailedPortfolioHoldings } from '../lib/portfolioModel';
 import { toAccountOperationMode } from '../data/fees';
 import { useTradingData } from '../hooks/useTradingData';
 import {
@@ -142,28 +139,17 @@ export default function PortfolioDetail({
   // 실패"를 구분하지 못해, 로딩/오류 중에 실계좌 사용자에게 목업 데이터가 노출될 수 있다.
   // 실 포지션에는 investor-facing 메타(섹터/AI 편입 사유 등)가 없어 STOCK_INFO 코드로 목업과 매칭해 보완한다.
   const HOLD_TOTAL = Number(portfolio?.total_assets ?? 0);
-  const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return [];
-    if (!portfolio) return [];
-    const assets = Number(portfolio.total_assets);
-    return portfolio.positions.map((position) => {
-      const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
-            return {
-        ...(matched ?? {}),
-        name: matched?.name ?? position.stock_code,
-        pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
-        chg: Number(position.return_rate),
-        principal: Number(position.purchase_amount),
-        returnRate: Number(position.return_rate),
-      };
-    });
-  }, [portfolio, accountMissing]);
+    const ALL_HOLDINGS = useMemo(
+    () => buildDetailedPortfolioHoldings(portfolio),
+    [portfolio],
+  );
 
   /** 오늘 손익 = 실 포지션이 있으면 평가손익(unrealized_profit), 없으면 평가금액×등락률(목업 근사) */
   const gains = useMemo(
     () => ALL_HOLDINGS.map((h) => {
-      const code = STOCK_INFO[h.name]?.code;
-      const position = portfolio?.positions.find((item) => item.stock_code === code);
+            const position = portfolio?.positions.find(
+        (item) => item.stock_code === h.stockCode,
+      );
       return {
         ...h,
         gain: position
@@ -298,7 +284,7 @@ export default function PortfolioDetail({
                     <p className="py-6 text-center text-[15px] text-subtle">아직 보유 중인 종목이 없어요.</p>
                   )}
                   {previewHoldings.map((h) => {
-                    const stockCode = STOCK_INFO[h.name]?.code;
+                    const stockCode = h.stockCode;
                     const alert = displayAlerts.find((a) => a.stockName === h.name);
                     return (
                       <button

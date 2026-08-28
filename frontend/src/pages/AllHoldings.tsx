@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronsUpDown, ChevronUp, X } from 'lucide-react';
 import Header from '../components/Header';
-import { ALL_HOLDINGS as MOCK_HOLDINGS, STOCK_INFO } from '../data/holdings';
+import { buildDetailedPortfolioHoldings } from '../lib/portfolioModel';
 import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
 import { getDisplayAlerts } from '../lib/rebalancing';
@@ -41,22 +41,10 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
   // 계좌가 없다고 확인된 경우에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는 아직 로딩 중/
   // 조회 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 — PortfolioDetail
   // 과 동일한 대체 규칙.
-  const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return [];
-    if (!portfolio) return [];
-    const assets = Number(portfolio.total_assets);
-    return portfolio.positions.map((position) => {
-      const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
-            return {
-        ...(matched ?? {}),
-        name: matched?.name ?? position.stock_code,
-        pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
-        chg: Number(position.return_rate),
-        principal: Number(position.purchase_amount),
-        returnRate: Number(position.return_rate),
-      };
-    });
-  }, [portfolio, accountMissing]);
+    const ALL_HOLDINGS = useMemo(
+    () => buildDetailedPortfolioHoldings(portfolio),
+    [portfolio],
+  );
 
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -122,7 +110,7 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
                     </tr>
                   )}
                   {sortedHoldings.map((h) => {
-                    const stockCode = STOCK_INFO[h.name]?.code;
+                    const stockCode = h.stockCode;
                     const alert = displayAlerts.find((a) => a.stockName === h.name);
                     return (
                       <tr

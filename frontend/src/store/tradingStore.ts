@@ -114,7 +114,17 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           });
           return;
         }
-        set({ error: apiError, isLoading: false, isRefreshing: false });
+                set({
+          account: null,
+          portfolio: null,
+          decisions: null,
+          orders: [],
+          executions: [],
+          accountMissing: false,
+          error: apiError,
+          isLoading: false,
+          isRefreshing: false,
+        });
         throw apiError;
       }
     })();

@@ -5,10 +5,8 @@ import {
 } from 'recharts';
 import { Check, Maximize2, X } from 'lucide-react';
 import Header from '../components/Header';
-import {
-  ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL,
-  PORTFOLIO_TREND, STOCK_CONTRIBUTION, STOCK_INFO,
-} from '../data/holdings';
+import { buildPortfolioHoldings } from '../lib/portfolioModel';
+import { PORTFOLIO_TREND } from '../data/holdings';
 import { useTradingData } from '../hooks/useTradingData';
 import { getPortfolioHistoryApi, type PortfolioHistoryPeriod, type PortfolioHistoryResponse } from '../lib/backendApi';
 import { getDisplayAlerts } from '../lib/rebalancing';
@@ -46,8 +44,8 @@ const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
 const TREND_PERIODS: { label: string; value: PortfolioHistoryPeriod; mockN: number }[] = [
   { label: '1개월', value: '1M', mockN: 2 },
   { label: '3개월', value: '3M', mockN: 3 },
-  { label: '1년', value: '1Y', mockN: PORTFOLIO_TREND.length },
-  { label: '전체', value: 'ALL', mockN: PORTFOLIO_TREND.length },
+  { label: '1년', value: '1Y', mockN: 0 },
+  { label: '전체', value: 'ALL', mockN: 0 },
 ];
 
 /** 도넛(보유 비중) 색 — 선택된 조각만 라임, 나머지는 순환 셰이드 */
@@ -94,7 +92,7 @@ const TX_BADGE: Record<TransactionRecord['type'], string> = {
 };
 
 /** 실 계좌가 없을 때 "내 투자 총금액"에 쓰는 목업 투자 원금 합계 */
-const MOCK_PRINCIPAL_TOTAL = MOCK_HOLDINGS.reduce((sum, h) => sum + (h.principal ?? 0), 0);
+
 
 /** `/portfolio` (운용방식 = 자동매매 유저용) — Portfolio.tsx(반자동)와 도넛/차트/투자정보 레이아웃은 동일하고,
  *  "AI의 리밸런싱 제안" 위젯만 다르다. 반자동은 사용자가 승인해야 하는 "제안"이지만, 자동매매는 AI가
@@ -113,20 +111,10 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
   // 계좌가 없다고 확인된 경우에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는 아직 로딩 중/조회
   // 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 — 로딩/오류 중에 실계좌
   // 사용자에게 목업 20종목이 노출되면 안 된다.
-  const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return [];
-    if (!portfolio) return [];
-    const assets = Number(portfolio.total_assets);
-    return portfolio.positions.map((position) => {
-      const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
-            return {
-        ...(matched ?? {}),
-        name: matched?.name ?? position.stock_code,
-        pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
-        chg: Number(position.return_rate),
-      };
-    });
-  }, [portfolio, accountMissing]);
+    const ALL_HOLDINGS = useMemo(
+    () => buildPortfolioHoldings(portfolio),
+    [portfolio],
+  );
 
   // 자산 증감 요약 — 계좌가 없다고 확인된 경우(accountMissing)에만 목업 값을 쓰고, 그 외(로딩 중/조회
   // 실패로 portfolio를 못 받은 경우 포함)에는 실 계좌 값(아직 없으면 0)을 쓴다. 실 계좌가 있으면
@@ -214,8 +202,10 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
   const hasHoldings = ALL_HOLDINGS.length > 0;
   const safeSelectedIndex = Math.min(selectedHoldingIdx, Math.max(ALL_HOLDINGS.length - 1, 0));
   const selectedHolding = hasHoldings ? ALL_HOLDINGS[safeSelectedIndex] : null;
-  const targetPct = selectedHolding ? (selectedHolding.target ?? selectedHolding.pct) : 0;
-  const weightDiff = selectedHolding ? Math.round((selectedHolding.pct - targetPct) * 10) / 10 : 0;
+  const targetPct = selectedHolding?.target ?? null;
+  const weightDiff = selectedHolding && targetPct != null
+    ? Math.round((selectedHolding.pct - targetPct) * 10) / 10
+    : null;
 
   // 도넛 차트 + 중앙 라벨 — 컬럼 안의 작은 버전과 "크게 보기" 팝업의 확대 버전이 이 렌더 함수를 그대로 공유한다.
   // sizeClass 만 다르게 넘겨서 같은 인터랙션(호버 라벨/클릭 선택/activeShape 확대)을 두 크기에서 동일하게 쓴다.
@@ -496,9 +486,9 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
                     <Insight compact>
                       {!selectedHolding
                         ? '아직 보유 중인 종목이 없어요. 계좌에 입금하면 여기에 배분이 채워져요.'
-                        : weightDiff > 0
+                        : weightDiff != null && weightDiff > 0
                           ? `${selectedHolding.name} 비중이 목표보다 높아요.`
-                          : weightDiff < 0
+                          : weightDiff != null && weightDiff < 0
                             ? `${selectedHolding.name} 비중이 목표보다 낮아요.`
                             : `${selectedHolding.name} 비중이 목표와 일치해요.`}
                     </Insight>

@@ -15,6 +15,7 @@ function toDisplayAlert(p: RebalancingProposalResponse): AiAlert {
   const over = diff > 0;
   return {
     id: `rebalance-${p.stock_code}`,
+    stockCode: p.stock_code,
     stockName: name,
     kind: '리밸런싱',
     badge: '리밸런싱 제안',

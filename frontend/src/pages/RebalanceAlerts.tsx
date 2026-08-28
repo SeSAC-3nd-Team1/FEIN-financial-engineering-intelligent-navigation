@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import Header from '../components/Header';
-import { ALL_HOLDINGS as MOCK_HOLDINGS, HOLD_TOTAL as MOCK_HOLD_TOTAL, STOCK_INFO } from '../data/holdings';
+import { buildDetailedPortfolioHoldings } from '../lib/portfolioModel';
 import { useTradingData } from '../hooks/useTradingData';
 import type { StrategyResponse } from '../lib/backendApi';
 import { getDisplayAlerts } from '../lib/rebalancing';
@@ -47,22 +47,10 @@ export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack
   // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는
   // 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 빈 배열/0원을 써서 실제 빈 상태로 보여준다.
   const HOLD_TOTAL = Number(portfolio?.total_assets ?? 0);
-  const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return [];
-    if (!portfolio) return [];
-    const assets = Number(portfolio.total_assets);
-    return portfolio.positions.map((position) => {
-      const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
-            return {
-        ...(matched ?? {}),
-        name: matched?.name ?? position.stock_code,
-        pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
-        chg: Number(position.return_rate),
-        principal: Number(position.purchase_amount),
-        returnRate: Number(position.return_rate),
-      };
-    });
-  }, [portfolio, accountMissing]);
+    const ALL_HOLDINGS = useMemo(
+    () => buildDetailedPortfolioHoldings(portfolio),
+    [portfolio],
+  );
 
   // 리밸런싱 "조정 전/후" 상세 시트
   const [rebalanceSheetId, setRebalanceSheetId] = useState<string | null>(null);
@@ -70,13 +58,14 @@ export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack
   // 어떤 결정을 내렸는지 세션 동안 기억한다 — PortfolioDetail 의 같은 위젯과 동일한 패턴.
   const [alertDecisions, setAlertDecisions] = useState<Record<string, 'adjusted' | 'held'>>({});
   const rebalanceAlert = displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
-  const rebalanceHolding = rebalanceAlert ? ALL_HOLDINGS.find((h) => h.name === rebalanceAlert.stockName) : undefined;
+    const rebalanceHolding = rebalanceAlert
+  ? ALL_HOLDINGS.find((h) => h.stockCode === rebalanceAlert.stockCode)
+  : undefined;
   // 실 제안이면 API가 이미 계산해 준 현재/목표 비중·조정금액을 그대로 쓴다 — 목업일 때만 보유 종목 목록에서
   // 같은 이름을 찾아(이름 매칭이라 실패할 수 있음) 대신 파생시킨다.
   const rebalanceCurrentPct = rebalanceAlert?.currentWeight ?? (rebalanceHolding ? rebalanceHolding.pct : 0);
-  const rebalanceTargetPct = rebalanceAlert?.targetWeight ?? (rebalanceHolding ? rebalanceHolding.target ?? rebalanceHolding.pct : 0);
-  const rebalanceAdjustAmount = rebalanceAlert?.recommendedAmount
-    ?? (rebalanceHolding ? Math.round((HOLD_TOTAL * (rebalanceHolding.pct - rebalanceTargetPct)) / 100) : 0);
+  const rebalanceTargetPct = rebalanceAlert?.targetWeight ?? 0;
+    const rebalanceAdjustAmount = rebalanceAlert?.recommendedAmount ?? 0;
 
   return (
     <div className="min-h-screen bg-canvas">
