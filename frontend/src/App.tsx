@@ -94,6 +94,24 @@ function loadPersistedNav(): Partial<PersistedNav> {
     return {};
   }
 }
+
+/**
+ * Browser Back/Forward 동기화(Phase 1, Priority 1 화면 한정: 회원가입 4단계 · strategy-list의
+ * 3개 하위 화면 · 로그인) — history.state에 최소 정보만 싣는다. sessionStorage(SESSION_KEY)는
+ * 새로고침 복원을 그대로 전담하고, 여기서는 Back/Forward만 다룬다 — 두 메커니즘은 서로 대체하지
+ * 않는다(section 16). Priority 1 밖의 화면 전환은 이 state를 전혀 건드리지 않는다.
+ */
+interface FeinHistoryState {
+  fein: true;
+  screen: Screen;
+  depth: number;
+}
+function readFeinHistoryState(): FeinHistoryState | null {
+  const state = window.history.state as Partial<FeinHistoryState> | null;
+  if (!state?.fein) return null;
+  return { fein: true, screen: state.screen as Screen, depth: state.depth ?? 0 };
+}
+
 /** 로그인이 필요한 화면 — 새로고침 후 토큰이 없거나 만료된 걸로 확인되면 이 화면들에서는 로그인으로 돌려보낸다.
  *  투자 시작 Flow(invest-*) 화면들도 로그인 이후에만 진입 가능한 흐름이라 함께 포함한다.
  *  'strategy'(Strategy Detail)와 'strategy-list'는 의도적으로 제외한다 — 비회원 접근 정책상 전략을
@@ -497,6 +515,48 @@ export default function App() {
     setScreen(target);
   };
 
+  /**
+   * Phase 1 Browser Back/Forward 동기화 헬퍼 — Priority 1 화면 전환에서만 쓴다(다른 곳의 기존
+   * setScreen(...) 호출은 그대로 둔다, section 17). pushScreen 앞에서 "현재 entry"를 먼저
+   * 지금 screen 값으로 맞춰두는 이유: strategy-list처럼 진입 자체는 Priority 1 대상이 아닌 화면은
+   * history.state가 그 이전 화면을 stale하게 들고 있을 수 있어서, 그 상태에서 곧장 push하면 나중에
+   * 뒤로 갔을 때 엉뚱한 화면(예: strategy-list 대신 home)이 복원된다. 이 자기 보정 덕분에 Priority 1
+   * 진입점(strategy-list, login 등)을 별도로 push/replace하지 않아도 항상 정확한 back target을 갖는다.
+   */
+  const pushScreen = (target: Screen) => {
+    const current = readFeinHistoryState();
+    if (!current || current.screen !== screen) {
+      window.history.replaceState(
+        { fein: true, screen, depth: current?.depth ?? 0 },
+        "",
+      );
+    }
+    const depth = (current?.depth ?? 0) + 1;
+    window.history.pushState({ fein: true, screen: target, depth }, "");
+    setScreen(target);
+  };
+
+  /** history.state만 현재 화면에 맞게 고쳐 쓴다(새 entry를 만들지 않음) — login/risk처럼 "뒤로가기로
+   *  다시 보이면 안 되는" 화면을 막 벗어난 직후에만 쓴다(아래 replace effect 참고). login/risk 자체를
+   *  push한 적이 없으므로 이 replace가 없어도 Back으로 재노출되지는 않는다 — 다만 그보다 앞서 push된
+   *  entry(예: 회원가입 STEP)가 최신 화면과 어긋난 채 남지 않도록 정리하는 역할이다. */
+  const replaceScreen = (target: Screen) => {
+    const depth = readFeinHistoryState()?.depth ?? 0;
+    window.history.replaceState({ fein: true, screen: target, depth }, "");
+  };
+
+  /** Priority 1 화면의 기존 "이전"/"← 목록" 버튼 — 뒤로 갈 FE!N history entry가 실제로 있으면
+   *  history.back()으로 popstate를 태워 Browser Back과 완전히 같은 경로를 타게 한다(새 entry를
+   *  만들지 않아 CASE F의 중복 stack 문제가 생기지 않는다). 새로고침 복원 등으로 그런 entry가 없는
+   *  경우에만 기존처럼 목적지로 직접 이동한다(section 10의 direct/recovered entry fallback). */
+  const goBackOrTo = (fallback: Screen) => {
+    if ((readFeinHistoryState()?.depth ?? 0) > 0) {
+      window.history.back();
+    } else {
+      setScreen(fallback);
+    }
+  };
+
   const userName = authenticatedUser?.name ?? (personal.name.trim() || "서연");
 
   const hasRestoredInvestFlowRef = useRef(false);
@@ -605,6 +665,46 @@ export default function App() {
     transactionBackTarget,
     rebalanceBackTarget,
   ]);
+
+  // Phase 1 Browser Back/Forward — 앱 최초 마운트 시(새로고침 포함) 현재 entry에 FE!N history
+  // state가 없으면 만들어둔다. pushState가 아니라 replaceState를 써서 새 entry를 만들지 않는다
+  // (중복 entry 방지) — 이후 pushScreen 호출부터 실제로 entry가 쌓인다. 마운트 시점 screen 값만
+  // 필요해 의존성 배열은 비워둔다(sessionStorage 복원이 이미 끝난 뒤의 최초 렌더 값).
+  useEffect(() => {
+    if (!readFeinHistoryState()) {
+      window.history.replaceState({ fein: true, screen, depth: 0 }, "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Phase 1 Browser Back/Forward — FE!N이 만든 entry(state.fein === true)로 돌아왔을 때만 화면을
+  // 복원한다. 이 기능 이전에 만들어진 entry나 외부 사이트에서 넘어온 history는 건드리지 않는다.
+  // 여기서는 setScreen만 호출하고 pushState/replaceState는 절대 호출하지 않으므로 popstate →
+  // pushState → popstate 로 이어지는 loop가 생기지 않는다.
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state as Partial<FeinHistoryState> | null;
+      if (state?.fein === true && state.screen) {
+        setScreen(state.screen as Screen);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  // Phase 1: login/risk는 Priority 1 push 대상이 아니다(로그인 폼·투자성향 8문항이 Back으로
+  // 재노출되는 걸 막는 게 목적이라, 애초에 push한 적이 없으면 재노출될 수도 없다). 다만 login/risk에
+  // 들어오기 전에 push된 entry(예: 회원가입 STEP)가 남아있으면 그 entry가 로그인/투자성향 진입 이전
+  // 화면을 가리킨 채로 stale해지므로, 이 두 화면을 "막 벗어난" 순간에만 현재 entry를 지금 화면으로
+  // replace해 정리한다 — 새 entry를 만들지 않으므로 depth/stack에는 영향이 없다.
+  const prevScreenForReplaceRef = useRef<Screen>(screen);
+  useEffect(() => {
+    const prev = prevScreenForReplaceRef.current;
+    if ((prev === "login" || prev === "risk") && screen !== prev) {
+      replaceScreen(screen);
+    }
+    prevScreenForReplaceRef.current = screen;
+  }, [screen]);
 
   // react-router 없이 screen state 하나로 화면을 전환하는 구조라, 브라우저가 자동으로 해주는
   // 스크롤 리셋이 없다 — 스크롤을 많이 내린 화면(예: PortfolioDetail)에서 다른 화면(예: StockDetail)으로
@@ -808,7 +908,7 @@ export default function App() {
           // 똑같이 적용된다.
           onContinue={(email) => {
             handlePersonalChange({ ...personal, email });
-            setScreen("signup-1");
+            pushScreen("signup-1");
           }}
         />
       )}
@@ -827,7 +927,7 @@ export default function App() {
               resendAfterSeconds: result.resend_after_seconds,
               token: null,
             });
-            setScreen("signup-2");
+            pushScreen("signup-2");
           }}
           userName={userName}
           onNavigate={navigate}
@@ -868,10 +968,10 @@ export default function App() {
               ...emailVerification,
               token: result.verification_token,
             });
-            setScreen("signup-3");
+            pushScreen("signup-3");
           }}
-          onContinue={() => setScreen("signup-3")}
-          onBack={() => setScreen("signup-1")}
+          onContinue={() => pushScreen("signup-3")}
+          onBack={() => goBackOrTo("signup-1")}
           userName={userName}
           onNavigate={navigate}
         />
@@ -919,7 +1019,7 @@ export default function App() {
             // 일시적으로 skip. 향후 추천 모델 연결 시 재활성화 예정.
             startInvestorProfile("strategy-list");
           }}
-          onBack={() => setScreen("signup-2")}
+          onBack={() => goBackOrTo("signup-2")}
           userName={userName}
           onNavigate={navigate}
         />
@@ -1008,17 +1108,17 @@ export default function App() {
           onNavigate={navigate}
           showOnboardingNotice={justFinishedInvestorProfile}
           onSelectLossAvoidance={() =>
-            setScreen("strategy-coming-soon-loss-avoidance")
+            pushScreen("strategy-coming-soon-loss-avoidance")
           }
-          onSelectF4={() => setScreen("strategy-f4")}
-          onSelectPersonalizedPreview={() => setScreen("strategy-preview")}
+          onSelectF4={() => pushScreen("strategy-f4")}
+          onSelectPersonalizedPreview={() => pushScreen("strategy-preview")}
         />
       )}
       {screen === "strategy-f4" && (
         <StrategyF4List
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen("strategy-list")}
+          onBack={() => goBackOrTo("strategy-list")}
           onSelectAvailableStrategy={() => {
             setStrategyId("momentum");
             setStrategyDetailBackTarget("strategy-f4");
@@ -1032,14 +1132,14 @@ export default function App() {
           strategyKey="loss-avoidance"
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen("strategy-list")}
+          onBack={() => goBackOrTo("strategy-list")}
         />
       )}
       {screen === "strategy-preview" && (
         <StrategyPersonalizedPreview
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen("strategy-list")}
+          onBack={() => goBackOrTo("strategy-list")}
         />
       )}
       {screen === "strategy" && strategy && (
