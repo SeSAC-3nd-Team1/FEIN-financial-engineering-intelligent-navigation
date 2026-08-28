@@ -1,7 +1,7 @@
 """물방개 읽기 전용 AI Agent API."""
 
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -52,33 +52,45 @@ def _is_personalized_request(payload: ChatMessageRequest) -> bool:
     )
 
 
+def _personalization_fallback(payload: ChatMessageRequest) -> ChatMessageResponse:
+    return ChatMessageResponse(
+        status="NEEDS_CLARIFICATION",
+        text=(
+            "개인 계좌 정보는 로그인 후 AI 개인화 동의가 확인된 경우에만 안내할 수 있어요. "
+            "현재 화면의 금융 개념이나 서비스 이용 방법은 설명해드릴 수 있습니다."
+        ),
+        caution="계좌 정보와 투자 판단은 본인 확인 및 제공된 데이터 범위 안에서만 안내합니다.",
+        suggested_questions=["PER이 무엇인가요?", "이 화면에서 무엇을 볼 수 있나요?"],
+        message_id=str(uuid4()),
+        model_version=settings.ai_chatbot_model_version,
+        generated_at=datetime.now(UTC),
+    )
+
+
 def _require_personalization_access(
     payload: ChatMessageRequest,
     user: User | None,
     session: Session,
-) -> None:
+) -> ChatMessageResponse | None:
     if not _is_personalized_request(payload):
-        return
+        return None
     if user is None:
-        raise ServiceError(
-            "AUTHENTICATION_REQUIRED",
-            "내 계좌와 포트폴리오를 확인하려면 로그인이 필요합니다.",
-            401,
-        )
+        return _personalization_fallback(payload)
     if not RecommendationRepository(session).has_ai_personalization_consent(user.id):
-        raise ServiceError(
-            "AI_PERSONALIZATION_CONSENT_REQUIRED",
-            "개인화된 계좌 안내를 이용하려면 AI 개인화 동의가 필요합니다.",
-            403,
-        )
+        return _personalization_fallback(payload)
     if payload.context.account_id is not None:
-        account_id = UUID(payload.context.account_id)
-        if TradingRepository(session).owned_account(account_id, user.id) is None:
+        if (
+            TradingRepository(session).owned_account(
+                payload.context.account_id, user.id
+            )
+            is None
+        ):
             raise ServiceError(
                 "ACCOUNT_ACCESS_DENIED",
                 "본인 소유 계좌만 조회할 수 있습니다.",
                 403,
             )
+    return None
 
 
 @router.post("/messages", response_model=ChatMessageResponse)
@@ -88,9 +100,12 @@ async def create_chat_message(
     session: Session = Depends(get_session),
     client: ChatAgentClient = Depends(get_chat_agent_client),
 ) -> ChatMessageResponse:
-    _require_personalization_access(payload, user, session)
+    fallback = _require_personalization_access(payload, user, session)
+    if fallback is not None:
+        return fallback
     # Provider에는 사용자 식별자나 account_id를 전달하지 않는다.
-    result = await client.answer(payload.message, payload.history, payload.context)
+    provider_context = payload.context.model_copy(update={"account_id": None})
+    result = await client.answer(payload.message, payload.history, provider_context)
     return ChatMessageResponse(
         **result.model_dump(),
         message_id=str(uuid4()),
