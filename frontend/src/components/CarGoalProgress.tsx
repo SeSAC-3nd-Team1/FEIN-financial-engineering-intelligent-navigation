@@ -120,6 +120,10 @@ export default function CarGoalProgress() {
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [saveError, setSaveError] = useState(false);
+  // "변경" 버튼을 눌렀을 때만 등급 선택 카드를 펼친다 — 평소엔 현재 등급 한 줄 요약만 보여
+  // 화면이 두 카드로 항상 붐비지 않게 한다. 아직 한 번도 고른 적 없으면(grade=null) 요약할
+  // 값 자체가 없으므로 펼친 상태를 강제한다.
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // grade=null: 서버에 아직 저장된 값이 없다고 "확인된" 상태(계정당 최초 진입) — 로딩 중에는 아직
   // 모르는 상태이므로 이 값만으로 게이트를 그리지 않고 반드시 status===\'ready\'와 함께 본다.
@@ -183,6 +187,7 @@ export default function CarGoalProgress() {
 
   const setGrade = (nextGrade: CarGrade) => {
     setGradeState(nextGrade);
+    setPickerOpen(false);
     persist({ grade: nextGrade, goalAmount, currentAmount });
   };
   const setGoalAmount = (next: number) => {
@@ -225,49 +230,45 @@ export default function CarGoalProgress() {
         )}
       </div>
 
-      {/* 1. 차량 등급 선택 — 카드 2개 중 하나를 고르는 방식. 처음 이용 시(grade=null)에는 반드시
-          하나를 골라야 아래 금액 입력/이미지/진행률이 열린다 — 이후에는 같은 카드로 자유롭게 변경한다. */}
-      <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-required={grade === null} aria-label="차량 등급 선택">
-        {GRADES.map((g) => {
-          const active = grade === g.id;
-          return (
-            <div
-              key={g.id}
-              className={`relative flex flex-col gap-1 rounded-field p-4 text-left transition-shadow ${
-                active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
-              }`}
-            >
-              {/* 카드 전체도 계속 클릭 가능하게 두되(넓은 히트 영역), 눈에 보이는 "변경" 버튼을 따로 둬서
-                  무엇을 눌러야 등급이 바뀌는지 바로 보이게 한다. */}
+      {/* 1. 차량 등급 — 평소엔 현재 등급 한 줄 + "변경" 버튼만 보여 화면을 차분하게 두고,
+          "변경"을 누르거나(또는 grade=null인 최초 진입) 카드 2개를 펼쳐 그 중 하나를 고르게 한다.
+          고르는 즉시 다시 한 줄 요약으로 접힌다. */}
+      {grade !== null && !pickerOpen ? (
+        <div className="flex items-center justify-between rounded-field bg-canvas px-4 py-3.5">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[13px] text-muted">선택한 등급</span>
+            <span className="text-base font-bold tracking-[-0.02em]">{GRADES.find((g) => g.id === grade)?.label}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
+          >
+            변경
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-required={grade === null} aria-label="차량 등급 선택">
+          {GRADES.map((g) => {
+            const active = grade === g.id;
+            return (
               <button
+                key={g.id}
                 type="button"
                 role="radio"
                 aria-checked={active}
-                aria-label={`${g.label} — ${g.description}`}
                 onClick={() => setGrade(g.id)}
-                className="absolute inset-0 rounded-field"
-              />
-              <div className="pointer-events-none flex items-start justify-between gap-2">
-                <div className="flex flex-col gap-1">
-                  <span className="text-base font-bold tracking-[-0.02em]">{g.label}</span>
-                  <span className="text-[13px] text-muted">{g.description}</span>
-                </div>
-                {active ? (
-                  <span className="shrink-0 rounded-full bg-lime px-2.5 py-1 text-[12px] font-bold text-navy">선택됨</span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setGrade(g.id)}
-                    className="pointer-events-auto relative shrink-0 rounded-full px-2.5 py-1 text-[12px] font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
-                  >
-                    변경
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                className={`flex flex-col gap-1 rounded-field p-4 text-left transition-shadow ${
+                  active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
+                }`}
+              >
+                <span className="text-base font-bold tracking-[-0.02em]">{g.label}</span>
+                <span className="text-[13px] text-muted">{g.description}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* 2~4. 이미지/금액 입력/진행률 — 등급을 아직 한 번도 고르지 않았으면(grade=null) 통째로 숨긴다.
           최초 선택 이후에는 항상 그려진다(등급 변경은 위 카드에서 계속 가능). */}
