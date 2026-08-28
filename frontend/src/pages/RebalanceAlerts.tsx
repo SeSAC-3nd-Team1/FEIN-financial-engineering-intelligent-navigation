@@ -31,20 +31,18 @@ const ALERT_BADGE: Record<'손절' | '리밸런싱', string> = {
 
 /** `/rebalance-alerts` — AI 손절·리밸런싱 제안 전체 목록. PortfolioDetail "AI의 리밸런싱 제안"의 "더보기"에서 진입한다.
  *  실 계좌에 리밸런싱 제안(규칙기반)이 있으면 그 값을, 없으면 AI_ALERTS(목업)를 그대로 쓴다 — lib/rebalancing.ts 참고. */
-export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack, isAutoMode }: Props) {
-  useTradingData();
-  const portfolio = useTradingStore((state) => state.portfolio);
+function RebalanceAlertsContent({ userName, strategy, onNavigate, onBack, isAutoMode }: Props) {
+    const portfolio = useTradingStore((state) => state.portfolio);
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
   // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const isLoading = useTradingStore((state) => state.isLoading);
   const error = useTradingStore((state) => state.error);
-  const retry = useTradingRetry();
+  
   const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
 
-  if (isLoading || accountMissing || error) {
-    return <PortfolioDataState userName={userName} onNavigate={onNavigate} loading={isLoading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
-  }
+  
+
   // displayAlerts는 실 계좌가 있으면(portfolio) portfolio.rebalancing_proposals(아직 실행 전인 "제안")를,
   // 없으면 AI_ALERTS(이미 실행됐다는 설정의 스토리 목업)를 쓴다 — lib/rebalancing.ts 참고. 그래서 자동매매
   // 실계좌라도 제안은 아직 제안일 뿐이라, 실데이터면 반자동과 같은 "제안" 톤을 쓰고 mock일 때만 과거형/완료
@@ -243,7 +241,20 @@ export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack
             )}
           </div>
         </div>
-      )}
+            )}
     </div>
   );
 }
+
+export default function RebalanceAlerts(props: Props) {
+  useTradingData();
+  const loading = useTradingStore((state) => state.isLoading);
+  const accountMissing = useTradingStore((state) => state.accountMissing);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
+  if (loading || accountMissing || error) {
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+  }
+  return <RebalanceAlertsContent {...props} />;
+}
+

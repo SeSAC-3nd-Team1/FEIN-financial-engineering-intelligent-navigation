@@ -154,7 +154,7 @@ const TX_BADGE: Record<TransactionRecord["type"], string> = {
  *  나머지 포트폴리오 관리 기능은 전부 "자세히" → PortfolioDetail.tsx(`/portfolio/detail`)로 분리했다.
  *  보유 비중 탭은 실 계좌(useTradingStore.portfolio)가 있으면 그 데이터를, 없으면
  *  MOCK_HOLDINGS 로 대체해 보여준다 — 이 대체 규칙은 PortfolioDetail.tsx 와 동일하게 맞춰뒀다. */
-export default function Portfolio({
+function PortfolioContent({
   userName,
   onNavigate,
   onOpenDetail,
@@ -163,7 +163,6 @@ export default function Portfolio({
   onSetupAccount,
   onOpenFundManagement,
 }: Props) {
-  useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
   const accessToken = useAuthStore((state) => state.accessToken);
@@ -184,15 +183,7 @@ export default function Portfolio({
   const account = useTradingStore((state) => state.account);
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const isAccountLoading = useTradingStore((state) => state.isLoading);
-  const portfolioError = useTradingStore((state) => state.error);
-  const retry = useTradingRetry();
-  if (portfolioError) {
-    return (
-      <PortfolioDataState userName={userName} onNavigate={onNavigate} loading={false} accountMissing={false} error={portfolioError} onRetry={retry}>
-        <div />
-      </PortfolioDataState>
-    );
-  }
+  
 
   const unconfiguredReason: UnconfiguredReason | null =
     isAccountLoading || isInvestorProfileHydrating
@@ -998,7 +989,20 @@ export default function Portfolio({
   );
 }
 
+export default function Portfolio(props: Props) {
+  useTradingData();
+  const loading = useTradingStore((state) => state.isLoading);
+  const accountMissing = useTradingStore((state) => state.accountMissing);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
+  if (loading || accountMissing || error) {
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+  }
+  return <PortfolioContent {...props} />;
+}
+
 function Insight({
+
   children,
   compact,
 }: {

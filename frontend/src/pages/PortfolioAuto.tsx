@@ -100,9 +100,8 @@ const TX_BADGE: Record<TransactionRecord['type'], string> = {
  *  "AI의 리밸런싱 제안" 위젯만 다르다. 반자동은 사용자가 승인해야 하는 "제안"이지만, 자동매매는 AI가
  *  이미 실행을 마친 뒤라 확인·승인 액션이 필요 없다 — 그래서 카드에 완료 표시를 더하고, 클릭하면 여는
  *  팝업도 "왜 지금인가요?"(앞으로 할 일) 대신 "왜 실행했나요?"(이미 한 일)로 과거형 문구를 쓴다. */
-export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOpenRebalanceAlerts, onOpenFundManagement }: Props) {
-  useTradingData();
-  const portfolio = useTradingStore((state) => state.portfolio);
+function PortfolioAutoContent({ userName, onNavigate, onOpenDetail, onOpenRebalanceAlerts, onOpenFundManagement }: Props) {
+    const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
   const account = useTradingStore((state) => state.account);
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
@@ -110,12 +109,8 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const isLoading = useTradingStore((state) => state.isLoading);
   const error = useTradingStore((state) => state.error);
-  const retry = useTradingRetry();
   const accessToken = useAuthStore((state) => state.accessToken);
 
-  if (isLoading || accountMissing || error) {
-    return <PortfolioDataState userName={userName} onNavigate={onNavigate} loading={isLoading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
-  }
 
   // 계좌가 없다고 확인된 경우에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는 아직 로딩 중/조회
   // 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 — 로딩/오류 중에 실계좌
@@ -689,6 +684,18 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
     )}
     </>
   );
+}
+
+export default function PortfolioAuto(props: Props) {
+  useTradingData();
+  const loading = useTradingStore((state) => state.isLoading);
+  const accountMissing = useTradingStore((state) => state.accountMissing);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
+  if (loading || accountMissing || error) {
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+  }
+  return <PortfolioAutoContent {...props} />;
 }
 
 function Insight({ children, compact }: { children: React.ReactNode; compact?: boolean }) {

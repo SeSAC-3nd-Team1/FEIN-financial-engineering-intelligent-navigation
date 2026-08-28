@@ -69,11 +69,11 @@ type ComparisonState =
  *  PowerBI 차트(도넛/라인/바/레이더)는 `/portfolio`(Portfolio.tsx)에만 있고, 여기는 그 아래 실무 기능 전부:
  *  오늘의 스토리, 전략 설정, AI 손절·리밸런싱 제안(목업), 보유 종목, 거래 내역(실 체결), 자동매매 비교(실 API), 판단 회고(목업).
  *  매매 방식(반자동/전체자동) 토글은 백엔드에 그런 구분이 없어 넣지 않았다 — PR #57 에서도 같은 이유로 제거된 것으로 보인다. */
-export default function PortfolioDetail({
+function PortfolioDetailContent({
   userName, strategy, strategies, onStrategyChange, onNavigate, onSelectStock, onSelectTransaction, onOpenRebalanceAlerts,
   onRediagnose, onBack,
 }: Props) {
-  const token = useTradingData();
+  const token = useAuthStore((state) => state.accessToken);
   const logout = useAuthStore((state) => state.logout);
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
@@ -82,15 +82,13 @@ export default function PortfolioDetail({
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const isLoading = useTradingStore((state) => state.isLoading);
   const error = useTradingStore((state) => state.error);
-  const retry = useTradingRetry();
+  
   const decisions = useTradingStore((state) => state.decisions);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
   const activeMode = useInvestmentStore((state) => state.activeMode);
   const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
 
-  if (isLoading || accountMissing || error) {
-    return <PortfolioDataState userName={userName} onNavigate={onNavigate} loading={isLoading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
-  }
+  
   const displayDecisions: DisplayDecisionSummary = useMemo(
     () => getDisplayDecisions(decisions),
     [decisions],
@@ -658,6 +656,18 @@ export default function PortfolioDetail({
       )}
     </div>
   );
+}
+
+export default function PortfolioDetail(props: Props) {
+  useTradingData();
+  const loading = useTradingStore((state) => state.isLoading);
+  const accountMissing = useTradingStore((state) => state.accountMissing);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
+  if (loading || accountMissing || error) {
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+  }
+  return <PortfolioDetailContent {...props} />;
 }
 
 /** PDF Page 5 — "내 투자 판단 돌아보기" 서브뷰. 라우터가 생기면 `/portfolio/review` 로 그대로 옮길 수 있다.
