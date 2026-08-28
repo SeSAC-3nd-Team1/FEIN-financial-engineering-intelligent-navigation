@@ -222,7 +222,7 @@ export default function CarGoalProgress() {
 
   if (status === 'loading') {
     return (
-      <section className="flex w-full flex-col gap-2 rounded-card bg-surface p-6 shadow-[0_0_0_1px_#E5E9E3_inset]">
+      <section className="flex w-full flex-col gap-2 rounded-card bg-surface p-6 shadow-elevation-sm">
         <span className="text-sm font-semibold text-muted">목표 차량</span>
         <div className="h-40 w-full animate-pulse rounded-[20px] bg-canvas" />
       </section>
@@ -231,7 +231,7 @@ export default function CarGoalProgress() {
 
   if (status === 'error') {
     return (
-      <section className="flex w-full flex-col gap-2 rounded-card bg-surface p-6 shadow-[0_0_0_1px_#E5E9E3_inset]">
+      <section className="flex w-full flex-col gap-2 rounded-card bg-surface p-6 shadow-elevation-sm">
         <span className="text-sm font-semibold text-muted">목표 차량</span>
         <p className="text-base font-semibold text-muted">목표 차량 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       </section>
@@ -239,7 +239,7 @@ export default function CarGoalProgress() {
   }
 
   return (
-    <section className="flex w-full flex-col gap-4 rounded-card bg-surface p-6 shadow-[0_0_0_1px_#E5E9E3_inset]">
+    <section className="flex w-full flex-col gap-4 rounded-card bg-surface p-6 shadow-elevation-sm">
       <div className="flex flex-col gap-0.5">
         <span className="text-[13px] font-semibold text-muted">목표 차량</span>
         <h2 className="text-lg font-bold tracking-[-0.02em]">투자가 쌓일수록 목표 차량에 가까워져요</h2>
