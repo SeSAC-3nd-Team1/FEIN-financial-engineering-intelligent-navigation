@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ImageOff } from 'lucide-react';
+import { ImageOff, X } from 'lucide-react';
 import {
   ApiError, getCarGoalApi, upsertCarGoalApi, type CarGrade,
 } from '../lib/backendApi';
@@ -225,34 +225,62 @@ export default function CarGoalProgress() {
       <div className="flex flex-col gap-1">
         <span className="text-sm font-semibold text-muted">목표 차량</span>
         <h2 className="text-2xl font-bold tracking-[-0.025em]">투자가 쌓일수록 목표 차량에 가까워져요</h2>
-        {grade === null && (
-          <p className="text-sm font-semibold text-[#7A5A1E]">차량 등급을 먼저 선택해주세요. (최초 1회 필수, 이후 언제든 변경할 수 있어요)</p>
-        )}
       </div>
 
       {/* 1. 차량 등급 — 평소엔 이미지 위 라벨("현재 등급"/"변경")로만 존재해 화면을 차분하게 두고,
-          "변경"을 누르거나(또는 grade=null인 최초 진입) 카드 2개를 펼쳐 그 중 하나를 고르게 한다.
-          고르는 즉시 다시 접힌다. */}
+          "변경"을 누르거나(또는 grade=null인 최초 진입) 팝업을 띄워 그 중 하나를 고르게 한다.
+          최초 진입(grade=null)에는 필수 선택이라 배경 클릭/닫기 버튼으로 닫을 수 없다. */}
       {(grade === null || pickerOpen) && (
-        <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-required={grade === null} aria-label="차량 등급 선택">
-          {GRADES.map((g) => {
-            const active = grade === g.id;
-            return (
-              <button
-                key={g.id}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setGrade(g.id)}
-                className={`flex flex-col gap-1 rounded-field p-4 text-left transition-shadow ${
-                  active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
-                }`}
-              >
-                <span className="text-base font-bold tracking-[-0.02em]">{g.label}</span>
-                <span className="text-[13px] text-muted">{g.description}</span>
-              </button>
-            );
-          })}
+        <div
+          className="fixed inset-0 z-[700] flex items-center justify-center bg-navy/40 p-8"
+          onClick={() => { if (grade !== null) setPickerOpen(false); }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="차량 등급 선택"
+            className="flex w-[480px] flex-col gap-6 rounded-card bg-surface p-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-6">
+              <div className="flex flex-col gap-2">
+                <h3 className="text-[22px] font-bold tracking-[-0.025em]">차량 등급을 선택해주세요</h3>
+                <p className="text-sm text-muted">
+                  {grade === null ? '최초 1회 필수 선택이에요. 이후 언제든 바꿀 수 있어요.' : '선택한 등급의 차량 이미지로 진행률을 보여드려요.'}
+                </p>
+              </div>
+              {grade !== null && (
+                <button
+                  type="button"
+                  aria-label="닫기"
+                  onClick={() => setPickerOpen(false)}
+                  className="rounded-[9px] bg-canvas p-2 text-muted"
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-required={grade === null} aria-label="차량 등급 선택">
+              {GRADES.map((g) => {
+                const active = grade === g.id;
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setGrade(g.id)}
+                    className={`flex flex-col gap-1 rounded-field p-4 text-left transition-shadow ${
+                      active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
+                    }`}
+                  >
+                    <span className="text-base font-bold tracking-[-0.02em]">{g.label}</span>
+                    <span className="text-[13px] text-muted">{g.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
