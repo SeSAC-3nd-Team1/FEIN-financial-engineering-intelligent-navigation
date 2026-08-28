@@ -310,10 +310,12 @@ export default function CarGoalProgress() {
           나눠 넓은 폭을 자연스럽게 쓴다. 등급을 아직 한 번도 고르지 않았으면(grade=null) 통째로
           숨긴다. */}
       {grade !== null && (
-        <div className="flex min-h-0 flex-1 flex-col justify-center gap-6 sm:flex-row sm:items-center">
-          {/* 2~3. 차량 이미지 — 두 레이어를 겹쳐 크로스페이드한다. 컨테이너 크기는 고정이라 전환
-              중에도 이미지 크기/위치가 흔들리지 않는다. 등급 이름은 좌측 상단, "변경"은 우측 상단. */}
-          <div className="relative h-56 w-full shrink-0 overflow-hidden rounded-[20px] bg-canvas sm:w-[380px]">
+        <div className="flex min-h-0 flex-1 flex-col gap-6 sm:flex-row sm:items-stretch">
+          {/* 2~3. 차량 이미지 — 카드가 늘어난 만큼 이미지도 함께 커져서(고정 높이 대신 flex-1 +
+              min/max 범위) 카드 안에 빈 공간이 남지 않게 한다. 폭은 계속 고정해 좌우 배치가
+              흔들리지 않는다. 두 레이어를 겹쳐 크로스페이드하며, 등급 이름은 좌측 상단,
+              "변경"은 우측 상단에 얹는다. */}
+          <div className="relative h-full min-h-[240px] w-full shrink-0 overflow-hidden rounded-[20px] bg-canvas sm:w-[420px] sm:max-h-[440px]">
             <div className="absolute left-3 top-3 z-20 rounded-full bg-surface/90 px-3 py-1.5 text-[13px] font-bold text-navy shadow-[0_0_0_1px_#E5E9E3_inset]">
               {GRADES.find((g) => g.id === grade)?.label}
             </div>
@@ -356,10 +358,11 @@ export default function CarGoalProgress() {
             )}
           </div>
 
-          <div className="flex flex-1 flex-col justify-center gap-5">
-            {/* 4. 진행률/메시지 — 이 위젯을 열었을 때 가장 먼저 눈에 들어와야 할 "결과"라서 맨 위. */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between text-sm font-semibold text-muted">
+          <div className="flex flex-1 flex-col justify-center gap-7">
+            {/* 4. 진행률/메시지 — 이 위젯을 열었을 때 가장 먼저 눈에 들어와야 할 "결과"라서 맨 위.
+                카드가 커진 만큼 글자/바 두께도 함께 키워 빈 여백 대신 내용 자체가 채우게 한다. */}
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between text-base font-semibold text-muted">
                 <span>
                   {completed
                     ? '목표 금액을 달성했어요! 🎉'
@@ -367,9 +370,9 @@ export default function CarGoalProgress() {
                       ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
                       : '목표 금액을 입력해주세요.'}
                 </span>
-                <span className="text-navy">{Math.round(progress)}%</span>
+                <span className="text-xl font-bold text-navy">{Math.round(progress)}%</span>
               </div>
-              <div className="h-2.5 overflow-hidden rounded-full bg-line">
+              <div className="h-3.5 overflow-hidden rounded-full bg-line">
                 <div
                   className="h-full rounded-full bg-lime transition-[width] duration-500"
                   style={{ width: `${progress}%` }}
@@ -385,15 +388,15 @@ export default function CarGoalProgress() {
             {goalEditing ? (
               <GoalAmountField value={goalAmount} onChange={setGoalAmount} />
             ) : (
-              <div className="flex items-center justify-between rounded-field bg-canvas px-4 py-3.5">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[13px] text-muted">목표 금액</span>
-                  <span className="text-base font-bold tracking-[-0.02em]">{won(goalAmount)}</span>
+              <div className="flex items-center justify-between rounded-field bg-canvas px-5 py-4">
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm text-muted">목표 금액</span>
+                  <span className="text-2xl font-bold tracking-[-0.02em]">{won(goalAmount)}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setGoalEditing(true)}
-                  className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
+                  className="shrink-0 rounded-full px-3.5 py-2 text-sm font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
                 >
                   수정
                 </button>
@@ -401,10 +404,10 @@ export default function CarGoalProgress() {
             )}
 
             {/* 6. 현재 투자 금액 — 직접 손댈 수 없는 값이라 입력창처럼 보이지 않게 가볍게 한 줄로만 둔다. */}
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between text-base">
               <span className="text-muted">현재 투자 금액</span>
               <span className="font-semibold text-ink">
-                {won(currentAmount)} <span className="text-[12px] font-medium text-subtle">(포트폴리오 연동)</span>
+                {won(currentAmount)} <span className="text-[13px] font-medium text-subtle">(포트폴리오 연동)</span>
               </span>
             </div>
           </div>
