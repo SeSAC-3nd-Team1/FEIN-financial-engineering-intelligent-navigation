@@ -5,8 +5,8 @@ import { digitsOnly, won } from '../lib/validation';
 import type { CarGrade } from '../lib/backendApi';
 
 const GRADES: { id: CarGrade; label: string; description: string }[] = [
-  { id: 'INEX', label: '보급차', description: '가볍게 시작하는 실속형 목표' },
-  { id: 'HIGHEND', label: '고급차', description: '조금 더 크게 그려보는 목표' },
+  { id: 'INEX', label: '다마방개', description: '가볍게 시작하는 실속형 목표' },
+  { id: 'HIGHEND', label: '람브로방개', description: '조금 더 크게 그려보는 목표' },
 ];
 
 /** 진행률 구간별 이미지 파일 번호(01~06) — 등급별로 같은 번호의 이미지를 쓴다.
@@ -83,7 +83,11 @@ function GoalAmountField({ value, onChange }: { value: number; onChange: (next: 
   useEffect(() => setText(String(value)), [value]);
 
   const commit = () => {
-    const n = Math.min(CAR_GOAL_MAX_AMOUNT, Number(digitsOnly(text, 12) || '0'));
+    const parsed = Number(digitsOnly(text, 12) || '0');
+    // 입력칸을 비우고(혹은 0으로) 벗어나면 이전 값으로 되돌린다 — 목표 금액 0원은 진행률/카드
+    // 문구가 전부 의미를 잃는 상태라("목표 금액을 입력해주세요"처럼 사용자 흐름상 막다른 상태),
+    // 애초에 그 상태에 들어가지 않게 막는다.
+    const n = parsed > 0 ? Math.min(CAR_GOAL_MAX_AMOUNT, parsed) : value;
     onChange(n);
     setText(String(n));
   };
@@ -285,7 +289,7 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
                     ? '목표 금액을 달성했어요! 🎉'
                     : goalAmount > 0
                       ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
-                      : '목표 금액을 입력해주세요.'}
+                      : '"변경" 버튼을 눌러 목표 금액을 설정해주세요.'}
                 </span>
                 <span className="shrink-0 text-2xl font-bold text-navy">{Math.round(progress)}%</span>
               </div>
