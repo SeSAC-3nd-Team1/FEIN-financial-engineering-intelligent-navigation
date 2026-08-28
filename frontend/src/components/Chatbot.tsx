@@ -7,6 +7,7 @@ import {
   type ChatScreenContextRequest,
 } from "../lib/backendApi";
 import { useAuthStore } from "../store/authStore";
+import { chatConversationBoundaryKey } from "../lib/chatSession";
 import type { ChatMessage, Screen } from "../types";
 
 const QUICK_QUESTIONS = [
@@ -46,6 +47,10 @@ export default function Chatbot({
     message: string;
   } | null>(null);
   const accessToken = useAuthStore((state) => state.accessToken);
+  const conversationBoundary = chatConversationBoundaryKey(
+    accessToken,
+    accountId,
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
   const requestPendingRef = useRef(false);
@@ -73,7 +78,7 @@ export default function Chatbot({
     setMessages([]);
     setError(null);
     setInput("");
-  }, [accessToken, accountId]);
+  }, [conversationBoundary]);
 
   const screenContext = (): ChatScreenContextRequest => ({
     screen,
