@@ -14,7 +14,7 @@ interface Props {
   allowNonAiFallback?: boolean;
   onContinueWithoutAi?: () => void;
   /**
-   * 'general': Home 등 일반 onboarding에서 진입 — "나에게 맞는 전략을 찾아볼까요?"
+   * 'general': Home 등 일반 onboarding에서 진입 — "나의 투자성향을 확인해볼까요?"
    * 'strategy': Strategy Detail "이 전략으로 시작하기"에서 진입 — 이미 고른 전략이 나와 맞는지 확인하는 맥락.
    * App.tsx가 이미 갖고 있던 postDiagnosisTarget(완료 후 목적지)을 그대로 재사용해 결정한다.
    */
@@ -22,21 +22,31 @@ interface Props {
 }
 
 const INTRO_COPY = {
-  general: { title: '나에게 맞는 투자전략을 찾아볼까요?' },
+  // 전략 추천 모델이 아직 없어 "나에게 맞는 전략을 찾아볼까요?"처럼 자동 추천을 암시하는 문구
+  // 대신, 투자성향을 이해하는 과정이라는 점을 분명히 한다.
+  general: { title: '나의 투자성향을 확인해볼까요?' },
   strategy: { title: '이 전략이 나에게 맞는지 확인해볼까요?' },
 };
 
 const DONE_COPY = {
   general: {
-    title: '딱 맞는 전략을 찾았어요.',
-    body: '답변을 바탕으로 투자전략을 비교했어요.',
-    checklist: ['투자자 정보 확인 완료', '투자성향 분석 완료', '전략 추천 준비 완료'],
+    title: '투자자 정보 입력을 완료했어요.',
+    body: '입력한 내용을 확인한 뒤 나의 투자성향을 확인할 수 있어요.',
+    checklist: ['투자자 정보 입력 완료', '투자성향 확인 준비 완료'],
   },
   strategy: {
     title: '선택한 전략과 잘 맞는지 확인했어요.',
     body: '답변을 바탕으로 이 전략과의 적합도를 확인했어요.',
     checklist: ['투자자 정보 확인 완료', '투자성향 분석 완료', '전략 적합도 확인 완료'],
   },
+};
+
+/** Review 화면 최종 CTA — general(일반 온보딩)은 전략 추천 모델 연결 전까지 RiskResult를 거치지
+ *  않고 곧장 StrategyList로 이동하므로 문구도 그에 맞춘다. strategy(이 전략으로 시작하기 진입)는
+ *  기존 흐름(결과 확인 후 투자 시작 절차로 이어짐) 그대로라 문구를 바꾸지 않는다. */
+const REVIEW_CTA_COPY = {
+  general: '투자성향 확인하고 전략 살펴보기 →',
+  strategy: '이 내용으로 결과 확인하기',
 };
 
 type Phase = 'intro' | 'question' | 'done' | 'review';
@@ -142,13 +152,13 @@ export default function RiskProfile({
           </h1>
           <p className="max-w-[560px] text-center text-[19px] leading-8 text-muted">
             몇 가지 질문으로 투자 경험과 목표, 감당할 수 있는 위험 수준을 확인할게요.<br />
-            답변을 바탕으로 나에게 맞는 투자전략을 찾는 데 활용해요.
+            내 투자성향을 이해하고 전략을 살펴볼 때 참고할 수 있어요.
           </p>
           <span className="rounded-full bg-surface px-5 py-3 text-base font-semibold text-[#3F4A43]">약 2분 · {total}문항</span>
           <button onClick={() => setPhase('question')} className="mt-3 rounded-field bg-lime px-11 py-5 text-[19px] font-bold text-navy">
             투자자 정보 확인하기
           </button>
-          <p className="text-base text-subtle">입력한 정보는 투자성향 확인 및 맞춤형 전략 제공에 활용돼요.</p>
+          <p className="text-base text-subtle">입력한 정보는 투자성향을 확인하는 데 활용돼요.</p>
         </main>
       )}
 
@@ -261,7 +271,7 @@ export default function RiskProfile({
             disabled={isSubmitting}
             className="rounded-field bg-lime py-5 text-[19px] font-bold text-navy disabled:cursor-default disabled:bg-[#E8EBE5] disabled:text-[#A6AFA7]"
           >
-            {isSubmitting ? '결과 분석 중...' : '이 내용으로 결과 확인하기'}
+            {isSubmitting ? '결과 분석 중...' : REVIEW_CTA_COPY[context]}
           </button>
         </main>
       )}
