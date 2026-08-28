@@ -333,6 +333,15 @@ class PortfolioAnalyticsService:
             request.account_id, request.idempotency_key
         )
         if existing:
+            if (
+                existing.stock_code != request.stock_code
+                or existing.decision != request.decision
+            ):
+                raise ServiceError(
+                    "IDEMPOTENCY_CONFLICT",
+                    "동일 요청 키가 다른 리밸런싱 판단에 사용되었습니다.",
+                    409,
+                )
             return self._decision_response(existing)
         portfolio = PortfolioService(self.session).evaluate(user_id, request.account_id)
         proposal = next(
