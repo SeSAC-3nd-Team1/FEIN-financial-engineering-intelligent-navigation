@@ -126,6 +126,19 @@ LOCAL_ANSWER_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
+def _local_answer_key(normalized: str) -> str | None:
+    """Return a local answer only for a single, unambiguous concept."""
+    matched_keys = {
+        key
+        for key, aliases in LOCAL_ANSWER_ALIASES.items()
+        if any(alias in normalized for alias in aliases)
+    }
+    matched_keys.update(key for key in ("per", "pbr", "roe") if key in normalized)
+    if len(matched_keys) != 1:
+        return None
+    return matched_keys.pop()
+
+
 LOCAL_SCREEN_ANSWER = (
     "이 화면의 주요 기능과 표시된 지표를 쉽게 설명해드릴 수 있어요. 특정 수치의 최신값이나 개인 계좌 정보는 연결된 데이터가 제공될 때만 확인할 수 있어요.",
     "화면에 표시되지 않은 수치나 미래 가격은 추측하지 않아요.",
@@ -233,17 +246,7 @@ class AzureOpenAIChatAgentClient:
         message: str, context: ChatScreenContext
     ) -> ChatAgentResult | None:
         normalized = " ".join(message.lower().split())
-        answer_key = next(
-            (
-                key
-                for key, aliases in LOCAL_ANSWER_ALIASES.items()
-                if any(alias in normalized for alias in aliases)
-            ),
-            next(
-                (key for key in ("per", "pbr", "roe") if key in normalized),
-                None,
-            ),
-        )
+        answer_key = _local_answer_key(normalized)
         if answer_key:
             text, caution, questions = LOCAL_ANSWERS[answer_key]
             return ChatAgentResult(

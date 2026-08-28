@@ -191,6 +191,37 @@ def test_client_answers_more_local_financial_terms_without_provider_call(
     assert called is False
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "변동성과 최대낙폭은 어떻게 다른가요?",
+        "배당금과 배당수익률은 어떻게 달라?",
+        "자산배분과 분산투자의 차이는?",
+    ],
+)
+def test_client_sends_compound_concept_questions_to_provider(question: str) -> None:
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(MODEL_RESULT)}}]},
+        )
+
+    client = make_client(handler)
+    try:
+        result = asyncio.run(
+            client.answer(question, [], ChatScreenContext(screen="home"))
+        )
+    finally:
+        asyncio.run(client.client.aclose())
+
+    assert result.status == "COMPLETED"
+    assert called is True
+
+
 def test_client_answers_screen_help_without_provider_call() -> None:
     called = False
 
