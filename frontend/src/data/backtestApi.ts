@@ -16,6 +16,10 @@ export const API_BASE = '/api/v1/backtest';
  */
 export const USE_MOCK_BACKTEST = import.meta.env.VITE_USE_MOCK_BACKTEST === 'true';
 
+if (import.meta.env.PROD && USE_MOCK_BACKTEST) {
+  throw new Error('Mock backtest is disabled in production.');
+}
+
 export interface BacktestAvailableRange {
   minDate: string;
   maxDate: string;

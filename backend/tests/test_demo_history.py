@@ -105,13 +105,14 @@ def test_explicit_model_schedule_does_not_add_21_day_rebalances() -> None:
     assert dates[42] not in trade_dates
 
 
-def test_demo_seed_requires_explicit_opt_in_and_rejects_production() -> None:
+def test_demo_seed_requires_explicit_opt_in_and_fails_closed_for_unknown_environments() -> None:
     with pytest.raises(RuntimeError, match="DEMO_SEED_ENABLED"):
         ensure_demo_environment("", "development")
-    with pytest.raises(RuntimeError, match="운영 환경"):
-        ensure_demo_environment("true", "production")
-
+    for environment in ("", "production", "unknown"):
+        with pytest.raises(RuntimeError, match="명시적인 개발 환경"):
+            ensure_demo_environment("true", environment)
     ensure_demo_environment("true", "demo")
+
 
 
 def test_momentum_demo_uses_generated_model_weights_without_symbol_override() -> None:
