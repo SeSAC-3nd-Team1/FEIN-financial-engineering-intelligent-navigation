@@ -118,10 +118,6 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
   // 화면이 두 카드로 항상 붐비지 않게 한다. 아직 한 번도 고른 적 없으면(grade=null) 요약할
   // 값 자체가 없으므로 펼친 상태를 강제한다.
   const [pickerOpen, setPickerOpen] = useState(false);
-  // 목표 금액도 등급 카드와 같은 원칙 — 평소엔 "목표: OO원 · 수정" 한 줄만 보여주고,
-  // "수정"을 눌렀을 때만 실제 입력창을 연다. 자주 안 바뀌는 값이 매번 큰 입력창을 차지하지
-  // 않게 한다.
-  const [goalEditing, setGoalEditing] = useState(false);
 
   // 등급을 바꿔도 같은 진행률에 대응하는 이미지로 즉시 넘어간다 — 목표/현재 금액은 그대로 유지된다.
   // grade가 아직 null(최초 미선택/로딩 중)이어도 훅은 항상 같은 순서로 호출되어야 하므로 무해한
@@ -129,14 +125,9 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
   const target = imagePathFor(grade ?? 'INEX', progress);
   const { back, front, frontVisible } = useCrossfadeImage(target, CROSSFADE_MS, reducedMotion);
 
-  const handleGrade = (nextGrade: CarGrade) => {
-    setGrade(nextGrade);
-    setPickerOpen(false);
-  };
-  const handleGoalAmount = (next: number) => {
-    setGoalAmount(next);
-    setGoalEditing(false);
-  };
+  // "변경" 팝업에서 등급을 골라도 곧장 닫지 않는다 — 같은 팝업 안에서 목표 금액도 이어서
+  // 바꿀 수 있어야 하므로, 닫는 것은 X 버튼(또는 최초 선택 시엔 등급 선택 자체)에 맡긴다.
+  const handleGrade = (nextGrade: CarGrade) => setGrade(nextGrade);
 
   const markBroken = (src: string) => setBroken((prev) => (prev[src] ? prev : { ...prev, [src]: true }));
   const bothBroken = broken[back] && broken[front];
@@ -222,6 +213,10 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
                 );
               })}
             </div>
+
+            {/* 목표 금액도 같은 팝업에서 바꾼다 — 카드 본문에 따로 두면 등급과 다른 곳에서
+                고쳐야 해 번거롭고, "변경" 버튼 하나로 등급/금액을 한 번에 관리하게 한다. */}
+            <GoalAmountField value={goalAmount} onChange={setGoalAmount} />
           </div>
         </div>
       )}
@@ -304,36 +299,6 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
             {saveError && (
               <p className="text-[13px] font-semibold text-warn">저장하지 못했어요. 네트워크를 확인해주세요.</p>
             )}
-          </div>
-
-          {/* 5~6. 목표 금액 / 현재 투자 금액 — 카드 전체 폭을 그대로 쓰는 한 줄씩. 목표 금액은
-              평소엔 "목표: OO원 · 수정" 한 줄만 보이고, "수정"을 눌렀을 때만 입력창을 연다. */}
-          <div className="flex shrink-0 flex-col gap-2.5">
-            {goalEditing ? (
-              <GoalAmountField value={goalAmount} onChange={handleGoalAmount} />
-            ) : (
-              <div className="flex items-center justify-between rounded-field bg-canvas px-5 py-4">
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm text-muted">목표 금액</span>
-                  <span className="text-2xl font-bold tracking-[-0.02em]">{won(goalAmount)}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setGoalEditing(true)}
-                  className="shrink-0 rounded-full px-3.5 py-2 text-sm font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
-                >
-                  수정
-                </button>
-              </div>
-            )}
-
-            {/* 직접 손댈 수 없는 값이라 입력창처럼 보이지 않게 가볍게 한 줄로만 둔다. */}
-            <div className="flex items-center justify-between text-base">
-              <span className="text-muted">현재 투자 금액</span>
-              <span className="font-semibold text-ink">
-                {won(currentAmount)} <span className="text-[13px] font-medium text-subtle">(포트폴리오 연동)</span>
-              </span>
-            </div>
           </div>
         </div>
       )}
