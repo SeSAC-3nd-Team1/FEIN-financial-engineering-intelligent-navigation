@@ -20,9 +20,9 @@ export const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
         "이익 대비 가격을 보는 지표지만, 업종·성장성·부채를 함께 살펴야 같은 숫자를 올바르게 비교할 수 있어요.",
       category: "지표",
       readingMinutes: 4,
-      sourceName: "한국거래소",
+      sourceName: "한국거래소 KRX 정보데이터시스템",
       sourceUrl:
-        "https://global.krx.co.kr/contents/GLB/02/0203/0203010000/GLB0203010000.jsp",
+        "https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020102",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },

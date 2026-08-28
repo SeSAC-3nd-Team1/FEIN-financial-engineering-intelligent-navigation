@@ -27,5 +27,9 @@ describe("financial education content policy", () => {
         /^https:\/\/www\.(krx|fss|nts)\.or\.kr\/?$/,
       );
     }
+
+    const perArticle = response.items.find((item) => item.id === "k1");
+    expect(perArticle?.sourceUrl).toContain("data.krx.co.kr");
+    expect(perArticle?.sourceUrl).toContain("MDC0201020102");
   });
 });
