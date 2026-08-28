@@ -286,6 +286,10 @@ export default function App() {
     useState<Screen>("risk-result");
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
   const [riskErrorCode, setRiskErrorCode] = useState<string | null>(null);
+  // 온보딩 흐름에서 RiskResult를 skip하고 곧장 StrategyList로 넘어온 직후에만 true — StrategyList가
+  // 상단에 짧은 안내 문구를 보여줄지 판단하는 용도. strategy-list를 벗어나면 아래 effect가 초기화한다.
+  const [justFinishedInvestorProfile, setJustFinishedInvestorProfile] =
+    useState(false);
   // 투자자 정보 확인(risk) 완료 버튼을 누른 뒤 백엔드 분석 응답을 기다리는 동안 true — 이 결과가
   // RiskResult/재로그인 복원의 Source of Truth이므로, 응답이 오기 전까지는 화면을 넘기지 않는다.
   const [isDiagnosisSubmitting, setIsDiagnosisSubmitting] = useState(false);
@@ -648,6 +652,14 @@ export default function App() {
     }
   }, [screen, fundOperation]);
 
+  // strategy-list를 벗어나면 온보딩 직후 안내 문구를 리셋한다 — Header "투자전략"으로 다시
+  // 들어왔을 때는 온보딩 완료 안내가 다시 보이면 안 된다.
+  useEffect(() => {
+    if (screen !== "strategy-list" && justFinishedInvestorProfile) {
+      setJustFinishedInvestorProfile(false);
+    }
+  }, [screen, justFinishedInvestorProfile]);
+
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
@@ -887,7 +899,9 @@ export default function App() {
               })),
             });
             setEmailVerification(null);
-            startInvestorProfile("risk-result");
+            // Strategy recommendation model 연결 전까지 onboarding flow에서 RiskResult를
+            // 일시적으로 skip. 향후 추천 모델 연결 시 재활성화 예정.
+            startInvestorProfile("strategy-list");
           }}
           onBack={() => setScreen("signup-2")}
           userName={userName}
@@ -937,6 +951,11 @@ export default function App() {
               );
               setRiskNotice(undefined);
               setRiskErrorCode(null);
+              // Strategy recommendation model 연결 전까지 onboarding flow에서 RiskResult를
+              // 일시적으로 skip. 향후 추천 모델 연결 시 재활성화 예정.
+              if (postDiagnosisTarget === "strategy-list") {
+                setJustFinishedInvestorProfile(true);
+              }
               setScreen(postDiagnosisTarget);
               setPostDiagnosisTarget("risk-result");
             } catch (error) {
@@ -971,6 +990,7 @@ export default function App() {
         <StrategyList
           userName={userName}
           onNavigate={navigate}
+          showOnboardingNotice={justFinishedInvestorProfile}
           onSelectLossAvoidance={() =>
             setScreen("strategy-coming-soon-loss-avoidance")
           }
