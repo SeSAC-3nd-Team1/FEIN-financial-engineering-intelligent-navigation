@@ -21,6 +21,7 @@ interface Props {
    *  포트폴리오 로딩 중이거나 조회에 실패해 portfolio가 잠깐/계속 null인 동안 완료 톤으로 잘못 보인다.
    *  반자동은 이 값과 무관하게 항상 "제안" 톤이어야 한다. */
   isAutoMode: boolean;
+  onAccountMissingAction?: () => void;
 }
 
 /** AI 제안 종류별 배지 색 — PortfolioDetail 의 요약 카드와 동일한 배색을 공유한다 */
@@ -253,7 +254,7 @@ export default function RebalanceAlerts(props: Props) {
   const error = useTradingStore((state) => state.error);
   const retry = useTradingRetry();
   if (loading || accountMissing || error) {
-    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry} onAccountMissingAction={props.onAccountMissingAction}><div /></PortfolioDataState>;
   }
   return <RebalanceAlertsContent {...props} />;
 }

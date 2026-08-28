@@ -34,6 +34,7 @@ interface Props {
   onOpenRebalanceAlerts: () => void;
   /** 모달의 "다시 진단하기" — 투자성향 진단으로 되돌린다 */
   onRediagnose: () => void;
+  onAccountMissingAction?: () => void;
   /** 상단 "돌아가기" — PowerBI 컨테이너만 있는 `/portfolio` 로 되돌아간다 */
   onBack: () => void;
 }
@@ -665,7 +666,7 @@ export default function PortfolioDetail(props: Props) {
   const error = useTradingStore((state) => state.error);
   const retry = useTradingRetry();
   if (loading || accountMissing || error) {
-    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry} onAccountMissingAction={props.onAccountMissingAction}><div /></PortfolioDataState>;
   }
   return <PortfolioDetailContent {...props} />;
 }

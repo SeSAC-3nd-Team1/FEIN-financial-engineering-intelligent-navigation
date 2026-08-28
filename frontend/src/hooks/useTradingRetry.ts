@@ -10,6 +10,6 @@ export function useTradingRetry() {
   );
   const refresh = useTradingStore((state) => state.refresh);
   return () => {
-    if (token) void refresh(token, mode);
+    if (token) void refresh(token, mode).catch(() => {});
   };
 }

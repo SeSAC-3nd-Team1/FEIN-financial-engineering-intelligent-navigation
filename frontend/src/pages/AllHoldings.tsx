@@ -15,6 +15,7 @@ interface Props {
   onNavigate: (s: Screen) => void;
   onSelectStock: (stockCode: string) => void;
   onBack: () => void;
+  onAccountMissingAction?: () => void;
 }
 
 /** AI 제안 종류별 배지 색 — PortfolioDetail 의 보유 종목 표와 동일한 배색을 공유한다 */
@@ -33,7 +34,7 @@ const HOLDINGS_COLUMNS: { key: SortKey; label: string; align: 'left' | 'right' }
 ];
 
 /** `/all-holdings` — 보유 종목 전체 목록. PortfolioDetail "보유 종목"의 "전체 종목 보기"에서 진입한다. */
-export default function AllHoldings({ userName, onNavigate, onSelectStock, onBack }: Props) {
+export default function AllHoldings({ userName, onNavigate, onSelectStock, onBack, onAccountMissingAction }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
@@ -78,6 +79,7 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
       accountMissing={accountMissing}
       error={error}
       onRetry={retry}
+      onAccountMissingAction={onAccountMissingAction}
     >
     <div className="min-h-screen bg-canvas">
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />

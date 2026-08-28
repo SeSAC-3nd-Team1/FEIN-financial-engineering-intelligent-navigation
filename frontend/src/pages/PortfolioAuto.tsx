@@ -30,6 +30,7 @@ interface Props {
   /** "+ 추가 투자" / "투자금 출금" — 현재는 placeholder 화면(FundManagementComingSoon)으로만 이동한다.
    *  실제 금액 입력~실행 Flow는 Backend/Model contract 확정 후 별도 작업. */
   onOpenFundManagement: (kind: 'deposit' | 'withdraw') => void;
+  onAccountMissingAction?: () => void;
 }
 
 /** Power BI 임베드 그래프 변형 3종 — 탭 전환 대상 (위험 분석 탭은 미사용으로 제거됨) */
@@ -693,7 +694,7 @@ export default function PortfolioAuto(props: Props) {
   const error = useTradingStore((state) => state.error);
   const retry = useTradingRetry();
   if (loading || accountMissing || error) {
-    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry} onAccountMissingAction={props.onAccountMissingAction}><div /></PortfolioDataState>;
   }
   return <PortfolioAutoContent {...props} />;
 }
