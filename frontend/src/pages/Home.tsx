@@ -27,7 +27,9 @@ export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
 
   return (
-    <div className="min-h-screen bg-canvas">
+    // Portfolio.tsx와 같은 패턴 — 뷰포트가 넉넉하면 한 화면(h-screen)에 다 담기도록 아래 flex
+    // 트리를 가용 높이에 맞춰 나누고, 화면이 작아 다 안 들어가면 페이지 자체가 스크롤된다.
+    <div className="flex h-screen flex-col overflow-y-auto bg-canvas">
       <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '무료로 시작하기', onClick: onRequestLogin }} />
       {isLoggedIn
         ? <LoggedInHome userName={userName} onNavigate={onNavigate} />
@@ -39,15 +41,17 @@ export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
 /** 로그인 Home은 스크롤 없이 한 화면(뷰포트)에 들어와야 한다. 좌우 2칼 구성(인사말 카드 | 목표
  *  차량 카드)은 성격이 다른 두 덩어리를 억지로 나란히 붙여놓은 것처럼 어색해 보여 걷어냈다 —
  *  대신 인사말은 카드/테두리 없이 캔버스 배경 위에 가볍게 얹고(물방개+문구를 가로로 묶어 세로
- *  공간을 아낀다), 그 아래 목표 차량 카드 하나만 이어지는 단일 세로 흐름으로 바꿨다. */
+ *  공간을 아낀다), 그 아래 목표 차량 카드 하나만 이어지는 단일 세로 흐름으로 바꿨다. Portfolio.tsx와
+ *  같은 방식으로 목표 차량 카드가 남는 세로 공간을 flex-1로 채워서(min-h-0 없이는 넘칠 때 부모를
+ *  밀어낸다), 카드 아래 빈 캔버스가 그냥 남지 않고 화면 전체를 쓴다. */
 function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: (s: Screen) => void }) {
   return (
-    <main className="flex flex-col items-center px-16 pt-8">
+    <main className="flex min-h-0 flex-1 flex-col items-center px-16 pb-8 pt-8">
       {/* Portfolio/PortfolioAuto의 "한 화면" 메인 컨텐츠 폭(max-w-[1040px])과 통일한다. */}
-      <div className="flex w-full max-w-[1040px] flex-col items-center gap-7">
+      <div className="flex min-h-0 w-full max-w-[1040px] flex-1 flex-col gap-7">
         {/* 인사말 줄도 아래 목표 차량 카드처럼 폭 전체를 쓴다 — 왼쪽 물방개+문구, 오른쪽 끝에
             CTA 버튼을 둬서 좌우 양 끝에 무게가 실리게 한다. */}
-        <div className="flex w-full items-center justify-between gap-6">
+        <div className="flex w-full shrink-0 items-center justify-between gap-6">
           <div className="flex items-center gap-6">
             <img src="/character-recommend.png" alt="물방개" className="h-24 w-auto shrink-0 object-contain" />
             <div className="flex flex-col gap-1.5">
