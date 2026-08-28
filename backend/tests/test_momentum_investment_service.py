@@ -115,7 +115,21 @@ def test_auto_account_publishes_targets_and_executes_initial_orders() -> None:
     ]
 
 
+def test_apply_does_not_restore_a_strategy_changed_after_momentum_onboarding() -> None:
+    momentum, session, trading = service()
+    momentum.repo.account.selected_strategy_id = "value"  # type: ignore[attr-defined]
+
+    with pytest.raises(ServiceError) as error:
+        momentum.apply(7, momentum.repo.account.id)  # type: ignore[attr-defined]
+
+    assert error.value.code == "MOMENTUM_STRATEGY_REQUIRED"
+    assert momentum.repo.account.selected_strategy_id == "value"  # type: ignore[attr-defined]
+    assert session.commits == 0
+    assert trading.requests == []
+
+
 def test_semi_auto_account_only_publishes_proposals() -> None:
+
     momentum, session, trading = service("SEMI_AUTO")
 
     response = momentum.apply(7, momentum.repo.account.id)  # type: ignore[attr-defined]

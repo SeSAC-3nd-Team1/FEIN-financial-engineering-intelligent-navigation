@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ServiceError
-from app.models import InvestmentOnboarding, Order, Position, StrategyTargetWeight
+from app.models import Order, Position, StrategyTargetWeight
 from app.repositories import TradingRepository
 from app.schemas.api import ModelRecommendationApplyResponse, OrderCreateRequest
 from app.services.model_recommendation import ModelRecommendationService
@@ -33,25 +33,11 @@ class MomentumInvestmentService:
         if account is None:
             raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
         if account.selected_strategy_id != "momentum":
-            # 투자 온보딩 완료와 계좌 전략 반영은 서로 다른 요청에서 수행될 수 있다.
-            # 프론트의 캐시/재조회 순서가 어긋나도, 같은 계좌에 모멘텀 온보딩이
-            # 완료된 사실이 있으면 서버가 최종 상태를 복구한 뒤 적용을 진행한다.
-            completed_onboarding = self.session.scalar(
-                select(InvestmentOnboarding).where(
-                    InvestmentOnboarding.account_id == account.id,
-                    InvestmentOnboarding.strategy_id == "momentum",
-                    InvestmentOnboarding.status == "COMPLETED",
-                )
+                        raise ServiceError(
+                "MOMENTUM_STRATEGY_REQUIRED",
+                "모멘텀 전략이 선택된 계좌에서만 모델 추천을 적용할 수 있습니다.",
+                409,
             )
-            if completed_onboarding is None:
-                raise ServiceError(
-                    "MOMENTUM_STRATEGY_REQUIRED",
-                    "모멘텀 전략이 선택된 계좌에서만 모델 추천을 적용할 수 있습니다.",
-                    409,
-                )
-            account.selected_strategy_id = "momentum"
-            self.session.flush()
-
 
         snapshot = self.snapshot_service.latest()
         if snapshot.source != "generated" or snapshot.is_stale:
