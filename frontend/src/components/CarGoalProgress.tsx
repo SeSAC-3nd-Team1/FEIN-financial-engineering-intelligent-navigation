@@ -237,6 +237,8 @@ export default function CarGoalProgress() {
                 active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
               }`}
             >
+              {/* 카드 전체도 계속 클릭 가능하게 두되(넓은 히트 영역), 눈에 보이는 "변경" 버튼을 따로 둬서
+                  무엇을 눌러야 등급이 바뀌는지 바로 보이게 한다. */}
               <button
                 type="button"
                 role="radio"
@@ -245,8 +247,23 @@ export default function CarGoalProgress() {
                 onClick={() => setGrade(g.id)}
                 className="absolute inset-0 rounded-field"
               />
-              <span className="pointer-events-none text-base font-bold tracking-[-0.02em]">{g.label}</span>
-              <span className="pointer-events-none text-[13px] text-muted">{g.description}</span>
+              <div className="pointer-events-none flex items-start justify-between gap-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-base font-bold tracking-[-0.02em]">{g.label}</span>
+                  <span className="text-[13px] text-muted">{g.description}</span>
+                </div>
+                {active ? (
+                  <span className="shrink-0 rounded-full bg-lime px-2.5 py-1 text-[12px] font-bold text-navy">선택됨</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setGrade(g.id)}
+                    className="pointer-events-auto relative shrink-0 rounded-full px-2.5 py-1 text-[12px] font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
+                  >
+                    변경
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
