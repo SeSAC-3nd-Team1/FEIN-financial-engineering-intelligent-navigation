@@ -4,7 +4,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
 
-export type LoginContext = 'header' | 'home' | 'strategy';
+export type LoginContext = 'header' | 'strategy';
 
 interface Props {
   onLogin: () => void;
@@ -15,14 +15,11 @@ interface Props {
   context: LoginContext;
 }
 
-// header/home은 둘 다 "일반" 로그인 진입(특정 transaction context 없음)이라 카피를 통일한다 —
-// 진입 경로에 따른 return destination 로직(pendingRiskProfileAfterLogin 등)은 App.tsx에 그대로
-// 남아있고, 여기서 바뀌는 건 화면에 보이는 문구뿐이다. strategy는 "이 전략으로 투자를 시작하려는"
-// 구체적 맥락이 있어 별도 문구를 유지한다.
-const GENERAL_LOGIN_COPY = { title: 'FE!N을 시작해볼까요?', subtitle: '로그인하고 FE!N을 계속 이용해보세요.' };
+// header는 "일반" 로그인 진입(특정 transaction context 없음), strategy는 "이 전략으로 투자를
+// 시작하려는" 구체적 맥락이 있어 별도 문구를 유지한다. Home의 "시작하기"/"내 투자성향 알아보기"는
+// 로그인을 거치지 않고 곧장 start-signup으로 보내므로 여기엔 별도 context가 필요 없다.
 const LOGIN_COPY: Record<LoginContext, { title: ReactNode; subtitle: string }> = {
-  header: GENERAL_LOGIN_COPY,
-  home: GENERAL_LOGIN_COPY,
+  header: { title: 'FE!N을 시작해볼까요?', subtitle: '로그인하고 FE!N을 계속 이용해보세요.' },
   // 440px 고정폭에서 줄바꿈 없이 두면 "…시작해볼까 / 요?"처럼 어색하게 끊겨 자연스러운 어절 경계에서
   // 줄을 바꾼다 — 문구/폭/font-size는 그대로다.
   strategy: { title: <>이 전략으로<br />시작해볼까요?</>, subtitle: '로그인하거나 회원가입하고 투자 준비를 이어가세요.' },

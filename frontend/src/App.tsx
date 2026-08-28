@@ -335,10 +335,6 @@ export default function App() {
   // 비회원이 백테스트 잠긴 기간(Inline Login CTA)에서 로그인 화면으로 보내진 경우 true — 로그인 후
   // Portfolio가 아니라 보고 있던 Strategy Detail로만 복귀시킨다(그 기간을 자동 실행하지는 않는다).
   const [pendingReturnToStrategy, setPendingReturnToStrategy] = useState(false);
-  // 비회원이 Home "내 투자성향 알아보기"/"무료로 시작하기"를 눌러 로그인 화면으로 보내진 경우 true —
-  // 로그인 완료 후 Portfolio가 아니라 투자성향 진단으로 이어간다(아래 Login onLogin 참고).
-  const [pendingRiskProfileAfterLogin, setPendingRiskProfileAfterLogin] =
-    useState(false);
   // 로그인 화면 title/subtitle을 결정하는 진입 경로 — Header의 일반 로그인은 기본값(header)을 쓰고,
   // Home/Strategy Detail의 특정 CTA는 각자 진입 시점에 이 값을 명시적으로 세팅한다.
   const [loginContext, setLoginContext] = useState<LoginContext>("header");
@@ -500,8 +496,8 @@ export default function App() {
    */
   const navigate = (target: Screen) => {
     // 이 함수를 거쳐 로그인으로 가는 경로(Header 일반 로그인, "나의 포트폴리오" 등 guarded 메뉴 리다이렉트)는
-    // 모두 기본 context — Home/Strategy Detail의 특정 CTA는 이 함수를 거치지 않고 각자
-    // requestLoginFromHome/requestLoginForBacktest/handleStartInvesting에서 직접 context를 세팅한다.
+    // 모두 기본 context — Strategy Detail의 특정 CTA는 이 함수를 거치지 않고 각자
+    // requestLoginForBacktest/handleStartInvesting에서 직접 context를 세팅한다.
     if (target === "login") {
       setLoginContext("header");
     }
@@ -830,17 +826,6 @@ export default function App() {
   };
 
   /**
-   * Home "내 투자성향 알아보기 →"/"무료로 시작하기" — 로그인 화면에 context="home"으로 진입시킨다.
-   * 두 CTA 모두 "FE!N을 시작해보려는" 같은 의도라 로그인 완료 후 Portfolio로 바로 보내지 않고
-   * pendingRiskProfileAfterLogin으로 투자성향 진단까지 이어가도록 목적지를 보존한다.
-   */
-  const requestLoginFromHome = () => {
-    setLoginContext("home");
-    setPendingRiskProfileAfterLogin(true);
-    setScreen("login");
-  };
-
-  /**
    * Strategy Detail 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보내진 경우 —
    * 로그인 완료 후 Portfolio가 아니라 보고 있던 Strategy Detail로만 복귀한다(그 기간을 자동 실행하지는
    * 않는다). strategyId는 이미 상태로 유지되고 있어 따로 안 챙겨도 된다.
@@ -905,7 +890,6 @@ export default function App() {
         <Home
           userName={userName}
           onNavigate={navigate}
-          onRequestLogin={requestLoginFromHome}
         />
       )}
 
@@ -913,8 +897,9 @@ export default function App() {
         <Login
           context={loginContext}
           // 로그인 성공 — "이 전략으로 시작하기"를 거쳐 왔으면 그 절차로 이어가고, 잠긴 백테스트에서
-          // 왔으면 보고 있던 Strategy Detail로 복귀하고, Home "내 투자성향 알아보기"/"무료로 시작하기"에서
-          // 왔으면 투자성향 진단으로 이어가며, 그 외에는 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
+          // 왔으면 보고 있던 Strategy Detail로 복귀하며, 그 외에는 헤더 "나의 포트폴리오"와 동일한
+          // 목적지(Portfolio)로 이동. 회원가입 유도는 이제 Home "시작하기"/"내 투자성향 알아보기"가
+          // 로그인을 거치지 않고 곧장 start-signup으로 보내므로 여기서 다룰 필요가 없다.
           onLogin={() => {
             if (pendingStartAfterLogin) {
               setPendingStartAfterLogin(false);
@@ -926,29 +911,21 @@ export default function App() {
               setScreen("strategy");
               return;
             }
-            if (pendingRiskProfileAfterLogin) {
-              setPendingRiskProfileAfterLogin(false);
-              startInvestorProfile("risk-result");
-              return;
-            }
             navigate("portfolio");
           }}
           onSignup={() => {
             setPendingStartAfterLogin(false);
             setPendingReturnToStrategy(false);
-            setPendingRiskProfileAfterLogin(false);
             setScreen("signup-1");
           }}
           onHome={() => {
             setPendingStartAfterLogin(false);
             setPendingReturnToStrategy(false);
-            setPendingRiskProfileAfterLogin(false);
             setScreen("home");
           }}
           onNavigate={(s) => {
             setPendingStartAfterLogin(false);
             setPendingReturnToStrategy(false);
-            setPendingRiskProfileAfterLogin(false);
             navigate(s);
           }}
         />
