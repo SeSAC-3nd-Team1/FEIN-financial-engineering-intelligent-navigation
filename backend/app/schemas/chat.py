@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from uuid import UUID
 
 
 class ChatHistoryMessage(BaseModel):
@@ -19,7 +20,7 @@ class ChatScreenContext(BaseModel):
     screen: str = Field(min_length=1, max_length=50)
     stock_code: str | None = Field(default=None, pattern=r"^[0-9A-Z]{6,12}$")
     strategy_id: str | None = Field(default=None, min_length=1, max_length=30)
-    account_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
+    account_id: UUID | None = None
 
 
 class ChatMessageRequest(BaseModel):
