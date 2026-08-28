@@ -68,12 +68,22 @@ LOCAL_ANSWERS: dict[str, tuple[str, str | None, list[str]]] = {
     "diversification": (
         "분산투자는 자산·종목·지역·업종을 나누어 투자 위험을 줄이는 방법이에요. 손실을 완전히 없애지는 않지만 특정 자산에 문제가 생겼을 때 영향을 줄일 수 있어요.",
         "분산을 너무 많이 하면 관리가 어려워질 수 있으므로 목적과 위험 수준에 맞춰야 해요.",
-        ["ETF도 알려줘", "자산배분은 무엇인가요?"],
+        ["ETF도 알려줘", "변동성은 무엇인가요?"],
+    ),
+    "asset_allocation": (
+        "자산배분은 주식·채권·현금·대체자산처럼 성격이 다른 자산에 투자 비중을 나누는 방법이에요. 목표와 위험 수준에 맞춰 비중을 정하고 주기적으로 점검해요.",
+        "자산배분 비중은 투자 기간과 손실을 감내할 수 있는 범위를 함께 고려해야 해요.",
+        ["분산투자는 왜 필요한가요?", "리밸런싱은 무엇인가요?"],
     ),
     "volatility": (
         "변동성은 가격이나 수익률이 평균에서 얼마나 크게 움직이는지를 나타내는 개념이에요. 변동성이 높을수록 가격 변화 폭이 클 수 있어 위험을 점검할 때 참고해요.",
         "변동성이 높다고 반드시 손실이 발생하는 것은 아니며 투자 기간도 함께 봐야 해요.",
-        ["분산투자는 왜 필요한가요?", "최대낙폭은 무엇인가요?"],
+        ["최대낙폭은 무엇인가요?", "분산투자는 왜 필요한가요?"],
+    ),
+    "mdd": (
+        "최대낙폭(MDD)은 측정 기간 중 기록한 고점에서 이후 저점까지 하락한 최대 폭이에요. 투자 중 겪을 수 있었던 가장 큰 과거 손실 구간을 보여주는 지표예요.",
+        "과거 측정값이므로 미래의 최대 손실 폭을 보장하지 않으며, 측정 기간과 기준을 함께 확인해야 해요.",
+        ["변동성과 최대낙폭은 어떻게 다른가요?", "분산투자는 왜 필요한가요?"],
     ),
     "per": (
         "PER은 주가를 주당순이익(EPS)으로 나눈 값이에요. 이익에 비해 주가가 몇 배인지 보여주며, 낮다고 항상 좋은 것은 아니고 성장성·업종·일회성 이익을 함께 봐야 해요.",
@@ -93,19 +103,40 @@ LOCAL_ANSWERS: dict[str, tuple[str, str | None, list[str]]] = {
     "dividend": (
         "배당수익률은 주가 대비 1년 배당금의 비율이에요. 배당금이 유지된다는 보장은 없으므로 배당성향, 현금흐름, 과거 배당 추이를 함께 확인해야 해요.",
         "높은 배당수익률만으로 안정적인 투자라고 판단할 수 없어요.",
-        ["배당성향은 무엇인가요?", "ROE도 알려줘"],
+        ["배당금은 무엇인가요?", "배당성향은 무엇인가요?"],
+    ),
+    "dividend_amount": (
+        "배당금은 기업이 주주에게 이익의 일부를 나누어 지급하는 금액이에요. 지급 여부와 금액은 기업의 이익, 현금흐름, 배당 정책에 따라 달라질 수 있어요.",
+        "과거에 배당금을 지급했더라도 앞으로 같은 금액을 지급한다는 보장은 없어요.",
+        ["배당수익률은 무엇인가요?", "배당성향은 무엇인가요?"],
     ),
 }
 
 LOCAL_ANSWER_ALIASES: dict[str, tuple[str, ...]] = {
     "debt": ("부채비율", "부채 비율"),
-    "diversification": ("분산투자", "분산 투자", "자산배분", "자산 배분"),
-    "volatility": ("변동성", "최대낙폭", "mdd"),
-    "dividend": ("배당", "배당금", "배당수익률", "배당 수익률"),
+    "asset_allocation": ("자산배분", "자산 배분"),
+    "diversification": ("분산투자", "분산 투자"),
+    "mdd": ("최대낙폭", "최대 낙폭", "mdd"),
+    "volatility": ("변동성",),
+    "dividend_amount": ("배당금",),
+    "dividend": ("배당수익률", "배당 수익률"),
     "etf": ("etf",),
     "eps": ("eps", "주당순이익"),
     "bps": ("bps", "주당순자산"),
 }
+
+
+def _local_answer_key(normalized: str) -> str | None:
+    """Return a local answer only for a single, unambiguous concept."""
+    matched_keys = {
+        key
+        for key, aliases in LOCAL_ANSWER_ALIASES.items()
+        if any(alias in normalized for alias in aliases)
+    }
+    matched_keys.update(key for key in ("per", "pbr", "roe") if key in normalized)
+    if len(matched_keys) != 1:
+        return None
+    return matched_keys.pop()
 
 
 LOCAL_SCREEN_ANSWER = (
@@ -215,17 +246,7 @@ class AzureOpenAIChatAgentClient:
         message: str, context: ChatScreenContext
     ) -> ChatAgentResult | None:
         normalized = " ".join(message.lower().split())
-        answer_key = next(
-            (
-                key
-                for key, aliases in LOCAL_ANSWER_ALIASES.items()
-                if any(alias in normalized for alias in aliases)
-            ),
-            next(
-                (key for key in ("per", "pbr", "roe") if key in normalized),
-                None,
-            ),
-        )
+        answer_key = _local_answer_key(normalized)
         if answer_key:
             text, caution, questions = LOCAL_ANSWERS[answer_key]
             return ChatAgentResult(

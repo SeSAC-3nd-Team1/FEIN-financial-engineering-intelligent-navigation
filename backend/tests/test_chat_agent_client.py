@@ -163,6 +163,9 @@ def test_client_answers_common_financial_terms_without_provider_call() -> None:
         ("ETF란 뭐야?", "ETF는"),
         ("분산투자란?", "분산투자는"),
         ("변동성이 뭐야?", "변동성은"),
+        ("최대낙폭은 무엇인가요?", "최대낙폭(MDD)은"),
+        ("자산배분이란?", "자산배분은"),
+        ("배당금은 무엇인가요?", "배당금은"),
     ],
 )
 def test_client_answers_more_local_financial_terms_without_provider_call(
@@ -186,6 +189,37 @@ def test_client_answers_more_local_financial_terms_without_provider_call(
     assert result.status == "COMPLETED"
     assert result.text.startswith(expected)
     assert called is False
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "변동성과 최대낙폭은 어떻게 다른가요?",
+        "배당금과 배당수익률은 어떻게 달라?",
+        "자산배분과 분산투자의 차이는?",
+    ],
+)
+def test_client_sends_compound_concept_questions_to_provider(question: str) -> None:
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(MODEL_RESULT)}}]},
+        )
+
+    client = make_client(handler)
+    try:
+        result = asyncio.run(
+            client.answer(question, [], ChatScreenContext(screen="home"))
+        )
+    finally:
+        asyncio.run(client.client.aclose())
+
+    assert result.status == "COMPLETED"
+    assert called is True
 
 
 def test_client_answers_screen_help_without_provider_call() -> None:
@@ -407,6 +441,33 @@ def test_client_rejects_invalid_structured_result() -> None:
         asyncio.run(client.client.aclose())
 
     assert raised.value.code == "CHAT_AGENT_INVALID_RESPONSE"
+
+
+def test_client_uses_resource_endpoint_url_and_api_version() -> None:
+    client = make_client(lambda _: httpx.Response(500))
+
+    assert client._request_url() == (
+        "https://example.openai.azure.com/openai/deployments/chat-model/chat/completions"
+    )
+
+
+def test_client_uses_foundry_project_endpoint_url_without_api_version() -> None:
+    client = AzureOpenAIChatAgentClient(
+        endpoint="https://example.services.ai.azure.com/api/projects/project-1",
+        api_key="secret",
+        deployment="chat-model",
+        api_version="2024-10-21",
+        timeout_seconds=1,
+        client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: httpx.Response(500))
+        ),
+    )
+
+    assert client._request_url() == (
+        "https://example.services.ai.azure.com/api/projects/project-1/openai/v1/chat/completions"
+    )
+
+    asyncio.run(client.client.aclose())
 
 
 def test_client_requires_chat_deployment() -> None:
