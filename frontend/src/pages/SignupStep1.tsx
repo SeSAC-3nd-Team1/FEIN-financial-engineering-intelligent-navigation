@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Header from '../components/Header';
 import TermsModal from '../components/TermsModal';
-import { RE, digitsOnly } from '../lib/validation';
+import { MIN_SIGNUP_AGE, RE, digitsOnly, meetsMinimumSignupAge } from '../lib/validation';
 import type { Agreements, Screen, SignupPersonal } from '../types';
 
 interface Props {
@@ -38,10 +38,13 @@ export default function SignupStep1({ value, onChange, onRequestEmailVerificatio
 
   const allAgreed = ORDER.every((k) => agree[k]);
   const emailValid = RE.email.test(value.email);
-  // Step 01 통과 조건: 입력 3개 + 약관 전체 동의(둘 다 필수)
+  const birthdateComplete = RE.birthdate.test(value.birthdate);
+  const isUnderage = birthdateComplete && !meetsMinimumSignupAge(value.birthdate);
+  // Step 01 통과 조건: 입력 3개(생년월일은 최소 연령 이상) + 약관 전체 동의(둘 다 필수)
   const canProceed =
     value.name.trim().length > 0 &&
-    RE.birthdate.test(value.birthdate) &&
+    birthdateComplete &&
+    !isUnderage &&
     emailValid &&
     allAgreed;
 
@@ -94,6 +97,9 @@ export default function SignupStep1({ value, onChange, onRequestEmailVerificatio
             placeholder="990101"
             className="w-full rounded-field bg-surface px-5 py-4 text-[17px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
           />
+          {isUnderage && (
+            <span className="text-sm text-up">만 {MIN_SIGNUP_AGE}세 이상만 가입할 수 있어요.</span>
+          )}
         </Field>
         <Field label="이메일">
           <input

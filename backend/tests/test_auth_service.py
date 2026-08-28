@@ -140,6 +140,35 @@ def test_signup_uses_server_email_proof() -> None:
     assert user.email_verified_at is not None
 
 
+def _birthdate_for_age(age: int) -> str:
+    """오늘 기준 만 `age`세가 되는 YYMMDD를 만든다 — 하드코딩된 연도로 인한 시간 경과 시 테스트
+    깨짐을 방지한다."""
+    today = datetime.now(UTC).date()
+    year = today.year - age
+    return f"{year % 100:02d}{today.month:02d}{today.day:02d}"
+
+
+def test_signup_rejects_underage_applicant() -> None:
+    session = SignupSession()
+    verifier = SignupVerifier()
+    request = SignupRequest(
+        user_id="tester03",
+        password="Password!1",
+        name="테스트",
+        birthdate=_birthdate_for_age(10),
+        phone_number="01012345678",
+        email="user@example.com",
+        email_verification_token="x" * 32,
+        agreements=[{"term_code": "B_PRIVACY", "version": "v1", "agreed": True}],
+    )
+
+    with pytest.raises(ServiceError) as error:
+        AuthService(session, verifier).signup(request)
+
+    assert error.value.code == "UNDERAGE"
+    assert session.commits == 0
+
+
 def test_signup_releases_reserved_email_proof_when_database_write_fails() -> None:
     session = FailingSignupSession()
     verifier = SignupVerifier()

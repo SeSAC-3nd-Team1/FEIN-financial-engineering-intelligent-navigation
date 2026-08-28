@@ -9,3 +9,37 @@ export const RE = {
 
 export const digitsOnly = (v: string, max: number) => v.replace(/[^\d]/g, '').slice(0, max);
 export const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`;
+
+/** 개인정보보호법 제22조의2 — 만 14세 미만 아동의 개인정보는 법정대리인 동의 없이 수집할 수 없다.
+ *  FE!N 가입 흐름에는 법정대리인 동의 절차가 없어, 가입 가능한 최소 연령을 만 14세로 둔다. */
+export const MIN_SIGNUP_AGE = 14;
+
+/** YYMMDD의 2자리 연도는 세기 구분이 없으므로, 20YY로 해석했을 때 미래 날짜가 되면 19YY로 본다. */
+function birthdateToDate(birthdate: string): Date | null {
+  if (!RE.birthdate.test(birthdate)) return null;
+  const yy = Number(birthdate.slice(0, 2));
+  const mm = Number(birthdate.slice(2, 4));
+  const dd = Number(birthdate.slice(4, 6));
+  const today = new Date();
+  const asY2000 = new Date(2000 + yy, mm - 1, dd);
+  const year = asY2000.getTime() > today.getTime() ? 1900 + yy : 2000 + yy;
+  return new Date(year, mm - 1, dd);
+}
+
+/** YYMMDD 문자열로부터 만 나이를 계산한다. 형식이 올바르지 않으면 null. */
+export function calculateAge(birthdate: string): number | null {
+  const born = birthdateToDate(birthdate);
+  if (!born) return null;
+  const today = new Date();
+  let age = today.getFullYear() - born.getFullYear();
+  const hadBirthdayThisYear =
+    today.getMonth() > born.getMonth() ||
+    (today.getMonth() === born.getMonth() && today.getDate() >= born.getDate());
+  if (!hadBirthdayThisYear) age -= 1;
+  return age;
+}
+
+export function meetsMinimumSignupAge(birthdate: string): boolean {
+  const age = calculateAge(birthdate);
+  return age !== null && age >= MIN_SIGNUP_AGE;
+}
