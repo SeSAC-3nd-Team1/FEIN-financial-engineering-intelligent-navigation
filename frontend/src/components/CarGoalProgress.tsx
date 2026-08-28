@@ -230,24 +230,10 @@ export default function CarGoalProgress() {
         )}
       </div>
 
-      {/* 1. 차량 등급 — 평소엔 현재 등급 한 줄 + "변경" 버튼만 보여 화면을 차분하게 두고,
+      {/* 1. 차량 등급 — 평소엔 이미지 위 라벨("현재 등급"/"변경")로만 존재해 화면을 차분하게 두고,
           "변경"을 누르거나(또는 grade=null인 최초 진입) 카드 2개를 펼쳐 그 중 하나를 고르게 한다.
-          고르는 즉시 다시 한 줄 요약으로 접힌다. */}
-      {grade !== null && !pickerOpen ? (
-        <div className="flex items-center justify-between rounded-field bg-canvas px-4 py-3.5">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[13px] text-muted">선택한 등급</span>
-            <span className="text-base font-bold tracking-[-0.02em]">{GRADES.find((g) => g.id === grade)?.label}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
-          >
-            변경
-          </button>
-        </div>
-      ) : (
+          고르는 즉시 다시 접힌다. */}
+      {(grade === null || pickerOpen) && (
         <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-required={grade === null} aria-label="차량 등급 선택">
           {GRADES.map((g) => {
             const active = grade === g.id;
@@ -271,12 +257,22 @@ export default function CarGoalProgress() {
       )}
 
       {/* 2~4. 이미지/금액 입력/진행률 — 등급을 아직 한 번도 고르지 않았으면(grade=null) 통째로 숨긴다.
-          최초 선택 이후에는 항상 그려진다(등급 변경은 위 카드에서 계속 가능). */}
+          최초 선택 이후에는 항상 그려진다(등급 변경은 이미지 좌측 상단 라벨 옆 "변경"으로 계속 가능). */}
       {grade !== null && (
         <>
           {/* 2~3. 차량 이미지 — 두 레이어를 겹쳐 크로스페이드한다. 컨테이너 크기는 고정이라 전환 중에도
-              이미지 크기/위치가 흔들리지 않는다. */}
+              이미지 크기/위치가 흔들리지 않는다. 등급 이름은 이미지 좌측 상단에, "변경"은 우측 상단에 얹는다. */}
           <div className="relative h-56 w-full overflow-hidden rounded-[20px] bg-canvas">
+            <div className="absolute left-3 top-3 z-20 rounded-full bg-surface/90 px-3 py-1.5 text-[13px] font-bold text-navy shadow-[0_0_0_1px_#E5E9E3_inset]">
+              {GRADES.find((g) => g.id === grade)?.label}
+            </div>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="absolute right-3 top-3 z-20 rounded-full bg-surface/90 px-3 py-1.5 text-[13px] font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2 shadow-[0_0_0_1px_#E5E9E3_inset]"
+            >
+              변경
+            </button>
             {bothBroken ? (
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-subtle">
                 <ImageOff size={28} />
