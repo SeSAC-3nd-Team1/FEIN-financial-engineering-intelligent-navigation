@@ -108,6 +108,26 @@ def test_chat_requires_login_for_account_context() -> None:
     assert client.calls == []
 
 
+def test_chat_falls_back_for_personal_strategy_without_login() -> None:
+    client = FakeClient()
+    app.dependency_overrides[get_chat_agent_client] = lambda: client
+    try:
+        response = TestClient(app).post(
+            "/api/v1/chat/messages",
+            json={
+                "message": "내 투자 전략이 뭐야?",
+                "history": [],
+                "context": {"screen": "strategy"},
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "NEEDS_CLARIFICATION"
+    assert client.calls == []
+
+
 def test_chat_falls_back_for_authenticated_user_without_consent(monkeypatch) -> None:
     client = FakeClient()
     app.dependency_overrides[get_chat_agent_client] = lambda: client

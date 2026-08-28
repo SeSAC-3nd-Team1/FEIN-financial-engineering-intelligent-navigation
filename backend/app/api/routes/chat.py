@@ -48,6 +48,10 @@ def _is_personalized_request(payload: ChatMessageRequest) -> bool:
             "내 수익률",
             "내 보유",
             "보유 종목",
+            "내 전략",
+            "내 투자 전략",
+            "내가 선택한 전략",
+            "선택한 전략",
         )
     )
 
