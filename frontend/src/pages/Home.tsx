@@ -36,20 +36,21 @@ export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
   );
 }
 
-/** 로그인 Home — Hero(환영 문구 + 캐릭터) + CTA 2개뿐인 단순 Navigation Hub */
 /** 로그인 Home은 스크롤 없이 한 화면(뷰포트)에 들어와야 한다 — 인사말/CTA를 위아래로 쌓지 않고
- *  목표 차량 위젯과 좌우로 나란히 둬서, 세로로 두 섹션을 쌓을 때 생기던 스크롤을 없앤다. */
+ *  목표 차량 위젯과 좌우로 나란히 둔다. 왼쪽도 오른쪽 위젯과 같은 카드 스타일(rounded-card
+ *  bg-surface + 테두리)로 감싸 두 패널이 한 세트처럼 보이게 하고, 화면 세로 중앙 정렬 대신
+ *  헤더 바로 아래에서 시작하게 해 위아래로 여백이 크게 남지 않게 한다. */
 function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: (s: Screen) => void }) {
   return (
-    <main className="flex items-center justify-center px-16 py-10" style={{ minHeight: 'calc(100vh - 80px)' }}>
-      <div className="grid w-full max-w-[1200px] grid-cols-2 items-center gap-14">
-        <div className="flex flex-col gap-5">
-          <img src="/character-recommend.png" alt="물방개" className="h-[120px] w-auto object-contain" />
+    <main className="flex justify-center px-16 pt-12">
+      <div className="grid w-full max-w-[1200px] grid-cols-2 items-stretch gap-8">
+        <div className="flex h-full flex-col justify-center gap-5 rounded-card bg-surface p-8 shadow-[0_0_0_1px_#E5E9E3_inset]">
+          <img src="/character-recommend.png" alt="물방개" className="h-[110px] w-auto object-contain" />
           <div className="flex flex-col gap-3">
-            <h1 className="text-[32px] font-bold leading-[42px] tracking-[-0.03em]">
+            <h1 className="text-[30px] font-bold leading-[40px] tracking-[-0.03em]">
               {userName}님, 오늘은 무엇을 알아볼까요?
             </h1>
-            <p className="text-lg leading-7 text-muted">
+            <p className="text-base leading-7 text-muted">
               물방개와 함께 투자 전략부터 시장 이야기까지 쉽게 살펴보세요.
             </p>
           </div>
