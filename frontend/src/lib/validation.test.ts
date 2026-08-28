@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateAge, meetsMinimumSignupAge } from './validation';
+import { MIN_SIGNUP_AGE, calculateAge, meetsMinimumSignupAge } from './validation';
 
 /** 오늘 기준 만 `age`세가 되는 YYMMDD를 만든다 — 하드코딩된 연도로 인한 시간 경과 시 테스트 깨짐을 방지한다. */
 function birthdateForAge(age: number): string {
@@ -33,7 +33,7 @@ describe('meetsMinimumSignupAge', () => {
   });
 
   it('accepts applicants at or above the minimum signup age', () => {
-    expect(meetsMinimumSignupAge(birthdateForAge(14))).toBe(true);
+    expect(meetsMinimumSignupAge(birthdateForAge(MIN_SIGNUP_AGE))).toBe(true);
     expect(meetsMinimumSignupAge(birthdateForAge(30))).toBe(true);
   });
 });

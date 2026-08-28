@@ -10,9 +10,10 @@ export const RE = {
 export const digitsOnly = (v: string, max: number) => v.replace(/[^\d]/g, '').slice(0, max);
 export const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`;
 
-/** 개인정보보호법 제22조의2 — 만 14세 미만 아동의 개인정보는 법정대리인 동의 없이 수집할 수 없다.
- *  FE!N 가입 흐름에는 법정대리인 동의 절차가 없어, 가입 가능한 최소 연령을 만 14세로 둔다. */
-export const MIN_SIGNUP_AGE = 14;
+/** 미성년자(만 19세 미만, 민법상 성년 기준)는 법정대리인 동의 없이 서비스 이용계약을 체결할 수
+ *  없다(민법 제5조). FE!N 가입 흐름에는 법정대리인 동의 절차가 없어, 가입 가능한 최소 연령을
+ *  만 19세로 둔다. */
+export const MIN_SIGNUP_AGE = 19;
 
 /** YYMMDD의 2자리 연도는 세기 구분이 없으므로, 20YY로 해석했을 때 미래 날짜가 되면 19YY로 본다. */
 function birthdateToDate(birthdate: string): Date | null {
