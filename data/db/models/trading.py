@@ -393,3 +393,39 @@ class AccountCashDeposit(Base):
     completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class UserCarGoal(Base):
+    """홈 화면 "목표 차량" 위젯의 등급/목표·현재 금액을 계정 단위로 저장한다."""
+
+    __tablename__ = "user_car_goals"
+    __table_args__ = (
+        # 이 마이그레이션(20260828_0029, 원래는 0025)의 op.create_table이 이미 이 이름 그대로
+        # 실행되어 공용 DB에 constraint가 생성되어 있다 — CheckConstraint는 이 프로젝트의
+        # naming_convention(ck: "ck_%(table_name)s_%(constraint_name)s")이 "name="에 준
+        # 값에도 항상 다시 적용되어, 여기서도 같은 입력을 주어야 실제 DB와 동일한
+        # "ck_user_car_goals_ck_user_car_goals_..." 이름으로 귀결되고 alembic check가
+        # drift로 보지 않는다.
+        CheckConstraint(
+            "car_grade IN ('INEX', 'HIGHEND')",
+            name="ck_user_car_goals_car_grade_values",
+        ),
+        CheckConstraint(
+            "goal_amount >= 0",
+            name="ck_user_car_goals_goal_amount_nonnegative",
+        ),
+        CheckConstraint(
+            "current_amount >= 0",
+            name="ck_user_car_goals_current_amount_nonnegative",
+        ),
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    car_grade: Mapped[str] = mapped_column(String(20), nullable=False)
+    goal_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    current_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
