@@ -38,13 +38,14 @@ from scripts.historical_momentum import (
     select_momentum_targets,
 )
 
-
 DEMO_VERSION = "minjun-1y-v3"
 DEMO_LOGIN_ID = "demomin32"
 DEMO_EMAIL = "demo.minjun@example.invalid"
 INITIAL_CASH = Decimal("3000000.00")
 HISTORY_TRADING_DAYS = 253
 KST = ZoneInfo("Asia/Seoul")
+
+
 def model_target_weights(snapshot) -> dict[str, Decimal]:
     """실제 최신 모멘텀 산출물만 95% 주식 목표 비중으로 변환한다."""
 
@@ -62,7 +63,9 @@ def model_target_weights(snapshot) -> dict[str, Decimal]:
 
 def ensure_demo_environment(enabled: str, environment: str) -> None:
     if enabled.lower() not in {"1", "true", "yes"}:
-        raise RuntimeError("DEMO_SEED_ENABLED=true를 명시해야 데모 시드를 실행할 수 있습니다.")
+        raise RuntimeError(
+            "DEMO_SEED_ENABLED=true를 명시해야 데모 시드를 실행할 수 있습니다."
+        )
     if environment.strip().lower() in {"prod", "production", "live"}:
         raise RuntimeError("운영 환경에서는 데모 시드를 실행할 수 없습니다.")
 
@@ -79,12 +82,12 @@ def _historical_model_history(
 ]:
     index_dates = sorted(
         set(
-        session.scalars(
-            select(MarketIndex.trade_date).where(
-                MarketIndex.market == "KOSPI",
-                MarketIndex.index_name.in_(("코스피", "KOSPI")),
+            session.scalars(
+                select(MarketIndex.trade_date).where(
+                    MarketIndex.market == "KOSPI",
+                    MarketIndex.index_name.in_(("코스피", "KOSPI")),
+                )
             )
-        )
         )
     )
     if len(index_dates) < HISTORY_TRADING_DAYS:
@@ -119,9 +122,7 @@ def _historical_model_history(
         bar = PriceBar(*row)
         bars_by_stock.setdefault(bar.stock_code, []).append(bar)
 
-    signal_dates = sorted(
-        set(monthly_signal_dates(trading_dates)) | {final_model_date}
-    )
+    signal_dates = sorted(set(monthly_signal_dates(trading_dates)) | {final_model_date})
     weights_by_date = {
         signal_date: select_momentum_targets(bars_by_stock, signal_date)
         for signal_date in signal_dates
@@ -150,7 +151,9 @@ def _historical_model_history(
             aligned[trading_date] = last_close
         closes[stock_code] = aligned
 
-    date_to_index = {trading_date: index for index, trading_date in enumerate(trading_dates)}
+    date_to_index = {
+        trading_date: index for index, trading_date in enumerate(trading_dates)
+    }
     schedule = {date_to_index[day]: weights for day, weights in weights_by_date.items()}
     schedule_dates = {date_to_index[day]: day for day in weights_by_date}
     return trading_dates, closes, schedule, schedule_dates
@@ -172,7 +175,9 @@ def _publish_model_targets(
     if existing:
         current = {row.stock_code: Decimal(row.target_weight) for row in existing}
         if current != target_weights:
-            raise RuntimeError("같은 기준일의 모멘텀 목표 비중이 다르게 저장돼 있습니다.")
+            raise RuntimeError(
+                "같은 기준일의 모멘텀 목표 비중이 다르게 저장돼 있습니다."
+            )
         return
     session.add_all(
         [
@@ -199,7 +204,9 @@ def _latest_terms(session: Session, effective_at: datetime) -> list[Term]:
     return list(latest.values())
 
 
-def _already_seeded(session: Session, login_id: str) -> tuple[User, VirtualAccount] | None:
+def _already_seeded(
+    session: Session, login_id: str
+) -> tuple[User, VirtualAccount] | None:
     user = session.scalar(select(User).where(User.user_id == login_id))
     if user is None:
         return None
@@ -210,15 +217,21 @@ def _already_seeded(session: Session, login_id: str) -> tuple[User, VirtualAccou
         )
     )
     if account is None:
-        raise RuntimeError("같은 로그인 아이디의 기존 사용자가 있어 데모 계정을 만들 수 없습니다.")
+        raise RuntimeError(
+            "같은 로그인 아이디의 기존 사용자가 있어 데모 계정을 만들 수 없습니다."
+        )
     marker = session.scalar(
-        select(Order.id).where(
+        select(Order.id)
+        .where(
             Order.account_id == account.id,
             Order.idempotency_key.like(f"demo-{DEMO_VERSION}-%"),
-        ).limit(1)
+        )
+        .limit(1)
     )
     if marker is None:
-        raise RuntimeError("같은 로그인 아이디의 기존 계정이 데모 시드 소유가 아닙니다.")
+        raise RuntimeError(
+            "같은 로그인 아이디의 기존 계정이 데모 시드 소유가 아닙니다."
+        )
     return user, account
 
 
@@ -314,7 +327,9 @@ def seed_demo_account(
 
     strategy = session.get(Strategy, "momentum")
     if strategy is None or not strategy.is_active:
-        raise RuntimeError("활성 momentum 전략이 없습니다. DB migration/seed를 먼저 실행해주세요.")
+        raise RuntimeError(
+            "활성 momentum 전략이 없습니다. DB migration/seed를 먼저 실행해주세요."
+        )
     model_snapshot = ModelRecommendationService().latest()
     final_target_weights = model_target_weights(model_snapshot)
     trading_dates, closes, target_schedule, target_schedule_dates = (
