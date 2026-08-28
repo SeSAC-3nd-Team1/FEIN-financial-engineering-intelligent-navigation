@@ -70,7 +70,11 @@ def get_financial_term(term: str) -> dict[str, object]:
 def get_strategy_catalog(session: Session) -> dict[str, object]:
     """활성 전략만 반환하며 주문·변경 정보는 포함하지 않는다."""
 
-    strategies = TradingRepository(session).strategies()
+    strategies = [
+        strategy
+        for strategy in TradingRepository(session).strategies()
+        if strategy.availability_status == "AVAILABLE"
+    ]
     return {
         "items": [
             {
@@ -139,7 +143,6 @@ def get_my_account_summary(
         else None
     )
     return {
-        "account_id": account.id,
         "account_name": account.account_name,
         "operation_mode": account.operation_mode,
         "status": account.status,
@@ -167,7 +170,6 @@ def get_my_portfolio_summary(
         default=None,
     )
     return {
-        "account_id": account.id,
         "cash_balance": portfolio.cash_balance,
         "total_assets": portfolio.total_assets,
         "valuation_profit": portfolio.valuation_profit,

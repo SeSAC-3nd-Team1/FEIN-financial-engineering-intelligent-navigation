@@ -107,10 +107,34 @@ def test_account_tool_uses_owned_active_account_and_selected_strategy(
 
     result = chat_tools.get_my_account_summary(FakeSession(), 7, account_id=account.id)
 
-    assert result["account_id"] == account.id
+    assert "account_id" not in result
     assert result["selected_strategy"] == {"strategy_id": "balanced", "name": "균형형"}
     assert result["source"] == "virtual_accounts"
     assert result["as_of"] is not None
+
+
+def test_account_tool_does_not_expose_account_id(monkeypatch) -> None:
+    account = SimpleNamespace(
+        id=uuid4(),
+        status="ACTIVE",
+        account_name="내 계좌",
+        operation_mode="AUTO",
+        cash_balance=100,
+        invested_principal=100,
+        selected_strategy_id=None,
+    )
+    monkeypatch.setattr(
+        chat_tools.RecommendationRepository,
+        "has_ai_personalization_consent",
+        lambda *_: True,
+    )
+    monkeypatch.setattr(
+        chat_tools.TradingRepository, "owned_account", lambda *_: account
+    )
+
+    result = chat_tools.get_my_account_summary(FakeSession(), 7, account_id=account.id)
+
+    assert "account_id" not in result
 
 
 def test_account_tool_rejects_missing_account(monkeypatch) -> None:
@@ -127,6 +151,32 @@ def test_account_tool_rejects_missing_account(monkeypatch) -> None:
     assert error.value.code == "ACCOUNT_NOT_FOUND"
 
 
+def test_portfolio_tool_does_not_expose_account_id(monkeypatch) -> None:
+    account = SimpleNamespace(id=uuid4(), status="ACTIVE")
+    portfolio = SimpleNamespace(
+        cash_balance=100,
+        total_assets=100,
+        valuation_profit=0,
+        return_rate=0,
+        positions=[],
+    )
+    monkeypatch.setattr(
+        chat_tools.RecommendationRepository,
+        "has_ai_personalization_consent",
+        lambda *_: True,
+    )
+    monkeypatch.setattr(
+        chat_tools.TradingRepository, "owned_account", lambda *_: account
+    )
+    monkeypatch.setattr(chat_tools.PortfolioService, "evaluate", lambda *_: portfolio)
+
+    result = chat_tools.get_my_portfolio_summary(
+        FakeSession(), 7, account_id=account.id
+    )
+
+    assert "account_id" not in result
+
+
 def test_strategy_catalog_is_read_only_and_active(monkeypatch) -> None:
     strategies = [
         SimpleNamespace(
@@ -135,7 +185,16 @@ def test_strategy_catalog_is_read_only_and_active(monkeypatch) -> None:
             description="분산 전략",
             risk_level="MEDIUM",
             rebalance_cycle="MONTHLY",
-        )
+            availability_status="AVAILABLE",
+        ),
+        SimpleNamespace(
+            id="value",
+            name="가치주",
+            description="테스트 중인 전략",
+            risk_level="HIGH",
+            rebalance_cycle="MONTHLY",
+            availability_status="TESTING",
+        ),
     ]
     monkeypatch.setattr(
         chat_tools.TradingRepository, "strategies", lambda *_: strategies
@@ -143,6 +202,6 @@ def test_strategy_catalog_is_read_only_and_active(monkeypatch) -> None:
 
     result = chat_tools.get_strategy_catalog(FakeSession())
 
-    assert result["items"][0]["strategy_id"] == "balanced"
+    assert [item["strategy_id"] for item in result["items"]] == ["balanced"]
     assert result["source"] == "strategies"
     assert "order" not in result["items"][0]
