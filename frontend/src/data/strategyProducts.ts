@@ -6,6 +6,10 @@
  * contract가 확정된 canonical `momentum` 전략으로 명시적으로 연결한다.
  */
 
+/** 전략 "이해/접근 난이도" — 투자 위험등급이 아니다. 몇 개의 개념을 얼마나 알아야 접근할 수
+ *  있는지에 대한 정적 UI 메타데이터이며, 투자성향 진단 결과와 연결되지 않는다. */
+export type StrategyDifficulty = '입문자 추천' | '경험자 추천' | '심화 전략';
+
 export interface StrategyProductCard {
   key: 'loss-avoidance' | 'f4-collection' | 'personalized';
   /** 카드 제목의 첫 글자(Visual Anchor) — 물/방/개 */
@@ -15,6 +19,7 @@ export interface StrategyProductCard {
   name: string;
   meta: string;
   status?: 'testing';
+  difficulty: StrategyDifficulty;
   description: string;
   /** CTA 라벨(화살표 문자 제외) — 화살표는 카드에서 별도의 lime circular arrow로 렌더링한다 */
   ctaLabel: string;
@@ -24,6 +29,13 @@ export interface StrategyProductCard {
  * 3차 디자인 QA: 물/방/개 각각 다른 색(green/yellow/blue)을 쓰던 2차 tint 시스템을 걷어내고,
  * FE!N lime key color 하나만 accent로 쓴다 — 3개 카드 모두 동일한 처리(CTA arrow circle)라
  * 카드마다 다른 색이 생기지 않는다.
+ *
+ * difficulty 근거(투자 위험도가 아니라 이해해야 하는 개념 수 기준):
+ * - 물림방지: 전략 1개, 개념도 "손실 방지" 하나뿐이라 바로 이해·진입 가능 → 입문자 추천
+ * - 방탄 F4: 가치/모멘텀/통계적 차익거래/이벤트 드리븐 4개 팩터 전략을 비교해야 해서 상대적으로
+ *   더 많은 투자 개념을 알아야 함 → 경험자 추천
+ * - 개인 맞춤화: 전략을 고르는 게 아니라 "나의 투자 기준"을 스스로 정의해야 하는 가장 복잡한
+ *   상호작용 모델(기존 카드 설명 "나의 투자 기준과 스타일을 반영" 자체가 이미 이를 전제) → 심화 전략
  */
 export const STRATEGY_PRODUCT_CARDS: StrategyProductCard[] = [
   {
@@ -32,6 +44,7 @@ export const STRATEGY_PRODUCT_CARDS: StrategyProductCard[] = [
     restOfName: '림방지 전략',
     name: '물림방지 전략',
     meta: 'FE!N 자체 알고리즘',
+    difficulty: '입문자 추천',
     description: '큰 손실을 피하면서 안정적인 투자를 지향하는 FE!N의 자체 전략입니다.',
     ctaLabel: '자세히 보기',
   },
@@ -41,6 +54,7 @@ export const STRATEGY_PRODUCT_CARDS: StrategyProductCard[] = [
     restOfName: '탄 F4 전략집',
     name: '방탄 F4 전략집',
     meta: '대표 투자전략 4가지',
+    difficulty: '경험자 추천',
     description: '시장에서도 활용되는 대표적인 투자 전략 4가지를 한곳에서 살펴볼 수 있어요.',
     ctaLabel: '4가지 전략 보기',
   },
@@ -51,6 +65,7 @@ export const STRATEGY_PRODUCT_CARDS: StrategyProductCard[] = [
     name: '개인 맞춤화 전략',
     meta: 'Personalized Strategy',
     status: 'testing',
+    difficulty: '심화 전략',
     description: '나의 투자 기준과 스타일을 반영해 나를 대신해 투자하는 개인화 전략을 준비하고 있어요.',
     ctaLabel: '미리 보기',
   },

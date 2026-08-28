@@ -956,22 +956,7 @@ export default function App() {
         />
       )}
       {screen === "risk-result" && (
-        <RiskResult
-          userName={userName}
-          onNavigate={navigate}
-          onSelectStrategy={(selectedStrategy, selectedRecommendation) => {
-            setStrategyId(selectedStrategy.id);
-            setStrategyDetailBackTarget("strategy-list");
-            // RiskResult가 방금 사용한 실제 카탈로그 객체를 그대로 이어받는다. App의 병렬 카탈로그
-            // 조회가 아직 끝나지 않았거나 일시 실패해도 상세 화면이 로컬 목업으로 되돌아가지 않는다.
-            setStrategyCatalog((current) => [
-              ...current.filter((item) => item.id !== selectedStrategy.id),
-              selectedStrategy,
-            ]);
-            setStrategyRecommendation(selectedRecommendation);
-            setScreen("strategy");
-          }}
-        />
+        <RiskResult userName={userName} onNavigate={navigate} />
       )}
       {screen === "investor-check" && (
         <InvestorProfileCheck

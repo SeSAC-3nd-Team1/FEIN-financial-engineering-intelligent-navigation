@@ -75,6 +75,12 @@ export default function StrategyList({
                     <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-muted shadow-[0_0_0_1px_#E5E9E3_inset]">
                       {card.meta}
                     </span>
+                    {/* 난이도 태그: 투자 위험등급이 아니라 "이해/접근 난이도" 안내용 정적 메타데이터라
+                       위 meta pill과 동일한 neutral 스타일을 그대로 재사용한다 — 별도 강조를 주면
+                       마치 투자성향 기반 추천처럼 보일 수 있어 의도적으로 시각적 위계를 두지 않았다. */}
+                    <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-muted shadow-[0_0_0_1px_#E5E9E3_inset]">
+                      {card.difficulty}
+                    </span>
                     {card.status === 'testing' && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-neutral-150 px-3 py-1 text-xs font-bold text-ink-soft shadow-[0_0_0_1px_#E5E9E3_inset]">
                         <Clock size={11} />
