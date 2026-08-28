@@ -47,13 +47,13 @@ def upgrade() -> None:
             description = 'BOCPD·HMM·BMA·Kelly 기반 자체 알고리즘으로 위험 국면의 노출을 줄입니다.',
             risk_level = 'MEDIUM',
             rebalance_cycle = 'DAILY',
-            rule_config = '{
-              "engine":"algorithm_v2_3",
-              "model_version":"2.3",
-              "snapshot_contract":"loss-avoidance-v1",
-              "cash_buffer_max":0.05,
-              "universe_rule":"latest_60d_median_trading_value"
-            }'::jsonb,
+            rule_config = jsonb_build_object(
+              'engine', 'algorithm_v2_3',
+              'model_version', '2.3',
+              'snapshot_contract', 'loss-avoidance-v1',
+              'cash_buffer_max', 0.05,
+              'universe_rule', 'latest_60d_median_trading_value'
+            ),
             product_group = 'MUL',
             availability_status = 'AVAILABLE',
             engine_key = 'algorithm_v2_3',
