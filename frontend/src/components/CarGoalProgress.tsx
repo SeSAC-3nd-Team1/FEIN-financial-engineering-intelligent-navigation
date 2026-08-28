@@ -160,7 +160,7 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
   }
 
   return (
-    <section className="flex min-h-0 w-full flex-1 flex-col gap-4 rounded-card bg-surface p-6 shadow-elevation-sm">
+    <section className="flex min-h-0 w-full flex-1 flex-col gap-3 rounded-card bg-surface p-5 shadow-elevation-sm">
       {/* Portfolio.tsx의 "나의 포트폴리오" 제목처럼 카드 제목은 항상 상단에 고정한다(shrink-0) —
           카드 전체를 justify-center로 묶으면 제목이 카드 한가운데로 떠 보여 어색해진다. 늘어난
           세로 공간은 아래 차량/진행률 블록만 flex-1로 받아 그 안에서 중앙 정렬한다. */}
@@ -226,17 +226,17 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
         </div>
       )}
 
-      {/* 2~4. 카드 폭이 Portfolio 메인 컨텐츠(1040px)와 통일되면서 세로로만 쌓으면 이미지가 넓고
-          납작해진다 — 이미지(왼쪽 고정폭)와 진행률/금액 정보(오른쪽)를 한 카드 안에서 좌우로
-          나눠 넓은 폭을 자연스럽게 쓴다. 등급을 아직 한 번도 고르지 않았으면(grade=null) 통째로
-          숨긴다. */}
+      {/* 2~6. 차량 이미지를 카드 상단에 넓게 두고, 그 아래 진행 정보를 세로로 쌓는다 — 좌우로
+          쪼개면 이미지가 좁은 고정폭에 갇혀 존재감이 작아지므로, 카드 폭(1040px)을 이미지가
+          그대로 받게 하고 진행률/금액 정보는 그 아래 전체 폭을 쓰는 한 줄씩으로 둔다. 등급을
+          아직 한 번도 고르지 않았으면(grade=null) 통째로 숨긴다. */}
       {grade !== null && (
-        <div className="flex min-h-0 flex-1 flex-col gap-6 sm:flex-row sm:items-stretch">
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
           {/* 2~3. 차량 이미지 — 카드가 늘어난 만큼 이미지도 함께 커져서(고정 높이 대신 flex-1 +
-              min/max 범위) 카드 안에 빈 공간이 남지 않게 한다. 폭은 계속 고정해 좌우 배치가
-              흔들리지 않는다. 두 레이어를 겹쳐 크로스페이드하며, 등급 이름은 좌측 상단,
-              "변경"은 우측 상단에 얹는다. */}
-          <div className="relative h-full min-h-[240px] w-full shrink-0 overflow-hidden rounded-[20px] bg-canvas sm:w-[420px] sm:max-h-[440px]">
+              min/max 범위) 카드 안에 빈 공간이 남지 않게 한다. 두 레이어를 겹쳐 크로스페이드하며,
+              등급 이름은 좌측 상단, "변경"은 우측 상단에 얹는다. min-h를 낮춰 작은 화면(768px대
+              높이)에서도 아래 진행률/금액 정보와 함께 스크롤 없이 들어가게 한다. */}
+          <div className="relative min-h-[140px] w-full flex-1 overflow-hidden rounded-[20px] bg-canvas sm:max-h-[380px]">
             <div className="absolute left-3 top-3 z-20 rounded-full bg-surface/90 px-3 py-1.5 text-[13px] font-bold text-navy shadow-[0_0_0_1px_#E5E9E3_inset]">
               {GRADES.find((g) => g.id === grade)?.label}
             </div>
@@ -279,39 +279,36 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
             )}
           </div>
 
-          <div className="flex flex-1 flex-col justify-center gap-7">
-            {/* 3~4. 물방개 + 진행률/메시지 — 예전엔 "물방개가 응원해요" 캡션과 진행률 메시지가
-                서로 다른 말을 하며 두 블록으로 쌓여 있었다(같은 얘기를 두 번 하는 것처럼 어색했다).
-                하나의 줄로 합쳐 마스코트가 실제 진행 메시지를 전하는 것처럼 보이게 하고, 그 아래
-                진행률 바를 바로 이어 붙였다. 카드 배경 위에 그대로 얹는다(Chatbot.tsx 빈 대화
-                상태와 같은 방식) — 박스로 감싸면 오히려 튀어 보인다. */}
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-5">
-                <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-[140px] w-[140px] shrink-0 object-contain" />
-                <div className="flex flex-1 items-center justify-between gap-4">
-                  <span className="text-lg font-bold tracking-[-0.02em]">
-                    {completed
-                      ? '목표 금액을 달성했어요! 🎉'
-                      : goalAmount > 0
-                        ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
-                        : '목표 금액을 입력해주세요.'}
-                  </span>
-                  <span className="shrink-0 text-2xl font-bold text-navy">{Math.round(progress)}%</span>
-                </div>
+          {/* 4. 물방개 + 진행률/메시지 — 마스코트가 진행 메시지를 직접 전하듯 아이콘과 문구를
+              한 줄에 두고, 퍼센트는 오른쪽 끝, 그 아래 진행률 바를 카드 전체 폭으로 이어 붙인다. */}
+          <div className="flex shrink-0 flex-col gap-2">
+            <div className="flex items-center gap-5">
+              <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-[84px] w-[84px] shrink-0 object-contain" />
+              <div className="flex flex-1 items-center justify-between gap-4">
+                <span className="text-lg font-bold tracking-[-0.02em]">
+                  {completed
+                    ? '목표 금액을 달성했어요! 🎉'
+                    : goalAmount > 0
+                      ? `${won(goalAmount - currentAmount)} 더 모으면 목표를 달성해요.`
+                      : '목표 금액을 입력해주세요.'}
+                </span>
+                <span className="shrink-0 text-2xl font-bold text-navy">{Math.round(progress)}%</span>
               </div>
-              <div className="h-3.5 overflow-hidden rounded-full bg-line">
-                <div
-                  className="h-full rounded-full bg-lime transition-[width] duration-500"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              {saveError && (
-                <p className="text-[13px] font-semibold text-warn">저장하지 못했어요. 네트워크를 확인해주세요.</p>
-              )}
             </div>
+            <div className="h-3.5 overflow-hidden rounded-full bg-line">
+              <div
+                className="h-full rounded-full bg-lime transition-[width] duration-500"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            {saveError && (
+              <p className="text-[13px] font-semibold text-warn">저장하지 못했어요. 네트워크를 확인해주세요.</p>
+            )}
+          </div>
 
-            {/* 5. 목표 금액 — 평소엔 "목표: OO원 · 수정" 한 줄만 보이고, "수정"을 눌렀을 때만
-                입력창을 연다(값을 정하면 다시 한 줄로 접힌다). */}
+          {/* 5~6. 목표 금액 / 현재 투자 금액 — 카드 전체 폭을 그대로 쓰는 한 줄씩. 목표 금액은
+              평소엔 "목표: OO원 · 수정" 한 줄만 보이고, "수정"을 눌렀을 때만 입력창을 연다. */}
+          <div className="flex shrink-0 flex-col gap-2.5">
             {goalEditing ? (
               <GoalAmountField value={goalAmount} onChange={handleGoalAmount} />
             ) : (
@@ -330,7 +327,7 @@ export default function CarGoalProgress(props: UseCarGoalResult) {
               </div>
             )}
 
-            {/* 6. 현재 투자 금액 — 직접 손댈 수 없는 값이라 입력창처럼 보이지 않게 가볍게 한 줄로만 둔다. */}
+            {/* 직접 손댈 수 없는 값이라 입력창처럼 보이지 않게 가볍게 한 줄로만 둔다. */}
             <div className="flex items-center justify-between text-base">
               <span className="text-muted">현재 투자 금액</span>
               <span className="font-semibold text-ink">
