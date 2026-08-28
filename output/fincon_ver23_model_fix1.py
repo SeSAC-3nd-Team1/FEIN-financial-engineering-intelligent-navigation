@@ -17,7 +17,7 @@ _spec.loader.exec_module(_base)
 PositionInput = _base.PositionInput
 PlannedOrder = _base.PlannedOrder
 ModelPlan = _base.ModelPlan
-MODEL_VERSION = "fincon-ver23-v1-fix"
+MODEL_VERSION = "fincon-ver23-v1-fix1"
 
 
 class FinConVer23Model(_base.FinConVer23Model):

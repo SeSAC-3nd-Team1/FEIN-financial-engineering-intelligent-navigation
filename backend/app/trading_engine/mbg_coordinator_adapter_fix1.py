@@ -5,7 +5,7 @@ from typing import Protocol
 
 import httpx
 
-from app.trading_engine.contracts_fix import MBGWeightResponseFix
+from app.trading_engine.contracts_fix1 import MBGWeightResponseFix
 
 
 DEFAULT_MBG_COORDINATOR_ENDPOINT = (
@@ -18,7 +18,7 @@ class AsyncCredentialFix(Protocol):
     async def get_token(self, *scopes: str): ...
 
 
-class MBGCoordinatorAdapterFix:
+class MBGCoordinatorAdapterFix1:
     def __init__(self, credential: AsyncCredentialFix, *, endpoint: str = DEFAULT_MBG_COORDINATOR_ENDPOINT,
                  http: httpx.AsyncClient | None = None, timeout_seconds: float = 30) -> None:
         url = httpx.URL(endpoint)

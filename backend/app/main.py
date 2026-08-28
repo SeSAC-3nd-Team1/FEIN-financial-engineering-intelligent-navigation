@@ -25,7 +25,7 @@ from app.api.routes import (
     portfolio,
     strategies,
     strategy_recommendations,
-    trading_engine_fix,
+    trading_engine_fix1,
 )
 from app.core.errors import ServiceError
 from app.db.session import engine
@@ -106,6 +106,6 @@ for router in (
     strategy_recommendations.router,
     model_recommendations.router,
     companies.router,
-    trading_engine_fix.router,
+    trading_engine_fix1.router,
 ):
     app.include_router(router, prefix="/api/v1")

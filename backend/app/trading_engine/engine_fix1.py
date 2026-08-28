@@ -1,18 +1,18 @@
-"""Async MBGCoordinator gate in front of the deterministic paper engine."""
+"""Async MBGCoordinator gate in front of the deterministic paper engine (fix1)."""
 
 from uuid import uuid4
 
 from app.core.errors import ServiceError
 from app.trading_engine.contracts import CoordinatorAdvice, EngineRunRequest, EngineRunResponse
-from app.trading_engine.engine import IntegratedTradingEngine
-from app.trading_engine.weight_gate_fix import AlgorithmWeightGateFix
+from app.trading_engine.engine_base_fix1 import IntegratedTradingEngineFix1
+from app.trading_engine.weight_gate_fix1 import AlgorithmWeightGateFix1
 
 
-class IntegratedTradingEngineFix:
-    def __init__(self, base_engine: IntegratedTradingEngine, coordinator, gate=None) -> None:
+class IntegratedTradingEngineGateFix1:
+    def __init__(self, base_engine: IntegratedTradingEngineFix1, coordinator, gate=None) -> None:
         self.base_engine = base_engine
         self.coordinator = coordinator
-        self.gate = gate or AlgorithmWeightGateFix()
+        self.gate = gate or AlgorithmWeightGateFix1()
 
     async def run(self, user_id: int, request: EngineRunRequest) -> EngineRunResponse:
         request_id = f"mbg-weight-{uuid4()}"
@@ -45,13 +45,7 @@ class IntegratedTradingEngineFix:
             "cash_buffer": self.gate.config.cash_buffer,
             "execute": False,
         })
-        plan = self.base_engine.run(user_id, fixed)
+        plan = self.base_engine.plan(user_id, fixed)
         if not request.execute:
             return plan
-        if len(plan.orders) > 1:
-            raise ServiceError(
-                "ATOMIC_BATCH_EXECUTION_REQUIRED",
-                "여러 리밸런싱 주문은 원자적 배치 체결 구현 전까지 실행할 수 없습니다.",
-                409,
-            )
-        return self.base_engine.run(user_id, fixed.model_copy(update={"execute": True}))
+        return self.base_engine.execute_plan(user_id, fixed, plan)

@@ -3,10 +3,10 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from app.trading_engine.contracts_fix import MBGWeightResponseFix, WeightGateConfigFix, WeightGateResultFix
+from app.trading_engine.contracts_fix1 import MBGWeightResponseFix, WeightGateConfigFix, WeightGateResultFix
 
 
-class AlgorithmWeightGateFix:
+class AlgorithmWeightGateFix1:
     def __init__(self, config: WeightGateConfigFix = WeightGateConfigFix()) -> None:
         self.config = config
 

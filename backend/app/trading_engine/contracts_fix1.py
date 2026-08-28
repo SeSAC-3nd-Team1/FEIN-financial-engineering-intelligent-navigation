@@ -1,4 +1,4 @@
-"""Strict contracts for MBGCoordinator weight modification gate."""
+"""Strict contracts for MBGCoordinator weight modification gate (fix1)."""
 
 from datetime import datetime
 from decimal import Decimal

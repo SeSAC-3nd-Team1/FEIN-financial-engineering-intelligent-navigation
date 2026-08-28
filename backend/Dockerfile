@@ -6,10 +6,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt ./
+COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend/ .
+COPY output/fincon_ver23_model.py output/fincon_ver23_model_fix1.py /models/
+
+ENV FINCON_VER23_MODEL_PATH=/models/fincon_ver23_model_fix1.py
 
 EXPOSE 8000
 

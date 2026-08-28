@@ -53,8 +53,16 @@ jobs:
       - name: Build backend image
         run: |
           docker build \
+            -f backend/Dockerfile \
             -t "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
-            ./backend
+            .
+
+      - name: Verify FINCON model in backend image
+        run: |
+          docker run --rm \
+            --entrypoint python \
+            "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
+            -c "from app.trading_engine.model_loader_fix1 import load_model_module_fix1; module = load_model_module_fix1(); assert module.MODEL_VERSION == 'fincon-ver23-v1-fix1'"
 
       - name: Push backend image
         run: |

@@ -4,8 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from app.trading_engine.contracts_fix import MBGWeightResponseFix
-from app.trading_engine.weight_gate_fix import AlgorithmWeightGateFix
+from app.trading_engine.contracts_fix1 import MBGWeightResponseFix
+from app.trading_engine.weight_gate_fix1 import AlgorithmWeightGateFix1
 
 
 def response(proposals, confidence="0.9"):
@@ -14,7 +14,7 @@ def response(proposals, confidence="0.9"):
 
 def test_agent_adjustment_is_capped_and_cash_buffer_is_preserved():
     baseline = {"005930": Decimal("0.50"), "000660": Decimal("0.40")}
-    result = AlgorithmWeightGateFix().evaluate(
+    result = AlgorithmWeightGateFix1().evaluate(
         baseline_weights=baseline, signal_generated_at=datetime.now(UTC),
         agent=response([
             {"stock_code": "005930", "baseline_weight": "0.50", "proposed_weight": "0.80", "reason": "강세"},
@@ -28,7 +28,7 @@ def test_agent_adjustment_is_capped_and_cash_buffer_is_preserved():
 
 def test_universe_mismatch_falls_back_to_baseline():
     baseline = {"005930": Decimal("0.50")}
-    result = AlgorithmWeightGateFix().evaluate(
+    result = AlgorithmWeightGateFix1().evaluate(
         baseline_weights=baseline, signal_generated_at=datetime.now(UTC),
         agent=response([{"stock_code": "000660", "baseline_weight": "0.50", "proposed_weight": "0.40", "reason": "교체"}]),
     )
@@ -37,7 +37,7 @@ def test_universe_mismatch_falls_back_to_baseline():
 
 
 def test_stale_signal_is_rejected():
-    result = AlgorithmWeightGateFix().evaluate(
+    result = AlgorithmWeightGateFix1().evaluate(
         baseline_weights={"005930": Decimal("0.50")},
         signal_generated_at=datetime.now(UTC) - timedelta(hours=2), agent=None,
     )
@@ -45,8 +45,8 @@ def test_stale_signal_is_rejected():
 
 
 def test_fixed_output_model_enforces_cash_buffer_across_portfolio():
-    path = Path(__file__).resolve().parents[2] / "output" / "fincon_ver23_model_fix.py"
-    spec = importlib.util.spec_from_file_location("fincon_ver23_model_fix_test", path)
+    path = Path(__file__).resolve().parents[2] / "output" / "fincon_ver23_model_fix1.py"
+    spec = importlib.util.spec_from_file_location("fincon_ver23_model_fix1_test", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)

@@ -1,6 +1,6 @@
-# FINCON-inspired Algorithm v2.3 통합 매매 엔진
+# FINCON-inspired Algorithm v2.3 통합 매매 엔진 fix1
 
-모델 코어는 `output/fincon_ver23_model.py`에 구현한다. 이 엔진은 FINCON의 manager–analyst 계층과 risk-first synthesis 패턴을 현재
+모델 코어는 `output/fincon_ver23_model_fix1.py`에 구현하고 production 이미지의 `/models`에도 포함한다. 이 엔진은 FINCON의 manager–analyst 계층과 risk-first synthesis 패턴을 현재
 가상투자 서버에 맞게 적용한다. FINCON 원본 코드를 런타임에 포함하지 않으며,
 외부 에이전트가 주문을 직접 생성하지 못하게 구조화된 계약만 허용한다.
 
@@ -21,7 +21,7 @@ MBGCoordinator는 종목을 차단할 수 있지만 목표비중을 새로 만�
 
 ## API
 
-`POST /api/v1/trading-engine/runs`
+`POST /api/v1/trading-engine-fix/runs`
 
 ```json
 {
@@ -53,7 +53,7 @@ FastAPI 주문 처리를 별도 프로세스나 예약 작업으로 분리할 �
 
 서버는 `FINCON_VER23_MODEL_PATH`에서 모델을 동적으로 로드한다. compose 환경은
 `./output`을 `/models`에 읽기 전용으로 마운트하고 기본 경로를
-`/models/fincon_ver23_model.py`로 지정한다.
+`/models/fincon_ver23_model_fix1.py`로 지정한다.
 
 추후 MBGCoordinator 연결 시 `OrchestrationResult.final_report.details`를 검증한 뒤
 `CoordinatorAdvice`로 변환하는 adapter만 추가한다. 기존 `analysis_only` 정책을
