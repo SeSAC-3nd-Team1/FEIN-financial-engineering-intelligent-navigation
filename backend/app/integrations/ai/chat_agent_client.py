@@ -3,6 +3,7 @@
 import copy
 import json
 from typing import Any, Protocol
+from uuid import UUID
 from urllib.parse import quote
 
 import httpx
@@ -11,7 +12,13 @@ from pydantic import ValidationError
 
 from app.core.errors import ServiceError
 from app.schemas.chat import ChatAgentResult, ChatHistoryMessage, ChatScreenContext
-
+from app.services.chat_tools import (
+    get_financial_term,
+    get_my_account_summary,
+    get_my_portfolio_summary,
+    get_stock_summary,
+    get_strategy_catalog,
+)
 
 # Requests that must be refused before any provider call.
 SAFETY_REFUSAL_PATTERNS = (
@@ -70,7 +77,7 @@ LOCAL_ANSWERS: dict[str, tuple[str, str | None, list[str]]] = {
         "PBR이 낮아도 자산의 수익성이나 성장성이 낮을 수 있어 다른 지표와 함께 확인해야 해요.",
         ["PER도 알려줘", "ROE도 알려줘"],
     ),
-        "roe": (
+    "roe": (
         "ROE는 자기자본이익률로, 회사가 주주가 맡긴 자기자본으로 얼마나 이익을 냈는지 보여주는 비율이에요. 높을수록 자본을 효율적으로 활용했다는 뜻이지만 부채가 많아도 높아질 수 있어요.",
         "ROE는 부채 수준과 일회성 이익을 함께 확인해야 해요.",
         ["PER과 PBR을 비교해줘", "부채비율은 무엇인가요?"],
@@ -93,7 +100,6 @@ LOCAL_ANSWER_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-
 LOCAL_SCREEN_ANSWER = (
     "이 화면의 주요 기능과 표시된 지표를 쉽게 설명해드릴 수 있어요. 특정 수치의 최신값이나 개인 계좌 정보는 연결된 데이터가 제공될 때만 확인할 수 있어요.",
     "화면에 표시되지 않은 수치나 미래 가격은 추측하지 않아요.",
@@ -112,6 +118,8 @@ SYSTEM_PROMPT = """당신은 FE!N의 금융 학습 도우미 '물방개'입니�
 5. 질문이 모호하면 NEEDS_CLARIFICATION으로 되묻고, 금지 요청은 REFUSED로 안전한 대안을 제시하세요.
 6. 답변은 교육 목적이며 필요할 때 최종 투자 결정과 책임이 사용자에게 있다는 caution을 포함하세요.
 7. suggested_questions는 현재 답변과 관련된 짧은 후속 질문만 최대 3개 제안하세요.
+8. 조회 숫자와 계좌 정보는 반드시 Tool 결과에 있는 값만 사용하고, 결과에 없는 값은 추측하지 마세요.
+9. Tool이 반환하지 않은 내부 식별자, 계좌 UUID, 사용자 식별자를 답변에 포함하지 마세요.
 """
 
 
@@ -154,7 +162,9 @@ class AzureOpenAIChatAgentClient:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         normalized_endpoint = endpoint.strip().rstrip("/")
-        if normalized_endpoint and not normalized_endpoint.startswith(("http://", "https://")):
+        if normalized_endpoint and not normalized_endpoint.startswith(
+            ("http://", "https://")
+        ):
             normalized_endpoint = f"https://{normalized_endpoint}"
         self.endpoint = normalized_endpoint
         self.api_key = api_key
@@ -179,7 +189,9 @@ class AzureOpenAIChatAgentClient:
         )
 
     @staticmethod
-    def _local_response(message: str, context: ChatScreenContext) -> ChatAgentResult | None:
+    def _local_response(
+        message: str, context: ChatScreenContext
+    ) -> ChatAgentResult | None:
         normalized = " ".join(message.lower().split())
         answer_key = next(
             (
@@ -206,7 +218,7 @@ class AzureOpenAIChatAgentClient:
                 status="COMPLETED",
                 text=text,
                 caution=caution,
-                                suggested_questions=questions,
+                suggested_questions=questions,
             )
         return None
 
@@ -261,7 +273,7 @@ class AzureOpenAIChatAgentClient:
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
-                                        "name": "mulbanggae_answer",
+                    "name": "mulbanggae_answer",
                     "strict": True,
                     "schema": _azure_response_schema(),
                 },
@@ -270,6 +282,201 @@ class AzureOpenAIChatAgentClient:
         if self._is_foundry_project_endpoint():
             body["model"] = self.deployment
         return body
+
+    @staticmethod
+    def _tool_definitions() -> list[dict[str, Any]]:
+        def function(
+            name: str,
+            description: str,
+            properties: dict[str, Any],
+            required: list[str] | None = None,
+        ) -> dict[str, Any]:
+            parameters = {
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": False,
+            }
+            if required:
+                parameters["required"] = required
+            return {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": description,
+                    "parameters": parameters,
+                },
+            }
+
+        return [
+            function(
+                "get_financial_term",
+                "금융 용어 정의를 조회합니다.",
+                {"term": {"type": "string"}},
+                ["term"],
+            ),
+            function(
+                "get_strategy_catalog", "이용 가능한 전략 catalog를 조회합니다.", {}
+            ),
+            function(
+                "get_stock_summary",
+                "KRX/OpenDART 종목 요약을 조회합니다.",
+                {"stock_code": {"type": "string", "pattern": "^[0-9A-Z]{6,12}$"}},
+                ["stock_code"],
+            ),
+            function(
+                "get_my_account_summary", "사용자의 활성 계좌 요약을 조회합니다.", {}
+            ),
+            function(
+                "get_my_portfolio_summary", "사용자의 포트폴리오 요약을 조회합니다.", {}
+            ),
+        ]
+
+    @staticmethod
+    def _execute_tool(
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        session: Any,
+        user_id: int | None,
+        account_id: UUID | None,
+    ) -> dict[str, Any]:
+        if name == "get_financial_term":
+            return get_financial_term(str(arguments.get("term", "")))
+        if name == "get_strategy_catalog":
+            return get_strategy_catalog(session)
+        if name == "get_stock_summary":
+            return get_stock_summary(session, str(arguments.get("stock_code", "")))
+        if user_id is None:
+            raise ServiceError(
+                "AUTHENTICATION_REQUIRED", "개인 Tool은 로그인이 필요합니다.", 401
+            )
+        if name == "get_my_account_summary":
+            return get_my_account_summary(session, user_id, account_id=account_id)
+        if name == "get_my_portfolio_summary":
+            return get_my_portfolio_summary(session, user_id, account_id=account_id)
+        raise ServiceError(
+            "CHAT_AGENT_TOOL_NOT_ALLOWED", "허용되지 않은 Tool입니다.", 502
+        )
+
+    async def answer_with_tools(
+        self,
+        message: str,
+        history: list[ChatHistoryMessage],
+        context: ChatScreenContext,
+        *,
+        session: Any,
+        user_id: int | None,
+        account_id: UUID | None = None,
+        max_tool_calls: int = 3,
+    ) -> ChatAgentResult:
+        """허용된 읽기 Tool만 최대 횟수 안에서 호출하고 최종 JSON 응답을 검증한다."""
+        safety_response = self._safety_response(message)
+        if safety_response is not None:
+            return safety_response
+        local_response = self._local_response(message, context)
+        if local_response is not None:
+            return local_response
+        self._validate_configuration()
+        request = self.client or httpx.AsyncClient(timeout=self.timeout_seconds)
+        owns_client = self.client is None
+        tools = self._tool_definitions()
+        messages = self._request_body(message, history, context)["messages"]
+        calls_used = 0
+        try:
+            while calls_used <= max_tool_calls:
+                response = await request.post(
+                    self._request_url(),
+                    params=(
+                        {}
+                        if self._is_foundry_project_endpoint()
+                        else {"api-version": self.api_version}
+                    ),
+                    headers={
+                        "api-key": self.api_key,
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        **self._request_body(message, history, context),
+                        "messages": messages,
+                        "tools": tools,
+                        "tool_choice": "auto",
+                    },
+                )
+                response.raise_for_status()
+                assistant = response.json()["choices"][0]["message"]
+                tool_calls = assistant.get("tool_calls") or []
+                if not tool_calls:
+                    content = assistant.get("content")
+                    if assistant.get("refusal") or not isinstance(content, str):
+                        raise ValueError("model did not return content")
+                    return ChatAgentResult.model_validate_json(content)
+                calls_used += len(tool_calls)
+                if calls_used > max_tool_calls:
+                    raise ServiceError(
+                        "CHAT_AGENT_TOOL_LIMIT",
+                        "물방개 조회 횟수 제한을 초과했습니다.",
+                        502,
+                    )
+                messages.append(assistant)
+                for call in tool_calls:
+                    name = call.get("function", {}).get("name")
+                    arguments = json.loads(
+                        call.get("function", {}).get("arguments", "{}")
+                    )
+                    result = self._execute_tool(
+                        name,
+                        arguments,
+                        session=session,
+                        user_id=user_id,
+                        account_id=account_id,
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call["id"],
+                            "name": name,
+                            "content": json.dumps(
+                                result, ensure_ascii=False, default=str
+                            ),
+                        }
+                    )
+            raise ServiceError(
+                "CHAT_AGENT_TOOL_LIMIT", "물방개 조회 횟수를 초과했습니다.", 502
+            )
+        except httpx.TimeoutException as exc:
+            raise ServiceError(
+                "CHAT_AGENT_TIMEOUT",
+                "물방가 답변을 준비하는 데 시간이 오래 걸리고 있습니다. 다시 시도해주세요.",
+                504,
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status_code = (
+                503
+                if exc.response.status_code == 429 or exc.response.status_code >= 500
+                else 502
+            )
+            raise ServiceError(
+                "CHAT_AGENT_UNAVAILABLE",
+                "물방개 AI를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.",
+                status_code,
+            ) from exc
+        except (
+            httpx.RequestError,
+            KeyError,
+            IndexError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+            ValidationError,
+        ) as exc:
+            raise ServiceError(
+                "CHAT_AGENT_INVALID_RESPONSE",
+                "물방개의 답변을 확인할 수 없습니다. 다시 시도해주세요.",
+                502,
+            ) from exc
+        finally:
+            if owns_client:
+                await request.aclose()
 
     async def answer(
         self,
@@ -319,7 +526,11 @@ class AzureOpenAIChatAgentClient:
                     "물방개 AI 배포 이름 또는 Endpoint를 확인해주세요.",
                     502,
                 ) from exc
-            status_code = 503 if exc.response.status_code == 429 or exc.response.status_code >= 500 else 502
+            status_code = (
+                503
+                if exc.response.status_code == 429 or exc.response.status_code >= 500
+                else 502
+            )
             raise ServiceError(
                 "CHAT_AGENT_UNAVAILABLE",
                 "물방개 AI를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.",
