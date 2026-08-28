@@ -15,6 +15,8 @@ import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
 import { useInvestmentStore } from '../store/investmentStore';
 import { useTradingStore } from '../store/tradingStore';
+import PortfolioDataState from '../components/PortfolioDataState';
+import { useTradingRetry } from '../hooks/useTradingRetry';
 import type { Screen, TransactionRecord } from '../types';
 
 interface Props {
@@ -78,10 +80,17 @@ export default function PortfolioDetail({
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
   // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
+  const isLoading = useTradingStore((state) => state.isLoading);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
   const decisions = useTradingStore((state) => state.decisions);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
   const activeMode = useInvestmentStore((state) => state.activeMode);
   const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+
+  if (isLoading || accountMissing || error) {
+    return <PortfolioDataState userName={userName} onNavigate={onNavigate} loading={isLoading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+  }
   const displayDecisions: DisplayDecisionSummary = useMemo(
     () => getDisplayDecisions(decisions),
     [decisions],

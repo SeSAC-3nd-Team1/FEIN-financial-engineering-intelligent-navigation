@@ -8,6 +8,8 @@ import { getDisplayAlerts } from '../lib/rebalancing';
 import { won } from '../lib/validation';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
+import PortfolioDataState from '../components/PortfolioDataState';
+import { useTradingRetry } from '../hooks/useTradingRetry';
 
 interface Props {
   userName: string;
@@ -35,7 +37,14 @@ export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
   // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
+  const isLoading = useTradingStore((state) => state.isLoading);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
   const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+
+  if (isLoading || accountMissing || error) {
+    return <PortfolioDataState userName={userName} onNavigate={onNavigate} loading={isLoading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+  }
   // displayAlerts는 실 계좌가 있으면(portfolio) portfolio.rebalancing_proposals(아직 실행 전인 "제안")를,
   // 없으면 AI_ALERTS(이미 실행됐다는 설정의 스토리 목업)를 쓴다 — lib/rebalancing.ts 참고. 그래서 자동매매
   // 실계좌라도 제안은 아직 제안일 뿐이라, 실데이터면 반자동과 같은 "제안" 톤을 쓰고 mock일 때만 과거형/완료

@@ -12,6 +12,8 @@ import { getPortfolioHistoryApi, type PortfolioHistoryPeriod, type PortfolioHist
 import { getDisplayAlerts } from '../lib/rebalancing';
 import { getDisplayTransactions } from '../lib/transactions';
 import { won } from '../lib/validation';
+import PortfolioDataState from '../components/PortfolioDataState';
+import { useTradingRetry } from '../hooks/useTradingRetry';
 import { useAuthStore } from '../store/authStore';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen, TransactionRecord } from '../types';
@@ -106,7 +108,14 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
   // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
+  const isLoading = useTradingStore((state) => state.isLoading);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
   const accessToken = useAuthStore((state) => state.accessToken);
+
+  if (isLoading || accountMissing || error) {
+    return <PortfolioDataState userName={userName} onNavigate={onNavigate} loading={isLoading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+  }
 
   // 계좌가 없다고 확인된 경우에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는 아직 로딩 중/조회
   // 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 — 로딩/오류 중에 실계좌
@@ -486,11 +495,13 @@ export default function PortfolioAuto({ userName, onNavigate, onOpenDetail, onOp
                     <Insight compact>
                       {!selectedHolding
                         ? '아직 보유 중인 종목이 없어요. 계좌에 입금하면 여기에 배분이 채워져요.'
-                        : weightDiff != null && weightDiff > 0
-                          ? `${selectedHolding.name} 비중이 목표보다 높아요.`
-                          : weightDiff != null && weightDiff < 0
-                            ? `${selectedHolding.name} 비중이 목표보다 낮아요.`
-                            : `${selectedHolding.name} 비중이 목표와 일치해요.`}
+                                                : targetPct == null
+                          ? `${selectedHolding.name}의 현재 전략 목표 비중 데이터가 아직 없어요.`
+                          : weightDiff != null && weightDiff > 0
+                            ? `${selectedHolding.name} 비중이 목표보다 높아요.`
+                            : weightDiff != null && weightDiff < 0
+                              ? `${selectedHolding.name} 비중이 목표보다 낮아요.`
+                              : `${selectedHolding.name} 비중이 목표와 일치해요.`}
                     </Insight>
                   </div>
                 )}

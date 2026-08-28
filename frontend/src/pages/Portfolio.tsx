@@ -29,6 +29,8 @@ import {
 import { getDisplayAlerts } from "../lib/rebalancing";
 import { getDisplayTransactions } from "../lib/transactions";
 import { won } from "../lib/validation";
+import PortfolioDataState from "../components/PortfolioDataState";
+import { useTradingRetry } from "../hooks/useTradingRetry";
 import { useAuthStore } from "../store/authStore";
 import { useTradingStore } from "../store/tradingStore";
 import type { Screen, TransactionRecord } from "../types";
@@ -182,6 +184,16 @@ export default function Portfolio({
   const account = useTradingStore((state) => state.account);
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const isAccountLoading = useTradingStore((state) => state.isLoading);
+  const portfolioError = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
+  if (portfolioError) {
+    return (
+      <PortfolioDataState userName={userName} onNavigate={onNavigate} loading={false} accountMissing={false} error={portfolioError} onRetry={retry}>
+        <div />
+      </PortfolioDataState>
+    );
+  }
+
   const unconfiguredReason: UnconfiguredReason | null =
     isAccountLoading || isInvestorProfileHydrating
       ? null
@@ -691,11 +703,13 @@ export default function Portfolio({
                       <Insight compact>
                         {!selectedHolding
                           ? "아직 보유 중인 종목이 없어요. 계좌에 입금하면 여기에 배분이 채워져요."
-                          : weightDiff != null && weightDiff > 0
-                            ? `${selectedHolding.name} 비중이 목표보다 높아요.`
-                            : weightDiff != null && weightDiff < 0
-                              ? `${selectedHolding.name} 비중이 목표보다 낮아요.`
-                              : `${selectedHolding.name} 비중이 목표와 일치해요.`}
+                                                    : targetPct == null
+                            ? `${selectedHolding.name}의 현재 전략 목표 비중 데이터가 아직 없어요.`
+                            : weightDiff != null && weightDiff > 0
+                              ? `${selectedHolding.name} 비중이 목표보다 높아요.`
+                              : weightDiff != null && weightDiff < 0
+                                ? `${selectedHolding.name} 비중이 목표보다 낮아요.`
+                                : `${selectedHolding.name} 비중이 목표와 일치해요.`}
                       </Insight>
                     </div>
                   )}
