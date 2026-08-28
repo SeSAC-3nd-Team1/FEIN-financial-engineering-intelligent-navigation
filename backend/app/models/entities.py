@@ -84,6 +84,25 @@ class UserAgreement(Base):
 
 class Strategy(Base):
     __tablename__ = "strategies"
+    __table_args__ = (
+        CheckConstraint(
+            "product_group IN ('MUL', 'BANG')",
+            name="ck_strategies_product_group_values",
+        ),
+        CheckConstraint(
+            "availability_status IN ('AVAILABLE', 'TESTING')",
+            name="ck_strategies_availability_status_values",
+        ),
+        CheckConstraint(
+            "display_order > 0",
+            name="ck_strategies_display_order_positive",
+        ),
+        Index(
+            "ix_strategies_catalog_order",
+            "product_group",
+            "display_order",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(30), primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     description: Mapped[str] = mapped_column(Text)
@@ -91,6 +110,10 @@ class Strategy(Base):
     rebalance_cycle: Mapped[str] = mapped_column(String(30))
     rule_config: Mapped[dict] = mapped_column(JSONB, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    product_group: Mapped[str] = mapped_column(String(20))
+    availability_status: Mapped[str] = mapped_column(String(20))
+    engine_key: Mapped[str] = mapped_column(String(50))
+    display_order: Mapped[int] = mapped_column(SmallInteger)
 
 
 class StrategyTargetWeight(Base):
