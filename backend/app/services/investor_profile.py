@@ -1,4 +1,4 @@
-"""Investor-profile answer validation, AI analysis, and persistence."""
+"""Investor-profile answer validation, deterministic scoring, and persistence."""
 
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -10,7 +10,11 @@ from app.domain.investor_profile.questionnaire import (
     QuestionnaireValidationError,
     resolve_investor_answers,
 )
-from app.integrations.ai.investor_profile_client import InvestorProfileAIClient
+from app.domain.investor_profile.scoring import (
+    SCORING_RULE_VERSION,
+    SCORING_VERSION,
+    score_investor_profile,
+)
 from app.models import InvestorProfileAssessment
 from app.repositories import RecommendationRepository
 from app.schemas.api import InvestorProfileAnalyzeRequest, InvestorProfileResponse
@@ -20,15 +24,8 @@ class InvestorProfileService:
     def __init__(
         self,
         session: Session,
-        client: InvestorProfileAIClient,
-        *,
-        model_version: str,
-        prompt_version: str,
     ) -> None:
         self.session = session
-        self.client = client
-        self.model_version = model_version
-        self.prompt_version = prompt_version
         self.repo = RecommendationRepository(session)
 
     @staticmethod
@@ -37,6 +34,7 @@ class InvestorProfileService:
             assessment_id=assessment.id,
             questionnaire_version=assessment.questionnaire_version,
             analysis_version=assessment.analysis_version,
+            risk_score=assessment.risk_score,
             profile_type=assessment.profile_type,
             tendency_line=assessment.tendency_line,
             description=assessment.description,
@@ -68,21 +66,22 @@ class InvestorProfileService:
         except QuestionnaireValidationError as exc:
             raise ServiceError(exc.code, str(exc), 400) from exc
 
-        result = await self.client.analyze(request.questionnaire_version, answers)
+        result = score_investor_profile(answers)
         assessment = InvestorProfileAssessment(
             id=uuid4(),
             user_id=user_id,
             questionnaire_version=request.questionnaire_version,
-            analysis_version="v1",
+            analysis_version="v2",
+            risk_score=result.risk_score,
             profile_type=result.profile_type,
-            stability=result.traits.stability,
-            return_seeking=result.traits.return_seeking,
-            horizon=result.traits.horizon,
+            stability=result.stability,
+            return_seeking=result.return_seeking,
+            horizon=result.horizon,
             tendency_line=result.tendency_line,
             description=result.description,
             analysis_summary=result.analysis_summary,
-            model_version=self.model_version,
-            prompt_version=self.prompt_version,
+            model_version=SCORING_VERSION,
+            prompt_version=SCORING_RULE_VERSION,
             created_at=datetime.now(UTC),
         )
         try:

@@ -23,6 +23,7 @@ class InvestorProfileAssessment(Base):
         CheckConstraint("stability BETWEEN 1 AND 5", name="stability_range"),
         CheckConstraint("return_seeking BETWEEN 1 AND 5", name="return_seeking_range"),
         CheckConstraint("horizon BETWEEN 1 AND 5", name="horizon_range"),
+        CheckConstraint("risk_score IS NULL OR risk_score BETWEEN 0 AND 100", name="risk_score_range"),
         Index("ix_investor_profile_assessments_user_created", "user_id", "created_at"),
     )
 
@@ -30,6 +31,8 @@ class InvestorProfileAssessment(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     questionnaire_version: Mapped[str] = mapped_column(String(20), nullable=False)
     analysis_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    # v1 AI 분석 기록은 원본 답변을 저장하지 않아 역산할 수 없으므로 nullable로 유지한다.
+    risk_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     profile_type: Mapped[str] = mapped_column(String(20), nullable=False)
     stability: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     return_seeking: Mapped[int] = mapped_column(SmallInteger, nullable=False)

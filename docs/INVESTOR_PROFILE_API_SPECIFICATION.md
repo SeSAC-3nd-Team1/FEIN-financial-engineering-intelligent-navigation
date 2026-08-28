@@ -1,8 +1,8 @@
-# 투자성향 AI 분석 API 명세서
+# 투자성향 점수 분석 API 명세서
 
 ## 1. 개요
 
-사용자가 제출한 투자성향 설문 답변을 Backend가 검증하고 Azure OpenAI에 전달한 뒤, 분석 결과를 PostgreSQL에 저장하고 같은 HTTP 요청에서 구조화된 결과와 `assessment_id`를 반환한다.
+사용자가 제출한 투자성향 설문 답변을 Backend가 검증하고 고정 점수표와 보수적 제한 규칙으로 분류한 뒤, 결과를 PostgreSQL에 저장하고 같은 HTTP 요청에서 구조화된 결과와 `assessment_id`를 반환한다.
 
 - Base URL: `/api/v1`
 - Content-Type: `application/json`
@@ -11,7 +11,7 @@
 - 데이터 저장: 원본 설문은 저장하지 않고 파생된 분석 성향과 재현 버전만 PostgreSQL에 저장
 - 지원 설문 버전: `v1`
 
-Backend 내부의 AI 네트워크 호출은 non-blocking `await`로 처리하지만 client 계약은 동기식이다. `202 Accepted`, 작업 ID, polling, SSE, WebSocket은 사용하지 않는다.
+분류 과정에는 외부 AI 네트워크 호출이 없으며 `202 Accepted`, 작업 ID, polling, SSE, WebSocket은 사용하지 않는다.
 
 ## 2. Endpoint
 
@@ -45,8 +45,7 @@ Accept: application/json
 
 ```json
 {
-  "assessment_id": "6118bc91-39b0-46f1-b726-7123e254437d",
-  "questionnaire_version": "v1",
+    "questionnaire_version": "v1",
   "answers": [
     {"question_id": "investment_experience", "option_id": "1_to_3_years"},
     {"question_id": "product_knowledge", "option_id": "basic"},
@@ -174,6 +173,29 @@ Accept: application/json
 | `50m_to_80m` | 5천만원 이상 ~ 8천만원 미만 |
 | `over_80m` | 8천만원 이상 |
 
+### 3.5 점수 및 분류 기준
+
+| 문항 | 선택지 점수 | 최대점수 |
+| --- | --- | ---: |
+| 투자 경험 | 처음 0 / 1년 미만 2 / 1~3년 5 / 3~5년 7 / 5년 이상 10 | 10 |
+| 금융상품 이해도 | 거의 모름 0 / 기본 3 / 어느 정도 이해 7 / 매우 잘 이해 10 | 10 |
+| 투자 기간 | 1년 미만 0 / 1~3년 4 / 3~5년 8 / 5년 이상 12 | 12 |
+| 투자 목적 | 생활자금 0 / 목돈 마련 2 / 노후 준비 4 / 여유자금 6 / 장기 자산 증식 8 | 8 |
+| 감당 가능한 손실 | 손실 불가 0 / 10% 6 / 20% 12 / 30% 18 / 30% 초과 24 | 24 |
+| 수익·안정성 선호 | 원금 보존 0 / 안정성 6 / 균형 12 / 수익 18 / 고수익·고변동 24 | 24 |
+| 투자 가능 자산 비중 | 10% 미만 7 / 10~30% 5 / 30~50% 3 / 50~70% 1 / 70% 이상 0 | 7 |
+| 연간 소득 | 1천만원 미만 0 / 1~3천만원 1 / 3~5천만원 2 / 5~8천만원 3 / 8천만원 이상 5 | 5 |
+
+최종 점수 구간은 `0~19 안정추구형`, `20~39 안정투자형`, `40~59 중립투자형`, `60~79 성장추구형`, `80~100 공격투자형`이다.
+
+합산 결과에는 다음 보수적 제한 규칙을 적용한다. 제한 후 `risk_score`도 최종 유형의 점수 구간에 맞게 조정하므로 점수와 유형이 서로 어긋나지 않는다.
+
+- 원금 손실 불가 또는 원금 보존 최우선: 최대 19점
+- 손실 감내도 10% 또는 안정성 우선: 최대 39점
+- 공격투자형: 손실 감내도 30% 이상과 고수익·고변동 선호를 모두 충족해야 함
+- 금융상품 이해도가 가장 낮으면 최대 79점
+- 생활자금 목적 또는 금융자산의 70% 이상을 투자하면 한 단계 하향
+
 ## 4. Response
 
 ### 4.1 성공 응답
@@ -182,7 +204,9 @@ Status: `200 OK`
 
 ```json
 {
+  "assessment_id": "6118bc91-39b0-46f1-b726-7123e254437d",
   "profile_type": "중립투자형",
+  "risk_score": 51,
   "tendency_line": "안정성과 수익의 균형을 중요하게 생각하는 투자자예요.",
   "description": "일정 수준의 변동은 감수하지만 과도한 위험은 피하는 성향입니다.",
   "traits": {
@@ -191,13 +215,14 @@ Status: `200 OK`
     "horizon": 4
   },
   "analysis_summary": [
-    "20% 수준의 손실을 감당할 수 있다고 응답했습니다.",
-    "안정성과 수익을 비슷하게 중요하게 생각합니다.",
-    "중장기 투자 기간을 선호합니다."
+    "투자성향 점수는 100점 만점에 51점입니다.",
+    "감당 가능한 손실은 '20% 정도의 손실까지 괜찮아요'로 응답했습니다.",
+    "수익과 안정성 선호는 '안정성과 수익을 비슷하게 생각해요'로 응답했습니다.",
+    "예상 투자 기간은 '3~5년'입니다."
   ],
   "questionnaire_version": "v1",
-  "analysis_version": "v1",
-  "model_version": "investor-profile-v1",
+  "analysis_version": "v2",
+  "model_version": "risk-score-v1",
   "created_at": "2026-08-24T15:00:00+09:00"
 }
 ```
@@ -208,6 +233,7 @@ Status: `200 OK`
 | --- | --- | --- |
 | `assessment_id` | UUID | 저장된 분석 성향 식별자 |
 | `profile_type` | string | 정의된 5개 투자유형 중 하나 |
+| `risk_score` | integer 또는 null | 최종 위험 점수, 0~100. 점수 도입 전 v1 기록은 `null` |
 | `tendency_line` | string | 결과 화면용 한 줄 설명, 1~200자 |
 | `description` | string | 투자성향 상세 설명, 1~500자 |
 | `traits.stability` | integer | 안정성 선호, 1~5 |
@@ -215,8 +241,8 @@ Status: `200 OK`
 | `traits.horizon` | integer | 투자기간 성향, 1~5 |
 | `analysis_summary` | string array | 응답에 근거한 분석 요약, 1~5개 |
 | `questionnaire_version` | string | 요청에 사용된 설문 버전 |
-| `analysis_version` | string | Backend 분석 응답 계약 버전, 현재 `v1` |
-| `model_version` | string | 성향 분석 모델 재현 버전 |
+| `analysis_version` | string | Backend 분석 응답 계약 버전. 신규 분석은 `v2`, 기존 기록은 `v1` |
+| `model_version` | string | 분류 로직 재현 버전. 신규 분석은 `risk-score-v1` |
 | `created_at` | datetime | 분석 성향 저장 시각 |
 
 허용되는 `profile_type`:
@@ -227,7 +253,7 @@ Status: `200 OK`
 - `성장추구형`
 - `공격투자형`
 
-AI가 이 목록에 없는 유형, 범위를 벗어난 trait 점수 또는 필수 field가 누락된 결과를 반환하면 Backend는 해당 결과를 client에 전달하지 않는다.
+Backend는 검증된 선택지 ID만 점수화하며, 점수 범위와 허용 유형은 코드 및 DB 제약으로 검증한다.
 
 ## 5. 오류 응답
 
@@ -235,8 +261,8 @@ AI가 이 목록에 없는 유형, 범위를 벗어난 trait 점수 또는 필�
 
 ```json
 {
-  "code": "AI_ANALYSIS_TIMEOUT",
-  "message": "투자성향 분석 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+  "code": "INVALID_INVESTOR_ANSWERS",
+  "message": "모든 설문 문항에 정확히 한 번씩 답변해야 합니다."
 }
 ```
 
@@ -249,13 +275,7 @@ AI가 이 목록에 없는 유형, 범위를 벗어난 trait 점수 또는 필�
 | 403 | `AI_PERSONALIZATION_CONSENT_REQUIRED` | AI 개인화 선택 약관 미동의 |
 | 404 | `INVESTOR_PROFILE_NOT_FOUND` | 최신 저장 성향 없음 |
 | 422 | FastAPI validation error | JSON 형식 또는 request field type/길이 오류 |
-| 502 | `AI_ANALYSIS_UNAVAILABLE` | Azure OpenAI 연결 실패 또는 처리할 수 없는 provider 4xx |
-| 502 | `AI_INVALID_RESPONSE` | AI 응답 JSON 또는 결과 schema가 유효하지 않음 |
-| 503 | `AI_NOT_CONFIGURED` | 필수 Azure OpenAI 환경변수 누락 |
-| 503 | `AI_ANALYSIS_UNAVAILABLE` | Azure OpenAI `429` 또는 `5xx` |
-| 504 | `AI_ANALYSIS_TIMEOUT` | 설정된 분석 제한시간 초과 |
-
-오류 응답에는 Azure OpenAI API key, provider 원문 응답 또는 사용자의 설문 원문을 포함하지 않는다.
+오류 응답에는 사용자의 설문 원문이나 내부 점수 계산 상세를 포함하지 않는다.
 
 ## 6. 호출 예시
 
@@ -280,27 +300,15 @@ curl --request POST 'http://localhost:8000/api/v1/investor-profile/analyze' \
 
 ## 7. Backend 환경변수
 
-| 환경변수 | 필수 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `AZURE_OPENAI_ENDPOINT` | 예 | 없음 | Azure OpenAI resource endpoint |
-| `AZURE_OPENAI_API_KEY` | 예 | 없음 | Azure OpenAI API key |
-| `AZURE_OPENAI_DEPLOYMENT` | 예 | 없음 | 분석에 사용할 deployment 이름 |
-| `AZURE_OPENAI_API_VERSION` | 아니요 | `2024-10-21` | Azure OpenAI API version |
-| `AI_PROFILE_TIMEOUT_SECONDS` | 아니요 | `15` | Azure OpenAI HTTP 요청 timeout(초) |
-| `AI_PROFILE_MODEL_VERSION` | 아니요 | `investor-profile-v1` | 저장할 분석 모델 버전 |
-| `AI_PROFILE_PROMPT_VERSION` | 아니요 | `v1` | 저장할 분석 prompt 버전 |
-
-설정 누락은 애플리케이션 시작을 막지 않고 분석 API 호출 시 `503 AI_NOT_CONFIGURED`로 처리한다.
+투자성향 점수 계산에는 Azure OpenAI 또는 별도 분석 환경변수가 필요하지 않다. 점수표와 보수적 제한 규칙은 `risk-score-v1` 코드 버전으로 관리한다.
 
 ## 8. 처리 및 보안 경계
 
 1. client가 보낸 질문 문구는 받지 않는다.
 2. Backend가 `question_id`와 `option_id`를 서버 카탈로그의 문구로 변환한다.
-3. 검증된 질문과 답변만 AI 모델에 전달한다.
-4. AI에는 특정 상품·종목·전략·예상 수익률을 추천하지 않도록 지시한다.
-5. AI 출력은 JSON Schema와 Pydantic schema를 모두 통과해야 한다.
-6. 원본 설문은 영속화하지 않고 분석된 성향과 버전만 저장한다.
-7. 저장과 외부 AI 호출 전에 현재 발효된 최신 `AI_PERSONALIZATION` 약관 version에 대한 동의를 확인한다.
-8. API key와 사용자 금융정보를 로그에 기록하지 않는다.
+3. 검증된 선택지 ID에 서버의 고정 점수표를 적용한다.
+4. 원본 설문은 영속화하지 않고 점수·분류된 성향과 재현 버전만 저장한다.
+5. 저장 전에 현재 발효된 최신 `AI_PERSONALIZATION` 약관 version에 대한 동의를 확인한다.
+6. 사용자 금융정보를 로그에 기록하지 않는다.
 
 현재 구현은 투자성향 안내용이다. 실제 금융상품 적합성·적정성 판단에 사용하려면 별도로 승인된 고정 분류 기준과 준법 검토가 필요하다.

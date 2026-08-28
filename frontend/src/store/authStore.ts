@@ -14,6 +14,7 @@ interface AuthState {
   investorProfileCompletedAt: string | null;
   investorAssessmentId: string | null;
   investorType: string | null;
+  investorRiskScore: number | null;
   investorTendencyLine: string | null;
   investorDescription: string | null;
   investorTraits: InvestorProfileResult['traits'] | null;
@@ -50,6 +51,7 @@ const INVESTOR_PROFILE_RESET = {
   investorProfileCompletedAt: null,
   investorAssessmentId: null,
   investorType: null,
+  investorRiskScore: null,
   investorTendencyLine: null,
   investorDescription: null,
   investorTraits: null,
@@ -60,6 +62,7 @@ const INVESTOR_PROFILE_RESET = {
 function toInvestorProfileFields(profile: InvestorProfileResult) {
   return {
     investorType: profile.type,
+    investorRiskScore: profile.riskScore,
     investorTendencyLine: profile.tendencyLine,
     investorDescription: profile.description,
     investorTraits: profile.traits,

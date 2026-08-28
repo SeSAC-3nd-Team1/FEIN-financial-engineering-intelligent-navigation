@@ -7,6 +7,8 @@ from app.api.deps import current_user
 from app.db.session import get_session
 from app.models import User, VirtualAccount
 from app.schemas.api import (
+    AccountCashDepositRequest,
+    AccountCashDepositResponse,
     AccountCreateRequest,
     AccountResponse,
     FundOperationRequest,
@@ -76,6 +78,20 @@ def select_strategy(
     service: AccountService = Depends(get_account_service),
 ) -> VirtualAccount:
     return service.select_strategy(user.id, account_id, payload.strategy_id)
+
+
+@router.post(
+    "/{account_id}/deposits",
+    response_model=AccountCashDepositResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def deposit_virtual_cash(
+    account_id: UUID,
+    payload: AccountCashDepositRequest,
+    user: User = Depends(current_user),
+    service: AccountService = Depends(get_account_service),
+) -> AccountCashDepositResponse:
+    return service.deposit_cash(user.id, account_id, payload)
 
 
 @router.get("/{account_id}/funds", response_model=FundSummaryResponse)

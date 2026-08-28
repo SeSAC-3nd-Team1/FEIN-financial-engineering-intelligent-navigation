@@ -11,6 +11,10 @@ from app.schemas.api import (
     ModelRecommendationApplyResponse,
     ModelRecommendationSnapshotResponse,
 )
+from app.services.loss_avoidance_investment import (
+    LossAvoidanceInvestmentService,
+    loss_avoidance_snapshot_service,
+)
 from app.services.model_recommendation import ModelRecommendationService
 from app.services.momentum_investment import MomentumInvestmentService
 
@@ -27,6 +31,12 @@ def get_momentum_investment_service(
     return MomentumInvestmentService(session)
 
 
+def get_loss_avoidance_investment_service(
+    session: Session = Depends(get_session),
+) -> LossAvoidanceInvestmentService:
+    return LossAvoidanceInvestmentService(session)
+
+
 @router.get("/latest", response_model=ModelRecommendationSnapshotResponse)
 def latest_model_recommendation(
     _: User = Depends(current_user),
@@ -40,5 +50,29 @@ def apply_latest_model_recommendation(
     payload: ModelRecommendationApplyRequest,
     user: User = Depends(current_user),
     service: MomentumInvestmentService = Depends(get_momentum_investment_service),
+) -> ModelRecommendationApplyResponse:
+    return service.apply(user.id, payload.account_id)
+
+
+@router.get(
+    "/loss-avoidance/latest",
+    response_model=ModelRecommendationSnapshotResponse,
+)
+def latest_loss_avoidance_recommendation(
+    _: User = Depends(current_user),
+) -> ModelRecommendationSnapshotResponse:
+    return loss_avoidance_snapshot_service().latest()
+
+
+@router.post(
+    "/loss-avoidance/latest/apply",
+    response_model=ModelRecommendationApplyResponse,
+)
+def apply_latest_loss_avoidance_recommendation(
+    payload: ModelRecommendationApplyRequest,
+    user: User = Depends(current_user),
+    service: LossAvoidanceInvestmentService = Depends(
+        get_loss_avoidance_investment_service
+    ),
 ) -> ModelRecommendationApplyResponse:
     return service.apply(user.id, payload.account_id)

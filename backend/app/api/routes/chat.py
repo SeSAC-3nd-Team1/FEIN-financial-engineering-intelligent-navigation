@@ -109,7 +109,17 @@ async def create_chat_message(
         return fallback
     # Provider에는 사용자 식별자나 account_id를 전달하지 않는다.
     provider_context = payload.context.model_copy(update={"account_id": None})
-    result = await client.answer(payload.message, payload.history, provider_context)
+    if isinstance(client, AzureOpenAIChatAgentClient):
+        result = await client.answer_with_tools(
+            payload.message,
+            payload.history,
+            provider_context,
+            session=session,
+            user_id=user.id if user else None,
+            account_id=payload.context.account_id,
+        )
+    else:
+        result = await client.answer(payload.message, payload.history, provider_context)
     return ChatMessageResponse(
         **result.model_dump(),
         message_id=str(uuid4()),

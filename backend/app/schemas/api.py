@@ -201,6 +201,21 @@ class CarGoalResponse(BaseModel):
     updated_at: datetime
 
 
+class AccountCashDepositRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0, le=100_000_000)
+    idempotency_key: str = Field(min_length=8, max_length=100)
+
+
+class AccountCashDepositResponse(BaseModel):
+    deposit_id: UUID
+    account: AccountResponse
+    amount: Decimal
+    balance_after: Decimal
+    status: Literal["COMPLETED"] = "COMPLETED"
+
+
 class OperationModeSwitchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -289,6 +304,10 @@ class StrategyResponse(BaseModel):
     description: str
     risk_level: str
     rebalance_cycle: str
+    product_group: Literal["MUL", "BANG"]
+    availability_status: Literal["AVAILABLE", "TESTING"]
+    engine_key: str
+    display_order: int
 
 
 class BacktestRunRequest(BaseModel):
@@ -822,7 +841,8 @@ class InvestorProfileAnalysisResult(BaseModel):
 class InvestorProfileResponse(InvestorProfileAnalysisResult):
     assessment_id: UUID
     questionnaire_version: str
-    analysis_version: Literal["v1"] = "v1"
+    analysis_version: Literal["v1", "v2"] = "v2"
+    risk_score: int | None = Field(default=None, ge=0, le=100)
     model_version: str
     created_at: datetime
 
@@ -898,7 +918,7 @@ class ModelRecommendationApplyRequest(BaseModel):
 
 class ModelRecommendationApplyResponse(BaseModel):
     account_id: UUID
-    strategy_id: Literal["momentum"]
+    strategy_id: Literal["low", "momentum"]
     as_of: date
     target_count: int = Field(ge=1)
     orders_created: int = Field(ge=0)

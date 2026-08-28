@@ -73,6 +73,14 @@ export interface CarGoalUpsertRequest {
   current_amount: number;
 }
 
+export interface AccountCashDepositResponse {
+  deposit_id: string;
+  account: AccountResponse;
+  amount: DecimalString;
+  balance_after: DecimalString;
+  status: "COMPLETED";
+}
+
 export interface FundOperationRequest {
   amount: number;
   idempotency_key: string;
@@ -392,7 +400,9 @@ export interface InvestorTraitsResponse {
 export interface InvestorProfileResponse {
   assessment_id: string;
   questionnaire_version: string;
-  analysis_version: "v1";
+  analysis_version: "v1" | "v2";
+  /** v2부터 백엔드 고정 점수표로 계산한 최종 위험 점수. 기존 v1 결과는 null이다. */
+  risk_score: number | null;
   profile_type:
     | "안정추구형"
     | "안정투자형"
@@ -635,6 +645,22 @@ export function createAccountApi(
     {
       method: "POST",
       body: JSON.stringify({ account_name: accountName, operation_mode: mode }),
+    },
+    token,
+  );
+}
+
+export function depositAccountCashApi(
+  accountId: string,
+  amount: number,
+  idempotencyKey: string,
+  token: string,
+): Promise<AccountCashDepositResponse> {
+  return request<AccountCashDepositResponse>(
+    `/accounts/${encodeURIComponent(accountId)}/deposits`,
+    {
+      method: "POST",
+      body: JSON.stringify({ amount, idempotency_key: idempotencyKey }),
     },
     token,
   );

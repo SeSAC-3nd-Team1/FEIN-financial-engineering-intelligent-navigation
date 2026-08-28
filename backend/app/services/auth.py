@@ -1,6 +1,6 @@
 """회원가입과 인증 service."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import logging
 
 from sqlalchemy import or_, select
@@ -19,7 +19,35 @@ SIGNUP_TERM_CODES = (
     "AI_PERSONALIZATION",
 )
 
+# 미성년자(만 19세 미만, 민법상 성년 기준)는 법정대리인 동의 없이 서비스 이용계약을 체결할 수
+# 없다(민법 제5조). 가입 흐름에 법정대리인 동의 절차가 없어, 가입 가능한 최소 연령을 만 19세로 둔다.
+MIN_SIGNUP_AGE = 19
+
 logger = logging.getLogger(__name__)
+
+
+def _calculate_age(birthdate: str) -> int:
+    """YYMMDD(세기 구분 없음)로부터 만 나이를 계산한다.
+
+    20YY로 해석했을 때 미래 날짜가 되면 19YY로 본다 — 프런트(lib/validation.ts)와 동일한 규칙.
+    """
+    yy, mm, dd = int(birthdate[0:2]), int(birthdate[2:4]), int(birthdate[4:6])
+    today = datetime.now(UTC).date()
+    year = 2000 + yy
+    try:
+        born = date(year, mm, dd)
+    except ValueError as exc:
+        raise ServiceError("INVALID_BIRTHDATE", "생년월일이 올바르지 않습니다.") from exc
+    if born > today:
+        year = 1900 + yy
+        try:
+            born = date(year, mm, dd)
+        except ValueError as exc:
+            raise ServiceError("INVALID_BIRTHDATE", "생년월일이 올바르지 않습니다.") from exc
+    age = today.year - born.year
+    if (today.month, today.day) < (born.month, born.day):
+        age -= 1
+    return age
 
 
 class AuthService:
@@ -37,6 +65,11 @@ class AuthService:
         )
         if duplicate:
             raise ServiceError("DUPLICATE_ACCOUNT", "이미 사용 중인 아이디 또는 이메일입니다.", 409)
+        if _calculate_age(request.birthdate) < MIN_SIGNUP_AGE:
+            raise ServiceError(
+                "UNDERAGE",
+                f"만 {MIN_SIGNUP_AGE}세 이상만 가입할 수 있습니다.",
+            )
         catalog = self.signup_terms()
         catalog_by_key = {(term.term_code, term.version): term for term in catalog}
         if any((item.term_code, item.version) not in catalog_by_key for item in request.agreements):

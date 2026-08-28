@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import AllHoldings from "./pages/AllHoldings";
+import AccountDeposit from "./pages/AccountDeposit";
+import AccountSetup from "./pages/AccountSetup";
 import Chatbot from "./components/Chatbot";
 import Dashboard from "./pages/Dashboard";
 import FundAddAmount from "./pages/FundAddAmount";
@@ -27,6 +29,7 @@ import SignupStep1 from "./pages/SignupStep1";
 import SignupStep2 from "./pages/SignupStep2";
 import SignupStep3 from "./pages/SignupStep3";
 import StartInvesting from "./pages/StartInvesting";
+import StartSignup from "./pages/StartSignup";
 import StockDetail from "./pages/StockDetail";
 import StrategyComingSoon from "./pages/StrategyComingSoon";
 import StrategyDetail from "./pages/StrategyDetail";
@@ -42,7 +45,7 @@ import {
 } from "./data/fees";
 import {
   analyzeInvestorProfileApi,
-    ApiError,
+  ApiError,
   applyLatestModelRecommendationsApi,
   createAdditionalInvestmentApi,
   createWithdrawalApi,
@@ -93,6 +96,24 @@ function loadPersistedNav(): Partial<PersistedNav> {
     return {};
   }
 }
+
+/**
+ * Browser Back/Forward 동기화(Phase 1, Priority 1 화면 한정: 회원가입 4단계 · strategy-list의
+ * 3개 하위 화면 · 로그인) — history.state에 최소 정보만 싣는다. sessionStorage(SESSION_KEY)는
+ * 새로고침 복원을 그대로 전담하고, 여기서는 Back/Forward만 다룬다 — 두 메커니즘은 서로 대체하지
+ * 않는다(section 16). Priority 1 밖의 화면 전환은 이 state를 전혀 건드리지 않는다.
+ */
+interface FeinHistoryState {
+  fein: true;
+  screen: Screen;
+  depth: number;
+}
+function readFeinHistoryState(): FeinHistoryState | null {
+  const state = window.history.state as Partial<FeinHistoryState> | null;
+  if (!state?.fein) return null;
+  return { fein: true, screen: state.screen as Screen, depth: state.depth ?? 0 };
+}
+
 /** 로그인이 필요한 화면 — 새로고침 후 토큰이 없거나 만료된 걸로 확인되면 이 화면들에서는 로그인으로 돌려보낸다.
  *  투자 시작 Flow(invest-*) 화면들도 로그인 이후에만 진입 가능한 흐름이라 함께 포함한다.
  *  'strategy'(Strategy Detail)와 'strategy-list'는 의도적으로 제외한다 — 비회원 접근 정책상 전략을
@@ -102,6 +123,8 @@ const PROTECTED_SCREENS: Screen[] = [
   "dashboard",
   "portfolio",
   "portfolio-detail",
+  "account-setup",
+  "account-deposit",
   "stock",
   "start",
   "transactions",
@@ -183,7 +206,6 @@ export default function App() {
     name: "",
     birthdate: "",
     email: "",
-    aiPersonalizationConsent: false,
     agreements: { b: false, c: false, ai: false },
   });
   /** 회원가입 Step 02(이메일 인증) 진행 상태 — 화면 전환과 무관하게 App.tsx가 들고 있어야
@@ -224,16 +246,30 @@ export default function App() {
     useState<Screen>("strategy-list");
   // 추가 투자/출금 STEP 1(금액) → STEP 2(확인) 사이에서만 쓰는 draft 금액 — 새로고침 유지가 필요 없는
   // 일회성 입력값이라 persistedNav(sessionStorage)에는 넣지 않는다.
-    const [fundAddAmount, setFundAddAmount] = useState(0);
+  const [fundAddAmount, setFundAddAmount] = useState(0);
   const [fundWithdrawAmount, setFundWithdrawAmount] = useState(0);
-  const [fundOperation, setFundOperation] = useState<import("./lib/backendApi").FundOperationResponse | null>(null);
-  const [fundOperationError, setFundOperationError] = useState<string | null>(null);
-  const [fundOperationIdempotencyKey, setFundOperationIdempotencyKey] = useState<string | null>(null);
-  const [isFundOperationSubmitting, setIsFundOperationSubmitting] = useState(false);
+  const [fundOperation, setFundOperation] = useState<
+    import("./lib/backendApi").FundOperationResponse | null
+  >(null);
+  const [fundOperationError, setFundOperationError] = useState<string | null>(
+    null,
+  );
+  const [fundOperationIdempotencyKey, setFundOperationIdempotencyKey] =
+    useState<string | null>(null);
+  const [isFundOperationSubmitting, setIsFundOperationSubmitting] =
+    useState(false);
 
   const strategy =
     strategyCatalog.find((item) => item.id === strategyId) ?? null;
   useEffect(() => {
+    if (!STRATEGY_DATA_SCREENS.includes(screen)) {
+      setIsStrategyCatalogLoading(false);
+      return;
+    }
+    if (strategyCatalog.length > 0) {
+      setIsStrategyCatalogLoading(false);
+      return;
+    }
     let cancelled = false;
     setIsStrategyCatalogLoading(true);
     setStrategyCatalogError(null);
@@ -260,7 +296,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [strategyCatalogRetry]);
+  }, [screen, strategyCatalog.length, strategyCatalogRetry]);
   const [stockCode, setStockCode] = useState(
     persistedNav.stockCode ?? "005930",
   );
@@ -286,6 +322,10 @@ export default function App() {
     useState<Screen>("risk-result");
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
   const [riskErrorCode, setRiskErrorCode] = useState<string | null>(null);
+  // 온보딩 흐름에서 RiskResult를 skip하고 곧장 StrategyList로 넘어온 직후에만 true — StrategyList가
+  // 상단에 짧은 안내 문구를 보여줄지 판단하는 용도. strategy-list를 벗어나면 아래 effect가 초기화한다.
+  const [justFinishedInvestorProfile, setJustFinishedInvestorProfile] =
+    useState(false);
   // 투자자 정보 확인(risk) 완료 버튼을 누른 뒤 백엔드 분석 응답을 기다리는 동안 true — 이 결과가
   // RiskResult/재로그인 복원의 Source of Truth이므로, 응답이 오기 전까지는 화면을 넘기지 않는다.
   const [isDiagnosisSubmitting, setIsDiagnosisSubmitting] = useState(false);
@@ -295,10 +335,6 @@ export default function App() {
   // 비회원이 백테스트 잠긴 기간(Inline Login CTA)에서 로그인 화면으로 보내진 경우 true — 로그인 후
   // Portfolio가 아니라 보고 있던 Strategy Detail로만 복귀시킨다(그 기간을 자동 실행하지는 않는다).
   const [pendingReturnToStrategy, setPendingReturnToStrategy] = useState(false);
-  // 비회원이 Home "내 투자성향 알아보기"/"무료로 시작하기"를 눌러 로그인 화면으로 보내진 경우 true —
-  // 로그인 완료 후 Portfolio가 아니라 투자성향 진단으로 이어간다(아래 Login onLogin 참고).
-  const [pendingRiskProfileAfterLogin, setPendingRiskProfileAfterLogin] =
-    useState(false);
   // 로그인 화면 title/subtitle을 결정하는 진입 경로 — Header의 일반 로그인은 기본값(header)을 쓰고,
   // Home/Strategy Detail의 특정 CTA는 각자 진입 시점에 이 값을 명시적으로 세팅한다.
   const [loginContext, setLoginContext] = useState<LoginContext>("header");
@@ -306,6 +342,8 @@ export default function App() {
   // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
   const [investmentAmount, setInvestmentAmount] = useState(1_000_000);
   const [investmentMode, setInvestmentMode] = useState<OperationMode>("auto");
+  const [accountSetupMode, setAccountSetupMode] =
+    useState<OperationMode>("manual");
   const [investmentAgreements, setInvestmentAgreements] = useState<
     SignupPayload["agreements"]
   >([]);
@@ -322,6 +360,8 @@ export default function App() {
   );
   const accessToken = useAuthStore((s) => s.accessToken);
   const ensureAccount = useTradingStore((s) => s.ensureAccount);
+  const prepareAccount = useTradingStore((s) => s.prepareAccount);
+  const depositCash = useTradingStore((s) => s.depositCash);
   const tradingAccount = useTradingStore((s) => s.account);
   const portfolioStrategy = resolvePortfolioStrategy(
     strategyCatalog,
@@ -456,8 +496,8 @@ export default function App() {
    */
   const navigate = (target: Screen) => {
     // 이 함수를 거쳐 로그인으로 가는 경로(Header 일반 로그인, "나의 포트폴리오" 등 guarded 메뉴 리다이렉트)는
-    // 모두 기본 context — Home/Strategy Detail의 특정 CTA는 이 함수를 거치지 않고 각자
-    // requestLoginFromHome/requestLoginForBacktest/handleStartInvesting에서 직접 context를 세팅한다.
+    // 모두 기본 context — Strategy Detail의 특정 CTA는 이 함수를 거치지 않고 각자
+    // requestLoginForBacktest/handleStartInvesting에서 직접 context를 세팅한다.
     if (target === "login") {
       setLoginContext("header");
     }
@@ -491,6 +531,48 @@ export default function App() {
       clearInFlight();
     }
     setScreen(target);
+  };
+
+  /**
+   * Phase 1 Browser Back/Forward 동기화 헬퍼 — Priority 1 화면 전환에서만 쓴다(다른 곳의 기존
+   * setScreen(...) 호출은 그대로 둔다, section 17). pushScreen 앞에서 "현재 entry"를 먼저
+   * 지금 screen 값으로 맞춰두는 이유: strategy-list처럼 진입 자체는 Priority 1 대상이 아닌 화면은
+   * history.state가 그 이전 화면을 stale하게 들고 있을 수 있어서, 그 상태에서 곧장 push하면 나중에
+   * 뒤로 갔을 때 엉뚱한 화면(예: strategy-list 대신 home)이 복원된다. 이 자기 보정 덕분에 Priority 1
+   * 진입점(strategy-list, login 등)을 별도로 push/replace하지 않아도 항상 정확한 back target을 갖는다.
+   */
+  const pushScreen = (target: Screen) => {
+    const current = readFeinHistoryState();
+    if (!current || current.screen !== screen) {
+      window.history.replaceState(
+        { fein: true, screen, depth: current?.depth ?? 0 },
+        "",
+      );
+    }
+    const depth = (current?.depth ?? 0) + 1;
+    window.history.pushState({ fein: true, screen: target, depth }, "");
+    setScreen(target);
+  };
+
+  /** history.state만 현재 화면에 맞게 고쳐 쓴다(새 entry를 만들지 않음) — login/risk처럼 "뒤로가기로
+   *  다시 보이면 안 되는" 화면을 막 벗어난 직후에만 쓴다(아래 replace effect 참고). login/risk 자체를
+   *  push한 적이 없으므로 이 replace가 없어도 Back으로 재노출되지는 않는다 — 다만 그보다 앞서 push된
+   *  entry(예: 회원가입 STEP)가 최신 화면과 어긋난 채 남지 않도록 정리하는 역할이다. */
+  const replaceScreen = (target: Screen) => {
+    const depth = readFeinHistoryState()?.depth ?? 0;
+    window.history.replaceState({ fein: true, screen: target, depth }, "");
+  };
+
+  /** Priority 1 화면의 기존 "이전"/"← 목록" 버튼 — 뒤로 갈 FE!N history entry가 실제로 있으면
+   *  history.back()으로 popstate를 태워 Browser Back과 완전히 같은 경로를 타게 한다(새 entry를
+   *  만들지 않아 CASE F의 중복 stack 문제가 생기지 않는다). 새로고침 복원 등으로 그런 entry가 없는
+   *  경우에만 기존처럼 목적지로 직접 이동한다(section 10의 direct/recovered entry fallback). */
+  const goBackOrTo = (fallback: Screen) => {
+    if ((readFeinHistoryState()?.depth ?? 0) > 0) {
+      window.history.back();
+    } else {
+      setScreen(fallback);
+    }
   };
 
   const userName = authenticatedUser?.name ?? (personal.name.trim() || "서연");
@@ -571,6 +653,12 @@ export default function App() {
         setActiveMode("auto");
       } else if (semiAutoActive && autoActive) {
         setActiveMode("manual"); // 위 주석 참고 — 둘 다 활성이면 기존 앱 기본값(반자동)으로 수렴
+      } else if (semiAuto && !auto) {
+        setActiveMode("manual");
+      } else if (auto && !semiAuto) {
+        setActiveMode("auto");
+      } else if (semiAuto && auto) {
+        setActiveMode("manual");
       } else {
         markActiveModeChecked();
       }
@@ -601,6 +689,46 @@ export default function App() {
     transactionBackTarget,
     rebalanceBackTarget,
   ]);
+
+  // Phase 1 Browser Back/Forward — 앱 최초 마운트 시(새로고침 포함) 현재 entry에 FE!N history
+  // state가 없으면 만들어둔다. pushState가 아니라 replaceState를 써서 새 entry를 만들지 않는다
+  // (중복 entry 방지) — 이후 pushScreen 호출부터 실제로 entry가 쌓인다. 마운트 시점 screen 값만
+  // 필요해 의존성 배열은 비워둔다(sessionStorage 복원이 이미 끝난 뒤의 최초 렌더 값).
+  useEffect(() => {
+    if (!readFeinHistoryState()) {
+      window.history.replaceState({ fein: true, screen, depth: 0 }, "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Phase 1 Browser Back/Forward — FE!N이 만든 entry(state.fein === true)로 돌아왔을 때만 화면을
+  // 복원한다. 이 기능 이전에 만들어진 entry나 외부 사이트에서 넘어온 history는 건드리지 않는다.
+  // 여기서는 setScreen만 호출하고 pushState/replaceState는 절대 호출하지 않으므로 popstate →
+  // pushState → popstate 로 이어지는 loop가 생기지 않는다.
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const state = event.state as Partial<FeinHistoryState> | null;
+      if (state?.fein === true && state.screen) {
+        setScreen(state.screen as Screen);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  // Phase 1: login/risk는 Priority 1 push 대상이 아니다(로그인 폼·투자성향 8문항이 Back으로
+  // 재노출되는 걸 막는 게 목적이라, 애초에 push한 적이 없으면 재노출될 수도 없다). 다만 login/risk에
+  // 들어오기 전에 push된 entry(예: 회원가입 STEP)가 남아있으면 그 entry가 로그인/투자성향 진입 이전
+  // 화면을 가리킨 채로 stale해지므로, 이 두 화면을 "막 벗어난" 순간에만 현재 entry를 지금 화면으로
+  // replace해 정리한다 — 새 entry를 만들지 않으므로 depth/stack에는 영향이 없다.
+  const prevScreenForReplaceRef = useRef<Screen>(screen);
+  useEffect(() => {
+    const prev = prevScreenForReplaceRef.current;
+    if ((prev === "login" || prev === "risk") && screen !== prev) {
+      replaceScreen(screen);
+    }
+    prevScreenForReplaceRef.current = screen;
+  }, [screen]);
 
   // react-router 없이 screen state 하나로 화면을 전환하는 구조라, 브라우저가 자동으로 해주는
   // 스크롤 리셋이 없다 — 스크롤을 많이 내린 화면(예: PortfolioDetail)에서 다른 화면(예: StockDetail)으로
@@ -635,7 +763,7 @@ export default function App() {
       setScreen("fund-add");
     }
   }, [screen, fundAddAmount]);
-    useEffect(() => {
+  useEffect(() => {
     if (screen === "fund-withdraw-confirm" && fundWithdrawAmount <= 0) {
       setScreen("fund-withdraw");
     }
@@ -643,11 +771,21 @@ export default function App() {
 
   // 성공 결과 데이터는 일회성 React state이므로 pending 화면을 새로고침하면 안전한 화면으로 돌아간다.
   useEffect(() => {
-    if ((screen === "fund-add-pending" || screen === "fund-withdraw-pending") && !fundOperation) {
+    if (
+      (screen === "fund-add-pending" || screen === "fund-withdraw-pending") &&
+      !fundOperation
+    ) {
       setScreen("portfolio");
     }
   }, [screen, fundOperation]);
 
+  // strategy-list를 벗어나면 온보딩 직후 안내 문구를 리셋한다 — Header "투자전략"으로 다시
+  // 들어왔을 때는 온보딩 완료 안내가 다시 보이면 안 된다.
+  useEffect(() => {
+    if (screen !== "strategy-list" && justFinishedInvestorProfile) {
+      setJustFinishedInvestorProfile(false);
+    }
+  }, [screen, justFinishedInvestorProfile]);
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
@@ -688,17 +826,6 @@ export default function App() {
   };
 
   /**
-   * Home "내 투자성향 알아보기 →"/"무료로 시작하기" — 로그인 화면에 context="home"으로 진입시킨다.
-   * 두 CTA 모두 "FE!N을 시작해보려는" 같은 의도라 로그인 완료 후 Portfolio로 바로 보내지 않고
-   * pendingRiskProfileAfterLogin으로 투자성향 진단까지 이어가도록 목적지를 보존한다.
-   */
-  const requestLoginFromHome = () => {
-    setLoginContext("home");
-    setPendingRiskProfileAfterLogin(true);
-    setScreen("login");
-  };
-
-  /**
    * Strategy Detail 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보내진 경우 —
    * 로그인 완료 후 Portfolio가 아니라 보고 있던 Strategy Detail로만 복귀한다(그 기간을 자동 실행하지는
    * 않는다). strategyId는 이미 상태로 유지되고 있어 따로 안 챙겨도 된다.
@@ -733,13 +860,36 @@ export default function App() {
     navigate("portfolio");
   };
 
+  const prepareStandaloneAccount = async (mode: OperationMode) => {
+    if (!accessToken) throw new Error("로그인이 필요합니다.");
+    setAccountSetupMode(mode);
+    setActiveMode(mode);
+    await prepareAccount(accessToken, toAccountOperationMode(mode));
+    setScreen("account-deposit");
+  };
+
+  const depositStandaloneCash = async (
+    amount: number,
+    idempotencyKey: string,
+  ) => {
+    if (!accessToken || !tradingAccount) {
+      throw new Error("입금할 계좌를 확인할 수 없습니다.");
+    }
+    await depositCash(
+      accessToken,
+      tradingAccount.id,
+      amount,
+      idempotencyKey,
+    );
+    setScreen("portfolio");
+  };
+
   return (
     <div className="min-h-screen bg-canvas">
       {screen === "home" && (
         <Home
           userName={userName}
           onNavigate={navigate}
-          onRequestLogin={requestLoginFromHome}
         />
       )}
 
@@ -747,8 +897,9 @@ export default function App() {
         <Login
           context={loginContext}
           // 로그인 성공 — "이 전략으로 시작하기"를 거쳐 왔으면 그 절차로 이어가고, 잠긴 백테스트에서
-          // 왔으면 보고 있던 Strategy Detail로 복귀하고, Home "내 투자성향 알아보기"/"무료로 시작하기"에서
-          // 왔으면 투자성향 진단으로 이어가며, 그 외에는 헤더 "나의 포트폴리오"와 동일한 목적지(Portfolio)로 이동
+          // 왔으면 보고 있던 Strategy Detail로 복귀하며, 그 외에는 헤더 "나의 포트폴리오"와 동일한
+          // 목적지(Portfolio)로 이동. 회원가입 유도는 이제 Home "시작하기"/"내 투자성향 알아보기"가
+          // 로그인을 거치지 않고 곧장 start-signup으로 보내므로 여기서 다룰 필요가 없다.
           onLogin={() => {
             if (pendingStartAfterLogin) {
               setPendingStartAfterLogin(false);
@@ -760,30 +911,35 @@ export default function App() {
               setScreen("strategy");
               return;
             }
-            if (pendingRiskProfileAfterLogin) {
-              setPendingRiskProfileAfterLogin(false);
-              startInvestorProfile("risk-result");
-              return;
-            }
             navigate("portfolio");
           }}
           onSignup={() => {
             setPendingStartAfterLogin(false);
             setPendingReturnToStrategy(false);
-            setPendingRiskProfileAfterLogin(false);
             setScreen("signup-1");
           }}
           onHome={() => {
             setPendingStartAfterLogin(false);
             setPendingReturnToStrategy(false);
-            setPendingRiskProfileAfterLogin(false);
             setScreen("home");
           }}
           onNavigate={(s) => {
             setPendingStartAfterLogin(false);
             setPendingReturnToStrategy(false);
-            setPendingRiskProfileAfterLogin(false);
             navigate(s);
+          }}
+        />
+      )}
+
+      {screen === "start-signup" && (
+        <StartSignup
+          onNavigate={navigate}
+          // 이메일만 SignupPersonal에 미리 채우고 기존 signup-1로 넘긴다 — 새 API/스키마 없음.
+          // handlePersonalChange를 그대로 써서 email이 바뀌면 기존 emailVerification 리셋 로직도
+          // 똑같이 적용된다.
+          onContinue={(email) => {
+            handlePersonalChange({ ...personal, email });
+            pushScreen("signup-1");
           }}
         />
       )}
@@ -802,7 +958,7 @@ export default function App() {
               resendAfterSeconds: result.resend_after_seconds,
               token: null,
             });
-            setScreen("signup-2");
+            pushScreen("signup-2");
           }}
           userName={userName}
           onNavigate={navigate}
@@ -843,10 +999,10 @@ export default function App() {
               ...emailVerification,
               token: result.verification_token,
             });
-            setScreen("signup-3");
+            pushScreen("signup-3");
           }}
-          onContinue={() => setScreen("signup-3")}
-          onBack={() => setScreen("signup-1")}
+          onContinue={() => pushScreen("signup-3")}
+          onBack={() => goBackOrTo("signup-1")}
           userName={userName}
           onNavigate={navigate}
         />
@@ -863,14 +1019,18 @@ export default function App() {
             const termCodeByAgreement = {
               b: "B_PRIVACY",
               c: "C_ASSOCIATE_TERMS",
+              // AI_PERSONALIZATION은 투자성향 분석/챗봇 개인화 응답 제공 여부를 가르는 실제 권한
+              // 경계로 쓰이고 있어(백엔드 recommendation.py의 has_ai_personalization_consent)
+              // 자동으로 true를 채워보내지 않고, 사용자가 실제로 체크한 값을 그대로 전송한다.
               ai: "AI_PERSONALIZATION",
             } as const;
-            const agreementByTermCode = Object.fromEntries(
-              Object.entries(termCodeByAgreement).map(([key, code]) => [
-                code,
-                personal.agreements[key as keyof typeof termCodeByAgreement],
-              ]),
-            );
+            const agreementByTermCode: Record<string, boolean> =
+              Object.fromEntries(
+                Object.entries(termCodeByAgreement).map(([key, code]) => [
+                  code,
+                  personal.agreements[key as keyof typeof termCodeByAgreement],
+                ]),
+              );
             const terms = await signupTermsApi();
             await register({
               user_id: userId,
@@ -887,9 +1047,11 @@ export default function App() {
               })),
             });
             setEmailVerification(null);
-            startInvestorProfile("risk-result");
+            // Strategy recommendation model 연결 전까지 onboarding flow에서 RiskResult를
+            // 일시적으로 skip. 향후 추천 모델 연결 시 재활성화 예정.
+            startInvestorProfile("strategy-list");
           }}
-          onBack={() => setScreen("signup-2")}
+          onBack={() => goBackOrTo("signup-2")}
           userName={userName}
           onNavigate={navigate}
         />
@@ -937,6 +1099,11 @@ export default function App() {
               );
               setRiskNotice(undefined);
               setRiskErrorCode(null);
+              // Strategy recommendation model 연결 전까지 onboarding flow에서 RiskResult를
+              // 일시적으로 skip. 향후 추천 모델 연결 시 재활성화 예정.
+              if (postDiagnosisTarget === "strategy-list") {
+                setJustFinishedInvestorProfile(true);
+              }
               setScreen(postDiagnosisTarget);
               setPostDiagnosisTarget("risk-result");
             } catch (error) {
@@ -971,18 +1138,19 @@ export default function App() {
         <StrategyList
           userName={userName}
           onNavigate={navigate}
+          showOnboardingNotice={justFinishedInvestorProfile}
           onSelectLossAvoidance={() =>
-            setScreen("strategy-coming-soon-loss-avoidance")
+            pushScreen("strategy-coming-soon-loss-avoidance")
           }
-          onSelectF4={() => setScreen("strategy-f4")}
-          onSelectPersonalizedPreview={() => setScreen("strategy-preview")}
+          onSelectF4={() => pushScreen("strategy-f4")}
+          onSelectPersonalizedPreview={() => pushScreen("strategy-preview")}
         />
       )}
       {screen === "strategy-f4" && (
         <StrategyF4List
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen("strategy-list")}
+          onBack={() => goBackOrTo("strategy-list")}
           onSelectAvailableStrategy={() => {
             setStrategyId("momentum");
             setStrategyDetailBackTarget("strategy-f4");
@@ -996,14 +1164,14 @@ export default function App() {
           strategyKey="loss-avoidance"
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen("strategy-list")}
+          onBack={() => goBackOrTo("strategy-list")}
         />
       )}
       {screen === "strategy-preview" && (
         <StrategyPersonalizedPreview
           userName={userName}
           onNavigate={navigate}
-          onBack={() => setScreen("strategy-list")}
+          onBack={() => goBackOrTo("strategy-list")}
         />
       )}
       {screen === "strategy" && strategy && (
@@ -1229,6 +1397,32 @@ export default function App() {
         />
       )}
 
+      {screen === "account-setup" && (
+        <AccountSetup
+          userName={userName}
+          initialMode={activeMode ?? accountSetupMode}
+          onNavigate={navigate}
+          onBack={() => setScreen("portfolio")}
+          onComplete={prepareStandaloneAccount}
+        />
+      )}
+
+      {screen === "account-deposit" && (
+        <AccountDeposit
+          userName={userName}
+          mode={
+            tradingAccount
+              ? toOperationMode(tradingAccount.operation_mode)
+              : accountSetupMode
+          }
+          account={tradingAccount}
+          onNavigate={navigate}
+          onBack={() => setScreen("account-setup")}
+          onDeposit={depositStandaloneCash}
+          onDefer={() => setScreen("portfolio")}
+        />
+      )}
+
       {screen === "information" && (
         <InformationExam userName={userName} onNavigate={navigate} />
       )}
@@ -1248,7 +1442,7 @@ export default function App() {
           Portfolio.tsx, 자동매매는 AI가 이미 실행을 마친 PortfolioAuto.tsx. 계좌를 아직 안 만든 경우(null)는
           기존 기본값인 반자동으로 보여준다. */}
       {screen === "portfolio" &&
-        (activeMode === "auto" ? (
+        (activeMode === "auto" && tradingAccount?.selected_strategy_id ? (
           <PortfolioAuto
             userName={userName}
             onNavigate={navigate}
@@ -1279,12 +1473,21 @@ export default function App() {
               setScreen("rebalance-alerts");
             }}
             onStartRiskProfile={() => startInvestorProfile("risk-result")}
+            onSetupAccount={() => {
+              setAccountSetupMode(activeMode ?? "manual");
+              setScreen("account-setup");
+            }}
             onOpenFundManagement={(kind) => {
               // STEP1↔STEP2 사이에서만 쓰는 일회성 draft 금액 — 이전에 종료한 Flow에서 남은 값이
               // 새 Flow 진입 시 그대로 미리 채워져 보이지 않도록 매번 새로 시작할 때 0으로 되돌린다.
               if (kind === "deposit") {
-                setFundAddAmount(0);
-                setScreen("fund-add");
+                if (!tradingAccount?.selected_strategy_id) {
+                  setAccountSetupMode(activeMode ?? "manual");
+                  setScreen("account-deposit");
+                } else {
+                  setFundAddAmount(0);
+                  setScreen("fund-add");
+                }
               } else {
                 setFundWithdrawAmount(0);
                 setScreen("fund-withdraw");
@@ -1317,30 +1520,48 @@ export default function App() {
           amount={fundAddAmount}
           userName={userName}
           onNavigate={navigate}
-                              onBack={() => setScreen("fund-add")}
+          onBack={() => setScreen("fund-add")}
           isSubmitting={isFundOperationSubmitting}
           onConfirm={async () => {
-            if (!accessToken || !tradingAccount || !fundOperationIdempotencyKey || isFundOperationSubmitting) return;
+            if (
+              !accessToken ||
+              !tradingAccount ||
+              !fundOperationIdempotencyKey ||
+              isFundOperationSubmitting
+            )
+              return;
             setFundOperationError(null);
             setIsFundOperationSubmitting(true);
             try {
               const operation = await createAdditionalInvestmentApi(
                 tradingAccount.id,
-                { amount: fundAddAmount, idempotency_key: fundOperationIdempotencyKey },
+                {
+                  amount: fundAddAmount,
+                  idempotency_key: fundOperationIdempotencyKey,
+                },
                 accessToken,
               );
               setFundOperation(operation);
               setScreen("fund-add-pending");
-              void useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode).catch((error) => {
-                console.error("Fund operation succeeded, but portfolio refresh failed", error);
-              });
+              void useTradingStore
+                .getState()
+                .refresh(accessToken, tradingAccount.operation_mode)
+                .catch((error) => {
+                  console.error(
+                    "Fund operation succeeded, but portfolio refresh failed",
+                    error,
+                  );
+                });
             } catch (error) {
-              setFundOperationError(error instanceof ApiError ? error.message : "추가 투자에 실패했어요. 다시 시도해주세요.");
+              setFundOperationError(
+                error instanceof ApiError
+                  ? error.message
+                  : "추가 투자에 실패했어요. 다시 시도해주세요.",
+              );
             } finally {
               setIsFundOperationSubmitting(false);
             }
           }}
-
         />
       )}
 
@@ -1368,54 +1589,74 @@ export default function App() {
           amount={fundWithdrawAmount}
           userName={userName}
           onNavigate={navigate}
-                              onBack={() => setScreen("fund-withdraw")}
+          onBack={() => setScreen("fund-withdraw")}
           isSubmitting={isFundOperationSubmitting}
           onConfirm={async () => {
-            if (!accessToken || !tradingAccount || !fundOperationIdempotencyKey || isFundOperationSubmitting) return;
+            if (
+              !accessToken ||
+              !tradingAccount ||
+              !fundOperationIdempotencyKey ||
+              isFundOperationSubmitting
+            )
+              return;
             setFundOperationError(null);
             setIsFundOperationSubmitting(true);
             try {
               const operation = await createWithdrawalApi(
                 tradingAccount.id,
-                { amount: fundWithdrawAmount, idempotency_key: fundOperationIdempotencyKey },
+                {
+                  amount: fundWithdrawAmount,
+                  idempotency_key: fundOperationIdempotencyKey,
+                },
                 accessToken,
               );
               setFundOperation(operation);
               setScreen("fund-withdraw-pending");
-              void useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode).catch((error) => {
-                console.error("Fund operation succeeded, but portfolio refresh failed", error);
-              });
+              void useTradingStore
+                .getState()
+                .refresh(accessToken, tradingAccount.operation_mode)
+                .catch((error) => {
+                  console.error(
+                    "Fund operation succeeded, but portfolio refresh failed",
+                    error,
+                  );
+                });
             } catch (error) {
-              setFundOperationError(error instanceof ApiError ? error.message : "출금에 실패했어요. 다시 시도해주세요.");
+              setFundOperationError(
+                error instanceof ApiError
+                  ? error.message
+                  : "출금에 실패했어요. 다시 시도해주세요.",
+              );
             } finally {
               setIsFundOperationSubmitting(false);
             }
           }}
-
         />
       )}
 
-            {(screen === "fund-add-pending" || screen === "fund-withdraw-pending") && fundOperation && (
-        <FundOperationResult
-          kind={screen === "fund-add-pending" ? "deposit" : "withdraw"}
-          operation={fundOperation}
-          userName={userName}
-          onNavigate={navigate}
-          onDone={() => {
-            setFundOperation(null);
-            setFundAddAmount(0);
-            setFundWithdrawAmount(0);
-            setFundOperationIdempotencyKey(null);
-            setScreen("portfolio");
-          }}
-        />
-      )}
-      {fundOperationError && (screen === "fund-add-confirm" || screen === "fund-withdraw-confirm") && (
-        <div className="fixed bottom-6 left-1/2 z-[800] -translate-x-1/2 rounded-field bg-[#FBEAEA] px-6 py-4 text-sm font-semibold text-down shadow-lg">
-          {fundOperationError}
-        </div>
-      )}
-
+      {(screen === "fund-add-pending" || screen === "fund-withdraw-pending") &&
+        fundOperation && (
+          <FundOperationResult
+            kind={screen === "fund-add-pending" ? "deposit" : "withdraw"}
+            operation={fundOperation}
+            userName={userName}
+            onNavigate={navigate}
+            onDone={() => {
+              setFundOperation(null);
+              setFundAddAmount(0);
+              setFundWithdrawAmount(0);
+              setFundOperationIdempotencyKey(null);
+              setScreen("portfolio");
+            }}
+          />
+        )}
+      {fundOperationError &&
+        (screen === "fund-add-confirm" ||
+          screen === "fund-withdraw-confirm") && (
+          <div className="fixed bottom-6 left-1/2 z-[800] -translate-x-1/2 rounded-field bg-[#FBEAEA] px-6 py-4 text-sm font-semibold text-down shadow-lg">
+            {fundOperationError}
+          </div>
+        )}
 
       {screen === "portfolio-detail" && portfolioStrategy && (
         <PortfolioDetail
@@ -1498,15 +1739,13 @@ export default function App() {
         />
       )}
 
-                  {/* 로그인 사용자에게만 챗봇을 노출한다. 비로그인 요청은 Backend에서 차단된다. */}
-      {accessToken && (
-        <Chatbot
-          screen={screen}
-          stockCode={stockCode}
-          strategyId={strategyId}
-          accountId={tradingAccount?.id}
-        />
-      )}
+      {/* 공개 금융 설명은 비로그인 사용자도 이용할 수 있고, 개인 계좌 조회만 Backend가 인증·동의를 검증한다. */}
+      <Chatbot
+        screen={screen}
+        stockCode={stockCode}
+        strategyId={strategyId}
+        accountId={accessToken ? tradingAccount?.id : undefined}
+      />
     </div>
   );
 }

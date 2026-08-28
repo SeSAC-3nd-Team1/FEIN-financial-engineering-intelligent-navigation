@@ -109,6 +109,25 @@ class UserAgreement(Base):
 
 class Strategy(Base):
     __tablename__ = "strategies"
+    __table_args__ = (
+        CheckConstraint(
+            "product_group IN ('MUL', 'BANG')",
+            name="ck_strategies_product_group_values",
+        ),
+        CheckConstraint(
+            "availability_status IN ('AVAILABLE', 'TESTING')",
+            name="ck_strategies_availability_status_values",
+        ),
+        CheckConstraint(
+            "display_order > 0",
+            name="ck_strategies_display_order_positive",
+        ),
+        Index(
+            "ix_strategies_catalog_order",
+            "product_group",
+            "display_order",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(30), primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     description: Mapped[str] = mapped_column(Text)
@@ -116,6 +135,10 @@ class Strategy(Base):
     rebalance_cycle: Mapped[str] = mapped_column(String(30))
     rule_config: Mapped[dict] = mapped_column(JSONB, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    product_group: Mapped[str] = mapped_column(String(20))
+    availability_status: Mapped[str] = mapped_column(String(20))
+    engine_key: Mapped[str] = mapped_column(String(50))
+    display_order: Mapped[int] = mapped_column(SmallInteger)
 
 
 class StrategyTargetWeight(Base):
@@ -526,6 +549,50 @@ class AccountDeposit(Base):
     )
 
 
+class AccountCashDeposit(Base):
+    """전략 선택과 무관하게 가상계좌에 충전한 현금 입금 기록."""
+
+    __tablename__ = "account_cash_deposits"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "idempotency_key",
+            name="uq_account_cash_deposits_account_idempotency",
+        ),
+        CheckConstraint("amount > 0", name="ck_account_cash_deposits_amount_positive"),
+        CheckConstraint(
+            "balance_after >= 0",
+            name="ck_account_cash_deposits_balance_nonnegative",
+        ),
+        CheckConstraint(
+            "status = 'COMPLETED'",
+            name="ck_account_cash_deposits_status_values",
+        ),
+        Index(
+            "ix_account_cash_deposits_account_created",
+            "account_id",
+            "created_at",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    account_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("virtual_accounts.id", ondelete="RESTRICT"),
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    balance_after: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    status: Mapped[str] = mapped_column(String(20), default="COMPLETED")
+    idempotency_key: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class InvestorProfileAssessment(Base):
     __tablename__ = "investor_profile_assessments"
     __table_args__ = (
@@ -545,6 +612,10 @@ class InvestorProfileAssessment(Base):
             "horizon BETWEEN 1 AND 5",
             name="ck_investor_profile_assessments_horizon_range",
         ),
+        CheckConstraint(
+            "risk_score IS NULL OR risk_score BETWEEN 0 AND 100",
+            name="ck_investor_profile_assessments_risk_score_range",
+        ),
         Index("ix_investor_profile_assessments_user_created", "user_id", "created_at"),
     )
     id: Mapped[UUID] = mapped_column(
@@ -555,6 +626,7 @@ class InvestorProfileAssessment(Base):
     )
     questionnaire_version: Mapped[str] = mapped_column(String(20))
     analysis_version: Mapped[str] = mapped_column(String(20))
+    risk_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     profile_type: Mapped[str] = mapped_column(String(20))
     stability: Mapped[int] = mapped_column(SmallInteger)
     return_seeking: Mapped[int] = mapped_column(SmallInteger)

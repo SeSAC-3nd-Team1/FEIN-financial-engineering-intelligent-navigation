@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   ApiError,
   createAccountApi,
+  depositAccountCashApi,
   createOrderApi,
   createRebalancingDecisionApi,
   getExecutionsApi,
@@ -11,6 +12,7 @@ import {
   getRebalancingDecisionsApi,
   selectStrategyApi,
   type AccountOperationMode,
+  type AccountCashDepositResponse,
   type AccountResponse,
   type ExecutionResponse,
   type OrderCreateRequest,
@@ -36,6 +38,8 @@ interface TradingState {
   error: ApiError | null;
   orderMessage: string | null;
   refresh: (token: string, mode: AccountOperationMode) => Promise<void>;
+  prepareAccount: (token: string, mode: AccountOperationMode) => Promise<AccountResponse>;
+  depositCash: (token: string, accountId: string, amount: number, idempotencyKey: string) => Promise<AccountCashDepositResponse>;
   ensureAccount: (token: string, strategyId: string, mode: AccountOperationMode) => Promise<AccountResponse>;
   placeOrder: (token: string, payload: OrderCreateRequest) => Promise<OrderResponse>;
   recordDecision: (token: string, payload: RebalancingDecisionCreateRequest) => Promise<void>;
@@ -119,6 +123,48 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       await promise;
     } finally {
       if (activeRefresh?.promise === promise) activeRefresh = null;
+    }
+  },
+
+  prepareAccount: async (token, mode) => {
+    set({ isSubmitting: true, error: null, orderMessage: null });
+    try {
+      let account: AccountResponse;
+      try {
+        account = await getMyAccountApi(token, mode);
+      } catch (error) {
+        const apiError = asApiError(error);
+        if (apiError.code !== 'ACCOUNT_NOT_FOUND') throw apiError;
+        account = await createAccountApi('나의 가상 투자계좌', mode, token);
+      }
+      const data = await loadAccountData(account, token);
+      set({ account, ...data, accountMissing: false, isSubmitting: false, lastUpdatedAt: new Date().toISOString() });
+      return account;
+    } catch (error) {
+      const apiError = asApiError(error);
+      set({ error: apiError, isSubmitting: false });
+      throw apiError;
+    }
+  },
+
+  depositCash: async (token, accountId, amount, idempotencyKey) => {
+    set({ isSubmitting: true, error: null, orderMessage: null });
+    try {
+      const result = await depositAccountCashApi(accountId, amount, idempotencyKey, token);
+      const data = await loadAccountData(result.account, token);
+      set({
+        account: result.account,
+        ...data,
+        accountMissing: false,
+        isSubmitting: false,
+        lastUpdatedAt: new Date().toISOString(),
+        orderMessage: `${amount.toLocaleString('ko-KR')}원이 입금됐습니다.`,
+      });
+      return result;
+    } catch (error) {
+      const apiError = asApiError(error);
+      set({ error: apiError, isSubmitting: false });
+      throw apiError;
     }
   },
 

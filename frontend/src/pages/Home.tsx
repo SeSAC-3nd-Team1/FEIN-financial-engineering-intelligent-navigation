@@ -8,8 +8,6 @@ import type { Screen } from '../types';
 interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
-  /** "내 투자성향 알아보기"/"무료로 시작하기" — 로그인 화면에 context="home"으로 진입시킨다 */
-  onRequestLogin: () => void;
 }
 
 const HOME_STEPS = [
@@ -25,17 +23,17 @@ const HOME_STEPS = [
  * 로그인 직후 자동 랜딩 규칙(Portfolio/입금 요청)은 App.tsx의 navigate()가 그대로 담당하고 있어
  * 여기서는 건드리지 않는다.
  */
-export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
+export default function Home({ userName, onNavigate }: Props) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
 
   return (
     // Portfolio.tsx와 같은 패턴 — 뷰포트가 넉넉하면 한 화면(h-screen)에 다 담기도록 아래 flex
     // 트리를 가용 높이에 맞춰 나누고, 화면이 작아 다 안 들어가면 페이지 자체가 스크롤된다.
     <div className="flex h-screen flex-col overflow-y-auto bg-canvas">
-      <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '무료로 시작하기', onClick: onRequestLogin }} />
+      <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '시작하기', onClick: () => onNavigate('start-signup') }} />
       {isLoggedIn
         ? <LoggedInHome userName={userName} />
-        : <LoggedOutHome onNavigate={onNavigate} onRequestLogin={onRequestLogin} />}
+        : <LoggedOutHome onNavigate={onNavigate} />}
     </div>
   );
 }
@@ -100,8 +98,8 @@ function LoggedInHome({ userName }: { userName: string }) {
 }
 
 /** 비로그인 Home — "기능/성과를 나열하는 페이지"가 아니라, 물방개와 한 문장으로 FE!N이 무엇을
- * 도와주는 서비스인지 바로 알리고 시작 행동(투자성향 진단)으로 보내는 것이 목적이다. */
-function LoggedOutHome({ onNavigate, onRequestLogin }: { onNavigate: (s: Screen) => void; onRequestLogin: () => void }) {
+ * 도와주는 서비스인지 바로 알리고 시작 행동(회원가입)으로 보내는 것이 목적이다. */
+function LoggedOutHome({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   return (
     <main className="flex flex-col items-center pb-24">
       <section className="grid w-[1312px] grid-cols-[1fr_auto] items-center gap-16 px-16 pb-24 pt-20">
@@ -110,10 +108,10 @@ function LoggedOutHome({ onNavigate, onRequestLogin }: { onNavigate: (s: Screen)
             투자는 어려워도,<br />내 전략은 이해할 수 있게.
           </h1>
           <p className="max-w-[540px] text-xl leading-[34px] text-muted">
-            내 투자성향에 맞는 전략을 찾고,<br />왜 이 전략인지 쉽게 이해할 수 있어요.
+            내 투자성향을 이해하고,<br />다양한 투자전략을 비교해 직접 선택할 수 있어요.
           </p>
           <div className="flex items-center gap-6 pt-3">
-            <button onClick={onRequestLogin} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
+            <button onClick={() => onNavigate('start-signup')} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
               내 투자성향 알아보기 →
             </button>
             <button onClick={() => onNavigate('strategy-list')} className="text-[17px] font-semibold text-muted transition-colors hover:text-navy">

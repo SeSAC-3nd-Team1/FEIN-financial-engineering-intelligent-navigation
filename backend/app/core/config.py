@@ -31,7 +31,6 @@ class Settings:
 
     azure_openai_endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
     azure_openai_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
-    azure_openai_deployment: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
     azure_openai_api_version: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
 
     azure_openai_chatbot_endpoint: str = os.getenv("AZURE_OPENAI_CHATBOT_ENDPOINT", "")
@@ -42,9 +41,6 @@ class Settings:
     ai_chatbot_model_version: str = os.getenv("AI_CHATBOT_MODEL_VERSION", "chatbot-v1")
     ai_chatbot_prompt_version: str = os.getenv("AI_CHATBOT_PROMPT_VERSION", "v1")
 
-    ai_profile_timeout_seconds: float = float(os.getenv("AI_PROFILE_TIMEOUT_SECONDS", "15"))
-    ai_profile_model_version: str = os.getenv("AI_PROFILE_MODEL_VERSION", "investor-profile-v1")
-    ai_profile_prompt_version: str = os.getenv("AI_PROFILE_PROMPT_VERSION", "v1")
     azure_openai_recommendation_deployment: str = os.getenv("AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT", "")
     ai_recommendation_timeout_seconds: float = float(os.getenv("AI_RECOMMENDATION_TIMEOUT_SECONDS", "15"))
     ai_recommendation_model_version: str = os.getenv("AI_RECOMMENDATION_MODEL_VERSION", "strategy-recommender-v1")
@@ -57,7 +53,7 @@ class Settings:
     ai_comparison_timeout_seconds: float = float(os.getenv("AI_COMPARISON_TIMEOUT_SECONDS", "15"))
     ai_comparison_model_version: str = os.getenv("AI_COMPARISON_MODEL_VERSION", "portfolio-comparison-v1")
 
-    strategy_catalog_version: str = os.getenv("STRATEGY_CATALOG_VERSION", "v1")
+    strategy_catalog_version: str = os.getenv("STRATEGY_CATALOG_VERSION", "v2")
 
     kis_app_key: str = os.getenv("KIS_APP_KEY", "")
     kis_app_secret: str = os.getenv("KIS_APP_SECRET", "")

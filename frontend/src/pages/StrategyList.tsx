@@ -6,6 +6,10 @@ import type { Screen } from '../types';
 interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
+  /** 온보딩(회원가입 → 투자성향 확인) 직후 곧장 이 화면으로 넘어온 경우에만 true — Header
+   *  "투자전략"으로 들어온 공용 진입에는 전달되지 않는다. 추천이 아니라 "확인을 완료했다"는
+   *  안내일 뿐이라, 특정 카드를 강조하거나 순서를 바꾸지 않는다. */
+  showOnboardingNotice?: boolean;
   /** 물림방지 전략 카드 → Coming Soon 상세(실 Model/API 미연결, TODO) */
   onSelectLossAvoidance: () => void;
   /** 방탄 F4 전략집 카드 → F4 4개 전략 선택 화면 */
@@ -25,7 +29,7 @@ interface Props {
  * Detail로 보내지 않는다(STOP CONDITION: 이번 단계에서 canonical strategy id를 새로 정하지 않음).
  */
 export default function StrategyList({
-  userName, onNavigate, onSelectLossAvoidance, onSelectF4, onSelectPersonalizedPreview,
+  userName, onNavigate, showOnboardingNotice, onSelectLossAvoidance, onSelectF4, onSelectPersonalizedPreview,
 }: Props) {
   const handleSelect = (key: (typeof STRATEGY_PRODUCT_CARDS)[number]['key']) => {
     if (key === 'loss-avoidance') onSelectLossAvoidance();
@@ -42,12 +46,24 @@ export default function StrategyList({
           <section className="flex flex-col gap-4">
             <span className="text-base font-semibold text-muted">투자전략</span>
             <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">
-              나에게 맞는 투자전략을<br />살펴보세요
+              투자전략을 살펴보세요
             </h1>
             <p className="max-w-[820px] text-[19px] leading-8 text-muted">
               전략을 골라 자세히 보면, 과거 시장에서 어땠는지와 어떤 방식으로 투자하는지 확인할 수 있어요.
             </p>
           </section>
+
+          {/* 온보딩(회원가입 → 투자성향 확인) 직후에만 보이는 짧은 안내 — 추천이 아니라 "확인을
+             완료했다"는 사실만 전달한다. 카드 강조/순서 변경은 절대 하지 않는다. */}
+          {showOnboardingNotice && (
+            <div className="flex items-start gap-3 rounded-[16px] bg-[#F8FCEE] px-6 py-4">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-lime text-xs font-bold text-navy">✓</span>
+              <p className="text-[15px] leading-6 text-[#3F4A43]">
+                투자성향 확인을 완료했어요.<br />
+                아래 전략의 특징과 난이도를 비교해 나에게 맞는 전략을 선택해보세요.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-6">
             {STRATEGY_PRODUCT_CARDS.map((card) => (

@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models import (
+    AccountCashDeposit,
     CashLedger,
     Execution,
     FundOperation,
@@ -70,6 +71,18 @@ class TradingRepository:
             .where(VirtualAccount.user_id == user_id)
             .order_by(VirtualAccount.operation_mode)
         ))
+
+    def account_cash_deposit_by_idempotency(
+        self,
+        account_id: UUID,
+        idempotency_key: str,
+    ) -> AccountCashDeposit | None:
+        return self.session.scalar(
+            select(AccountCashDeposit).where(
+                AccountCashDeposit.account_id == account_id,
+                AccountCashDeposit.idempotency_key == idempotency_key,
+            )
+        )
 
     def completed_onboarding_for_user_mode(
         self,
@@ -269,7 +282,13 @@ class TradingRepository:
         ))
 
     def strategies(self) -> list[Strategy]:
-        return list(self.session.scalars(select(Strategy).where(Strategy.is_active.is_(True)).order_by(Strategy.id)))
+        return list(
+            self.session.scalars(
+                select(Strategy)
+                .where(Strategy.is_active.is_(True))
+                .order_by(Strategy.product_group, Strategy.display_order, Strategy.id)
+            )
+        )
 
     def strategy(self, strategy_id: str) -> Strategy | None:
         return self.session.get(Strategy, strategy_id)

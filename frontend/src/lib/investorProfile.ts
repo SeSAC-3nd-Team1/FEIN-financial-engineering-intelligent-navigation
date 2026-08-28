@@ -12,6 +12,8 @@ export interface InvestorTraits {
 
 export interface InvestorProfileResult {
   type: string;
+  /** 0~100 최종 위험 점수. 점수 도입 전 v1 결과는 null이다. */
+  riskScore: number | null;
   tendencyLine: string;
   description: string;
   traits: InvestorTraits;
@@ -22,6 +24,7 @@ export interface InvestorProfileResult {
 export function mapInvestorProfileResponse(response: InvestorProfileResponse): InvestorProfileResult {
   return {
     type: response.profile_type,
+    riskScore: response.risk_score ?? null,
     tendencyLine: response.tendency_line,
     description: response.description,
     traits: {
