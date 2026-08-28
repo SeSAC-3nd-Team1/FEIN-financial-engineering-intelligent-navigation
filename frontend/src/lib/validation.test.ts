@@ -22,6 +22,14 @@ describe('calculateAge', () => {
     expect(calculateAge('900101')).toBeGreaterThan(30);
   });
 
+  it('rejects calendar dates that do not exist instead of silently rolling over', () => {
+    // JS Date는 "021332"(13월 32일) 같은 값을 자동 보정해서 다음 해/달로 넘겨버린다 — 백엔드
+    // Python date()는 이런 값을 그대로 거부하므로, 여기서 걸러내지 않으면 프런트만 통과시키고
+    // 백엔드에서만 실패하는 상황이 생긴다.
+    expect(calculateAge('021332')).toBeNull();
+    expect(calculateAge('990230')).toBeNull(); // 2월 30일은 존재하지 않음
+  });
+
   it('computes the exact age for a birthdate matching today', () => {
     expect(calculateAge(birthdateForAge(20))).toBe(20);
   });

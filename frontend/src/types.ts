@@ -25,13 +25,15 @@ export interface SignupPersonal {
   agreements: Agreements;
 }
 
-/** 동의 항목 — 둘 다 필수(모두 true 여야 이메일 인증 진행 가능).
+/** 동의 항목 — 셋 다 필수(모두 true 여야 이메일 인증 진행 가능).
  *  휴대폰 SMS/KCB/통신사 본인확인 관련 동의(구 a1~a4)는 더 이상 회원가입에서 요구하지 않아 제거했다.
- *  AI 기반 맞춤형 서비스 이용 동의(AI_PERSONALIZATION)는 더 이상 별도 체크박스로 받지 않는다 —
- *  회원가입 시 항상 동의로 전송한다(App.tsx 참고). */
+ *  AI 기반 맞춤형 서비스 이용 동의(AI_PERSONALIZATION)는 투자성향 분석/챗봇 개인화 응답 제공 여부를
+ *  가르는 실제 권한 경계로 쓰이고 있어(recommendation.py의 has_ai_personalization_consent), 선택이
+ *  아니라 필수 동의로 관리한다 — 서버 약관 카탈로그에서도 is_required=true다. */
 export interface Agreements {
   b: boolean;  // 개인정보 수집·이용 동의
   c: boolean;  // 서비스 이용약관 동의
+  ai: boolean; // AI 기반 맞춤형 서비스 이용 동의
 }
 
 /** Step 03 계정 정보 — email은 Step 01/02에서 이미 입력·인증 완료된 상태라 여기서는 다루지 않는다 */

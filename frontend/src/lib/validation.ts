@@ -23,6 +23,11 @@ function birthdateToDate(birthdate: string): Date | null {
   const dd = Number(birthdate.slice(4, 6));
   const today = new Date();
   const asY2000 = new Date(2000 + yy, mm - 1, dd);
+  // JS Date는 존재하지 않는 날짜(예: 021332, 990230)를 다음 달/해로 자동 보정한다 — 입력한
+  // month/day가 그대로 반영됐는지 확인해 보정된 값은 무효로 처리한다. 백엔드(services/auth.py의
+  // _calculate_age)는 Python date() 생성이 그대로 실패하는 방식으로 이미 이렇게 동작하므로, 여기서
+  // 걸러내지 않으면 프런트는 통과시키고 백엔드만 거부하는 케이스가 생긴다.
+  if (asY2000.getMonth() !== mm - 1 || asY2000.getDate() !== dd) return null;
   const year = asY2000.getTime() > today.getTime() ? 1900 + yy : 2000 + yy;
   return new Date(year, mm - 1, dd);
 }
