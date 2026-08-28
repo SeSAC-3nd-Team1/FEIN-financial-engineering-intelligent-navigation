@@ -45,28 +45,32 @@ function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: 
     <main className="flex flex-col items-center px-16 pt-8">
       {/* Portfolio/PortfolioAuto의 "한 화면" 메인 컨텐츠 폭(max-w-[1040px])과 통일한다. */}
       <div className="flex w-full max-w-[1040px] flex-col items-center gap-7">
-        <div className="flex items-center gap-6">
-          <img src="/character-recommend.png" alt="물방개" className="h-24 w-auto shrink-0 object-contain" />
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-[26px] font-bold leading-9 tracking-[-0.02em]">
-              {userName}님, 오늘은 무엇을 알아볼까요?
-            </h1>
-            <p className="text-[15px] text-muted">
-              물방개와 함께 투자 전략부터 시장 이야기까지 쉽게 살펴보세요.
-            </p>
+        {/* 인사말 줄도 아래 목표 차량 카드처럼 폭 전체를 쓴다 — 왼쪽 물방개+문구, 오른쪽 끝에
+            CTA 버튼을 둬서 좌우 양 끝에 무게가 실리게 한다. */}
+        <div className="flex w-full items-center justify-between gap-6">
+          <div className="flex items-center gap-6">
+            <img src="/character-recommend.png" alt="물방개" className="h-24 w-auto shrink-0 object-contain" />
+            <div className="flex flex-col gap-1.5">
+              <h1 className="text-[26px] font-bold leading-9 tracking-[-0.02em]">
+                {userName}님, 오늘은 무엇을 알아볼까요?
+              </h1>
+              <p className="text-[15px] text-muted">
+                물방개와 함께 투자 전략부터 시장 이야기까지 쉽게 살펴보세요.
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-3">
-          <button onClick={() => onNavigate('strategy-list')} className="rounded-field bg-lime px-6 py-3.5 text-[15px] font-bold text-navy">
-            투자 전략 살펴보기 →
-          </button>
-          <button
-            onClick={() => onNavigate('information')}
-            className="rounded-field px-5 py-3.5 text-[15px] font-semibold text-navy shadow-[0_0_0_1px_#E5E9E3_inset] transition-shadow hover:shadow-[0_0_0_1px_#C9D1C4_inset]"
-          >
-            오늘의 인사이트 보기 →
-          </button>
+          <div className="flex shrink-0 items-center gap-3">
+            <button onClick={() => onNavigate('strategy-list')} className="rounded-field bg-lime px-6 py-3.5 text-[15px] font-bold text-navy">
+              투자 전략 살펴보기 →
+            </button>
+            <button
+              onClick={() => onNavigate('information')}
+              className="rounded-field px-5 py-3.5 text-[15px] font-semibold text-navy shadow-[0_0_0_1px_#E5E9E3_inset] transition-shadow hover:shadow-[0_0_0_1px_#C9D1C4_inset]"
+            >
+              오늘의 인사이트 보기 →
+            </button>
+          </div>
         </div>
 
         <CarGoalProgress />
