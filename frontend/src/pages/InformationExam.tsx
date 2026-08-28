@@ -200,7 +200,7 @@ export default function InformationExam({ userName, onNavigate }: Props) {
               {knowledge!.map((k) => (
                 <a
                   key={k.id}
-                  href={k.link}
+                  href={k.sourceUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex flex-col gap-3.5 rounded-[20px] bg-surface p-9 shadow-[0_0_0_1px_#FFFFFF_inset] hover:shadow-[0_0_0_1.5px_#C6F04D_inset]"

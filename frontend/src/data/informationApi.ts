@@ -11,7 +11,7 @@ import type { KnowledgeArticle, ListResponse, NewsArticle } from "../types";
  * ============================================================ */
 export const API_BASE = "/api/v1/information";
 
-const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
+export const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
   items: [
     {
       id: "k1",
@@ -20,9 +20,9 @@ const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
         "이익 대비 가격을 보는 지표지만, 업종·성장성·부채를 함께 살펴야 같은 숫자를 올바르게 비교할 수 있어요.",
       category: "지표",
       readingMinutes: 4,
-      link: "https://www.krx.co.kr/",
       sourceName: "한국거래소",
-      sourceUrl: "https://www.krx.co.kr/",
+      sourceUrl:
+        "https://global.krx.co.kr/contents/GLB/02/0203/0203010000/GLB0203010000.jsp",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },
@@ -33,9 +33,8 @@ const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
         "수익이 적다는 뜻이 아니라 가격이 오르내리는 폭이 상대적으로 좁다는 뜻이에요. 과거 변동성이 미래 수익을 보장하지는 않습니다.",
       category: "리스크",
       readingMinutes: 3,
-      link: "https://www.fss.or.kr/",
       sourceName: "금융감독원",
-      sourceUrl: "https://www.fss.or.kr/",
+      sourceUrl: "https://www.fss.or.kr/fss/consumer/consumer020101.do",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },
@@ -46,9 +45,9 @@ const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
         "과거 관측 기간 중 고점에서 저점까지의 하락 폭을 보는 지표예요. 과거 MDD가 미래 손실 한도를 의미하지는 않습니다.",
       category: "리스크",
       readingMinutes: 5,
-      link: "https://www.krx.co.kr/",
       sourceName: "한국거래소",
-      sourceUrl: "https://www.krx.co.kr/",
+      sourceUrl:
+        "https://global.krx.co.kr/contents/GLB/02/0203/0203010000/GLB0203010000.jsp",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },
@@ -59,9 +58,8 @@ const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
         "정해진 정답은 없어요. 거래 비용·세금·운용 목표와 자산 비중의 이탈 정도를 함께 확인해야 합니다.",
       category: "전략",
       readingMinutes: 4,
-      link: "https://www.fss.or.kr/",
       sourceName: "금융감독원",
-      sourceUrl: "https://www.fss.or.kr/",
+      sourceUrl: "https://www.fss.or.kr/fss/consumer/consumer020101.do",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },
@@ -72,9 +70,9 @@ const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
         "종목 수를 늘리는 것만으로 충분하지 않아요. 자산·지역·업종처럼 위험 요인이 다른 대상을 함께 살펴야 합니다.",
       category: "전략",
       readingMinutes: 6,
-      link: "https://www.krx.co.kr/",
       sourceName: "한국거래소",
-      sourceUrl: "https://www.krx.co.kr/",
+      sourceUrl:
+        "https://global.krx.co.kr/contents/GLB/02/0203/0203010000/GLB0203010000.jsp",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },
@@ -85,9 +83,8 @@ const KNOWLEDGE_CONTENT: ListResponse<KnowledgeArticle> = {
         "배당 관련 세율·공제·신고 기준은 상품과 납세자 상황, 법령 개정에 따라 달라질 수 있어요. 최신 기준은 공식 세무 안내를 확인하세요.",
       category: "세금",
       readingMinutes: 5,
-      link: "https://www.nts.go.kr/",
-      sourceName: "국세청",
-      sourceUrl: "https://www.nts.go.kr/",
+      sourceName: "국가법령정보센터",
+      sourceUrl: "https://www.law.go.kr/법령/소득세법",
       reviewedAt: "2026-08-28",
       contentVersion: "education-v1",
     },

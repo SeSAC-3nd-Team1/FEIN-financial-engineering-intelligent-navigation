@@ -157,7 +157,6 @@ export interface KnowledgeArticle {
   excerpt: string;
   category: string;
   readingMinutes: number;
-  link: string;
   sourceName: string;
   sourceUrl: string;
   reviewedAt: string;
