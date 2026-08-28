@@ -84,66 +84,31 @@ function useCrossfadeImage(target: string, durationMs: number, reducedMotion: bo
   return pair;
 }
 
-/** StartInvesting.tsx의 투자 금액 선택(프리셋 pill + "직접 입력" 토글)과 같은 패턴 —
- *  텍스트 칸을 항상 열어두는 대신 금액대를 눌러서 고르고, 원하면 직접 입력으로 바꾼다. */
-const GOAL_PRESETS = [10_000_000, 30_000_000, 50_000_000, 100_000_000];
-
-function presetLabel(amount: number) {
-  return amount >= 100_000_000
-    ? `${(amount / 100_000_000).toLocaleString('ko-KR')}억원`
-    : `${(amount / 10_000).toLocaleString('ko-KR')}만원`;
-}
-
 function GoalAmountField({ value, onChange }: { value: number; onChange: (next: number) => void }) {
-  const [custom, setCustom] = useState<string | null>(() => (GOAL_PRESETS.includes(value) ? null : String(value)));
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
 
-  const commitCustom = () => {
-    const n = Math.min(MAX_AMOUNT, Number(digitsOnly(custom ?? '', 12) || '0'));
+  const commit = () => {
+    const n = Math.min(MAX_AMOUNT, Number(digitsOnly(text, 12) || '0'));
     onChange(n);
-    setCustom(String(n));
+    setText(String(n));
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <label className="flex flex-col gap-2">
       <span className="text-sm font-semibold text-muted">목표 금액</span>
-      <div className="flex flex-wrap gap-2">
-        {GOAL_PRESETS.map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => { onChange(p); setCustom(null); }}
-            className={`rounded-full px-4 py-2.5 text-sm font-semibold ${
-              value === p && custom === null ? 'bg-lime text-navy' : 'bg-canvas text-muted'
-            }`}
-          >
-            {presetLabel(p)}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => setCustom((c) => (c === null ? String(value) : null))}
-          className={`rounded-full px-4 py-2.5 text-sm font-semibold underline decoration-[#C6F04D] decoration-2 underline-offset-2 ${
-            custom !== null ? 'bg-[#F8FCEE] text-navy' : 'text-muted'
-          }`}
-        >
-          직접 입력
-        </button>
+      <div className="flex items-center gap-2 rounded-field bg-surface px-4 py-3.5 shadow-[0_0_0_1px_#E5E9E3_inset] focus-within:shadow-[0_0_0_2px_#C6F04D_inset]">
+        <input
+          value={Number(text || '0').toLocaleString('ko-KR')}
+          inputMode="numeric"
+          onChange={(e) => setText(digitsOnly(e.target.value, 12))}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+          className="w-full bg-transparent text-lg font-bold tracking-[-0.02em] outline-none"
+        />
+        <span className="shrink-0 text-base font-semibold text-muted">원</span>
       </div>
-      {custom !== null && (
-        <div className="flex items-center gap-2 rounded-field bg-surface px-4 py-3.5 shadow-[0_0_0_1px_#E5E9E3_inset] focus-within:shadow-[0_0_0_2px_#C6F04D_inset]">
-          <input
-            value={Number(custom || '0').toLocaleString('ko-KR')}
-            inputMode="numeric"
-            onChange={(e) => setCustom(digitsOnly(e.target.value, 12))}
-            onBlur={commitCustom}
-            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-            className="w-full bg-transparent text-lg font-bold tracking-[-0.02em] outline-none"
-            autoFocus
-          />
-          <span className="shrink-0 text-base font-semibold text-muted">원</span>
-        </div>
-      )}
-    </div>
+    </label>
   );
 }
 
