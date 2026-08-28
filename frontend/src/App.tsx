@@ -50,8 +50,9 @@ import {
   createAdditionalInvestmentApi,
   createWithdrawalApi,
   getMyAccountApi,
-  getStrategiesApi,
+    getStrategiesApi,
   sendEmailVerificationApi,
+  selectStrategyApi,
   signupTermsApi,
   startInvestmentApi,
   verifyEmailVerificationApi,
@@ -1550,12 +1551,15 @@ export default function App() {
               investmentAgreements,
               accessToken,
             );
-            const account = await ensureAccount(
+                        const account = await ensureAccount(
               accessToken,
               strategyId,
               operationMode,
             );
             if (strategyId === "momentum") {
+              // 온보딩 완료 응답과 계좌 재조회가 서로 다른 시점에 도착할 수 있으므로,
+              // 모델 추천 적용 직전에 현재 계좌의 전략을 서버에 명시적으로 확정한다.
+              await selectStrategyApi(account.id, strategyId, accessToken);
               await applyLatestModelRecommendationsApi(account.id, accessToken);
               await ensureAccount(accessToken, strategyId, operationMode);
             }
