@@ -410,6 +410,15 @@ export default function CarGoalProgress() {
                 {won(currentAmount)} <span className="text-[13px] font-medium text-subtle">(포트폴리오 연동)</span>
               </span>
             </div>
+
+            {/* 7. 목표를 달성했을 때만 — 빈 공간을 장식으로 채우는 대신, 달성 순간에만 의미가
+                생기는 축하 일러스트를 둔다. 평소(달성 전)에는 그리지 않는다. */}
+            {completed && (
+              <div className="flex items-center gap-3 rounded-field bg-[#F8FCEE] px-4 py-3">
+                <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-20 w-auto shrink-0 object-contain" />
+                <span className="text-sm font-semibold text-[#3F5222]">물방개도 함께 축하하고 있어요!</span>
+              </div>
+            )}
           </div>
         </div>
       )}
