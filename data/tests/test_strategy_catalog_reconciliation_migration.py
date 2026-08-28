@@ -89,7 +89,7 @@ def test_existing_user_car_goals_schema_is_validated(
 
         command.downgrade(config, DRIFTED_REVISION)
         with engine.begin() as connection:
-            connection.execute(text("DROP TABLE user_car_goals"))
+            connection.execute(text("DROP TABLE IF EXISTS user_car_goals"))
             connection.execute(text("""
                 CREATE TABLE user_car_goals (
                     user_id BIGINT PRIMARY KEY,
