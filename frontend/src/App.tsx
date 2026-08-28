@@ -43,7 +43,7 @@ import {
 } from "./data/fees";
 import {
   analyzeInvestorProfileApi,
-    ApiError,
+  ApiError,
   applyLatestModelRecommendationsApi,
   createAdditionalInvestmentApi,
   createWithdrawalApi,
@@ -224,12 +224,18 @@ export default function App() {
     useState<Screen>("strategy-list");
   // 추가 투자/출금 STEP 1(금액) → STEP 2(확인) 사이에서만 쓰는 draft 금액 — 새로고침 유지가 필요 없는
   // 일회성 입력값이라 persistedNav(sessionStorage)에는 넣지 않는다.
-    const [fundAddAmount, setFundAddAmount] = useState(0);
+  const [fundAddAmount, setFundAddAmount] = useState(0);
   const [fundWithdrawAmount, setFundWithdrawAmount] = useState(0);
-  const [fundOperation, setFundOperation] = useState<import("./lib/backendApi").FundOperationResponse | null>(null);
-  const [fundOperationError, setFundOperationError] = useState<string | null>(null);
-  const [fundOperationIdempotencyKey, setFundOperationIdempotencyKey] = useState<string | null>(null);
-  const [isFundOperationSubmitting, setIsFundOperationSubmitting] = useState(false);
+  const [fundOperation, setFundOperation] = useState<
+    import("./lib/backendApi").FundOperationResponse | null
+  >(null);
+  const [fundOperationError, setFundOperationError] = useState<string | null>(
+    null,
+  );
+  const [fundOperationIdempotencyKey, setFundOperationIdempotencyKey] =
+    useState<string | null>(null);
+  const [isFundOperationSubmitting, setIsFundOperationSubmitting] =
+    useState(false);
 
   const strategy =
     strategyCatalog.find((item) => item.id === strategyId) ?? null;
@@ -639,7 +645,7 @@ export default function App() {
       setScreen("fund-add");
     }
   }, [screen, fundAddAmount]);
-    useEffect(() => {
+  useEffect(() => {
     if (screen === "fund-withdraw-confirm" && fundWithdrawAmount <= 0) {
       setScreen("fund-withdraw");
     }
@@ -647,7 +653,10 @@ export default function App() {
 
   // 성공 결과 데이터는 일회성 React state이므로 pending 화면을 새로고침하면 안전한 화면으로 돌아간다.
   useEffect(() => {
-    if ((screen === "fund-add-pending" || screen === "fund-withdraw-pending") && !fundOperation) {
+    if (
+      (screen === "fund-add-pending" || screen === "fund-withdraw-pending") &&
+      !fundOperation
+    ) {
       setScreen("portfolio");
     }
   }, [screen, fundOperation]);
@@ -659,7 +668,6 @@ export default function App() {
       setJustFinishedInvestorProfile(false);
     }
   }, [screen, justFinishedInvestorProfile]);
-
 
   /** risk 화면 진입 지점 — 완료 후 목적지와 안내 문구를 함께 정한다 */
   const startInvestorProfile = (target: Screen, opts?: { notice?: string }) => {
@@ -893,12 +901,13 @@ export default function App() {
               // 자동으로 true를 채워보내지 않고, 사용자가 실제로 체크한 값을 그대로 전송한다.
               ai: "AI_PERSONALIZATION",
             } as const;
-            const agreementByTermCode: Record<string, boolean> = Object.fromEntries(
-              Object.entries(termCodeByAgreement).map(([key, code]) => [
-                code,
-                personal.agreements[key as keyof typeof termCodeByAgreement],
-              ]),
-            );
+            const agreementByTermCode: Record<string, boolean> =
+              Object.fromEntries(
+                Object.entries(termCodeByAgreement).map(([key, code]) => [
+                  code,
+                  personal.agreements[key as keyof typeof termCodeByAgreement],
+                ]),
+              );
             const terms = await signupTermsApi();
             await register({
               user_id: userId,
@@ -1353,30 +1362,48 @@ export default function App() {
           amount={fundAddAmount}
           userName={userName}
           onNavigate={navigate}
-                              onBack={() => setScreen("fund-add")}
+          onBack={() => setScreen("fund-add")}
           isSubmitting={isFundOperationSubmitting}
           onConfirm={async () => {
-            if (!accessToken || !tradingAccount || !fundOperationIdempotencyKey || isFundOperationSubmitting) return;
+            if (
+              !accessToken ||
+              !tradingAccount ||
+              !fundOperationIdempotencyKey ||
+              isFundOperationSubmitting
+            )
+              return;
             setFundOperationError(null);
             setIsFundOperationSubmitting(true);
             try {
               const operation = await createAdditionalInvestmentApi(
                 tradingAccount.id,
-                { amount: fundAddAmount, idempotency_key: fundOperationIdempotencyKey },
+                {
+                  amount: fundAddAmount,
+                  idempotency_key: fundOperationIdempotencyKey,
+                },
                 accessToken,
               );
               setFundOperation(operation);
               setScreen("fund-add-pending");
-              void useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode).catch((error) => {
-                console.error("Fund operation succeeded, but portfolio refresh failed", error);
-              });
+              void useTradingStore
+                .getState()
+                .refresh(accessToken, tradingAccount.operation_mode)
+                .catch((error) => {
+                  console.error(
+                    "Fund operation succeeded, but portfolio refresh failed",
+                    error,
+                  );
+                });
             } catch (error) {
-              setFundOperationError(error instanceof ApiError ? error.message : "추가 투자에 실패했어요. 다시 시도해주세요.");
+              setFundOperationError(
+                error instanceof ApiError
+                  ? error.message
+                  : "추가 투자에 실패했어요. 다시 시도해주세요.",
+              );
             } finally {
               setIsFundOperationSubmitting(false);
             }
           }}
-
         />
       )}
 
@@ -1404,54 +1431,74 @@ export default function App() {
           amount={fundWithdrawAmount}
           userName={userName}
           onNavigate={navigate}
-                              onBack={() => setScreen("fund-withdraw")}
+          onBack={() => setScreen("fund-withdraw")}
           isSubmitting={isFundOperationSubmitting}
           onConfirm={async () => {
-            if (!accessToken || !tradingAccount || !fundOperationIdempotencyKey || isFundOperationSubmitting) return;
+            if (
+              !accessToken ||
+              !tradingAccount ||
+              !fundOperationIdempotencyKey ||
+              isFundOperationSubmitting
+            )
+              return;
             setFundOperationError(null);
             setIsFundOperationSubmitting(true);
             try {
               const operation = await createWithdrawalApi(
                 tradingAccount.id,
-                { amount: fundWithdrawAmount, idempotency_key: fundOperationIdempotencyKey },
+                {
+                  amount: fundWithdrawAmount,
+                  idempotency_key: fundOperationIdempotencyKey,
+                },
                 accessToken,
               );
               setFundOperation(operation);
               setScreen("fund-withdraw-pending");
-              void useTradingStore.getState().refresh(accessToken, tradingAccount.operation_mode).catch((error) => {
-                console.error("Fund operation succeeded, but portfolio refresh failed", error);
-              });
+              void useTradingStore
+                .getState()
+                .refresh(accessToken, tradingAccount.operation_mode)
+                .catch((error) => {
+                  console.error(
+                    "Fund operation succeeded, but portfolio refresh failed",
+                    error,
+                  );
+                });
             } catch (error) {
-              setFundOperationError(error instanceof ApiError ? error.message : "출금에 실패했어요. 다시 시도해주세요.");
+              setFundOperationError(
+                error instanceof ApiError
+                  ? error.message
+                  : "출금에 실패했어요. 다시 시도해주세요.",
+              );
             } finally {
               setIsFundOperationSubmitting(false);
             }
           }}
-
         />
       )}
 
-            {(screen === "fund-add-pending" || screen === "fund-withdraw-pending") && fundOperation && (
-        <FundOperationResult
-          kind={screen === "fund-add-pending" ? "deposit" : "withdraw"}
-          operation={fundOperation}
-          userName={userName}
-          onNavigate={navigate}
-          onDone={() => {
-            setFundOperation(null);
-            setFundAddAmount(0);
-            setFundWithdrawAmount(0);
-            setFundOperationIdempotencyKey(null);
-            setScreen("portfolio");
-          }}
-        />
-      )}
-      {fundOperationError && (screen === "fund-add-confirm" || screen === "fund-withdraw-confirm") && (
-        <div className="fixed bottom-6 left-1/2 z-[800] -translate-x-1/2 rounded-field bg-[#FBEAEA] px-6 py-4 text-sm font-semibold text-down shadow-lg">
-          {fundOperationError}
-        </div>
-      )}
-
+      {(screen === "fund-add-pending" || screen === "fund-withdraw-pending") &&
+        fundOperation && (
+          <FundOperationResult
+            kind={screen === "fund-add-pending" ? "deposit" : "withdraw"}
+            operation={fundOperation}
+            userName={userName}
+            onNavigate={navigate}
+            onDone={() => {
+              setFundOperation(null);
+              setFundAddAmount(0);
+              setFundWithdrawAmount(0);
+              setFundOperationIdempotencyKey(null);
+              setScreen("portfolio");
+            }}
+          />
+        )}
+      {fundOperationError &&
+        (screen === "fund-add-confirm" ||
+          screen === "fund-withdraw-confirm") && (
+          <div className="fixed bottom-6 left-1/2 z-[800] -translate-x-1/2 rounded-field bg-[#FBEAEA] px-6 py-4 text-sm font-semibold text-down shadow-lg">
+            {fundOperationError}
+          </div>
+        )}
 
       {screen === "portfolio-detail" && portfolioStrategy && (
         <PortfolioDetail
@@ -1534,15 +1581,13 @@ export default function App() {
         />
       )}
 
-                  {/* 로그인 사용자에게만 챗봇을 노출한다. 비로그인 요청은 Backend에서 차단된다. */}
-      {accessToken && (
-        <Chatbot
-          screen={screen}
-          stockCode={stockCode}
-          strategyId={strategyId}
-          accountId={tradingAccount?.id}
-        />
-      )}
+      {/* 공개 금융 설명은 비로그인 사용자도 이용할 수 있고, 개인 계좌 조회만 Backend가 인증·동의를 검증한다. */}
+      <Chatbot
+        screen={screen}
+        stockCode={stockCode}
+        strategyId={strategyId}
+        accountId={accessToken ? tradingAccount?.id : undefined}
+      />
     </div>
   );
 }

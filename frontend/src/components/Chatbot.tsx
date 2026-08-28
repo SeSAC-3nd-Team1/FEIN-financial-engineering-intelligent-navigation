@@ -1,18 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
-import { RotateCcw, X, ArrowUp } from 'lucide-react';
+import { useEffect, useRef, useState } from "react";
+import { RotateCcw, X, ArrowUp } from "lucide-react";
 import {
   ApiError,
   createChatMessageApi,
   type ChatHistoryMessageRequest,
   type ChatScreenContextRequest,
-} from '../lib/backendApi';
-import { useAuthStore } from '../store/authStore';
-import type { ChatMessage, Screen } from '../types';
+} from "../lib/backendApi";
+import { useAuthStore } from "../store/authStore";
+import type { ChatMessage, Screen } from "../types";
 
 const QUICK_QUESTIONS = [
-  'PER이 무엇인가요?',
-  'PBR이 무엇인가요?',
-  'ROE가 무엇인가요?',
+  "PER이 무엇인가요?",
+  "PBR이 무엇인가요?",
+  "ROE가 무엇인가요?",
 ];
 
 let seq = 0;
@@ -20,7 +20,7 @@ const nextId = () => `m${++seq}`;
 
 const toHistory = (messages: ChatMessage[]): ChatHistoryMessageRequest[] =>
   messages.slice(-10).map((message) => ({
-    role: message.role === 'user' ? 'user' : 'assistant',
+    role: message.role === "user" ? "user" : "assistant",
     content: message.text,
   }));
 
@@ -31,14 +31,22 @@ interface Props {
   accountId?: string;
 }
 
-export default function Chatbot({ screen, stockCode, strategyId, accountId }: Props) {
+export default function Chatbot({
+  screen,
+  stockCode,
+  strategyId,
+  accountId,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<{ question: string; message: string } | null>(null);
+  const [error, setError] = useState<{
+    question: string;
+    message: string;
+  } | null>(null);
   const accessToken = useAuthStore((state) => state.accessToken);
-    const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
   const requestPendingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -60,21 +68,32 @@ export default function Chatbot({ screen, stockCode, strategyId, accountId }: Pr
 
   const screenContext = (): ChatScreenContextRequest => ({
     screen,
-    ...(screen === 'stock' && stockCode ? { stock_code: stockCode } : {}),
-    ...(['strategy', 'start', 'invest-terms', 'invest-confirm'].includes(screen) && strategyId
+    ...(screen === "stock" && stockCode ? { stock_code: stockCode } : {}),
+    ...(["strategy", "start", "invest-terms", "invest-confirm"].includes(
+      screen,
+    ) && strategyId
       ? { strategy_id: strategyId }
       : {}),
-    ...(['dashboard', 'portfolio', 'portfolio-detail', 'stock', 'transactions', 'transaction-detail', 'rebalance-alerts', 'all-holdings'].includes(screen) && accountId
+    ...([
+      "dashboard",
+      "portfolio",
+      "portfolio-detail",
+      "stock",
+      "transactions",
+      "transaction-detail",
+      "rebalance-alerts",
+      "all-holdings",
+    ].includes(screen) && accountId
       ? { account_id: accountId }
       : {}),
   });
 
-    const ask = async (question: string, appendUser = true) => {
+  const ask = async (question: string, appendUser = true) => {
     if (requestPendingRef.current) return;
     requestPendingRef.current = true;
     const history = appendUser
       ? messages
-      : messages.at(-1)?.role === 'user' && messages.at(-1)?.text === question
+      : messages.at(-1)?.role === "user" && messages.at(-1)?.text === question
         ? messages.slice(0, -1)
         : messages;
     const requestId = ++requestIdRef.current;
@@ -84,7 +103,7 @@ export default function Chatbot({ screen, stockCode, strategyId, accountId }: Pr
     if (appendUser) {
       setMessages((previous) => [
         ...previous,
-        { id: nextId(), role: 'user', text: question },
+        { id: nextId(), role: "user", text: question },
       ]);
     }
     setError(null);
@@ -102,22 +121,25 @@ export default function Chatbot({ screen, stockCode, strategyId, accountId }: Pr
         ...previous,
         {
           id: response.message_id,
-          role: 'bot',
+          role: "bot",
           text: response.text,
+          status: response.status,
           caution: response.caution,
           suggestedQuestions: response.suggested_questions,
         },
-            ]);
+      ]);
     } catch (caught) {
       if (
-        requestIdRef.current !== requestId
-        || (caught instanceof DOMException && caught.name === 'AbortError')
-      ) return;
+        requestIdRef.current !== requestId ||
+        (caught instanceof DOMException && caught.name === "AbortError")
+      )
+        return;
       setError({
         question,
-        message: caught instanceof ApiError
-          ? caught.message
-          : '물방개의 답변을 불러오지 못했어요. 잠시 후 다시 시도해주세요.',
+        message:
+          caught instanceof ApiError
+            ? caught.message
+            : "물방개의 답변을 불러오지 못했어요. 잠시 후 다시 시도해주세요.",
       });
     } finally {
       if (requestIdRef.current === requestId) {
@@ -131,11 +153,11 @@ export default function Chatbot({ screen, stockCode, strategyId, accountId }: Pr
   const submit = () => {
     const text = input.trim();
     if (!text || loading) return;
-    setInput('');
+    setInput("");
     void ask(text);
   };
 
-      const reset = () => {
+  const reset = () => {
     cancelRequest();
     setMessages([]);
     setError(null);
@@ -148,30 +170,59 @@ export default function Chatbot({ screen, stockCode, strategyId, accountId }: Pr
   };
 
   const started = messages.length > 0;
-  const suggestedQuestions = messages.at(-1)?.suggestedQuestions;
-  const chips = suggestedQuestions?.length ? suggestedQuestions : QUICK_QUESTIONS;
+  const lastMessage = messages.at(-1);
+  const suggestedQuestions = lastMessage?.suggestedQuestions;
+  const chips = suggestedQuestions?.length
+    ? suggestedQuestions
+    : QUICK_QUESTIONS;
 
   return (
     <>
       {open && (
-        <section className="fixed bottom-[104px] right-8 z-[600] flex h-[min(78vh,calc(100vh-136px))] w-[30vw] min-w-[360px] flex-col overflow-hidden rounded-[20px] bg-surface shadow-[0_20px_60px_rgba(24,36,58,0.18)]">
+        <section
+          aria-label="물방개 대화창"
+          aria-live="polite"
+          className="fixed bottom-[104px] right-8 z-[600] flex h-[min(78vh,calc(100vh-136px))] w-[30vw] min-w-[360px] flex-col overflow-hidden rounded-[20px] bg-surface shadow-[0_20px_60px_rgba(24,36,58,0.18)]"
+        >
           <div className="flex items-center justify-between border-b border-line px-5 py-4">
-            <span className="text-[17px] font-bold tracking-[-0.02em]">물방개에게 물어보기</span>
+            <div>
+              <span className="text-[17px] font-bold tracking-[-0.02em]">
+                물방개에게 물어보기
+              </span>
+              {!accessToken && (
+                <p className="mt-1 text-xs text-muted">공개 금융 설명 모드</p>
+              )}
+            </div>
             <div className="flex items-center gap-1.5">
-              <button aria-label="대화 초기화" onClick={reset} className="rounded-lg p-2 text-muted hover:bg-canvas">
+              <button
+                aria-label="대화 초기화"
+                onClick={reset}
+                className="rounded-lg p-2 text-muted hover:bg-canvas"
+              >
                 <RotateCcw size={17} />
               </button>
-              <button aria-label="닫기" onClick={close} className="rounded-lg p-2 text-muted hover:bg-canvas">
+              <button
+                aria-label="닫기"
+                onClick={close}
+                className="rounded-lg p-2 text-muted hover:bg-canvas"
+              >
                 <X size={18} />
               </button>
             </div>
           </div>
 
-          <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-auto px-5 py-2.5">
+          <div
+            ref={scrollRef}
+            className="flex flex-1 flex-col gap-3 overflow-auto px-5 py-2.5"
+          >
             {!started && !loading && (
               <div className="m-auto flex w-full flex-col items-center gap-1.5">
                 <div className="flex w-full flex-col items-center gap-1.5">
-                  <img src="/character-analyze.png" alt="물방개 캐릭터" className="block h-20 w-20 object-contain" />
+                  <img
+                    src="/character-analyze.png"
+                    alt="물방개 캐릭터"
+                    className="block h-20 w-20 object-contain"
+                  />
                   <span className="text-center text-base font-bold leading-6 tracking-[-0.02em]">
                     물방개에게 주식을 쉽게 물어보세요
                   </span>
@@ -191,28 +242,54 @@ export default function Chatbot({ screen, stockCode, strategyId, accountId }: Pr
             )}
 
             {messages.map((message) => (
-              <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+              <div
+                key={message.id}
+                className={
+                  message.role === "user"
+                    ? "flex justify-end"
+                    : "flex justify-start"
+                }
+              >
                 <div
                   className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-[24px] ${
-                    message.role === 'user' ? 'bg-navy text-white' : 'bg-canvas text-[#3F4A43]'
+                    message.role === "user"
+                      ? "bg-navy text-white"
+                      : "bg-canvas text-[#3F4A43]"
                   }`}
                 >
                   <p>{message.text}</p>
+                  {message.role === "bot" &&
+                    message.status &&
+                    message.status !== "COMPLETED" && (
+                      <p className="mt-2 text-xs font-semibold text-muted">
+                        {message.status === "REFUSED"
+                          ? "안전 정책에 따른 안내"
+                          : "추가 확인이 필요한 질문"}
+                      </p>
+                    )}
                   {message.caution && (
-                    <p className="mt-2 border-t border-line pt-2 text-xs text-muted">{message.caution}</p>
+                    <p className="mt-2 border-t border-line pt-2 text-xs text-muted">
+                      {message.caution}
+                    </p>
                   )}
                 </div>
               </div>
             ))}
 
-                                    {loading && (
-              <div className="my-auto flex flex-col items-center justify-center gap-2 py-5" role="status" aria-live="polite">
+            {loading && (
+              <div
+                className="my-auto flex flex-col items-center justify-center gap-2 py-5"
+                role="status"
+                aria-live="polite"
+              >
                 <img
                   src="/character-thinking.png"
                   alt="생각 중인 물방개"
                   className="h-20 w-20 object-contain"
                 />
-                <p className="text-sm font-semibold text-muted">물방개가 답변을 준비하고 있어요</p>
+                <p className="text-sm font-semibold text-muted">
+                  물방개가 답변을 준비하고 있어요
+                </p>
               </div>
             )}
 
@@ -245,14 +322,19 @@ export default function Chatbot({ screen, stockCode, strategyId, accountId }: Pr
             )}
             <div className="flex items-center gap-2">
               <input
+                aria-label="물방개 질문 입력"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => event.key === 'Enter' && submit()}
+                onKeyDown={(event) => event.key === "Enter" && submit()}
+                aria-describedby="chatbot-input-help"
                 placeholder="질문을 입력하세요..."
                 className="flex-1 rounded-field bg-canvas px-3.5 py-3 text-[15px] outline-none"
                 disabled={loading}
                 maxLength={2000}
               />
+              <span id="chatbot-input-help" className="sr-only">
+                Enter 키로 질문을 전송할 수 있습니다.
+              </span>
               <button
                 aria-label="전송"
                 onClick={submit}
@@ -271,7 +353,11 @@ export default function Chatbot({ screen, stockCode, strategyId, accountId }: Pr
         onClick={() => (open ? close() : setOpen(true))}
         className="fixed bottom-8 right-8 z-[600] flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-lime shadow-[0_10px_28px_rgba(24,36,58,0.24)]"
       >
-                <img src="/character-master.png" alt="물방개" className="h-12 w-12 object-contain" />
+        <img
+          src="/character-master.png"
+          alt="물방개"
+          className="h-12 w-12 object-contain"
+        />
       </button>
     </>
   );
