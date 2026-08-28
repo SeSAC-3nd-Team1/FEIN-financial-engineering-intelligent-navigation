@@ -183,6 +183,21 @@ class AccountResponse(BaseModel):
         return Decimal("0") if value is None else value
 
 
+class AccountCashDepositRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0, le=100_000_000)
+    idempotency_key: str = Field(min_length=8, max_length=100)
+
+
+class AccountCashDepositResponse(BaseModel):
+    deposit_id: UUID
+    account: AccountResponse
+    amount: Decimal
+    balance_after: Decimal
+    status: Literal["COMPLETED"] = "COMPLETED"
+
+
 class OperationModeSwitchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
