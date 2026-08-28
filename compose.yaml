@@ -92,10 +92,13 @@ services:
       EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: ${EMAIL_VERIFICATION_TOKEN_TTL_SECONDS:-1800}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       WATCHFILES_FORCE_POLLING: "true"
+      FINCON_VER23_MODEL_PATH: /models/fincon_ver23_model_fix.py
+      MBG_COORDINATOR_ENDPOINT: ${MBG_COORDINATOR_ENDPOINT:-https://fein-agent.services.ai.azure.com/api/projects/proj-default/agents/MBGCoordinator/endpoint/protocols/openai/responses}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+      - ./output:/models:ro
       - model_recommendation_artifacts:/model-artifacts:ro
     depends_on:
       redis:

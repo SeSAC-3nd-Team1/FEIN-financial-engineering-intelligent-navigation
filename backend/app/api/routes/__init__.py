@@ -11,6 +11,7 @@ from app.api.routes import (
     portfolio,
     strategies,
     strategy_recommendations,
+    trading_engine_fix,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "portfolio",
     "strategies",
     "strategy_recommendations",
+    "trading_engine_fix",
 ]
