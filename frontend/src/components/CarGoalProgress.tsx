@@ -239,8 +239,11 @@ export default function CarGoalProgress() {
   }
 
   return (
-    <section className="flex min-h-0 w-full flex-1 flex-col justify-center gap-4 rounded-card bg-surface p-6 shadow-elevation-sm">
-      <div className="flex flex-col gap-0.5">
+    <section className="flex min-h-0 w-full flex-1 flex-col gap-4 rounded-card bg-surface p-6 shadow-elevation-sm">
+      {/* Portfolio.tsx의 "나의 포트폴리오" 제목처럼 카드 제목은 항상 상단에 고정한다(shrink-0) —
+          카드 전체를 seros-center로 묶으면 제목이 카드 한가운데로 떠 보여 어색해진다. 늘어난
+          세로 공간은 아래 차량/진행률 블록만 flex-1로 받아 그 안에서 중앙 정렬한다. */}
+      <div className="flex shrink-0 flex-col gap-0.5">
         <span className="text-[13px] font-semibold text-muted">목표 차량</span>
         <h2 className="text-lg font-bold tracking-[-0.02em]">투자가 쌓일수록 목표 차량에 가까워져요</h2>
       </div>
@@ -307,7 +310,7 @@ export default function CarGoalProgress() {
           나눠 넓은 폭을 자연스럽게 쓴다. 등급을 아직 한 번도 고르지 않았으면(grade=null) 통째로
           숨긴다. */}
       {grade !== null && (
-        <div className="flex flex-col gap-6 sm:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col justify-center gap-6 sm:flex-row sm:items-center">
           {/* 2~3. 차량 이미지 — 두 레이어를 겹쳐 크로스페이드한다. 컨테이너 크기는 고정이라 전환
               중에도 이미지 크기/위치가 흔들리지 않는다. 등급 이름은 좌측 상단, "변경"은 우측 상단. */}
           <div className="relative h-56 w-full shrink-0 overflow-hidden rounded-[20px] bg-canvas sm:w-[380px]">
