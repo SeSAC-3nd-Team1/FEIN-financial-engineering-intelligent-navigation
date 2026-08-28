@@ -26,6 +26,7 @@ from db.models.trading import (
     RebalancingDecision,
     Strategy,
     StrategyTargetWeight,
+    UserCarGoal,
     VirtualAccount,
 )
 from db.models.opendart import (
@@ -61,6 +62,7 @@ __all__ = [
     "Position",
     "Strategy",
     "StrategyTargetWeight",
+    "UserCarGoal",
     "VirtualAccount",
     "Company",
     "CompanyDisclosure",
