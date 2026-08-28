@@ -8,6 +8,7 @@ interface Props {
   accountMissing: boolean;
   error: unknown;
   onRetry: () => void;
+  onAccountMissingAction?: () => void;
   children: ReactNode;
 }
 
@@ -18,6 +19,7 @@ export default function PortfolioDataState({
   accountMissing,
   error,
   onRetry,
+  onAccountMissingAction,
   children,
 }: Props) {
   if (!loading && !accountMissing && !error) return <>{children}</>;
@@ -43,7 +45,7 @@ export default function PortfolioDataState({
         <h1 className="text-2xl font-bold text-ink">{title}</h1>
         <p className="text-base text-subtle">{message}</p>
         {accountMissing ? (
-          <button onClick={() => onNavigate('strategy-list')} className="rounded-field bg-navy px-6 py-3 font-bold text-white">
+          <button onClick={onAccountMissingAction ?? (() => onNavigate('strategy-list'))} className="rounded-field bg-navy px-6 py-3 font-bold text-white">
             계좌 준비하기
           </button>
         ) : !loading && (

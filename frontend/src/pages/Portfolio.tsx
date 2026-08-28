@@ -996,7 +996,7 @@ export default function Portfolio(props: Props) {
   const error = useTradingStore((state) => state.error);
   const retry = useTradingRetry();
   if (loading || accountMissing || error) {
-    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry}><div /></PortfolioDataState>;
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry} onAccountMissingAction={props.onSetupAccount}><div /></PortfolioDataState>;
   }
   return <PortfolioContent {...props} />;
 }
