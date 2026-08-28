@@ -37,35 +37,37 @@ export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
 }
 
 /** 로그인 Home — Hero(환영 문구 + 캐릭터) + CTA 2개뿐인 단순 Navigation Hub */
+/** 로그인 Home은 스크롤 없이 한 화면(뷰포트)에 들어와야 한다 — 인사말/CTA를 위아래로 쌓지 않고
+ *  목표 차량 위젯과 좌우로 나란히 둬서, 세로로 두 섹션을 쌓을 때 생기던 스크롤을 없앤다. */
 function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: (s: Screen) => void }) {
   return (
-    <main className="flex flex-col items-center pb-24">
-      <section className="flex w-[1312px] flex-col items-center gap-8 px-16 pb-24 pt-24 text-center">
-        <div className="flex flex-col items-center gap-4">
-          <h1 className="text-[40px] font-bold leading-[56px] tracking-[-0.035em]">
-            {userName}님, 오늘은 무엇을 알아볼까요?
-          </h1>
-          <p className="max-w-[480px] text-xl leading-[34px] text-muted">
-            물방개와 함께 투자 전략부터<br />시장 이야기까지 쉽게 살펴보세요.
-          </p>
+    <main className="flex items-center justify-center px-16 py-10" style={{ minHeight: 'calc(100vh - 80px)' }}>
+      <div className="grid w-full max-w-[1200px] grid-cols-2 items-center gap-14">
+        <div className="flex flex-col gap-5">
+          <img src="/character-recommend.png" alt="물방개" className="h-[120px] w-auto object-contain" />
+          <div className="flex flex-col gap-3">
+            <h1 className="text-[32px] font-bold leading-[42px] tracking-[-0.03em]">
+              {userName}님, 오늘은 무엇을 알아볼까요?
+            </h1>
+            <p className="text-lg leading-7 text-muted">
+              물방개와 함께 투자 전략부터 시장 이야기까지 쉽게 살펴보세요.
+            </p>
+          </div>
+          <div className="flex items-center gap-4 pt-1">
+            <button onClick={() => onNavigate('strategy-list')} className="rounded-field bg-lime px-7 py-4 text-base font-bold text-navy">
+              투자 전략 살펴보기 →
+            </button>
+            <button
+              onClick={() => onNavigate('information')}
+              className="rounded-field px-6 py-4 text-[15px] font-semibold text-navy shadow-[0_0_0_1px_#E5E9E3_inset] transition-shadow hover:shadow-[0_0_0_1px_#C9D1C4_inset]"
+            >
+              오늘의 인사이트 보기 →
+            </button>
+          </div>
         </div>
 
-        <img src="/character-recommend.png" alt="물방개" className="h-[220px] w-auto object-contain" />
-
-        <div className="flex items-center gap-4 pt-2">
-          <button onClick={() => onNavigate('strategy-list')} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
-            투자 전략 살펴보기 →
-          </button>
-          <button
-            onClick={() => onNavigate('information')}
-            className="rounded-field px-8 py-5 text-[17px] font-semibold text-navy shadow-[0_0_0_1px_#E5E9E3_inset] transition-shadow hover:shadow-[0_0_0_1px_#C9D1C4_inset]"
-          >
-            오늘의 인사이트 보기 →
-          </button>
-        </div>
-      </section>
-
-      <CarGoalProgress />
+        <CarGoalProgress />
+      </div>
     </main>
   );
 }

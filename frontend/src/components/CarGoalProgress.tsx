@@ -222,16 +222,16 @@ export default function CarGoalProgress() {
 
   if (status === 'loading') {
     return (
-      <section className="flex w-full max-w-[560px] flex-col gap-2 rounded-card bg-surface p-8 shadow-[0_0_0_1px_#E5E9E3_inset]">
+      <section className="flex w-full flex-col gap-2 rounded-card bg-surface p-6 shadow-[0_0_0_1px_#E5E9E3_inset]">
         <span className="text-sm font-semibold text-muted">목표 차량</span>
-        <div className="h-56 w-full animate-pulse rounded-[20px] bg-canvas" />
+        <div className="h-40 w-full animate-pulse rounded-[20px] bg-canvas" />
       </section>
     );
   }
 
   if (status === 'error') {
     return (
-      <section className="flex w-full max-w-[560px] flex-col gap-2 rounded-card bg-surface p-8 shadow-[0_0_0_1px_#E5E9E3_inset]">
+      <section className="flex w-full flex-col gap-2 rounded-card bg-surface p-6 shadow-[0_0_0_1px_#E5E9E3_inset]">
         <span className="text-sm font-semibold text-muted">목표 차량</span>
         <p className="text-base font-semibold text-muted">목표 차량 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       </section>
@@ -239,10 +239,10 @@ export default function CarGoalProgress() {
   }
 
   return (
-    <section className="flex w-full max-w-[560px] flex-col gap-6 rounded-card bg-surface p-8 shadow-[0_0_0_1px_#E5E9E3_inset]">
-      <div className="flex flex-col gap-1">
-        <span className="text-sm font-semibold text-muted">목표 차량</span>
-        <h2 className="text-2xl font-bold tracking-[-0.025em]">투자가 쌓일수록 목표 차량에 가까워져요</h2>
+    <section className="flex w-full flex-col gap-4 rounded-card bg-surface p-6 shadow-[0_0_0_1px_#E5E9E3_inset]">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[13px] font-semibold text-muted">목표 차량</span>
+        <h2 className="text-lg font-bold tracking-[-0.02em]">투자가 쌓일수록 목표 차량에 가까워져요</h2>
       </div>
 
       {/* 1. 차량 등급 — 평소엔 이미지 위 라벨("현재 등급"/"변경")로만 존재해 화면을 차분하게 두고,
@@ -308,7 +308,7 @@ export default function CarGoalProgress() {
         <>
           {/* 2~3. 차량 이미지 — 두 레이어를 겹쳐 크로스페이드한다. 컨테이너 크기는 고정이라 전환 중에도
               이미지 크기/위치가 흔들리지 않는다. 등급 이름은 이미지 좌측 상단에, "변경"은 우측 상단에 얹는다. */}
-          <div className="relative h-56 w-full overflow-hidden rounded-[20px] bg-canvas">
+          <div className="relative h-40 w-full overflow-hidden rounded-[20px] bg-canvas">
             <div className="absolute left-3 top-3 z-20 rounded-full bg-surface/90 px-3 py-1.5 text-[13px] font-bold text-navy shadow-[0_0_0_1px_#E5E9E3_inset]">
               {GRADES.find((g) => g.id === grade)?.label}
             </div>
@@ -331,7 +331,7 @@ export default function CarGoalProgress() {
                   alt=""
                   aria-hidden="true"
                   onError={() => markBroken(back)}
-                  className="absolute inset-0 h-full w-full object-contain p-6"
+                  className="absolute inset-0 h-full w-full object-contain p-4"
                 />
                 {front !== back && (
                   <img
@@ -339,7 +339,7 @@ export default function CarGoalProgress() {
                     src={front}
                     alt={`${GRADES.find((g) => g.id === grade)?.label} 목표 달성 진행 이미지`}
                     onError={() => markBroken(front)}
-                    className="absolute inset-0 h-full w-full object-contain p-6 transition-[opacity,transform] ease-out"
+                    className="absolute inset-0 h-full w-full object-contain p-4 transition-[opacity,transform] ease-out"
                     style={{
                       opacity: frontVisible ? 1 : 0,
                       transform: frontVisible ? 'translateY(0) scale(1)' : 'translateY(6px) scale(0.98)',
