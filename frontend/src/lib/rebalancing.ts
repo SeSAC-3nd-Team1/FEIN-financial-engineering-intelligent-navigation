@@ -1,4 +1,4 @@
-import { AI_ALERTS } from '../data/holdings';
+
 import type { PortfolioResponse, RebalancingProposalResponse } from './backendApi';
 import { won } from './validation';
 import type { AiAlert } from '../types';
@@ -32,7 +32,6 @@ function toDisplayAlert(p: RebalancingProposalResponse): AiAlert {
  *  로딩 중/조회 실패로 portfolio를 못 받았으면(portfolio === null이지만 accountMissing은 아님)
  *  빈 배열을 쓴다. portfolio === null만으로 mock을 판단하면 "계좌 없음"과 "계좌는 있는데 로딩
  *  중/조회 실패"를 구분하지 못해, 실계좌 사용자에게 지어낸 제안이 실제 제안인 것처럼 노출될 수 있다. */
-export function getDisplayAlerts(portfolio: PortfolioResponse | null, accountMissing: boolean): AiAlert[] {
-  if (accountMissing) return AI_ALERTS;
+export function getDisplayAlerts(portfolio: PortfolioResponse | null): AiAlert[] {
   return portfolio ? portfolio.rebalancing_proposals.map(toDisplayAlert) : [];
 }

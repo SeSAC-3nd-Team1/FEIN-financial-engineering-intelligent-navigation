@@ -84,10 +84,10 @@ export default function PortfolioDetail({
   const decisions = useTradingStore((state) => state.decisions);
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
   const activeMode = useInvestmentStore((state) => state.activeMode);
-  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio, accountMissing), [portfolio, accountMissing]);
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
   const displayDecisions: DisplayDecisionSummary = useMemo(
-    () => getDisplayDecisions(decisions, accountMissing),
-    [decisions, accountMissing],
+    () => getDisplayDecisions(decisions),
+    [decisions],
   );
 
   // AI 자동투자 vs 내 투자 비교 — AUTO/SEMI_AUTO 두 계좌가 모두 있어야 하는 별도 API라 account_id가
@@ -141,16 +141,15 @@ export default function PortfolioDetail({
   // 상태를 보여준다 — portfolio===null 하나만으로 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회
   // 실패"를 구분하지 못해, 로딩/오류 중에 실계좌 사용자에게 목업 데이터가 노출될 수 있다.
   // 실 포지션에는 investor-facing 메타(섹터/AI 편입 사유 등)가 없어 STOCK_INFO 코드로 목업과 매칭해 보완한다.
-  const HOLD_TOTAL = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
+  const HOLD_TOTAL = Number(portfolio?.total_assets ?? 0);
   const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return MOCK_HOLDINGS;
+    if (accountMissing) return [];
     if (!portfolio) return [];
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
-      const metadata = matched ?? MOCK_HOLDINGS[0];
-      return {
-        ...metadata,
+            return {
+        ...(matched ?? {}),
         name: matched?.name ?? position.stock_code,
         pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
         chg: Number(position.return_rate),
@@ -199,7 +198,7 @@ export default function PortfolioDetail({
 
   // 최근 거래 — 계좌가 없다고 확인된 경우에만 목업을 쓰고, 그 외(체결 0건, 로딩 중/조회 실패)에는
   // 실 체결 내역(빈 배열이어도)을 그대로 쓴다
-  const displayTransactions = useMemo(() => getDisplayTransactions(executions, !accountMissing), [executions, accountMissing]);
+  const displayTransactions = useMemo(() => getDisplayTransactions(executions), [executions]);
 
   if (view === 'review') {
     return (

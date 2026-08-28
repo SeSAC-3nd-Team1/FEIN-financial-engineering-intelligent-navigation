@@ -22,10 +22,9 @@ describe('hybrid Mock fallback', () => {
     });
   });
 
-  it('uses the existing Mock trend only when snapshots are empty', () => {
+  it('shows an empty trend when the API has no snapshots', () => {
     const result = hybridTrendData(null, '3M');
-    expect(result.usesMock).toBe(true);
-    expect(result.items).toHaveLength(4);
+    expect(result).toEqual({ items: [], usesMock: false });
   });
 
   it('keeps actual contribution data ahead of the Mock fallback', () => {
@@ -62,9 +61,9 @@ describe('hybrid Mock fallback', () => {
 
     const result = hybridEvaluation(evaluation, '005930');
     expect(result.axes[0]).toEqual(evaluation.axes[0]);
-    expect(result.axes[1].score).toBe(88);
+    expect(result.axes).toEqual(evaluation.axes);
     expect(result.roleSummary).toBe('실제 역할 설명');
-    expect(result.usesMock).toBe(true);
+    expect(result.usesMock).toBe(false);
   });
 
   it('finds the original Mock metadata by stock code', () => {

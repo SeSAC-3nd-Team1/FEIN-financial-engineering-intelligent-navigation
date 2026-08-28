@@ -35,27 +35,26 @@ export default function RebalanceAlerts({ userName, strategy, onNavigate, onBack
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
   // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
-  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio, accountMissing), [portfolio, accountMissing]);
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
   // displayAlerts는 실 계좌가 있으면(portfolio) portfolio.rebalancing_proposals(아직 실행 전인 "제안")를,
   // 없으면 AI_ALERTS(이미 실행됐다는 설정의 스토리 목업)를 쓴다 — lib/rebalancing.ts 참고. 그래서 자동매매
   // 실계좌라도 제안은 아직 제안일 뿐이라, 실데이터면 반자동과 같은 "제안" 톤을 쓰고 mock일 때만 과거형/완료
   // 톤을 써야 한다. 다만 portfolio!==null만으로 판단하면 반자동 유저도 로딩 중/조회 실패로 portfolio가
   // 잠깐 null인 동안 완료 톤으로 잘못 보일 수 있어, 애초에 자동매매가 아니면(!isAutoMode) 실데이터 여부와
   // 무관하게 항상 "제안" 톤을 쓰도록 activeMode를 우선 확인한다.
-  const usingRealAlerts = !isAutoMode || portfolio !== null;
+  const usingRealAlerts = true;
 
   // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는
   // 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 빈 배열/0원을 써서 실제 빈 상태로 보여준다.
-  const HOLD_TOTAL = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
+  const HOLD_TOTAL = Number(portfolio?.total_assets ?? 0);
   const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return MOCK_HOLDINGS;
+    if (accountMissing) return [];
     if (!portfolio) return [];
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
-      const metadata = matched ?? MOCK_HOLDINGS[0];
-      return {
-        ...metadata,
+            return {
+        ...(matched ?? {}),
         name: matched?.name ?? position.stock_code,
         pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
         chg: Number(position.return_rate),

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronsUpDown, ChevronUp, X } from 'lucide-react';
 import Header from '../components/Header';
-import { AI_ALERTS, ALL_HOLDINGS as MOCK_HOLDINGS, STOCK_INFO } from '../data/holdings';
+import { ALL_HOLDINGS as MOCK_HOLDINGS, STOCK_INFO } from '../data/holdings';
 import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
+import { getDisplayAlerts } from '../lib/rebalancing';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
 
@@ -41,14 +42,13 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
   // 조회 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 — PortfolioDetail
   // 과 동일한 대체 규칙.
   const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return MOCK_HOLDINGS;
+    if (accountMissing) return [];
     if (!portfolio) return [];
     const assets = Number(portfolio.total_assets);
     return portfolio.positions.map((position) => {
       const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
-      const metadata = matched ?? MOCK_HOLDINGS[0];
-      return {
-        ...metadata,
+            return {
+        ...(matched ?? {}),
         name: matched?.name ?? position.stock_code,
         pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
         chg: Number(position.return_rate),
@@ -74,7 +74,8 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
 
   // 표의 배지 클릭 시 "왜 지금인가요?" 사유 모달만 연다 — PortfolioDetail 의 보유 종목 표와 동일한 동작.
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
-  const alertModal = AI_ALERTS.find((a) => a.id === alertModalId) ?? null;
+  const displayAlerts = getDisplayAlerts(portfolio);
+  const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -122,7 +123,7 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
                   )}
                   {sortedHoldings.map((h) => {
                     const stockCode = STOCK_INFO[h.name]?.code;
-                    const alert = AI_ALERTS.find((a) => a.stockName === h.name);
+                    const alert = displayAlerts.find((a) => a.stockName === h.name);
                     return (
                       <tr
                         key={h.name}

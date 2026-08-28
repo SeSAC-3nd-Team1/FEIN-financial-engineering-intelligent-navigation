@@ -1,4 +1,4 @@
-import { DECISION_SUMMARY, PAST_DECISIONS } from '../data/holdings';
+
 import type { RebalancingDecisionHistoryResponse } from './backendApi';
 
 export interface DisplayDecision {
@@ -46,18 +46,8 @@ function toDisplayDecision(item: RebalancingDecisionHistoryResponse['items'][num
  *  decisions === null만으로 mock을 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회 실패"를
  *  구분하지 못해, 실계좌 사용자에게 지어낸 판단 이력이 실제 이력인 것처럼 노출될 수 있다. */
 export function getDisplayDecisions(
-  decisions: RebalancingDecisionHistoryResponse | null,
-  accountMissing: boolean,
+    decisions: RebalancingDecisionHistoryResponse | null,
 ): DisplayDecisionSummary {
-  if (accountMissing) {
-    return {
-      periodLabel: DECISION_SUMMARY.periodLabel,
-      proposed: DECISION_SUMMARY.proposed,
-      accepted: DECISION_SUMMARY.accepted,
-      held: DECISION_SUMMARY.held,
-      items: PAST_DECISIONS.map((d, i) => ({ id: `mock-${i}`, date: d.date, action: d.action, choice: d.choice, result: d.result })),
-    };
-  }
   if (!decisions) {
     return { periodLabel: DEFAULT_PERIOD_LABEL, proposed: 0, accepted: 0, held: 0, items: [] };
   }
