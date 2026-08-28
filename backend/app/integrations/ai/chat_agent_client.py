@@ -2,6 +2,7 @@
 
 import copy
 import json
+import time
 from typing import Any, Protocol
 from uuid import UUID
 from urllib.parse import quote
@@ -10,6 +11,7 @@ import httpx
 
 from pydantic import ValidationError
 
+from app.core.chat_observability import observe_provider_request, observe_tool
 from app.core.errors import ServiceError
 from app.schemas.chat import ChatAgentResult, ChatHistoryMessage, ChatScreenContext
 from app.services.chat_tools import (
@@ -427,25 +429,53 @@ class AzureOpenAIChatAgentClient:
         calls_used = 0
         try:
             while calls_used <= max_tool_calls:
-                response = await request.post(
-                    self._request_url(),
-                    params=(
-                        {}
-                        if self._is_foundry_project_endpoint()
-                        else {"api-version": self.api_version}
-                    ),
-                    headers={
-                        "api-key": self.api_key,
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        **self._request_body(message, history, context),
-                        "messages": messages,
-                        "tools": tools,
-                        "tool_choice": "auto",
-                    },
-                )
-                response.raise_for_status()
+                provider_started_at = time.perf_counter()
+                try:
+                    response = await request.post(
+                        self._request_url(),
+                        params=(
+                            {}
+                            if self._is_foundry_project_endpoint()
+                            else {"api-version": self.api_version}
+                        ),
+                        headers={
+                            "api-key": self.api_key,
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            **self._request_body(message, history, context),
+                            "messages": messages,
+                            "tools": tools,
+                            "tool_choice": "auto",
+                        },
+                    )
+                    response.raise_for_status()
+                except httpx.TimeoutException:
+                    observe_provider_request(
+                        outcome="timeout",
+                        elapsed_ms=(time.perf_counter() - provider_started_at) * 1000,
+                    )
+                    raise
+                except httpx.HTTPStatusError as exc:
+                    observe_provider_request(
+                        outcome="http_error",
+                        elapsed_ms=(time.perf_counter() - provider_started_at) * 1000,
+                        status_code=exc.response.status_code,
+                    )
+                    raise
+                except httpx.RequestError:
+                    observe_provider_request(
+                        outcome="request_error",
+                        elapsed_ms=(time.perf_counter() - provider_started_at) * 1000,
+                    )
+                    raise
+                else:
+                    observe_provider_request(
+                        outcome="success",
+                        elapsed_ms=(time.perf_counter() - provider_started_at) * 1000,
+                        status_code=response.status_code,
+                        usage=response.json().get("usage"),
+                    )
                 assistant = response.json()["choices"][0]["message"]
                 if not isinstance(assistant, dict):
                     raise ServiceError(
@@ -508,12 +538,26 @@ class AzureOpenAIChatAgentClient:
                             "물방개의 Tool 인자가 올바르지 않습니다.",
                             502,
                         )
-                    result = self._execute_tool(
-                        name,
-                        arguments,
-                        session=session,
-                        user_id=user_id,
-                        account_id=account_id,
+                    tool_started_at = time.perf_counter()
+                    try:
+                        result = self._execute_tool(
+                            name,
+                            arguments,
+                            session=session,
+                            user_id=user_id,
+                            account_id=account_id,
+                        )
+                    except Exception:
+                        observe_tool(
+                            name=name,
+                            outcome="error",
+                            elapsed_ms=(time.perf_counter() - tool_started_at) * 1000,
+                        )
+                        raise
+                    observe_tool(
+                        name=name,
+                        outcome="success",
+                        elapsed_ms=(time.perf_counter() - tool_started_at) * 1000,
                     )
                     messages.append(
                         {
