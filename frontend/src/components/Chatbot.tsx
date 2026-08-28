@@ -66,6 +66,16 @@ export default function Chatbot({
     setLoading(false);
   };
 
+  // 인증 토큰이 바뀌면 로그아웃 또는 계정 전환이므로 이전 사용자의 대화와
+  // 재시도 대상 질문을 폐기한다. 진행 중인 요청도 취소해 이전 history가
+  // 새 사용자 화면에 다시 반영되지 않도록 한다.
+  useEffect(() => {
+    cancelRequest();
+    setMessages([]);
+    setError(null);
+    setInput("");
+  }, [accessToken]);
+
   const screenContext = (): ChatScreenContextRequest => ({
     screen,
     ...(screen === "stock" && stockCode ? { stock_code: stockCode } : {}),
