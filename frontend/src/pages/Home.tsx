@@ -1,3 +1,4 @@
+import CarGoalProgress from '../components/CarGoalProgress';
 import Header from '../components/Header';
 import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
@@ -63,6 +64,8 @@ function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: 
           </button>
         </div>
       </section>
+
+      <CarGoalProgress />
     </main>
   );
 }
