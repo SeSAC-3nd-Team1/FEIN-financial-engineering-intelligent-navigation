@@ -57,7 +57,7 @@ class Settings:
     ai_comparison_timeout_seconds: float = float(os.getenv("AI_COMPARISON_TIMEOUT_SECONDS", "15"))
     ai_comparison_model_version: str = os.getenv("AI_COMPARISON_MODEL_VERSION", "portfolio-comparison-v1")
 
-    strategy_catalog_version: str = os.getenv("STRATEGY_CATALOG_VERSION", "v1")
+    strategy_catalog_version: str = os.getenv("STRATEGY_CATALOG_VERSION", "v2")
 
     kis_app_key: str = os.getenv("KIS_APP_KEY", "")
     kis_app_secret: str = os.getenv("KIS_APP_SECRET", "")

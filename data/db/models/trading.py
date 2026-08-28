@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID as PythonUUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Identity, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Identity, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,8 +13,20 @@ from db.models.common import TimestampMixin
 
 
 class Strategy(Base):
-    """모델 구현과 분리된 서비스용 전략 catalog다."""
+    """모델 구현과 분리된 서비스용 전략 카탈로그다."""
     __tablename__ = "strategies"
+    __table_args__ = (
+        CheckConstraint(
+            "product_group IN ('MUL', 'BANG')",
+            name="product_group_values",
+        ),
+        CheckConstraint(
+            "availability_status IN ('AVAILABLE', 'TESTING')",
+            name="availability_status_values",
+        ),
+        CheckConstraint("display_order > 0", name="display_order_positive"),
+        Index("ix_strategies_catalog_order", "product_group", "display_order"),
+    )
     id: Mapped[str] = mapped_column(String(30), primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -22,6 +34,10 @@ class Strategy(Base):
     rebalance_cycle: Mapped[str] = mapped_column(String(30), nullable=False)
     rule_config: Mapped[dict] = mapped_column(JSONB, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
+    product_group: Mapped[str] = mapped_column(String(20), nullable=False)
+    availability_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    engine_key: Mapped[str] = mapped_column(String(50), nullable=False)
+    display_order: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 
 
 class StrategyTargetWeight(Base):

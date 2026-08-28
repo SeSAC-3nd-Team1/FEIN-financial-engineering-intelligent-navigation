@@ -271,6 +271,10 @@ class StrategyResponse(BaseModel):
     description: str
     risk_level: str
     rebalance_cycle: str
+    product_group: Literal["MUL", "BANG"]
+    availability_status: Literal["AVAILABLE", "TESTING"]
+    engine_key: str
+    display_order: int
 
 
 class BacktestRunRequest(BaseModel):
@@ -880,7 +884,7 @@ class ModelRecommendationApplyRequest(BaseModel):
 
 class ModelRecommendationApplyResponse(BaseModel):
     account_id: UUID
-    strategy_id: Literal["momentum"]
+    strategy_id: Literal["low", "momentum"]
     as_of: date
     target_count: int = Field(ge=1)
     orders_created: int = Field(ge=0)

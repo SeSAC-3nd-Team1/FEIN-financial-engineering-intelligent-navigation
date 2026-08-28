@@ -368,10 +368,14 @@ class InvestmentOnboardingService:
 
     def _active_strategy(self, strategy_id: str) -> Strategy:
         strategy = self.session.scalar(
-            select(Strategy).where(Strategy.id == strategy_id, Strategy.is_active.is_(True))
+            select(Strategy).where(
+                Strategy.id == strategy_id,
+                Strategy.is_active.is_(True),
+                Strategy.availability_status == "AVAILABLE",
+            )
         )
         if strategy is None:
-            raise NotFoundError("STRATEGY_NOT_FOUND", "활성 투자 전략을 찾을 수 없습니다.")
+            raise NotFoundError("STRATEGY_NOT_FOUND", "이용 가능한 투자 전략을 찾을 수 없습니다.")
         return strategy
 
     def _current_terms(self, strategy_id: str) -> list[Term]:

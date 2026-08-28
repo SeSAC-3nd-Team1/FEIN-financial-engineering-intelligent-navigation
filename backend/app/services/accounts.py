@@ -145,8 +145,15 @@ class AccountService:
             account = self.repo.owned_account(account_id, user_id, lock=True)
             if not account:
                 raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
-            if not self.repo.strategy(strategy_id):
+            strategy = self.repo.strategy(strategy_id)
+            if not strategy or not strategy.is_active:
                 raise NotFoundError("STRATEGY_NOT_FOUND", "전략을 찾을 수 없습니다.")
+            if strategy.availability_status != "AVAILABLE":
+                raise ServiceError(
+                    "STRATEGY_NOT_AVAILABLE",
+                    "아직 테스트 중인 전략은 선택할 수 없습니다.",
+                    409,
+                )
             account.selected_strategy_id = strategy_id
             self.session.commit()
         except Exception:

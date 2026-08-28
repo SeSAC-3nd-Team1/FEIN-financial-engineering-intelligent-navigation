@@ -61,7 +61,12 @@ class RecommendationRepository:
     def active_strategies(self) -> list[Strategy]:
         return list(
             self.session.scalars(
-                select(Strategy).where(Strategy.is_active.is_(True)).order_by(Strategy.id)
+                select(Strategy)
+                .where(
+                    Strategy.is_active.is_(True),
+                    Strategy.availability_status == "AVAILABLE",
+                )
+                .order_by(Strategy.product_group, Strategy.display_order, Strategy.id)
             )
         )
 

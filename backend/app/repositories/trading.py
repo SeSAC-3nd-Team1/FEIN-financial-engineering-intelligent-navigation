@@ -269,7 +269,13 @@ class TradingRepository:
         ))
 
     def strategies(self) -> list[Strategy]:
-        return list(self.session.scalars(select(Strategy).where(Strategy.is_active.is_(True)).order_by(Strategy.id)))
+        return list(
+            self.session.scalars(
+                select(Strategy)
+                .where(Strategy.is_active.is_(True))
+                .order_by(Strategy.product_group, Strategy.display_order, Strategy.id)
+            )
+        )
 
     def strategy(self, strategy_id: str) -> Strategy | None:
         return self.session.get(Strategy, strategy_id)

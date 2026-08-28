@@ -56,9 +56,10 @@ services:
       AI_CHATBOT_MODEL_VERSION: ${AI_CHATBOT_MODEL_VERSION:-chatbot-v1}
       AI_CHATBOT_PROMPT_VERSION: ${AI_CHATBOT_PROMPT_VERSION:-v1}
       MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+      LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
       MODEL_RECOMMENDATION_ALLOW_FALLBACK: ${MODEL_RECOMMENDATION_ALLOW_FALLBACK:-true}
       MODEL_RECOMMENDATION_STALE_AFTER_DAYS: ${MODEL_RECOMMENDATION_STALE_AFTER_DAYS:-3}
-      STRATEGY_CATALOG_VERSION: ${STRATEGY_CATALOG_VERSION:-v1}
+      STRATEGY_CATALOG_VERSION: ${STRATEGY_CATALOG_VERSION:-v2}
       KIS_APP_KEY: ${KIS_APP_KEY:-}
       KIS_APP_SECRET: ${KIS_APP_SECRET:-}
       KIS_BASE_URL: ${KIS_BASE_URL:-https://openapi.koreainvestment.com:9443}
@@ -187,8 +188,11 @@ services:
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
       MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+      LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
+      ALGORITHM_V23_PATH: /algorithm-output/Algorithm(ver.2.3).py
     volumes:
       - ./ai:/app
+      - ./output:/algorithm-output:ro
       - model_recommendation_artifacts:/model-artifacts
       - azure_cli_data:/root/.azure
     depends_on:
@@ -223,6 +227,35 @@ services:
       - ${SECURITY_MASTER_FEATURE_VERSION:-1}
       - --top-n
       - ${MODEL_RECOMMENDATION_TOP_N:-5}
+    restart: "no"
+
+  loss-avoidance-generator:
+    build:
+      context: ./ai
+    profiles:
+      - ai
+    environment:
+      PYTHONPATH: /app
+      AZURE_CONFIG_DIR: /root/.azure
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
+      LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
+      ALGORITHM_V23_PATH: /algorithm-output/Algorithm(ver.2.3).py
+    volumes:
+      - ./ai:/app
+      - ./output:/algorithm-output:ro
+      - model_recommendation_artifacts:/model-artifacts
+      - azure_cli_data:/root/.azure
+    command:
+      - python
+      - -m
+      - inference.generate_loss_avoidance_snapshot
+      - --algorithm-version
+      - ${ALGORITHM_FEATURE_VERSION:-2}
+      - --top-n
+      - ${LOSS_AVOIDANCE_TOP_N:-5}
+      - --universe-size
+      - ${LOSS_AVOIDANCE_UNIVERSE_SIZE:-20}
     restart: "no"
 
   redis:
