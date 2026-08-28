@@ -84,33 +84,66 @@ function useCrossfadeImage(target: string, durationMs: number, reducedMotion: bo
   return pair;
 }
 
-function AmountField({
-  label, value, onChange,
-}: { label: string; value: number; onChange: (next: number) => void }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
+/** StartInvesting.tsx의 투자 금액 선택(프리셋 pill + "직접 입력" 토글)과 같은 패턴 —
+ *  텍스트 칸을 항상 열어두는 대신 금액대를 눌러서 고르고, 원하면 직접 입력으로 바꾼다. */
+const GOAL_PRESETS = [10_000_000, 30_000_000, 50_000_000, 100_000_000];
 
-  const commit = () => {
-    const n = Math.min(MAX_AMOUNT, Number(digitsOnly(text, 12) || '0'));
+function presetLabel(amount: number) {
+  return amount >= 100_000_000
+    ? `${(amount / 100_000_000).toLocaleString('ko-KR')}억원`
+    : `${(amount / 10_000).toLocaleString('ko-KR')}만원`;
+}
+
+function GoalAmountField({ value, onChange }: { value: number; onChange: (next: number) => void }) {
+  const [custom, setCustom] = useState<string | null>(() => (GOAL_PRESETS.includes(value) ? null : String(value)));
+
+  const commitCustom = () => {
+    const n = Math.min(MAX_AMOUNT, Number(digitsOnly(custom ?? '', 12) || '0'));
     onChange(n);
-    setText(String(n));
+    setCustom(String(n));
   };
 
   return (
-    <label className="flex flex-1 flex-col gap-2">
-      <span className="text-sm font-semibold text-muted">{label}</span>
-      <div className="flex items-center gap-2 rounded-field bg-surface px-4 py-3.5 shadow-[0_0_0_1px_#E5E9E3_inset] focus-within:shadow-[0_0_0_2px_#C6F04D_inset]">
-        <input
-          value={Number(text || '0').toLocaleString('ko-KR')}
-          inputMode="numeric"
-          onChange={(e) => setText(digitsOnly(e.target.value, 12))}
-          onBlur={commit}
-          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-          className="w-full bg-transparent text-lg font-bold tracking-[-0.02em] outline-none"
-        />
-        <span className="shrink-0 text-base font-semibold text-muted">원</span>
+    <div className="flex flex-col gap-3">
+      <span className="text-sm font-semibold text-muted">목표 금액</span>
+      <div className="flex flex-wrap gap-2">
+        {GOAL_PRESETS.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => { onChange(p); setCustom(null); }}
+            className={`rounded-full px-4 py-2.5 text-sm font-semibold ${
+              value === p && custom === null ? 'bg-lime text-navy' : 'bg-canvas text-muted'
+            }`}
+          >
+            {presetLabel(p)}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setCustom((c) => (c === null ? String(value) : null))}
+          className={`rounded-full px-4 py-2.5 text-sm font-semibold underline decoration-[#C6F04D] decoration-2 underline-offset-2 ${
+            custom !== null ? 'bg-[#F8FCEE] text-navy' : 'text-muted'
+          }`}
+        >
+          직접 입력
+        </button>
       </div>
-    </label>
+      {custom !== null && (
+        <div className="flex items-center gap-2 rounded-field bg-surface px-4 py-3.5 shadow-[0_0_0_1px_#E5E9E3_inset] focus-within:shadow-[0_0_0_2px_#C6F04D_inset]">
+          <input
+            value={Number(custom || '0').toLocaleString('ko-KR')}
+            inputMode="numeric"
+            onChange={(e) => setCustom(digitsOnly(e.target.value, 12))}
+            onBlur={commitCustom}
+            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+            className="w-full bg-transparent text-lg font-bold tracking-[-0.02em] outline-none"
+            autoFocus
+          />
+          <span className="shrink-0 text-base font-semibold text-muted">원</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -348,18 +381,18 @@ export default function CarGoalProgress() {
             )}
           </div>
 
-          {/* 4. 목표 금액은 직접 입력, 현재 투자 금액은 포트폴리오의 "나의 투자"(총자산)를 그대로
-              보여준다 — 여기서 따로 입력받지 않는다(위 sync effect가 항상 최신값으로 맞춰둔다). */}
-          <div className="flex gap-4">
-            <AmountField label="목표 금액" value={goalAmount} onChange={setGoalAmount} />
-            <div className="flex flex-1 flex-col gap-2">
-              <span className="text-sm font-semibold text-muted">현재 투자 금액</span>
-              <div className="flex items-center gap-2 rounded-field bg-canvas px-4 py-3.5 shadow-[0_0_0_1px_#E5E9E3_inset]">
-                <span className="w-full text-lg font-bold tracking-[-0.02em]">{currentAmount.toLocaleString('ko-KR')}</span>
-                <span className="shrink-0 text-base font-semibold text-muted">원</span>
-              </div>
-              <span className="text-[12px] text-subtle">포트폴리오의 나의 투자 금액과 자동으로 맞춰져요.</span>
+          {/* 4. 목표 금액은 프리셋 pill을 눌러 고르거나 "직접 입력"으로 바꿔 입력한다. 현재 투자
+              금액은 포트폴리오의 "나의 투자"(총자산)를 그대로 보여준다 — 여기서 따로 입력받지
+              않는다(위 sync effect가 항상 최신값으로 맞춰둔다). */}
+          <GoalAmountField value={goalAmount} onChange={setGoalAmount} />
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-semibold text-muted">현재 투자 금액</span>
+            <div className="flex items-center gap-2 rounded-field bg-canvas px-4 py-3.5 shadow-[0_0_0_1px_#E5E9E3_inset]">
+              <span className="w-full text-lg font-bold tracking-[-0.02em]">{currentAmount.toLocaleString('ko-KR')}</span>
+              <span className="shrink-0 text-base font-semibold text-muted">원</span>
             </div>
+            <span className="text-[12px] text-subtle">포트폴리오의 나의 투자 금액과 자동으로 맞춰져요.</span>
           </div>
 
           <div className="flex flex-col gap-2">
