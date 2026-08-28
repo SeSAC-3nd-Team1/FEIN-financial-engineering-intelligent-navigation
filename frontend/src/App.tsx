@@ -29,6 +29,7 @@ import SignupStep1 from "./pages/SignupStep1";
 import SignupStep2 from "./pages/SignupStep2";
 import SignupStep3 from "./pages/SignupStep3";
 import StartInvesting from "./pages/StartInvesting";
+import StartSignup from "./pages/StartSignup";
 import StockDetail from "./pages/StockDetail";
 import StrategyComingSoon from "./pages/StrategyComingSoon";
 import StrategyDetail from "./pages/StrategyDetail";
@@ -187,7 +188,6 @@ export default function App() {
     name: "",
     birthdate: "",
     email: "",
-    aiPersonalizationConsent: false,
     agreements: { b: false, c: false, ai: false },
   });
   /** 회원가입 Step 02(이메일 인증) 진행 상태 — 화면 전환과 무관하게 App.tsx가 들고 있어야
@@ -846,6 +846,19 @@ export default function App() {
         />
       )}
 
+      {screen === "start-signup" && (
+        <StartSignup
+          onNavigate={navigate}
+          // 이메일만 SignupPersonal에 미리 채우고 기존 signup-1로 넘긴다 — 새 API/스키마 없음.
+          // handlePersonalChange를 그대로 써서 email이 바뀌면 기존 emailVerification 리셋 로직도
+          // 똑같이 적용된다.
+          onContinue={(email) => {
+            handlePersonalChange({ ...personal, email });
+            setScreen("signup-1");
+          }}
+        />
+      )}
+
       {screen === "signup-1" && (
         <SignupStep1
           value={personal}
@@ -921,9 +934,12 @@ export default function App() {
             const termCodeByAgreement = {
               b: "B_PRIVACY",
               c: "C_ASSOCIATE_TERMS",
+              // AI_PERSONALIZATION은 투자성향 분석/챗봇 개인화 응답 제공 여부를 가르는 실제 권한
+              // 경계로 쓰이고 있어(백엔드 recommendation.py의 has_ai_personalization_consent)
+              // 자동으로 true를 채워보내지 않고, 사용자가 실제로 체크한 값을 그대로 전송한다.
               ai: "AI_PERSONALIZATION",
             } as const;
-            const agreementByTermCode = Object.fromEntries(
+            const agreementByTermCode: Record<string, boolean> = Object.fromEntries(
               Object.entries(termCodeByAgreement).map(([key, code]) => [
                 code,
                 personal.agreements[key as keyof typeof termCodeByAgreement],
