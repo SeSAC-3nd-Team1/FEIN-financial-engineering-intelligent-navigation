@@ -823,7 +823,8 @@ class InvestorProfileAnalysisResult(BaseModel):
 class InvestorProfileResponse(InvestorProfileAnalysisResult):
     assessment_id: UUID
     questionnaire_version: str
-    analysis_version: Literal["v1"] = "v1"
+    analysis_version: Literal["v1", "v2"] = "v2"
+    risk_score: int | None = Field(default=None, ge=0, le=100)
     model_version: str
     created_at: datetime
 

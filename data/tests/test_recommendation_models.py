@@ -18,7 +18,19 @@ def _constraint_columns(model: type, constraint_name: str) -> tuple[str, ...]:
 
 def test_assessment_stores_derived_profile_without_raw_answers() -> None:
     columns = set(InvestorProfileAssessment.__table__.columns.keys())
-    assert {"profile_type", "stability", "return_seeking", "horizon", "model_version", "prompt_version"} <= columns
+    assert {
+        "risk_score",
+        "profile_type",
+        "stability",
+        "return_seeking",
+        "horizon",
+        "model_version",
+        "prompt_version",
+    } <= columns
+    assert InvestorProfileAssessment.__table__.c.risk_score.nullable is True
+    assert "ck_investor_profile_assessments_risk_score_range" in _constraint_names(
+        InvestorProfileAssessment
+    )
     assert {"answers", "raw_answers", "question_answers"}.isdisjoint(columns)
     assert _foreign_key_targets(InvestorProfileAssessment) == {"users.id"}
 

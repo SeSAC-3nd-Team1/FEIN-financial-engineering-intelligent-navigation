@@ -154,7 +154,7 @@ docker compose exec -T redis redis-cli TTL "information:news:kr:증시:1:20"
 
 Frontend 로그인은 `/api/v1/auth/login`과 `/api/v1/auth/me`를 사용한다. JWT는 브라우저에 보관되어 새로고침 후 검증·복원되며, 로그아웃 시 제거된다.
 
-투자성향 분석은 인증된 `POST /api/v1/investor-profile/analyze` 요청으로 처리한다. Backend는 `v1` 설문의 8개 문항 ID와 선택지 ID를 검증한 뒤 Azure OpenAI에 전달하고, 모델 분석이 끝나면 같은 HTTP 요청에서 5단계 투자유형과 설명을 구조화된 JSON으로 반환한다. 답변과 분석 결과는 DB에 저장하지 않는다. 로컬 실행 전 `.env`에 `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`를 설정한다.
+투자성향 분석은 인증된 `POST /api/v1/investor-profile/analyze` 요청으로 처리한다. Backend는 `v1` 설문의 8개 문항 ID와 선택지 ID를 검증한 뒤 `risk-score-v1` 고정 점수표와 보수적 제한 규칙으로 0~100점 및 5단계 투자유형을 계산한다. 원본 답변은 저장하지 않고 점수·분류 결과·재현 버전만 PostgreSQL에 저장하며, Azure OpenAI 설정 없이 같은 HTTP 요청에서 결과를 반환한다.
 
 Frontend 가상투자 화면은 FastAPI만 호출한다. `/auth/me`의 `active_operation_mode`를 복원하고
 `/accounts/me?operation_mode=`로 AUTO/SEMI_AUTO별 동적 계좌 ID를 얻은 뒤 `/portfolio` 한 번으로

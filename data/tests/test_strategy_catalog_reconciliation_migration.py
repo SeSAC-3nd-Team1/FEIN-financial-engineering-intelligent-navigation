@@ -21,7 +21,7 @@ DATA_ROOT = Path(__file__).resolve().parents[1]
 PRE_STRATEGY_REVISION = "20260827_0024"
 SKIPPED_STRATEGY_REVISION = "20260828_0025"
 DRIFTED_REVISION = "20260828_0026"
-HEAD_REVISION = "20260828_0027"
+HEAD_REVISION = "20260828_0028"
 STRATEGY_COLUMNS = {
     "product_group",
     "availability_status",
@@ -100,6 +100,16 @@ def test_reconciliation_repairs_revision_only_strategy_migration(
     assert "ix_strategies_catalog_order" in {
         index["name"] for index in strategy_inspector.get_indexes("strategies")
     }
+    assessment_columns = {
+        column["name"]: column
+        for column in strategy_inspector.get_columns("investor_profile_assessments")
+    }
+    assert assessment_columns["risk_score"]["nullable"] is True
+    assessment_constraints = {
+        constraint["name"]
+        for constraint in strategy_inspector.get_check_constraints("investor_profile_assessments")
+    }
+    assert "ck_investor_profile_assessments_risk_score_range" in assessment_constraints
 
     with engine.connect() as connection:
         momentum = connection.execute(

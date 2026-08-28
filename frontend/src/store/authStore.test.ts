@@ -33,6 +33,7 @@ function mockProfile(overrides: Partial<InvestorProfileResponse> = {}): Investor
     assessment_id: 'assessment-1',
     questionnaire_version: 'v1',
     analysis_version: 'v1',
+    risk_score: null,
     profile_type: '안정추구형',
     tendency_line: '지키는 것을 중요하게 생각해요',
     description: '설명',
@@ -66,6 +67,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     const hydrated = useAuthStore.getState();
     expect(hydrated.investorProfileCompleted).toBe(true);
     expect(hydrated.investorType).toBe('안정추구형');
+    expect(hydrated.investorRiskScore).toBeNull();
     expect(hydrated.investorAssessmentId).toBe('assessment-1');
     // 백엔드 응답이 Source of Truth — RiskResult/InvestorProfileCheck가 쓰는 나머지 필드도 그대로 매핑돼야 한다.
     expect(hydrated.investorTendencyLine).toBe('지키는 것을 중요하게 생각해요');
@@ -78,6 +80,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     expect(state.investorProfileCompletedAt).toBeNull();
     expect(state.investorAssessmentId).toBeNull();
     expect(state.investorType).toBeNull();
+    expect(state.investorRiskScore).toBeNull();
     expect(state.investorTendencyLine).toBeNull();
     expect(state.investorDescription).toBeNull();
     expect(state.investorTraits).toBeNull();
@@ -88,7 +91,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
   it('인증 실패(initialize)로 로그아웃되는 경우에도 투자성향 상태가 초기화된다', async () => {
     // completeInvestorProfile 로 로컬에만 값을 채운 뒤(예: 방금 진단 완료), 토큰 만료로 initialize() 가 실패하는 상황
     useAuthStore.getState().completeInvestorProfile(
-      { type: '공격투자형', tendencyLine: '', description: '', traits: { stability: 1, returnSeeking: 5, horizon: 5 } },
+      { type: '공격투자형', riskScore: 100, tendencyLine: '', description: '', traits: { stability: 1, returnSeeking: 5, horizon: 5 } },
       [0, 1, 2],
       '2026-01-01T00:00:00Z',
       'assessment-local',
@@ -102,6 +105,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     expect(state.isLoggedIn).toBe(false);
     expect(state.investorProfileCompleted).toBe(false);
     expect(state.investorType).toBeNull();
+    expect(state.investorRiskScore).toBeNull();
     expect(state.investorAssessmentId).toBeNull();
     expect(state.investorAnswers).toBeNull();
   });
@@ -160,11 +164,12 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     vi.mocked(loginApi).mockResolvedValueOnce('token-b');
     vi.mocked(currentUserApi).mockResolvedValueOnce(mockUser(2, 'b'));
     vi.mocked(latestInvestorProfileApi).mockResolvedValueOnce(
-      mockProfile({ profile_type: '공격투자형', assessment_id: 'assessment-2', created_at: '2026-02-02T00:00:00Z' }),
+      mockProfile({ profile_type: '공격투자형', risk_score: 100, assessment_id: 'assessment-2', created_at: '2026-02-02T00:00:00Z' }),
     );
     await useAuthStore.getState().login('b', 'pw');
     await flush();
     expect(useAuthStore.getState().investorType).toBe('공격투자형');
+    expect(useAuthStore.getState().investorRiskScore).toBe(100);
 
     // 이제서야 A 의 늦은 응답이 도착한다 — 이미 B 로 전환된 상태를 덮어쓰면 안 된다.
     slowA.resolve(mockProfile({ profile_type: '안정추구형' }));
@@ -173,6 +178,7 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     const state = useAuthStore.getState();
     expect(state.user?.user_id).toBe('b');
     expect(state.investorType).toBe('공격투자형');
+    expect(state.investorRiskScore).toBe(100);
     expect(state.investorAssessmentId).toBe('assessment-2');
     expect(state.investorProfileCompletedAt).toBe('2026-02-02T00:00:00Z');
   });
