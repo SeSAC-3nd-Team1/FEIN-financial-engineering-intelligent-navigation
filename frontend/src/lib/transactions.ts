@@ -1,4 +1,4 @@
-import { ALL_HOLDINGS, RECENT_TRANSACTIONS, STOCK_INFO } from '../data/holdings';
+import { ALL_HOLDINGS, STOCK_INFO } from '../data/holdings';
 import type { ExecutionResponse } from './backendApi';
 import type { TransactionRecord } from '../types';
 
@@ -29,8 +29,7 @@ function toDisplayTransaction(execution: ExecutionResponse): TransactionRecord {
  *  실 계좌 자체가 없을 때(hasAccount=false)만 목업으로 대체한다 — "계좌 없음"과 "계좌는 있는데
  *  체결이 0건"은 다른 상태라, executions.length만으로 판단하면 신규 계좌의 진짜 빈 내역이
  *  목업으로 가려진다. */
-export function getDisplayTransactions(executions: ExecutionResponse[], hasAccount: boolean): TransactionRecord[] {
-  if (!hasAccount) return RECENT_TRANSACTIONS;
+export function getDisplayTransactions(executions: ExecutionResponse[]): TransactionRecord[] {
   return [...executions]
     .sort((a, b) => b.executed_at.localeCompare(a.executed_at))
     .map(toDisplayTransaction);

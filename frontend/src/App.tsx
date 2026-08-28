@@ -1620,9 +1620,10 @@ export default function App() {
           기존 기본값인 반자동으로 보여준다. */}
       {screen === "portfolio" &&
         (activeMode === "auto" && tradingAccount?.selected_strategy_id ? (
-          <PortfolioAuto
+                    <PortfolioAuto
             userName={userName}
             onNavigate={navigate}
+            onAccountMissingAction={() => pushScreen("account-setup", { accountSetupMode: activeMode ?? "manual" })}
             onOpenDetail={() => pushScreen("portfolio-detail")}
             onOpenRebalanceAlerts={() => {
               pushScreen("rebalance-alerts", {
@@ -1842,6 +1843,7 @@ export default function App() {
       {screen === "portfolio-detail" && portfolioStrategy && (
         <PortfolioDetail
           userName={userName}
+          onAccountMissingAction={() => pushScreen("account-setup", { accountSetupMode: activeMode ?? "manual" })}
           strategy={portfolioStrategy}
           strategies={strategyCatalog}
           onStrategyChange={setStrategyId}
@@ -1869,19 +1871,21 @@ export default function App() {
       )}
 
       {screen === "rebalance-alerts" && portfolioStrategy && (
-        <RebalanceAlerts
+                <RebalanceAlerts
           userName={userName}
           strategy={portfolioStrategy}
           onNavigate={navigate}
+          onAccountMissingAction={() => pushScreen("account-setup", { accountSetupMode: activeMode ?? "manual" })}
           onBack={() => goBackOrTo(rebalanceBackTarget)}
           isAutoMode={activeMode === "auto"}
         />
       )}
 
       {screen === "all-holdings" && (
-        <AllHoldings
+                <AllHoldings
           userName={userName}
           onNavigate={navigate}
+          onAccountMissingAction={() => pushScreen("account-setup", { accountSetupMode: activeMode ?? "manual" })}
           onSelectStock={(code) => {
             pushScreen("stock", {
               stockCode: code,

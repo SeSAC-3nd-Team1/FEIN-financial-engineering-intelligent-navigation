@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronsUpDown, ChevronUp, X } from 'lucide-react';
 import Header from '../components/Header';
-import { AI_ALERTS, ALL_HOLDINGS as MOCK_HOLDINGS, STOCK_INFO } from '../data/holdings';
+import { buildDetailedPortfolioHoldings } from '../lib/portfolioModel';
 import { useTradingData } from '../hooks/useTradingData';
 import { won } from '../lib/validation';
+import { getDisplayAlerts } from '../lib/rebalancing';
+import PortfolioDataState from '../components/PortfolioDataState';
+import { useTradingRetry } from '../hooks/useTradingRetry';
 import { useTradingStore } from '../store/tradingStore';
 import type { Screen } from '../types';
 
@@ -12,6 +15,7 @@ interface Props {
   onNavigate: (s: Screen) => void;
   onSelectStock: (stockCode: string) => void;
   onBack: () => void;
+  onAccountMissingAction?: () => void;
 }
 
 /** AI 제안 종류별 배지 색 — PortfolioDetail 의 보유 종목 표와 동일한 배색을 공유한다 */
@@ -30,33 +34,23 @@ const HOLDINGS_COLUMNS: { key: SortKey; label: string; align: 'left' | 'right' }
 ];
 
 /** `/all-holdings` — 보유 종목 전체 목록. PortfolioDetail "보유 종목"의 "전체 종목 보기"에서 진입한다. */
-export default function AllHoldings({ userName, onNavigate, onSelectStock, onBack }: Props) {
+export default function AllHoldings({ userName, onNavigate, onSelectStock, onBack, onAccountMissingAction }: Props) {
   useTradingData();
   const portfolio = useTradingStore((state) => state.portfolio);
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
   // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
+  const isLoading = useTradingStore((state) => state.isLoading);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
 
   // 계좌가 없다고 확인된 경우에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는 아직 로딩 중/
   // 조회 실패로 portfolio를 못 받은 경우)에는 빈 배열을 써서 실제 빈 상태로 보여준다 — PortfolioDetail
   // 과 동일한 대체 규칙.
-  const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return MOCK_HOLDINGS;
-    if (!portfolio) return [];
-    const assets = Number(portfolio.total_assets);
-    return portfolio.positions.map((position) => {
-      const matched = MOCK_HOLDINGS.find((holding) => STOCK_INFO[holding.name]?.code === position.stock_code);
-      const metadata = matched ?? MOCK_HOLDINGS[0];
-      return {
-        ...metadata,
-        name: matched?.name ?? position.stock_code,
-        pct: assets > 0 ? Number(position.evaluation_amount) / assets * 100 : 0,
-        chg: Number(position.return_rate),
-        principal: Number(position.purchase_amount),
-        returnRate: Number(position.return_rate),
-      };
-    });
-  }, [portfolio, accountMissing]);
+    const ALL_HOLDINGS = useMemo(
+    () => buildDetailedPortfolioHoldings(portfolio),
+    [portfolio],
+  );
 
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -74,9 +68,19 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
 
   // 표의 배지 클릭 시 "왜 지금인가요?" 사유 모달만 연다 — PortfolioDetail 의 보유 종목 표와 동일한 동작.
   const [alertModalId, setAlertModalId] = useState<string | null>(null);
-  const alertModal = AI_ALERTS.find((a) => a.id === alertModalId) ?? null;
+  const displayAlerts = getDisplayAlerts(portfolio);
+  const alertModal = displayAlerts.find((a) => a.id === alertModalId) ?? null;
 
   return (
+    <PortfolioDataState
+      userName={userName}
+      onNavigate={onNavigate}
+      loading={isLoading}
+      accountMissing={accountMissing}
+      error={error}
+      onRetry={retry}
+      onAccountMissingAction={onAccountMissingAction}
+    >
     <div className="min-h-screen bg-canvas">
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
 
@@ -121,8 +125,8 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
                     </tr>
                   )}
                   {sortedHoldings.map((h) => {
-                    const stockCode = STOCK_INFO[h.name]?.code;
-                    const alert = AI_ALERTS.find((a) => a.stockName === h.name);
+                    const stockCode = h.stockCode;
+                    const alert = displayAlerts.find((a) => a.stockName === h.name);
                     return (
                       <tr
                         key={h.name}
@@ -185,6 +189,7 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
           </div>
         </div>
       )}
-    </div>
+        </div>
+    </PortfolioDataState>
   );
 }
