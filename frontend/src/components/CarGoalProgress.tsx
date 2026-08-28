@@ -128,6 +128,10 @@ export default function CarGoalProgress() {
   // 화면이 두 카드로 항상 붐비지 않게 한다. 아직 한 번도 고른 적 없으면(grade=null) 요약할
   // 값 자체가 없으므로 펼친 상태를 강제한다.
   const [pickerOpen, setPickerOpen] = useState(false);
+  // 목표 금액도 등급 카드와 같은 원칙 — 평소엔 "목표: OO원 · 수정" 한 줄만 보여주고,
+  // "수정"을 눌렀을 때만 실제 입력창을 연다. 자주 안 바뀌는 값이 매번 큰 입력창을 차지하지
+  // 않게 한다.
+  const [goalEditing, setGoalEditing] = useState(false);
 
   // grade=null: 서버에 아직 저장된 값이 없다고 "확인된" 상태(계정당 최초 진입) — 로딩 중에는 아직
   // 모르는 상태이므로 이 값만으로 게이트를 그리지 않고 반드시 status===\'ready\'와 함께 본다.
@@ -196,6 +200,7 @@ export default function CarGoalProgress() {
   };
   const setGoalAmount = (next: number) => {
     setGoalAmountState(next);
+    setGoalEditing(false);
     if (grade) persist({ grade, goalAmount: next, currentAmount });
   };
   const setCurrentAmount = (next: number) => {
@@ -346,20 +351,8 @@ export default function CarGoalProgress() {
             )}
           </div>
 
-          {/* 4. 목표 금액은 프리셋 pill을 눌러 고르거나 "직접 입력"으로 바꿔 입력한다. 현재 투자
-              금액은 포트폴리오의 "나의 투자"(총자산)를 그대로 보여준다 — 여기서 따로 입력받지
-              않는다(위 sync effect가 항상 최신값으로 맞춰둔다). */}
-          <GoalAmountField value={goalAmount} onChange={setGoalAmount} />
-
-          <div className="flex flex-col gap-2">
-            <span className="text-sm font-semibold text-muted">현재 투자 금액</span>
-            <div className="flex items-center gap-2 rounded-field bg-canvas px-4 py-3.5 shadow-[0_0_0_1px_#E5E9E3_inset]">
-              <span className="w-full text-lg font-bold tracking-[-0.02em]">{currentAmount.toLocaleString('ko-KR')}</span>
-              <span className="shrink-0 text-base font-semibold text-muted">원</span>
-            </div>
-            <span className="text-[12px] text-subtle">포트폴리오의 나의 투자 금액과 자동으로 맞춰져요.</span>
-          </div>
-
+          {/* 4. 진행률/메시지를 이미지 바로 아래로 — 이 위젯을 열었을 때 가장 먼저 눈에 들어와야
+              할 "결과"라서, 자주 안 바뀌는 목표 금액 입력보다 위에 둔다. */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between text-sm font-semibold text-muted">
               <span>
@@ -380,6 +373,34 @@ export default function CarGoalProgress() {
             {saveError && (
               <p className="text-[13px] font-semibold text-warn">저장하지 못했어요. 네트워크를 확인해주세요.</p>
             )}
+          </div>
+
+          {/* 5. 목표 금액 — 평소엔 "목표: OO원 · 수정" 한 줄만 보이고, "수정"을 눌렀을 때만
+              입력창을 연다(값을 정하면 다시 한 줄로 접힌다). */}
+          {goalEditing ? (
+            <GoalAmountField value={goalAmount} onChange={setGoalAmount} />
+          ) : (
+            <div className="flex items-center justify-between rounded-field bg-canvas px-4 py-3.5">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[13px] text-muted">목표 금액</span>
+                <span className="text-base font-bold tracking-[-0.02em]">{won(goalAmount)}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGoalEditing(true)}
+                className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-navy underline decoration-[#C6F04D] decoration-2 underline-offset-2"
+              >
+                수정
+              </button>
+            </div>
+          )}
+
+          {/* 6. 현재 투자 금액 — 직접 손댈 수 없는 값이라 입력창처럼 보이지 않게 가볍게 한 줄로만 둔다. */}
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted">현재 투자 금액</span>
+            <span className="font-semibold text-ink">
+              {won(currentAmount)} <span className="text-[12px] font-medium text-subtle">(포트폴리오 연동)</span>
+            </span>
           </div>
         </>
       )}
