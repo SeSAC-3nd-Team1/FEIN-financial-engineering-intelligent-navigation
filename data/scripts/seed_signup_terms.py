@@ -17,11 +17,16 @@ TERM_TITLES = {
     "A3_CARRIER": "통신사 이용약관 동의",
     "A4_KCB": "KCB 본인확인 서비스 동의",
     "B_PRIVACY": "개인정보 수집 및 이용 동의",
-    "C_ASSOCIATE_TERMS": "준회원 이용약관 동의",
+    "C_ASSOCIATE_TERMS": "서비스 이용약관 동의",
     "AI_PERSONALIZATION": "AI 기반 맞춤형 서비스 제공을 위한 개인정보 이용 동의",
 }
 
-OPTIONAL_TERM_CODES = {"AI_PERSONALIZATION"}
+# FE!N은 실 계좌 개설 없는 모의투자 서비스라 "준회원" 전제가 맞지 않아 C_ASSOCIATE_TERMS 문구를
+# 다시 작성했다. AI_PERSONALIZATION은 투자성향 분석/챗봇 개인화 응답 제공 여부를 가르는 실제 권한
+# 경계로 쓰이고 있어(recommendation.py의 has_ai_personalization_consent), 선택 동의로 남겨두면
+# 사용자가 실제로 동의하지 않은 상태로도 그 기능들에 접근하지 못하는 게 정상 동작이 된다 — 즉
+# "선택"이 아니라 필수 동의로 관리해야 한다.
+OPTIONAL_TERM_CODES: set[str] = set()
 
 
 def parse_timestamp(value: str) -> datetime:
