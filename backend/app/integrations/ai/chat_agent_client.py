@@ -33,6 +33,14 @@ SAFETY_REFUSAL_PATTERNS = (
     "매도해",
     "몇 퍼센트 오를",
     "목표주가",
+    "이전 지시 무시",
+    "앞선 지시 무시",
+    "시스템 프롬프트",
+    "시스템 프롬프트 공개",
+    "내부 정책",
+    "api key",
+    "api_key",
+    "비밀정보",
 )
 
 
@@ -178,10 +186,24 @@ class AzureOpenAIChatAgentClient:
         normalized = " ".join(message.lower().split())
         if not any(pattern in normalized for pattern in SAFETY_REFUSAL_PATTERNS):
             return None
+        is_policy_request = any(
+            pattern in normalized
+            for pattern in (
+                "이전 지시 무시",
+                "앞선 지시 무시",
+                "시스템 프롬프트",
+                "내부 정책",
+                "api key",
+                "api_key",
+                "비밀정보",
+            )
+        )
         return ChatAgentResult(
             status="REFUSED",
             text=(
-                "특정 종목의 매수·매도 지시나 수익 보장은 제공할 수 없어요. "
+                "시스템 프롬프트·내부 정책·비밀정보는 공개할 수 없어요."
+                if is_policy_request
+                else "특정 종목의 매수·매도 지시나 수익 보장은 제공할 수 없어요. "
                 "대신 투자 판단에 필요한 재무지표와 위험요인을 함께 확인해드릴게요."
             ),
             caution="최종 투자 결정과 책임은 사용자에게 있으며, 과거 성과가 미래 수익을 보장하지 않습니다.",
@@ -404,7 +426,19 @@ class AzureOpenAIChatAgentClient:
                 )
                 response.raise_for_status()
                 assistant = response.json()["choices"][0]["message"]
+                if not isinstance(assistant, dict):
+                    raise ServiceError(
+                        "CHAT_AGENT_INVALID_RESPONSE",
+                        "물방개의 답변을 확인할 수 없습니다. 다시 시도해주세요.",
+                        502,
+                    )
                 tool_calls = assistant.get("tool_calls") or []
+                if not isinstance(tool_calls, list):
+                    raise ServiceError(
+                        "CHAT_AGENT_INVALID_RESPONSE",
+                        "물방개의 Tool 호출 형식이 올바르지 않습니다.",
+                        502,
+                    )
                 if not tool_calls:
                     content = assistant.get("content")
                     if assistant.get("refusal") or not isinstance(content, str):
@@ -419,10 +453,40 @@ class AzureOpenAIChatAgentClient:
                     )
                 messages.append(assistant)
                 for call in tool_calls:
-                    name = call.get("function", {}).get("name")
-                    arguments = json.loads(
-                        call.get("function", {}).get("arguments", "{}")
-                    )
+                    if not isinstance(call, dict) or not isinstance(
+                        call.get("id"), str
+                    ):
+                        raise ServiceError(
+                            "CHAT_AGENT_INVALID_RESPONSE",
+                            "물방개의 Tool 호출 형식이 올바르지 않습니다.",
+                            502,
+                        )
+                    function = call.get("function")
+                    if (
+                        not isinstance(function, dict)
+                        or not isinstance(function.get("name"), str)
+                        or not isinstance(function.get("arguments"), str)
+                    ):
+                        raise ServiceError(
+                            "CHAT_AGENT_INVALID_RESPONSE",
+                            "물방개의 Tool 호출 형식이 올바르지 않습니다.",
+                            502,
+                        )
+                    name = function["name"]
+                    try:
+                        arguments = json.loads(function["arguments"])
+                    except json.JSONDecodeError as exc:
+                        raise ServiceError(
+                            "CHAT_AGENT_INVALID_RESPONSE",
+                            "물방개의 Tool 인자를 확인할 수 없습니다.",
+                            502,
+                        ) from exc
+                    if not isinstance(arguments, dict):
+                        raise ServiceError(
+                            "CHAT_AGENT_INVALID_RESPONSE",
+                            "물방개의 Tool 인자가 올바르지 않습니다.",
+                            502,
+                        )
                     result = self._execute_tool(
                         name,
                         arguments,
