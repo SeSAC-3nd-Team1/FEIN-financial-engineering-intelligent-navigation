@@ -3,6 +3,7 @@ import {
   ApiError,
   applyLatestModelRecommendationsApi,
   createStrategyRecommendationApi,
+  depositAccountCashApi,
   getLatestModelRecommendationsApi,
   startInvestmentApi,
   type ModelRecommendationSnapshotResponse,
@@ -250,5 +251,57 @@ describe("investment onboarding API", () => {
       amount: 10_000_000,
       idempotency_key: "investment-onboarding-1-10000000",
     });
+  });
+});
+
+describe("standalone account cash deposit API", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("전략 정보 없이 계좌 id와 입금 요청만 전송한다", async () => {
+    const response = {
+      deposit_id: "deposit-1",
+      account: {
+        id: "account-1",
+        account_name: "나의 가상 투자계좌",
+        operation_mode: "SEMI_AUTO",
+        initial_cash: "500000",
+        cash_balance: "500000",
+        invested_principal: "500000",
+        status: "ACTIVE",
+        selected_strategy_id: null,
+        created_at: "2026-08-28T00:00:00Z",
+      },
+      amount: "500000",
+      balance_after: "500000",
+      status: "COMPLETED",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(response), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      depositAccountCashApi(
+        "account-1",
+        500_000,
+        "cash-deposit-once",
+        "token-a",
+      ),
+    ).resolves.toEqual(response);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/accounts/account-1/deposits",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          amount: 500_000,
+          idempotency_key: "cash-deposit-once",
+        }),
+      }),
+    );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Headers).get("Authorization")).toBe(
+      "Bearer token-a",
+    );
+    expect(String(init.body)).not.toContain("strategy");
   });
 });

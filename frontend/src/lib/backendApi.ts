@@ -58,6 +58,14 @@ export interface AccountResponse {
   created_at: string;
 }
 
+export interface AccountCashDepositResponse {
+  deposit_id: string;
+  account: AccountResponse;
+  amount: DecimalString;
+  balance_after: DecimalString;
+  status: "COMPLETED";
+}
+
 export interface FundOperationRequest {
   amount: number;
   idempotency_key: string;
@@ -620,6 +628,22 @@ export function createAccountApi(
     {
       method: "POST",
       body: JSON.stringify({ account_name: accountName, operation_mode: mode }),
+    },
+    token,
+  );
+}
+
+export function depositAccountCashApi(
+  accountId: string,
+  amount: number,
+  idempotencyKey: string,
+  token: string,
+): Promise<AccountCashDepositResponse> {
+  return request<AccountCashDepositResponse>(
+    `/accounts/${encodeURIComponent(accountId)}/deposits`,
+    {
+      method: "POST",
+      body: JSON.stringify({ amount, idempotency_key: idempotencyKey }),
     },
     token,
   );
