@@ -21,7 +21,7 @@ def get_car_goal(
     user: User = Depends(current_user),
     service: CarGoalService = Depends(get_car_goal_service),
 ) -> CarGoalResponse:
-    return service.get(user.id)
+    return service.get(user)
 
 
 @router.put("", response_model=CarGoalResponse)
@@ -30,4 +30,4 @@ def upsert_car_goal(
     user: User = Depends(current_user),
     service: CarGoalService = Depends(get_car_goal_service),
 ) -> CarGoalResponse:
-    return service.upsert(user.id, payload.car_grade, payload.goal_amount, payload.current_amount)
+    return service.upsert(user, payload.car_grade, payload.goal_amount)

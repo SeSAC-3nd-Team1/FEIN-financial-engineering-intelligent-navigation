@@ -29,7 +29,6 @@ export function useCarGoal() {
   // 모르는 상태이므로 이 값만으로 게이트를 그리지 않고 반드시 status==='ready'와 함께 본다.
   const [grade, setGradeState] = useState<CarGrade | null>(null);
   const [goalAmount, setGoalAmountState] = useState(DEFAULT_GOAL);
-  const [currentAmount, setCurrentAmountState] = useState(0);
 
   const requestIdRef = useRef(0);
 
@@ -42,7 +41,6 @@ export function useCarGoal() {
         if (requestIdRef.current !== requestId) return;
         setGradeState(res.car_grade);
         setGoalAmountState(Number(res.goal_amount));
-        setCurrentAmountState(Number(res.current_amount));
         setStatus('ready');
       })
       .catch((error: unknown) => {
@@ -57,18 +55,25 @@ export function useCarGoal() {
       });
   }, [accessToken]);
 
+  // "현재 투자 금액"은 서버에 저장/왕복하지 않고 항상 실시간 포트폴리오 값을 그대로 쓴다 — PUT
+  // payload로 클라이언트가 이 값을 보내 서버가 그대로 저장하던 예전 구조는 값을 조작해 실제
+  // 투자 금액과 다르게 저장할 수 있는 문제가 있었다(PR #257 리뷰). 서버도 GET/PUT 응답에서
+  // 같은 계좌를 다시 조회해 계산한 값만 돌려주므로, 여기서는 그 왕복을 기다리지 않고 이미 갖고
+  // 있는 라이브 포트폴리오 값을 바로 쓴다 — 화면 지연도 없고 서버가 계산한 값과도 항상 같다.
+  const currentAmount = portfolio ? Number(portfolio.total_assets) : 0;
+
   // 목표가 0원이면(입력 중 등) 0%로 취급한다 — 0으로 나누는 상황을 만들지 않는다.
   const progress = goalAmount > 0 ? Math.min(100, Math.max(0, (currentAmount / goalAmount) * 100)) : 0;
   const completed = progress >= 100;
 
-  /** 등급/금액 중 하나가 바뀔 때마다 세 값을 함께 서버에 저장한다 — upsert가 항상 세 값을 통째로 받는
-   *  구조라, 화면 상태를 먼저 반영(낙관적 업데이트)하고 실패하면 인라인 에러로 알린다. */
-  const persist = (next: { grade: CarGrade; goalAmount: number; currentAmount: number }) => {
+  /** 등급/목표 금액이 바뀔 때마다 서버에 저장한다 — 화면 상태를 먼저 반영(낙관적 업데이트)하고
+   *  실패하면 인라인 에러로 알린다. current_amount는 보내지 않는다(서버가 직접 계산한다). */
+  const persist = (next: { grade: CarGrade; goalAmount: number }) => {
     if (!accessToken) return;
     setSaveError(false);
     const requestId = ++requestIdRef.current;
     upsertCarGoalApi(
-      { car_grade: next.grade, goal_amount: next.goalAmount, current_amount: next.currentAmount },
+      { car_grade: next.grade, goal_amount: next.goalAmount },
       accessToken,
     ).catch(() => {
       if (requestIdRef.current !== requestId) return;
@@ -78,30 +83,17 @@ export function useCarGoal() {
 
   const setGrade = (nextGrade: CarGrade) => {
     setGradeState(nextGrade);
-    persist({ grade: nextGrade, goalAmount, currentAmount });
+    persist({ grade: nextGrade, goalAmount });
   };
   const setGoalAmount = (next: number) => {
     setGoalAmountState(next);
-    if (grade) persist({ grade, goalAmount: next, currentAmount });
-  };
-  const setCurrentAmount = (next: number) => {
-    setCurrentAmountState(next);
-    if (grade) persist({ grade, goalAmount, currentAmount: next });
+    if (grade) persist({ grade, goalAmount: next });
   };
 
   // Portfolio.tsx의 "나의 투자" 옆 수익률과 같은 값(백엔드가 계산해 둔 계좌 손익률)을 그대로 쓴다.
   // 계좌가 없으면(portfolio=null) 0%로 둔다 — Portfolio.tsx와 달리 여기선 계좌 없음 상태의
   // 목업 수익률을 보여줄 이유가 없다(목표 차량 위젯 자체가 실제 투자 진행을 보여주는 용도).
   const returnPct = portfolio ? Number(portfolio.return_rate) : 0;
-
-  // 계좌가 없거나 아직 포지션이 없으면 total_assets 도 0이다 — 그대로 0으로 둔다(별도 목업 없음).
-  const livePortfolioAmount = portfolio ? Number(portfolio.total_assets) : 0;
-  useEffect(() => {
-    if (status !== 'ready') return;
-    if (livePortfolioAmount === currentAmount) return;
-    setCurrentAmount(livePortfolioAmount);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [livePortfolioAmount, status]);
 
   return {
     status, saveError, grade, goalAmount, currentAmount, returnPct, progress, completed, setGrade, setGoalAmount,

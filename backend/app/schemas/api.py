@@ -190,7 +190,8 @@ class CarGoalUpsertRequest(BaseModel):
     # 프런트 StartInvesting류 금액 입력과 동일하게 상한을 둔다 — 계정 단위로 영구 저장되는 값이라
     # 클라이언트 검증만 믿지 않고 서버에도 같은 상한을 건다.
     goal_amount: Decimal = Field(ge=0, le=Decimal("2000000000"))
-    current_amount: Decimal = Field(ge=0, le=Decimal("2000000000"))
+    # current_amount는 요청으로 받지 않는다 — 실제 투자 금액은 클라이언트가 주장하는 값이 아니라
+    # 서버가 활성 계좌의 포트폴리오를 직접 조회해 계산한 값만 신뢰해야 한다(PR #257 리뷰).
 
 
 class CarGoalResponse(BaseModel):
