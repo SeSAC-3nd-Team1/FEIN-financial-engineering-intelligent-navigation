@@ -359,6 +359,15 @@ export default function CarGoalProgress() {
           </div>
 
           <div className="flex flex-1 flex-col justify-center gap-7">
+            {/* 3.5. 물방개 — 진행률(%) 위쪽 빈 공간을 상시 채운다. 달성 전에는 응원하는 말투,
+                달성하면 character-celebrate.png의 축하 연출과 맞춰 문구도 축하로 바뀐다. */}
+            <div className="flex items-center gap-3 rounded-field bg-[#F8FCEE] px-4 py-3">
+              <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-16 w-auto shrink-0 object-contain" />
+              <span className="text-sm font-semibold text-[#3F5222]">
+                {completed ? '물방개도 함께 축하하고 있어요!' : '물방개가 목표 달성을 응원하고 있어요!'}
+              </span>
+            </div>
+
             {/* 4. 진행률/메시지 — 이 위젯을 열었을 때 가장 먼저 눈에 들어와야 할 "결과"라서 맨 위.
                 카드가 커진 만큼 글자/바 두께도 함께 키워 빈 여백 대신 내용 자체가 채우게 한다. */}
             <div className="flex flex-col gap-3">
@@ -410,15 +419,6 @@ export default function CarGoalProgress() {
                 {won(currentAmount)} <span className="text-[13px] font-medium text-subtle">(포트폴리오 연동)</span>
               </span>
             </div>
-
-            {/* 7. 목표를 달성했을 때만 — 빈 공간을 장식으로 채우는 대신, 달성 순간에만 의미가
-                생기는 축하 일러스트를 둔다. 평소(달성 전)에는 그리지 않는다. */}
-            {completed && (
-              <div className="flex items-center gap-3 rounded-field bg-[#F8FCEE] px-4 py-3">
-                <img src="/character-celebrate.png" alt="" aria-hidden="true" className="h-20 w-auto shrink-0 object-contain" />
-                <span className="text-sm font-semibold text-[#3F5222]">물방개도 함께 축하하고 있어요!</span>
-              </div>
-            )}
           </div>
         </div>
       )}
