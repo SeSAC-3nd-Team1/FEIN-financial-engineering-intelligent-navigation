@@ -1,5 +1,7 @@
 import CarGoalProgress from '../components/CarGoalProgress';
 import Header from '../components/Header';
+import { useCarGoal } from '../hooks/useCarGoal';
+import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
 
@@ -32,7 +34,7 @@ export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
     <div className="flex h-screen flex-col overflow-y-auto bg-canvas">
       <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '무료로 시작하기', onClick: onRequestLogin }} />
       {isLoggedIn
-        ? <LoggedInHome userName={userName} onNavigate={onNavigate} />
+        ? <LoggedInHome userName={userName} />
         : <LoggedOutHome onNavigate={onNavigate} onRequestLogin={onRequestLogin} />}
     </div>
   );
@@ -44,13 +46,18 @@ export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
  *  공간을 아낀다), 그 아래 목표 차량 카드 하나만 이어지는 단일 세로 흐름으로 바꿨다. Portfolio.tsx와
  *  같은 방식으로 목표 차량 카드가 남는 세로 공간을 flex-1로 채워서(min-h-0 없이는 넘칠 때 부모를
  *  밀어낸다), 카드 아래 빈 캔버스가 그냥 남지 않고 화면 전체를 쓴다. */
-function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: (s: Screen) => void }) {
+function LoggedInHome({ userName }: { userName: string }) {
+  // 훅을 여기서 한 번만 불러 인사말 줄 요약과 아래 CarGoalProgress 카드에 같은 값을 내려준다.
+  const carGoal = useCarGoal();
+  const showSummary = carGoal.status === 'ready' && carGoal.grade !== null;
+
   return (
     <main className="flex min-h-0 flex-1 flex-col items-center px-16 pb-8 pt-8">
       {/* Portfolio/PortfolioAuto의 "한 화면" 메인 컨텐츠 폭(max-w-[1040px])과 통일한다. */}
       <div className="flex min-h-0 w-full max-w-[1040px] flex-1 flex-col gap-7">
-        {/* 인사말 줄도 아래 목표 차량 카드처럼 폭 전체를 쓴다 — 왼쪽 물방개+문구, 오른쪽 끝에
-            CTA 버튼을 둬서 좌우 양 끝에 무게가 실리게 한다. */}
+        {/* 인사말 줄도 아래 목표 차량 카드처럼 폭 전체를 쓴다 — 왼쪽 물방개+문구, 오른쪽 끝에는
+            내비게이션 버튼(헤더에 이미 있어 중복이었다) 대신 목표/현재 투자 금액을 한눈에
+            보여준다 — 아래 카드로 스크롤/시선 이동 없이도 바로 확인 가능하게 한다. */}
         <div className="flex w-full shrink-0 items-center justify-between gap-6">
           <div className="flex items-center gap-6">
             <img src="/character-recommend.png" alt="물방개" className="h-24 w-auto shrink-0 object-contain" />
@@ -64,20 +71,21 @@ function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: 
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-3">
-            <button onClick={() => onNavigate('strategy-list')} className="rounded-field bg-lime px-6 py-3.5 text-[15px] font-bold text-navy">
-              투자 전략 살펴보기 →
-            </button>
-            <button
-              onClick={() => onNavigate('information')}
-              className="rounded-field px-5 py-3.5 text-[15px] font-semibold text-navy shadow-[0_0_0_1px_#E5E9E3_inset] transition-shadow hover:shadow-[0_0_0_1px_#C9D1C4_inset]"
-            >
-              오늘의 인사이트 보기 →
-            </button>
-          </div>
+          {showSummary && (
+            <div className="flex shrink-0 items-center gap-8">
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="text-[13px] text-muted">목표 금액</span>
+                <span className="text-xl font-bold tracking-[-0.02em]">{won(carGoal.goalAmount)}</span>
+              </div>
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="text-[13px] text-muted">현재 투자 금액</span>
+                <span className="text-xl font-bold tracking-[-0.02em] text-navy">{won(carGoal.currentAmount)}</span>
+              </div>
+            </div>
+          )}
         </div>
 
-        <CarGoalProgress />
+        <CarGoalProgress {...carGoal} />
       </div>
     </main>
   );

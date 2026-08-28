@@ -1,12 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ImageOff, X } from 'lucide-react';
-import {
-  ApiError, getCarGoalApi, upsertCarGoalApi, type CarGrade,
-} from '../lib/backendApi';
-import { useTradingData } from '../hooks/useTradingData';
+import { CAR_GOAL_MAX_AMOUNT, type UseCarGoalResult } from '../hooks/useCarGoal';
 import { digitsOnly, won } from '../lib/validation';
-import { useAuthStore } from '../store/authStore';
-import { useTradingStore } from '../store/tradingStore';
+import type { CarGrade } from '../lib/backendApi';
 
 const GRADES: { id: CarGrade; label: string; description: string }[] = [
   { id: 'INEX', label: '보급차', description: '가볍게 시작하는 실속형 목표' },
@@ -18,8 +14,6 @@ const GRADES: { id: CarGrade; label: string; description: string }[] = [
 const STAGE_THRESHOLDS = [0, 10, 30, 50, 70, 90] as const;
 const GRADE_FILE_PREFIX: Record<CarGrade, string> = { INEX: 'Inex', HIGHEND: 'highend' };
 
-const DEFAULT_GOAL = 30_000_000;
-const MAX_AMOUNT = 2_000_000_000; // 20억원 — 백엔드 CarGoalUpsertRequest의 le 상한과 맞춘다
 const CROSSFADE_MS = 650;
 
 function stageIndexFor(progress: number) {
@@ -89,7 +83,7 @@ function GoalAmountField({ value, onChange }: { value: number; onChange: (next: 
   useEffect(() => setText(String(value)), [value]);
 
   const commit = () => {
-    const n = Math.min(MAX_AMOUNT, Number(digitsOnly(text, 12) || '0'));
+    const n = Math.min(CAR_GOAL_MAX_AMOUNT, Number(digitsOnly(text, 12) || '0'));
     onChange(n);
     setText(String(n));
   };
@@ -112,18 +106,14 @@ function GoalAmountField({ value, onChange }: { value: number; onChange: (next: 
   );
 }
 
-type LoadStatus = 'loading' | 'ready' | 'error';
-
-export default function CarGoalProgress() {
-  const accessToken = useAuthStore((s) => s.accessToken);
-  // Portfolio/Dashboard와 같은 훅·스토어를 그대로 써서 "나의 투자"(portfolio.total_assets)를
-  // 그대로 가져온다 — "현재 투자 금액"은 여기서 직접 입력받지 않고 항상 이 값을 따라간다.
-  useTradingData();
-  const portfolio = useTradingStore((s) => s.portfolio);
+/** 상태/데이터는 useCarGoal()에서 받는다 — Home.tsx가 훅을 한 번만 불러 상단 요약과 이 카드에
+ *  같은 값을 내려준다(각자 따로 fetch하면 두 곳이 어긋날 수 있다). */
+export default function CarGoalProgress(props: UseCarGoalResult) {
+  const {
+    status, saveError, grade, goalAmount, currentAmount, progress, completed, setGrade, setGoalAmount,
+  } = props;
   const reducedMotion = usePrefersReducedMotion();
   const [broken, setBroken] = useState<Record<string, boolean>>({});
-  const [status, setStatus] = useState<LoadStatus>('loading');
-  const [saveError, setSaveError] = useState(false);
   // "변경" 버튼을 눌렀을 때만 등급 선택 카드를 펼친다 — 평소엔 현재 등급 한 줄 요약만 보여
   // 화면이 두 카드로 항상 붐비지 않게 한다. 아직 한 번도 고른 적 없으면(grade=null) 요약할
   // 값 자체가 없으므로 펼친 상태를 강제한다.
@@ -133,89 +123,20 @@ export default function CarGoalProgress() {
   // 않게 한다.
   const [goalEditing, setGoalEditing] = useState(false);
 
-  // grade=null: 서버에 아직 저장된 값이 없다고 "확인된" 상태(계정당 최초 진입) — 로딩 중에는 아직
-  // 모르는 상태이므로 이 값만으로 게이트를 그리지 않고 반드시 status===\'ready\'와 함께 본다.
-  const [grade, setGradeState] = useState<CarGrade | null>(null);
-  const [goalAmount, setGoalAmountState] = useState(DEFAULT_GOAL);
-  const [currentAmount, setCurrentAmountState] = useState(0);
-
-  const requestIdRef = useRef(0);
-
-  useEffect(() => {
-    if (!accessToken) return;
-    const requestId = ++requestIdRef.current;
-    setStatus('loading');
-    getCarGoalApi(accessToken)
-      .then((res) => {
-        if (requestIdRef.current !== requestId) return;
-        setGradeState(res.car_grade);
-        setGoalAmountState(Number(res.goal_amount));
-        setCurrentAmountState(Number(res.current_amount));
-        setStatus('ready');
-      })
-      .catch((error: unknown) => {
-        if (requestIdRef.current !== requestId) return;
-        if (error instanceof ApiError && error.code === 'CAR_GOAL_NOT_SET') {
-          // 계정 최초 진입 — 아직 아무것도 고른 적 없다는 게 "확인된" 상태. 계속 null로 둔다.
-          setGradeState(null);
-          setStatus('ready');
-          return;
-        }
-        setStatus('error');
-      });
-  }, [accessToken]);
-
-  // 목표가 0원이면(입력 중 등) 0%로 취급한다 — 0으로 나누는 상황을 만들지 않는다.
-  const progress = useMemo(
-    () => (goalAmount > 0 ? Math.min(100, Math.max(0, (currentAmount / goalAmount) * 100)) : 0),
-    [currentAmount, goalAmount],
-  );
-  const completed = progress >= 100;
-
   // 등급을 바꿔도 같은 진행률에 대응하는 이미지로 즉시 넘어간다 — 목표/현재 금액은 그대로 유지된다.
   // grade가 아직 null(최초 미선택/로딩 중)이어도 훅은 항상 같은 순서로 호출되어야 하므로 무해한
   // 기본값으로 계산해두고, 아래 렌더에서 필요할 때만 이 이미지 섹션을 보여준다.
   const target = imagePathFor(grade ?? 'INEX', progress);
   const { back, front, frontVisible } = useCrossfadeImage(target, CROSSFADE_MS, reducedMotion);
 
-  /** 등급/금액 중 하나가 바뀔 때마다 세 값을 함께 서버에 저장한다 — upsert가 항상 세 값을 통째로 받는
-   *  구조라, 화면 상태를 먼저 반영(낙관적 업데이트)하고 실패하면 서버 값으로 다시 맞춘다. */
-  const persist = (next: { grade: CarGrade; goalAmount: number; currentAmount: number }) => {
-    if (!accessToken) return;
-    setSaveError(false);
-    const requestId = ++requestIdRef.current;
-    upsertCarGoalApi(
-      { car_grade: next.grade, goal_amount: next.goalAmount, current_amount: next.currentAmount },
-      accessToken,
-    ).catch(() => {
-      if (requestIdRef.current !== requestId) return;
-      setSaveError(true);
-    });
-  };
-
-  const setGrade = (nextGrade: CarGrade) => {
-    setGradeState(nextGrade);
+  const handleGrade = (nextGrade: CarGrade) => {
+    setGrade(nextGrade);
     setPickerOpen(false);
-    persist({ grade: nextGrade, goalAmount, currentAmount });
   };
-  const setGoalAmount = (next: number) => {
-    setGoalAmountState(next);
+  const handleGoalAmount = (next: number) => {
+    setGoalAmount(next);
     setGoalEditing(false);
-    if (grade) persist({ grade, goalAmount: next, currentAmount });
   };
-  const setCurrentAmount = (next: number) => {
-    setCurrentAmountState(next);
-    if (grade) persist({ grade, goalAmount, currentAmount: next });
-  };
-
-  // 계좌가 없거나 아직 포지션이 없으면 total_assets 도 0이다 — 그대로 0으로 둔다(별도 목업 없음).
-  const livePortfolioAmount = portfolio ? Number(portfolio.total_assets) : 0;
-  useEffect(() => {
-    if (status !== 'ready') return;
-    if (livePortfolioAmount === currentAmount) return;
-    setCurrentAmount(livePortfolioAmount);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [livePortfolioAmount, status]);
 
   const markBroken = (src: string) => setBroken((prev) => (prev[src] ? prev : { ...prev, [src]: true }));
   const bothBroken = broken[back] && broken[front];
@@ -241,7 +162,7 @@ export default function CarGoalProgress() {
   return (
     <section className="flex min-h-0 w-full flex-1 flex-col gap-4 rounded-card bg-surface p-6 shadow-elevation-sm">
       {/* Portfolio.tsx의 "나의 포트폴리오" 제목처럼 카드 제목은 항상 상단에 고정한다(shrink-0) —
-          카드 전체를 seros-center로 묶으면 제목이 카드 한가운데로 떠 보여 어색해진다. 늘어난
+          카드 전체를 justify-center로 묶으면 제목이 카드 한가운데로 떠 보여 어색해진다. 늘어난
           세로 공간은 아래 차량/진행률 블록만 flex-1로 받아 그 안에서 중앙 정렬한다. */}
       <div className="flex shrink-0 flex-col gap-0.5">
         <span className="text-[13px] font-semibold text-muted">목표 차량</span>
@@ -290,7 +211,7 @@ export default function CarGoalProgress() {
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => setGrade(g.id)}
+                    onClick={() => handleGrade(g.id)}
                     className={`flex flex-col gap-1 rounded-field p-4 text-left transition-shadow ${
                       active ? 'bg-[#F8FCEE] shadow-[0_0_0_2px_#C6F04D_inset]' : 'bg-canvas shadow-[0_0_0_1px_#E5E9E3_inset]'
                     }`}
@@ -398,7 +319,7 @@ export default function CarGoalProgress() {
             {/* 5. 목표 금액 — 평소엔 "목표: OO원 · 수정" 한 줄만 보이고, "수정"을 눌렀을 때만
                 입력창을 연다(값을 정하면 다시 한 줄로 접힌다). */}
             {goalEditing ? (
-              <GoalAmountField value={goalAmount} onChange={setGoalAmount} />
+              <GoalAmountField value={goalAmount} onChange={handleGoalAmount} />
             ) : (
               <div className="flex items-center justify-between rounded-field bg-canvas px-5 py-4">
                 <div className="flex flex-col gap-1">
