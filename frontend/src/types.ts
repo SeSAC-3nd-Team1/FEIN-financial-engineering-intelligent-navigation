@@ -1,6 +1,10 @@
 /** 라우팅 상태 머신의 화면 키 */
 export type Screen =
   | 'home' | 'login'
+  // 'start-signup': Home "시작하기" 전용 진입 화면 — 이메일을 먼저 받아 SignupStep1으로 prefill해
+  // 넘겨준다(Netflix식 이메일 선입력 패턴). 신규 email verification API/스키마는 추가하지 않고,
+  // 기존 SignupPersonal.email 값만 미리 채워서 기존 회원가입 Flow(signup-1~3)로 그대로 이어간다.
+  | 'start-signup'
   | 'signup-1' | 'signup-2' | 'signup-3'
   | 'risk' | 'risk-result' | 'investor-check'
   | 'strategy-list' | 'strategy' | 'start'

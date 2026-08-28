@@ -5,7 +5,8 @@ import type { Screen } from '../types';
 interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
-  /** "내 투자성향 알아보기"/"무료로 시작하기" — 로그인 화면에 context="home"으로 진입시킨다 */
+  /** "내 투자성향 알아보기" — 로그인 화면에 context="home"으로 진입시킨다. Header의 "시작하기"는
+   *  로그인이 아니라 회원가입 진입 화면(start-signup)으로 보내므로 이 prop을 쓰지 않는다. */
   onRequestLogin: () => void;
 }
 
@@ -27,7 +28,7 @@ export default function Home({ userName, onNavigate, onRequestLogin }: Props) {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '무료로 시작하기', onClick: onRequestLogin }} />
+      <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '시작하기', onClick: () => onNavigate('start-signup') }} />
       {isLoggedIn
         ? <LoggedInHome userName={userName} onNavigate={onNavigate} />
         : <LoggedOutHome onNavigate={onNavigate} onRequestLogin={onRequestLogin} />}
@@ -78,7 +79,7 @@ function LoggedOutHome({ onNavigate, onRequestLogin }: { onNavigate: (s: Screen)
             투자는 어려워도,<br />내 전략은 이해할 수 있게.
           </h1>
           <p className="max-w-[540px] text-xl leading-[34px] text-muted">
-            내 투자성향에 맞는 전략을 찾고,<br />왜 이 전략인지 쉽게 이해할 수 있어요.
+            내 투자성향을 이해하고,<br />다양한 투자전략을 비교해 직접 선택할 수 있어요.
           </p>
           <div className="flex items-center gap-6 pt-3">
             <button onClick={onRequestLogin} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">

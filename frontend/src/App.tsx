@@ -27,6 +27,7 @@ import SignupStep1 from "./pages/SignupStep1";
 import SignupStep2 from "./pages/SignupStep2";
 import SignupStep3 from "./pages/SignupStep3";
 import StartInvesting from "./pages/StartInvesting";
+import StartSignup from "./pages/StartSignup";
 import StockDetail from "./pages/StockDetail";
 import StrategyComingSoon from "./pages/StrategyComingSoon";
 import StrategyDetail from "./pages/StrategyDetail";
@@ -796,6 +797,19 @@ export default function App() {
             setPendingReturnToStrategy(false);
             setPendingRiskProfileAfterLogin(false);
             navigate(s);
+          }}
+        />
+      )}
+
+      {screen === "start-signup" && (
+        <StartSignup
+          onNavigate={navigate}
+          // 이메일만 SignupPersonal에 미리 채우고 기존 signup-1로 넘긴다 — 새 API/스키마 없음.
+          // handlePersonalChange를 그대로 써서 email이 바뀌면 기존 emailVerification 리셋 로직도
+          // 똑같이 적용된다.
+          onContinue={(email) => {
+            handlePersonalChange({ ...personal, email });
+            setScreen("signup-1");
           }}
         />
       )}
