@@ -12,12 +12,7 @@ def test_build_term_rows_uses_existing_required_catalog() -> None:
     assert {row["term_code"] for row in rows} == set(TERM_TITLES)
     assert len(rows) == 7
     assert all(row["version"] == "dev-test" for row in rows)
-    assert next(row for row in rows if row["term_code"] == "AI_PERSONALIZATION")["is_required"] is False
-    assert all(
-        row["is_required"] is True
-        for row in rows
-        if row["term_code"] != "AI_PERSONALIZATION"
-    )
+    assert all(row["is_required"] is True for row in rows)
     assert all(row["effective_at"] == effective_at for row in rows)
     assert all(row["content_reference"].endswith(f"/{row['term_code']}/dev-test") for row in rows)
 
