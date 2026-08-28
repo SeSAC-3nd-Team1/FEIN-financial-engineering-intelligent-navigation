@@ -22,17 +22,16 @@ export interface SignupPersonal {
   name: string;
   birthdate: string;   // YYMMDD 6자리
   email: string;
-  /** [선택] AI 기반 맞춤형 서비스 제공을 위한 개인정보 이용 동의 — 회원가입 가능 여부에는 영향 없음 */
-  aiPersonalizationConsent: boolean;
   agreements: Agreements;
 }
 
-/** 동의 항목 — b·c는 필수(모두 true 여야 이메일 인증 진행 가능), ai는 선택(회원가입 가능 여부와 무관).
- *  휴대폰 SMS/KCB/통신사 본인확인 관련 동의(구 a1~a4)는 더 이상 회원가입에서 요구하지 않아 제거했다. */
+/** 동의 항목 — 둘 다 필수(모두 true 여야 이메일 인증 진행 가능).
+ *  휴대폰 SMS/KCB/통신사 본인확인 관련 동의(구 a1~a4)는 더 이상 회원가입에서 요구하지 않아 제거했다.
+ *  AI 기반 맞춤형 서비스 이용 동의(AI_PERSONALIZATION)는 더 이상 별도 체크박스로 받지 않는다 —
+ *  회원가입 시 항상 동의로 전송한다(App.tsx 참고). */
 export interface Agreements {
   b: boolean;  // 개인정보 수집·이용 동의
-  c: boolean;  // 준회원 이용약관 동의
-  ai: boolean; // [선택] AI 기반 맞춤형 서비스 제공을 위한 개인정보 이용 동의
+  c: boolean;  // 서비스 이용약관 동의
 }
 
 /** Step 03 계정 정보 — email은 Step 01/02에서 이미 입력·인증 완료된 상태라 여기서는 다루지 않는다 */

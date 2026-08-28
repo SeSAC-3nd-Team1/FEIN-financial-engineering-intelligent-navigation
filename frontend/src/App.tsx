@@ -183,8 +183,7 @@ export default function App() {
     name: "",
     birthdate: "",
     email: "",
-    aiPersonalizationConsent: false,
-    agreements: { b: false, c: false, ai: false },
+    agreements: { b: false, c: false },
   });
   /** 회원가입 Step 02(이메일 인증) 진행 상태 — 화면 전환과 무관하게 App.tsx가 들고 있어야
    *  Step 02/03 사이를 오가도(뒤로가기) 인증 완료 상태가 유지된다. email이 바뀌면(Step 01 재수정)
@@ -863,14 +862,18 @@ export default function App() {
             const termCodeByAgreement = {
               b: "B_PRIVACY",
               c: "C_ASSOCIATE_TERMS",
-              ai: "AI_PERSONALIZATION",
             } as const;
-            const agreementByTermCode = Object.fromEntries(
-              Object.entries(termCodeByAgreement).map(([key, code]) => [
-                code,
-                personal.agreements[key as keyof typeof termCodeByAgreement],
-              ]),
-            );
+            const agreementByTermCode: Record<string, boolean> = {
+              ...Object.fromEntries(
+                Object.entries(termCodeByAgreement).map(([key, code]) => [
+                  code,
+                  personal.agreements[key as keyof typeof termCodeByAgreement],
+                ]),
+              ),
+              // AI 개인화 동의는 더 이상 별도 체크박스로 받지 않고 항상 동의로 전송한다 —
+              // RiskProfile의 AI 기반 투자성향 분석이 계속 정상 동작하려면 이 동의가 필요하다.
+              AI_PERSONALIZATION: true,
+            };
             const terms = await signupTermsApi();
             await register({
               user_id: userId,
