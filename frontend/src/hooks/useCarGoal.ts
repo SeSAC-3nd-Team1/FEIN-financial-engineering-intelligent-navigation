@@ -89,6 +89,11 @@ export function useCarGoal() {
     if (grade) persist({ grade, goalAmount, currentAmount: next });
   };
 
+  // Portfolio.tsx의 "나의 투자" 옆 수익률과 같은 값(백엔드가 계산해 둔 계좌 손익률)을 그대로 쓴다.
+  // 계좌가 없으면(portfolio=null) 0%로 둔다 — Portfolio.tsx와 달리 여기선 계좌 없음 상태의
+  // 목업 수익률을 보여줄 이유가 없다(목표 차량 위젯 자체가 실제 투자 진행을 보여주는 용도).
+  const returnPct = portfolio ? Number(portfolio.return_rate) : 0;
+
   // 계좌가 없거나 아직 포지션이 없으면 total_assets 도 0이다 — 그대로 0으로 둔다(별도 목업 없음).
   const livePortfolioAmount = portfolio ? Number(portfolio.total_assets) : 0;
   useEffect(() => {
@@ -99,7 +104,7 @@ export function useCarGoal() {
   }, [livePortfolioAmount, status]);
 
   return {
-    status, saveError, grade, goalAmount, currentAmount, progress, completed, setGrade, setGoalAmount,
+    status, saveError, grade, goalAmount, currentAmount, returnPct, progress, completed, setGrade, setGoalAmount,
   };
 }
 

@@ -79,7 +79,15 @@ function LoggedInHome({ userName }: { userName: string }) {
               </div>
               <div className="flex flex-col items-end gap-0.5">
                 <span className="text-[13px] text-muted">현재 투자 금액</span>
-                <span className="text-xl font-bold tracking-[-0.02em] text-navy">{won(carGoal.currentAmount)}</span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xl font-bold tracking-[-0.02em] text-navy">{won(carGoal.currentAmount)}</span>
+                  {/* Portfolio.tsx "나의 투자"와 같은 방식(return_rate, 상승 text-up/하락 text-down)으로
+                      수익률을 함께 보여준다 — 화면마다 표기가 다르면 같은 계좌 정보를 다르게 읽을 수 있다. */}
+                  <span className={`text-sm font-bold ${carGoal.returnPct >= 0 ? 'text-up' : 'text-down'}`}>
+                    {carGoal.returnPct >= 0 ? '+' : ''}
+                    {carGoal.returnPct.toFixed(1)}%
+                  </span>
+                </div>
               </div>
             </div>
           )}
