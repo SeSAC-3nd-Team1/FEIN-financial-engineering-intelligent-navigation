@@ -5,8 +5,12 @@ import {
   ALL_SCREENS,
   createFeinHistoryState,
   fallbackScreen,
+  hasFeinBackEntry,
   parseFeinHistoryState,
+  pushScreenHistory,
+  replaceScreenHistory,
   SCREEN_ROUTE_POLICIES,
+  type HistoryPort,
 } from "./screenHistory";
 
 const EXPECTED_SCREENS: Screen[] = [
@@ -68,7 +72,9 @@ describe("screen history state", () => {
       strategyId: "momentum",
       stockCode: "005930",
       stockBackTarget: "all-holdings",
-      operationMode: "manual",
+      investmentMode: "manual",
+      loginContext: "strategy",
+      pendingStartAfterLogin: true,
     });
 
     expect(parseFeinHistoryState(state)).toEqual(state);
@@ -90,9 +96,78 @@ describe("screen history state", () => {
         context: {
           stockCode: 5930,
           stockBackTarget: "missing",
-          operationMode: "AUTO",
+          investmentMode: "AUTO",
         },
       }),
     ).toEqual(createFeinHistoryState("stock", 0, {}));
+  });
+});
+
+class FakeHistory implements HistoryPort {
+  state: unknown = null;
+  calls: Array<{ method: "push" | "replace" | "back"; state?: unknown }> = [];
+
+  pushState(data: unknown): void {
+    this.state = data;
+    this.calls.push({ method: "push", state: data });
+  }
+
+  replaceState(data: unknown): void {
+    this.state = data;
+    this.calls.push({ method: "replace", state: data });
+  }
+
+  back(): void {
+    this.calls.push({ method: "back" });
+  }
+}
+
+describe("screen history controller", () => {
+  it("refreshes the current entry before pushing the next screen", () => {
+    const history = new FakeHistory();
+    history.state = createFeinHistoryState("portfolio", 2, {});
+
+    const next = pushScreenHistory(
+      history,
+      "portfolio",
+      { strategyId: "momentum" },
+      "account-setup",
+      { accountSetupMode: "manual" },
+    );
+
+    expect(history.calls.map((call) => call.method)).toEqual([
+      "replace",
+      "push",
+    ]);
+    expect(history.calls[0]?.state).toEqual(
+      createFeinHistoryState("portfolio", 2, { strategyId: "momentum" }),
+    );
+    expect(next).toEqual(
+      createFeinHistoryState("account-setup", 3, {
+        accountSetupMode: "manual",
+      }),
+    );
+    expect(hasFeinBackEntry(history)).toBe(true);
+  });
+
+  it("replaces completion redirects without increasing depth", () => {
+    const history = new FakeHistory();
+    history.state = createFeinHistoryState("account-deposit", 2, {});
+
+    const next = replaceScreenHistory(history, "portfolio", {
+      strategyId: "momentum",
+    });
+
+    expect(history.calls.map((call) => call.method)).toEqual(["replace"]);
+    expect(next).toEqual(
+      createFeinHistoryState("portfolio", 2, { strategyId: "momentum" }),
+    );
+  });
+
+  it("does not report an app back entry for direct entry depth zero", () => {
+    const history = new FakeHistory();
+    history.state = createFeinHistoryState("information", 0, {});
+
+    expect(hasFeinBackEntry(history)).toBe(false);
   });
 });

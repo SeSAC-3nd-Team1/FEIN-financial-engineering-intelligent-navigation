@@ -58,7 +58,12 @@ export interface ScreenHistoryContext {
   selectedTransactionId?: string;
   transactionBackTarget?: Screen;
   rebalanceBackTarget?: Screen;
-  operationMode?: OperationMode;
+  investmentMode?: OperationMode;
+  accountSetupMode?: OperationMode;
+  loginContext?: "header" | "strategy";
+  postDiagnosisTarget?: Screen;
+  pendingStartAfterLogin?: boolean;
+  pendingReturnToStrategy?: boolean;
 }
 
 export interface FeinHistoryState {
@@ -67,6 +72,13 @@ export interface FeinHistoryState {
   screen: Screen;
   depth: number;
   context: ScreenHistoryContext;
+}
+
+export interface HistoryPort {
+  readonly state: unknown;
+  pushState(data: unknown, unused: string): void;
+  replaceState(data: unknown, unused: string): void;
+  back(): void;
 }
 
 export function isScreen(value: unknown): value is Screen {
@@ -94,6 +106,42 @@ export function createFeinHistoryState(
   };
 }
 
+export function pushScreenHistory(
+  history: HistoryPort,
+  currentScreen: Screen,
+  currentContext: ScreenHistoryContext,
+  targetScreen: Screen,
+  targetContext: ScreenHistoryContext,
+): FeinHistoryState {
+  const depth = parseFeinHistoryState(history.state)?.depth ?? 0;
+  history.replaceState(
+    createFeinHistoryState(currentScreen, depth, currentContext),
+    "",
+  );
+  const next = createFeinHistoryState(
+    targetScreen,
+    depth + 1,
+    targetContext,
+  );
+  history.pushState(next, "");
+  return next;
+}
+
+export function replaceScreenHistory(
+  history: HistoryPort,
+  targetScreen: Screen,
+  targetContext: ScreenHistoryContext,
+): FeinHistoryState {
+  const depth = parseFeinHistoryState(history.state)?.depth ?? 0;
+  const next = createFeinHistoryState(targetScreen, depth, targetContext);
+  history.replaceState(next, "");
+  return next;
+}
+
+export function hasFeinBackEntry(history: HistoryPort): boolean {
+  return (parseFeinHistoryState(history.state)?.depth ?? 0) > 0;
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
@@ -112,10 +160,8 @@ export function parseFeinHistoryState(value: unknown): FeinHistoryState | null {
     state.context && typeof state.context === "object"
       ? (state.context as Record<string, unknown>)
       : {};
-  const operationMode =
-    rawContext.operationMode === "auto" || rawContext.operationMode === "manual"
-      ? rawContext.operationMode
-      : undefined;
+  const optionalOperationMode = (mode: unknown): OperationMode | undefined =>
+    mode === "auto" || mode === "manual" ? mode : undefined;
 
   return createFeinHistoryState(
     state.screen,
@@ -132,7 +178,22 @@ export function parseFeinHistoryState(value: unknown): FeinHistoryState | null {
       selectedTransactionId: optionalString(rawContext.selectedTransactionId),
       transactionBackTarget: optionalScreen(rawContext.transactionBackTarget),
       rebalanceBackTarget: optionalScreen(rawContext.rebalanceBackTarget),
-      operationMode,
+      investmentMode: optionalOperationMode(rawContext.investmentMode),
+      accountSetupMode: optionalOperationMode(rawContext.accountSetupMode),
+      loginContext:
+        rawContext.loginContext === "header" ||
+        rawContext.loginContext === "strategy"
+          ? rawContext.loginContext
+          : undefined,
+      postDiagnosisTarget: optionalScreen(rawContext.postDiagnosisTarget),
+      pendingStartAfterLogin:
+        typeof rawContext.pendingStartAfterLogin === "boolean"
+          ? rawContext.pendingStartAfterLogin
+          : undefined,
+      pendingReturnToStrategy:
+        typeof rawContext.pendingReturnToStrategy === "boolean"
+          ? rawContext.pendingReturnToStrategy
+          : undefined,
     },
   );
 }
