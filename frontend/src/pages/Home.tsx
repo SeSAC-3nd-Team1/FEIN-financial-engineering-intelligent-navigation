@@ -63,7 +63,7 @@ function LoggedInHome({ userName }: { userName: string }) {
             <img src="/character-recommend.png" alt="물방개" className="h-24 w-auto shrink-0 object-contain" />
             <div className="flex flex-col gap-1.5">
               <h1 className="text-[26px] font-bold leading-9 tracking-[-0.02em]">
-                {userName}님, 오늘은 무엇을 알아볼까요?
+                {userName}님, 오늘도 목표 차량을 향해 달려볼까요?
               </h1>
               <p className="text-[15px] text-muted">
                 물방개와 함께 투자 전략부터 시장 이야기까지 쉽게 살펴보세요.
