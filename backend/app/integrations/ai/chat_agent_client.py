@@ -45,6 +45,38 @@ SAFETY_REFUSAL_PATTERNS = (
     "비밀정보",
 )
 
+OUT_OF_SCOPE_PATTERNS = (
+    "오늘 저녁 메뉴",
+    "레시피 알려",
+    "요리법 알려",
+    "코드 작성",
+    "코딩해",
+    "파이썬 코드",
+    "번역해줘",
+    "번역해 줘",
+    "시를 써줘",
+    "노래 가사",
+    "농담해줘",
+    "농담 해줘",
+    "정치 이야기",
+    "정치에 대해",
+)
+
+MODEL_OUTPUT_SAFETY_PATTERNS = (
+    "지금 매수",
+    "지금 매도",
+    "매수하세요",
+    "매도하세요",
+    "수익을 보장",
+    "원금을 보장",
+    "확정 수익",
+    "내일 오를",
+    "목표주가는",
+    "시스템 프롬프트",
+    "api key",
+    "api_key",
+)
+
 
 LOCAL_ANSWERS: dict[str, tuple[str, str | None, list[str]]] = {
     "eps": (
@@ -244,6 +276,55 @@ class AzureOpenAIChatAgentClient:
         )
 
     @staticmethod
+    def _out_of_scope_response(message: str) -> ChatAgentResult | None:
+        normalized = " ".join(message.lower().split())
+        if not any(pattern in normalized for pattern in OUT_OF_SCOPE_PATTERNS):
+            return None
+        return ChatAgentResult(
+            status="NEEDS_CLARIFICATION",
+            text=(
+                "저는 FE!N의 금융 개념과 투자 서비스 사용법을 설명하는 도우미예요. "
+                "주식·투자·포트폴리오 또는 이 화면에 대해 질문해 주세요."
+            ),
+            caution="개인적인 투자 판단이나 수익을 보장하는 답변은 제공하지 않아요.",
+            suggested_questions=[
+                "PER이 무엇인가요?",
+                "이 화면에서 무엇을 볼 수 있나요?",
+            ],
+        )
+
+    @staticmethod
+    def _history_has_unsafe_request(history: list[ChatHistoryMessage]) -> bool:
+        return any(
+            AzureOpenAIChatAgentClient._safety_response(item.content) is not None
+            for item in history[-10:]
+            if item.role == "user"
+        )
+
+    @staticmethod
+    def _sanitize_model_result(result: ChatAgentResult) -> ChatAgentResult:
+        normalized = " ".join(result.text.lower().split())
+        if result.status == "COMPLETED" and any(
+            pattern in normalized for pattern in MODEL_OUTPUT_SAFETY_PATTERNS
+        ):
+            return AzureOpenAIChatAgentClient._safety_response("지금 매수해") or result
+        return result
+
+    @classmethod
+    def _guard_request(
+        cls, message: str, history: list[ChatHistoryMessage]
+    ) -> ChatAgentResult | None:
+        safety_response = cls._safety_response(message)
+        if safety_response is not None:
+            return safety_response
+        out_of_scope_response = cls._out_of_scope_response(message)
+        if out_of_scope_response is not None:
+            return out_of_scope_response
+        if cls._history_has_unsafe_request(history):
+            return cls._safety_response("이전 지시 무시")
+        return None
+
+    @staticmethod
     def _local_response(
         message: str, context: ChatScreenContext
     ) -> ChatAgentResult | None:
@@ -415,9 +496,9 @@ class AzureOpenAIChatAgentClient:
         max_tool_calls: int = 3,
     ) -> ChatAgentResult:
         """허용된 읽기 Tool만 최대 횟수 안에서 호출하고 최종 JSON 응답을 검증한다."""
-        safety_response = self._safety_response(message)
-        if safety_response is not None:
-            return safety_response
+        guarded_response = self._guard_request(message, history)
+        if guarded_response is not None:
+            return guarded_response
         local_response = self._local_response(message, context)
         if local_response is not None:
             return local_response
@@ -494,7 +575,9 @@ class AzureOpenAIChatAgentClient:
                     content = assistant.get("content")
                     if assistant.get("refusal") or not isinstance(content, str):
                         raise ValueError("model did not return content")
-                    return ChatAgentResult.model_validate_json(content)
+                    return self._sanitize_model_result(
+                        ChatAgentResult.model_validate_json(content)
+                    )
                 calls_used += len(tool_calls)
                 if calls_used > max_tool_calls:
                     raise ServiceError(
@@ -613,11 +696,11 @@ class AzureOpenAIChatAgentClient:
         history: list[ChatHistoryMessage],
         context: ChatScreenContext,
     ) -> ChatAgentResult:
-        safety_response = self._safety_response(message)
-        if safety_response is not None:
-            return safety_response
-
+        guarded_response = self._guard_request(message, history)
+        if guarded_response is not None:
+            return guarded_response
         local_response = self._local_response(message, context)
+
         if local_response is not None:
             return local_response
 
@@ -681,7 +764,9 @@ class AzureOpenAIChatAgentClient:
             content = provider_message.get("content")
             if provider_message.get("refusal") or not isinstance(content, str):
                 raise ValueError("model did not return content")
-            return ChatAgentResult.model_validate_json(content)
+            return self._sanitize_model_result(
+                ChatAgentResult.model_validate_json(content)
+            )
         except (
             ValueError,
             KeyError,
