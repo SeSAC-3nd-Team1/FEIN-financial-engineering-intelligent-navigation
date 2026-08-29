@@ -642,6 +642,7 @@ jobs:
           wait_for_latest_revision() {
             local app_name="$1"
             local label="$2"
+            local require_running="${3:-false}"
             local latest_revision=""
             local ready_revision=""
             local health_state=""
@@ -655,7 +656,8 @@ jobs:
                 running_state="$(az containerapp revision show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --revision "${latest_revision}" --query properties.runningState --output tsv 2>/dev/null || true)"
                 replicas="$(az containerapp revision show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --revision "${latest_revision}" --query properties.replicas --output tsv 2>/dev/null || true)"
               fi
-              if [[ -n "${latest_revision}" && "${latest_revision}" == "${ready_revision}" && "${health_state}" == "Healthy" && "${running_state}" == "Running" && "${replicas:-0}" -ge 1 ]]; then
+              if [[ -n "${latest_revision}" && "${latest_revision}" == "${ready_revision}" && "${health_state}" == "Healthy" ]] \
+                && [[ "${require_running}" != "true" || ( ( "${running_state}" == "Running" || "${running_state}" == "RunningAtMaxScale" ) && "${replicas:-0}" -ge 1 ) ]]; then
                 echo "${label} ready revision: ${ready_revision}"
                 return 0
               fi
@@ -666,6 +668,6 @@ jobs:
             echo "latest=${latest_revision:-none}, ready=${ready_revision:-none}, health=${health_state:-unknown}, running=${running_state:-unknown}, replicas=${replicas:-0}" >&2
             return 1
           }
-          wait_for_latest_revision "${REDIS_APP_NAME}" "Redis"
+          wait_for_latest_revision "${REDIS_APP_NAME}" "Redis" true
           wait_for_latest_revision "${{ vars.FRONTEND_APP_NAME }}" "Frontend"
-          wait_for_latest_revision "${{ vars.BACKEND_APP_NAME }}" "Backend"
+          wait_for_latest_revision "${{ vars.BACKEND_APP_NAME }}" "Backend" true
