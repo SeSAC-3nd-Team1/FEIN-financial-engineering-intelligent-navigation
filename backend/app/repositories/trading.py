@@ -1,6 +1,7 @@
 """거래 도메인의 SQLAlchemy repository."""
 
 from dataclasses import dataclass
+import calendar
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -308,12 +309,19 @@ class TradingRepository:
     def quarter_end_trade_date(self, year: int, quarter: int):
         start_month = (quarter - 1) * 3 + 1
         start = date(year, start_month, 1)
-        end = date(year, start_month + 2, 1)
-        if end.month == 12:
-            end = date(year, 12, 31)
-        else:
-            end = date(year, start_month + 3, 1)
-            end = end.fromordinal(end.toordinal() - 1)
+        end_month = start_month + 2
+        end = date(year, end_month, calendar.monthrange(year, end_month)[1])
+        # A partially loaded current quarter must never be treated as an
+        # official decision period.
+        if date.today() <= end:
+            return None
+        # For weekday month-ends, require that exact KOSPI date to exist.
+        # Only weekend month-ends use the preceding actual trading date.
+        if end.weekday() < 5:
+            return self.session.scalar(select(MarketIndex.trade_date).where(
+                MarketIndex.market == "KOSPI",
+                MarketIndex.trade_date == end,
+            ).limit(1))
         return self.session.scalar(select(func.max(MarketIndex.trade_date)).where(
             MarketIndex.market == "KOSPI",
             MarketIndex.trade_date >= start,
