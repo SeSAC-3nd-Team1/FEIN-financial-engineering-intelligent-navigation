@@ -304,7 +304,7 @@ class BacktestService:
             | frame["low_price"].gt(frame["close_price"])
         )
         missing_ohlcv = frame[
-            ["volume", "trading_value", "open_price", "high_price", "low_price", "close_price"]
+            ["volume", "open_price", "high_price", "low_price", "close_price"]
         ].isna().any(axis=1)
         frame["is_tradable"] = ~(
             missing_ohlcv
@@ -327,7 +327,9 @@ class BacktestService:
         )
         frame["volume_ratio_20d"] = frame["volume"] / volume_average.replace(0, math.nan)
         frame["history_120d_ready"] = grouped["close_price"].transform(
-            lambda values: values.rolling(120, min_periods=120).count().ge(120)
+            # momentum_120d = close / close.shift(120) - 1 needs the current
+            # observation plus the observation 120 rows earlier.
+            lambda values: values.rolling(121, min_periods=121).count().ge(121)
         )
         frame = apply_stock_risk_filter(frame)
         model = RiskAdjustedMomentumModel()
