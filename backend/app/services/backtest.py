@@ -293,6 +293,11 @@ class BacktestService:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 가격 데이터가 부족합니다.")
         price_matrix = features.pivot(index="trade_date", columns="stock_code", values="point_in_time_adjusted_close").sort_index()
         safe_matrix = features.pivot(index="trade_date", columns="stock_code", values="corporate_action_event_safe").sort_index()
+        # The shared weight helper serializes symbols as strings.  Convert only
+        # the compact pivot column labels, rather than duplicating strings for
+        # every historical feature row.
+        price_matrix.columns = price_matrix.columns.map(str)
+        safe_matrix.columns = safe_matrix.columns.map(str)
         ordered_dates = [pd.Timestamp(day) for day in dates]
         values = [1.0]
         # The initial decision is made at the requested start close; its target
@@ -366,8 +371,9 @@ class BacktestService:
             return pd.DataFrame(columns=V2_FEATURE_COLUMNS)
 
         pieces: list[pd.DataFrame] = []
+        stock_ids: dict[str, int] = {}
         groups = chain((first_group,), point_groups)
-        for _, point_group in groups:
+        for stock_code, point_group in groups:
             stock_points = list(point_group)
             frame = pd.DataFrame([
                 {
@@ -395,7 +401,16 @@ class BacktestService:
                 raise NotFoundError(
                     "BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 입력 데이터가 안전하지 않습니다."
                 ) from exc
-            pieces.append(computed.loc[:, V2_FEATURE_COLUMNS].copy())
+            piece = computed.loc[:, V2_FEATURE_COLUMNS].copy()
+            # Object-backed strings are disproportionately expensive when the
+            # complete multi-year cross-section is concatenated.  Stock codes
+            # are only internal pivot keys here, so use stable int32 ids.
+            stock_id = stock_ids.setdefault(stock_code, len(stock_ids))
+            piece["stock_code"] = stock_id
+            piece["stock_code"] = piece["stock_code"].astype("int32")
+            piece["market_cap"] = pd.to_numeric(piece["market_cap"], errors="coerce")
+            pieces.append(piece)
+            del piece
             del computed, filtered, enriched, frame
             gc.collect()
 
