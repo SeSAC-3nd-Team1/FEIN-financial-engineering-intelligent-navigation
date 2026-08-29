@@ -270,6 +270,11 @@ class RebalancingDecision(Base):
             "idempotency_key",
             name="uq_rebalancing_decisions_account_idempotency",
         ),
+        UniqueConstraint(
+            "account_id",
+            "proposal_key",
+            name="uq_rebalancing_decisions_account_proposal",
+        ),
         CheckConstraint("action IN ('BUY', 'SELL')", name="action_values"),
         CheckConstraint("decision IN ('ACCEPTED', 'HELD')", name="decision_values"),
         Index("ix_rebalancing_decisions_account_created", "account_id", "created_at"),
@@ -294,6 +299,7 @@ class RebalancingDecision(Base):
     recommended_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
     decision: Mapped[str] = mapped_column(String(10), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    proposal_key: Mapped[str] = mapped_column(String(255), nullable=False)
     baseline_snapshot_date: Mapped[date | None] = mapped_column(Date)
     baseline_total_assets: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
     created_at: Mapped[datetime] = mapped_column(
