@@ -17,6 +17,17 @@ concurrency:
 env:
   IMAGE_TAG: ${{ github.sha }}
   REDIS_APP_NAME: ca-redis-fein-vnet
+  KEY_VAULT_NAME: ${{ vars.KEY_VAULT_NAME || 'kv-fein' }}
+  ACS_EMAIL_KV_SECRET: ${{ vars.ACS_EMAIL_KV_SECRET || 'email-service-key' }}
+  KIS_APP_KEY_KV_SECRET: ${{ vars.KIS_APP_KEY_KV_SECRET || 'kis-app-key' }}
+  KIS_APP_SECRET_KV_SECRET: ${{ vars.KIS_APP_SECRET_KV_SECRET || 'kis-app-secret' }}
+  ACS_EMAIL_SENDER_ADDRESS: ${{ vars.ACS_EMAIL_SENDER_ADDRESS || 'DoNotReply@5160acac-2538-427a-8d6c-ff0e9a748e3b.azurecomm.net' }}
+  AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT || 'https://fndr-fein.openai.azure.com/' }}
+  AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${{ vars.AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT }}
+  AZURE_OPENAI_REBALANCING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_REBALANCING_DEPLOYMENT }}
+  AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT }}
+  AZURE_OPENAI_CHATBOT_ENDPOINT: ${{ vars.AZURE_OPENAI_CHATBOT_ENDPOINT || 'https://fein-chatbot.openai.azure.com/' }}
+  AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHATBOT_DEPLOYMENT || 'gpt-5.6-luna' }}
 
 jobs:
   deploy:
@@ -40,7 +51,17 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
-          required=(ACR_NAME AZURE_RESOURCE_GROUP FRONTEND_APP_NAME BACKEND_APP_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID DATABASE_URL)
+          required=(
+            ACR_NAME
+            AZURE_RESOURCE_GROUP
+            FRONTEND_APP_NAME
+            BACKEND_APP_NAME
+            AZURE_CLIENT_ID
+            AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID
+            DATABASE_URL
+            ACS_EMAIL_SENDER_ADDRESS
+          )
           missing=()
           for name in "${required[@]}"; do
             [[ -n "${!name:-}" ]] || missing+=("${name}")
@@ -71,10 +92,10 @@ jobs:
             --query properties.managedEnvironmentId \
             --output tsv)"
 
-          if [[ -z "${environment_id}" ]]; then
+          [[ -n "${environment_id}" ]] || {
             echo "Backend Container App managed environment could not be resolved." >&2
             exit 1
-          fi
+          }
 
           environment_name="${environment_id##*/}"
 
@@ -88,10 +109,10 @@ jobs:
               --query properties.managedEnvironmentId \
               --output tsv)"
 
-            if [[ -z "${redis_environment_id}" ]]; then
+            [[ -n "${redis_environment_id}" ]] || {
               echo "Existing Redis Container App managed environment could not be resolved." >&2
               exit 1
-            fi
+            }
 
             if [[ "${redis_environment_id,,}" != "${environment_id,,}" ]]; then
               echo "Existing Redis Container App is in a different Container Apps Environment." >&2
@@ -100,7 +121,7 @@ jobs:
               exit 1
             fi
 
-            echo "Reusing existing internal Redis Container App in Backend environment: ${REDIS_APP_NAME}"
+            echo "Reusing existing internal Redis Container App: ${REDIS_APP_NAME}"
             az containerapp update \
               --name "${REDIS_APP_NAME}" \
               --resource-group "${RESOURCE_GROUP}" \
@@ -158,70 +179,137 @@ jobs:
 
           echo "url=redis://${REDIS_APP_NAME}:6379/0" >> "${GITHUB_OUTPUT}"
 
-      - name: Validate backend integration configuration
+      - name: Configure core production secrets
         env:
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
-          ACS_EMAIL_CONNECTION_STRING: ${{ secrets.ACS_EMAIL_CONNECTION_STRING }}
-          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
-          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
-          NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
-          NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          AZURE_OPENAI_CHATBOT_API_KEY: ${{ secrets.AZURE_OPENAI_CHATBOT_API_KEY }}
-          ACS_EMAIL_SENDER_ADDRESS: ${{ vars.ACS_EMAIL_SENDER_ADDRESS }}
-          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
-          AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${{ vars.AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT }}
-          AZURE_OPENAI_REBALANCING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_REBALANCING_DEPLOYMENT }}
-          AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT }}
-          AZURE_OPENAI_CHATBOT_ENDPOINT: ${{ vars.AZURE_OPENAI_CHATBOT_ENDPOINT }}
-          AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHATBOT_DEPLOYMENT }}
+          GH_ACS_EMAIL_CONNECTION_STRING: ${{ secrets.ACS_EMAIL_CONNECTION_STRING }}
+          GH_KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          GH_KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
         run: |
           set -euo pipefail
 
-          has_existing_env() {
-            local name="$1"
-            local count
-            count="$(az containerapp show \
+          need_key_vault=false
+          [[ -n "${GH_ACS_EMAIL_CONNECTION_STRING}" ]] || need_key_vault=true
+          [[ -n "${GH_KIS_APP_KEY}" ]] || need_key_vault=true
+          [[ -n "${GH_KIS_APP_SECRET}" ]] || need_key_vault=true
+
+          if [[ "${need_key_vault}" == "true" ]]; then
+            az containerapp identity assign \
               --name "${BACKEND_APP_NAME}" \
               --resource-group "${RESOURCE_GROUP}" \
-              --query "length(properties.template.containers[0].env[?name=='${name}'])" \
+              --system-assigned \
+              --output none
+
+            principal_id="$(az containerapp show \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query identity.principalId \
               --output tsv)"
-            [[ "${count}" != "0" ]]
-          }
+            [[ -n "${principal_id}" ]] || {
+              echo "Backend managed identity principalId could not be resolved." >&2
+              exit 1
+            }
 
-          missing=()
-          required_sensitive=(
-            ACS_EMAIL_CONNECTION_STRING
-            KIS_APP_KEY
-            KIS_APP_SECRET
-            NAVER_API_HUB_CLIENT_ID
-            NAVER_API_HUB_CLIENT_SECRET
-            AZURE_OPENAI_API_KEY
-            AZURE_OPENAI_CHATBOT_API_KEY
-          )
-          required_plain=(
-            ACS_EMAIL_SENDER_ADDRESS
-            AZURE_OPENAI_ENDPOINT
-            AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT
-            AZURE_OPENAI_REBALANCING_DEPLOYMENT
-            AZURE_OPENAI_COMPARISON_DEPLOYMENT
-            AZURE_OPENAI_CHATBOT_ENDPOINT
-            AZURE_OPENAI_CHATBOT_DEPLOYMENT
-          )
+            vault_id="$(az keyvault show \
+              --name "${KEY_VAULT_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query id \
+              --output tsv)"
+            [[ -n "${vault_id}" ]] || {
+              echo "Key Vault ${KEY_VAULT_NAME} could not be resolved." >&2
+              exit 1
+            }
 
-          for name in "${required_sensitive[@]}" "${required_plain[@]}"; do
-            if [[ -z "${!name:-}" ]] && ! has_existing_env "${name}"; then
-              missing+=("${name}")
+            rbac_enabled="$(az keyvault show \
+              --name "${KEY_VAULT_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query properties.enableRbacAuthorization \
+              --output tsv)"
+
+            if [[ "${rbac_enabled,,}" == "true" ]]; then
+              role_count="$(az role assignment list \
+                --assignee-object-id "${principal_id}" \
+                --scope "${vault_id}" \
+                --role "Key Vault Secrets User" \
+                --query 'length(@)' \
+                --output tsv 2>/dev/null || echo 0)"
+              if [[ "${role_count}" == "0" ]]; then
+                if ! az role assignment create \
+                  --assignee-object-id "${principal_id}" \
+                  --assignee-principal-type ServicePrincipal \
+                  --role "Key Vault Secrets User" \
+                  --scope "${vault_id}" \
+                  --output none; then
+                  echo "Failed to grant Backend managed identity Key Vault Secrets User on ${KEY_VAULT_NAME}." >&2
+                  echo "The deployment identity needs permission to create this role assignment, or the role must be assigned once in Azure." >&2
+                  exit 1
+                fi
+              fi
+            else
+              if ! az keyvault set-policy \
+                --name "${KEY_VAULT_NAME}" \
+                --resource-group "${RESOURCE_GROUP}" \
+                --object-id "${principal_id}" \
+                --secret-permissions get list \
+                --output none; then
+                echo "Failed to grant Backend managed identity Key Vault secret access policy." >&2
+                exit 1
+              fi
             fi
+          fi
+
+          core_secret_args=()
+          if [[ -n "${GH_ACS_EMAIL_CONNECTION_STRING}" ]]; then
+            core_secret_args+=("acs-email=${GH_ACS_EMAIL_CONNECTION_STRING}")
+          else
+            core_secret_args+=("acs-email=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${ACS_EMAIL_KV_SECRET},identityref:system")
+          fi
+
+          if [[ -n "${GH_KIS_APP_KEY}" ]]; then
+            core_secret_args+=("kis-key=${GH_KIS_APP_KEY}")
+          else
+            core_secret_args+=("kis-key=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${KIS_APP_KEY_KV_SECRET},identityref:system")
+          fi
+
+          if [[ -n "${GH_KIS_APP_SECRET}" ]]; then
+            core_secret_args+=("kis-secret=${GH_KIS_APP_SECRET}")
+          else
+            core_secret_args+=("kis-secret=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${KIS_APP_SECRET_KV_SECRET},identityref:system")
+          fi
+
+          az containerapp secret set \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --secrets "${core_secret_args[@]}" \
+            --output none
+
+          echo "Core production secret references configured without exposing secret values."
+
+      - name: Validate core backend integration configuration
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+        run: |
+          set -euo pipefail
+          required_app_secrets=(acs-email kis-key kis-secret)
+          missing=()
+          for secret_name in "${required_app_secrets[@]}"; do
+            count="$(az containerapp secret list \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query "length([?name=='${secret_name}'])" \
+              --output tsv)"
+            [[ "${count}" != "0" ]] || missing+=("${secret_name}")
           done
 
           if (( ${#missing[@]} > 0 )); then
-            printf 'Missing in both GitHub production config and current Azure Container App: %s\n' "${missing[*]}" >&2
+            printf 'Missing core Container App secrets: %s\n' "${missing[*]}" >&2
             exit 1
           fi
 
-          echo "Backend integration configuration can be resolved from GitHub production config and/or the existing Azure Container App."
+          echo "Core backend integrations are configured: ACS Email, KIS, Redis, PostgreSQL."
+          echo "NAVER news and Azure OpenAI features are optional at deployment time and are enabled only when their credentials are configured."
 
       - name: Login to Azure Container Registry
         run: az acr login --name "${{ vars.ACR_NAME }}"
@@ -274,10 +362,13 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --query properties.configuration.ingress.fqdn \
             --output tsv)"
-          [[ -n "${frontend_fqdn}" ]] || { echo "Frontend Container App ingress FQDN is missing." >&2; exit 1; }
+          [[ -n "${frontend_fqdn}" ]] || {
+            echo "Frontend Container App ingress FQDN is missing." >&2
+            exit 1
+          }
           echo "origin=https://${frontend_fqdn}" >> "${GITHUB_OUTPUT}"
 
-      - name: Deploy backend with bootstrapped production configuration
+      - name: Deploy backend with production configuration
         env:
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
@@ -285,21 +376,11 @@ jobs:
           PRODUCTION_REDIS_URL: ${{ steps.redis.outputs.url }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ACS_EMAIL_CONNECTION_STRING: ${{ secrets.ACS_EMAIL_CONNECTION_STRING }}
           EMAIL_OTP_SECRET: ${{ secrets.EMAIL_OTP_SECRET }}
-          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
-          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
           NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
           NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_CHATBOT_API_KEY: ${{ secrets.AZURE_OPENAI_CHATBOT_API_KEY }}
-          ACS_EMAIL_SENDER_ADDRESS: ${{ vars.ACS_EMAIL_SENDER_ADDRESS }}
-          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
-          AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${{ vars.AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT }}
-          AZURE_OPENAI_REBALANCING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_REBALANCING_DEPLOYMENT }}
-          AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT }}
-          AZURE_OPENAI_CHATBOT_ENDPOINT: ${{ vars.AZURE_OPENAI_CHATBOT_ENDPOINT }}
-          AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHATBOT_DEPLOYMENT }}
         run: |
           set -euo pipefail
 
@@ -320,6 +401,10 @@ jobs:
             REDIS_URL="${PRODUCTION_REDIS_URL}"
             ACCESS_TOKEN_MINUTES=60
             CORS_ORIGINS="${FRONTEND_ORIGIN}"
+            ACS_EMAIL_CONNECTION_STRING=secretref:acs-email
+            ACS_EMAIL_SENDER_ADDRESS="${ACS_EMAIL_SENDER_ADDRESS}"
+            KIS_APP_KEY=secretref:kis-key
+            KIS_APP_SECRET=secretref:kis-secret
             EMAIL_OTP_TTL_SECONDS=300
             EMAIL_OTP_MAX_ATTEMPTS=5
             EMAIL_OTP_RESEND_SECONDS=60
@@ -381,13 +466,10 @@ jobs:
           }
 
           set_secret_env DATABASE_URL database-url "${DATABASE_URL}"
-          set_secret_env ACS_EMAIL_CONNECTION_STRING acs-email-connection-string "${ACS_EMAIL_CONNECTION_STRING}"
-          set_secret_env KIS_APP_KEY kis-app-key "${KIS_APP_KEY}"
-          set_secret_env KIS_APP_SECRET kis-app-secret "${KIS_APP_SECRET}"
-          set_secret_env NAVER_API_HUB_CLIENT_ID naver-api-hub-client-id "${NAVER_API_HUB_CLIENT_ID}"
-          set_secret_env NAVER_API_HUB_CLIENT_SECRET naver-api-hub-client-secret "${NAVER_API_HUB_CLIENT_SECRET}"
-          set_secret_env AZURE_OPENAI_API_KEY azure-openai-api-key "${AZURE_OPENAI_API_KEY}"
-          set_secret_env AZURE_OPENAI_CHATBOT_API_KEY azure-openai-chatbot-api-key "${AZURE_OPENAI_CHATBOT_API_KEY}"
+          set_secret_env NAVER_API_HUB_CLIENT_ID naver-id "${NAVER_API_HUB_CLIENT_ID}"
+          set_secret_env NAVER_API_HUB_CLIENT_SECRET naver-secret "${NAVER_API_HUB_CLIENT_SECRET}"
+          set_secret_env AZURE_OPENAI_API_KEY aoai-key "${AZURE_OPENAI_API_KEY}"
+          set_secret_env AZURE_OPENAI_CHATBOT_API_KEY aoai-chat-key "${AZURE_OPENAI_CHATBOT_API_KEY}"
 
           if [[ -n "${JWT_SECRET}" ]]; then
             set_secret_env JWT_SECRET jwt-secret "${JWT_SECRET}"
@@ -403,7 +485,6 @@ jobs:
             set_secret_env EMAIL_OTP_SECRET email-otp-secret "${generated_otp}"
           fi
 
-          set_plain_env ACS_EMAIL_SENDER_ADDRESS "${ACS_EMAIL_SENDER_ADDRESS}"
           set_plain_env AZURE_OPENAI_ENDPOINT "${AZURE_OPENAI_ENDPOINT}"
           set_plain_env AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT "${AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT}"
           set_plain_env AZURE_OPENAI_REBALANCING_DEPLOYMENT "${AZURE_OPENAI_REBALANCING_DEPLOYMENT}"
