@@ -45,6 +45,8 @@ AZURE_CLI_PYTHON = resolve_windows_azure_cli_python()
 
 
 def windows_az(*args: str, capture: bool = False, check: bool = True) -> str:
+    # Pass every argument directly to the bundled Python runtime. This avoids
+    # cmd.exe parsing entirely, so secret values are not interpreted as shell syntax.
     command = [str(AZURE_CLI_PYTHON), "-IBm", "azure.cli", *args]
     completed = subprocess.run(
         command,
