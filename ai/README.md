@@ -218,3 +218,15 @@ docker compose down
 ```
 
 `docker compose down`은 컨테이너를 제거하지만 PostgreSQL과 Redis의 named volume 데이터는 유지합니다.
+
+## Risk-adjusted Momentum v2
+
+기존 `price-momentum-v1`과 별도로 6개월/12개월 skip-1M, 3년 주간 변동성 조정,
+cross-sectional z-score, 시가총액×점수 비중 및 5% cap을 적용한
+`risk-adjusted-momentum-v2`를 제공한다. Azure 원천 종가는 수정주가가 아니므로
+검증 가능한 split은 `listed_shares` 비율로 point-in-time 조정하고 설명할 수 없는 이벤트는
+fail-closed하며, 적절한 단기
+무위험금리가 없는 현재 macro 계약에서는 중립 조정을 사용한다.
+
+상세 방법론, 별도 artifact 생성 명령, 분기 v1/v2/KOSPI 백테스트 명령은
+[`docs/RISK_ADJUSTED_MOMENTUM_V2.md`](docs/RISK_ADJUSTED_MOMENTUM_V2.md)를 참조한다.
