@@ -1069,11 +1069,12 @@ export default function App() {
           // 로그인을 거치지 않고 곧장 start-signup으로 보내므로 여기서 다룰 필요가 없다.
           onLogin={async () => {
             if (pendingStartAfterLogin) {
-              setPendingStartAfterLogin(false);
               await proceedToStartInvesting("replace", {
                 pendingStartAfterLogin: false,
                 pendingReturnToStrategy: false,
               });
+              // 후속 hydration/navigation까지 성공한 뒤에만 원래 투자 시작 intent를 소비한다.
+              setPendingStartAfterLogin(false);
               return;
             }
             if (pendingReturnToStrategy) {
