@@ -189,10 +189,46 @@ jobs:
         run: |
           set -euo pipefail
 
+          has_app_secret() {
+            local secret_name="$1"
+            local count
+            count="$(az containerapp secret list \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query "length([?name=='${secret_name}'])" \
+              --output tsv)"
+            [[ "${count}" != "0" ]]
+          }
+
           need_key_vault=false
-          [[ -n "${GH_ACS_EMAIL_CONNECTION_STRING}" ]] || need_key_vault=true
-          [[ -n "${GH_KIS_APP_KEY}" ]] || need_key_vault=true
-          [[ -n "${GH_KIS_APP_SECRET}" ]] || need_key_vault=true
+          core_secret_args=()
+
+          if [[ -n "${GH_ACS_EMAIL_CONNECTION_STRING}" ]]; then
+            core_secret_args+=("acs-email=${GH_ACS_EMAIL_CONNECTION_STRING}")
+          elif has_app_secret acs-email; then
+            echo "Reusing existing Container App secret: acs-email"
+          else
+            need_key_vault=true
+            core_secret_args+=("acs-email=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${ACS_EMAIL_KV_SECRET},identityref:system")
+          fi
+
+          if [[ -n "${GH_KIS_APP_KEY}" ]]; then
+            core_secret_args+=("kis-key=${GH_KIS_APP_KEY}")
+          elif has_app_secret kis-key; then
+            echo "Reusing existing Container App secret: kis-key"
+          else
+            need_key_vault=true
+            core_secret_args+=("kis-key=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${KIS_APP_KEY_KV_SECRET},identityref:system")
+          fi
+
+          if [[ -n "${GH_KIS_APP_SECRET}" ]]; then
+            core_secret_args+=("kis-secret=${GH_KIS_APP_SECRET}")
+          elif has_app_secret kis-secret; then
+            echo "Reusing existing Container App secret: kis-secret"
+          else
+            need_key_vault=true
+            core_secret_args+=("kis-secret=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${KIS_APP_SECRET_KV_SECRET},identityref:system")
+          fi
 
           if [[ "${need_key_vault}" == "true" ]]; then
             az containerapp identity assign \
@@ -211,11 +247,15 @@ jobs:
               exit 1
             }
 
-            vault_id="$(az keyvault show \
+            if ! vault_id="$(az keyvault show \
               --name "${KEY_VAULT_NAME}" \
               --resource-group "${RESOURCE_GROUP}" \
               --query id \
-              --output tsv)"
+              --output tsv 2>/dev/null)"; then
+              echo "Required core Container App secret is missing and the deployment identity cannot read Key Vault ${KEY_VAULT_NAME}." >&2
+              echo "Run the one-time production Key Vault bootstrap from an authorized private-network operator environment, then retry deployment." >&2
+              exit 1
+            fi
             [[ -n "${vault_id}" ]] || {
               echo "Key Vault ${KEY_VAULT_NAME} could not be resolved." >&2
               exit 1
@@ -259,32 +299,16 @@ jobs:
             fi
           fi
 
-          core_secret_args=()
-          if [[ -n "${GH_ACS_EMAIL_CONNECTION_STRING}" ]]; then
-            core_secret_args+=("acs-email=${GH_ACS_EMAIL_CONNECTION_STRING}")
+          if (( ${#core_secret_args[@]} > 0 )); then
+            az containerapp secret set \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --secrets "${core_secret_args[@]}" \
+              --output none
+            echo "Updated required core Container App secrets without exposing secret values."
           else
-            core_secret_args+=("acs-email=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${ACS_EMAIL_KV_SECRET},identityref:system")
+            echo "All required core Container App secrets already exist; Key Vault management access is not required for this deployment."
           fi
-
-          if [[ -n "${GH_KIS_APP_KEY}" ]]; then
-            core_secret_args+=("kis-key=${GH_KIS_APP_KEY}")
-          else
-            core_secret_args+=("kis-key=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${KIS_APP_KEY_KV_SECRET},identityref:system")
-          fi
-
-          if [[ -n "${GH_KIS_APP_SECRET}" ]]; then
-            core_secret_args+=("kis-secret=${GH_KIS_APP_SECRET}")
-          else
-            core_secret_args+=("kis-secret=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${KIS_APP_SECRET_KV_SECRET},identityref:system")
-          fi
-
-          az containerapp secret set \
-            --name "${BACKEND_APP_NAME}" \
-            --resource-group "${RESOURCE_GROUP}" \
-            --secrets "${core_secret_args[@]}" \
-            --output none
-
-          echo "Core production secret references configured without exposing secret values."
 
       - name: Validate core backend integration configuration
         env:
