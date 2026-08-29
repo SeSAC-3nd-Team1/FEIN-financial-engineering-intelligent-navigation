@@ -446,7 +446,12 @@ def test_client_allows_guarantee_questions(question: str) -> None:
 
 
 def test_client_refuses_trade_advice_with_how_to_words() -> None:
-    for question in ("삼성전자를 어떻게든 사세요", "삼성전자를 어디서든 사세요"):
+    for question in (
+        "삼성전자를 어떻게든 사세요",
+        "삼성전자를 어디서든 사세요",
+        "주식을 어떻게든 사세요",
+        "주식은 어떻게 매수하나요 그리고 삼성전자를 사세요",
+    ):
         client = make_client(lambda _: pytest.fail("provider must not be called"))
         try:
             result = asyncio.run(
