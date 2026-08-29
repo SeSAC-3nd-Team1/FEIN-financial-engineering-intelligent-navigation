@@ -2,6 +2,7 @@
 
 import copy
 import json
+import re
 import time
 from typing import Any, Protocol
 from uuid import UUID
@@ -23,58 +24,86 @@ from app.services.chat_tools import (
 )
 
 # Requests that must be refused before any provider call.
+# Whitespace and punctuation variants are normalized before matching. Keep these
+# patterns broad enough to cover polite/direct forms without using a full LLM
+# classifier in the request path.
 SAFETY_REFUSAL_PATTERNS = (
-    "무조건 수익",
-    "수익 보장",
-    "원금 보장",
-    "지금 사",
-    "지금 매수",
-    "지금 팔",
-    "지금 매도",
+    "무조건수익",
+    "수익보장",
+    "원금보장",
+    "손실없",
+    "확정수익",
+    "지금사",
+    "지금매수",
+    "지금팔",
+    "지금매도",
     "매수해",
     "매도해",
-    "몇 퍼센트 오를",
+    "매수하세요",
+    "매도하세요",
+    "매수권",
+    "매도권",
+    "매수를권",
+    "매도를권",
+    "매수추천",
+    "매도추천",
+    "몇퍼센트오를",
+    "내일오를",
     "목표주가",
-    "이전 지시 무시",
-    "앞선 지시 무시",
-    "시스템 프롬프트",
-    "시스템 프롬프트 공개",
-    "내부 정책",
-    "api key",
-    "api_key",
+    "목표가격",
+    "이전지시무시",
+    "앞선지시무시",
+    "시스템프롬프트",
+    "내부정책",
+    "apikey",
     "비밀정보",
 )
 
 OUT_OF_SCOPE_PATTERNS = (
-    "오늘 저녁 메뉴",
-    "레시피 알려",
-    "요리법 알려",
-    "코드 작성",
+    "오늘저녁메뉴",
+    "저녁메뉴추천",
+    "레시피알려",
+    "요리법알려",
+    "코드작성",
     "코딩해",
-    "파이썬 코드",
+    "파이썬코드",
+    "파이썬으로코드",
     "번역해줘",
-    "번역해 줘",
-    "시를 써줘",
-    "노래 가사",
+    "시를써줘",
+    "노래가사",
     "농담해줘",
-    "농담 해줘",
-    "정치 이야기",
-    "정치에 대해",
+    "정치이야기",
+    "정치얘기",
+    "정치에대해",
 )
 
-MODEL_OUTPUT_SAFETY_PATTERNS = (
-    "지금 매수",
-    "지금 매도",
-    "매수하세요",
-    "매도하세요",
-    "수익을 보장",
-    "원금을 보장",
-    "확정 수익",
-    "내일 오를",
-    "목표주가는",
-    "시스템 프롬프트",
-    "api key",
-    "api_key",
+FINANCE_SCOPE_TERMS = (
+    "금융",
+    "주식",
+    "투자",
+    "포트폴리오",
+    "종목",
+    "주가",
+    "수익률",
+    "etf",
+    "per",
+    "pbr",
+    "roe",
+    "매수",
+    "매도",
+    "계좌",
+    "전략",
+    "시장",
+)
+
+MODEL_OUTPUT_SAFETY_PATTERNS = SAFETY_REFUSAL_PATTERNS
+POLICY_PATTERNS = (
+    "이전지시무시",
+    "앞선지시무시",
+    "시스템프롬프트",
+    "내부정책",
+    "apikey",
+    "비밀정보",
 )
 
 
@@ -247,22 +276,15 @@ class AzureOpenAIChatAgentClient:
         self.client = client
 
     @staticmethod
-    def _safety_response(message: str) -> ChatAgentResult | None:
-        normalized = " ".join(message.lower().split())
+    def _normalize_for_safety(value: str) -> str:
+        return re.sub(r"[^0-9a-z가-힣]+", "", value.lower())
+
+    @classmethod
+    def _safety_response(cls, message: str) -> ChatAgentResult | None:
+        normalized = cls._normalize_for_safety(message)
         if not any(pattern in normalized for pattern in SAFETY_REFUSAL_PATTERNS):
             return None
-        is_policy_request = any(
-            pattern in normalized
-            for pattern in (
-                "이전 지시 무시",
-                "앞선 지시 무시",
-                "시스템 프롬프트",
-                "내부 정책",
-                "api key",
-                "api_key",
-                "비밀정보",
-            )
-        )
+        is_policy_request = any(pattern in normalized for pattern in POLICY_PATTERNS)
         return ChatAgentResult(
             status="REFUSED",
             text=(
@@ -275,9 +297,11 @@ class AzureOpenAIChatAgentClient:
             suggested_questions=["PER과 PBR을 비교해줘", "분산투자 원칙을 알려줘"],
         )
 
-    @staticmethod
-    def _out_of_scope_response(message: str) -> ChatAgentResult | None:
-        normalized = " ".join(message.lower().split())
+    @classmethod
+    def _out_of_scope_response(cls, message: str) -> ChatAgentResult | None:
+        normalized = cls._normalize_for_safety(message)
+        if any(term in normalized for term in FINANCE_SCOPE_TERMS):
+            return None
         if not any(pattern in normalized for pattern in OUT_OF_SCOPE_PATTERNS):
             return None
         return ChatAgentResult(
@@ -293,21 +317,44 @@ class AzureOpenAIChatAgentClient:
             ],
         )
 
-    @staticmethod
-    def _history_has_unsafe_request(history: list[ChatHistoryMessage]) -> bool:
-        return any(
-            AzureOpenAIChatAgentClient._safety_response(item.content) is not None
+    @classmethod
+    def _sanitize_history(
+        cls, history: list[ChatHistoryMessage]
+    ) -> list[ChatHistoryMessage]:
+        """Drop unsafe user turns instead of poisoning all later questions."""
+        return [
+            item
             for item in history[-10:]
-            if item.role == "user"
-        )
+            if not (item.role == "user" and cls._safety_response(item.content))
+        ]
 
-    @staticmethod
-    def _sanitize_model_result(result: ChatAgentResult) -> ChatAgentResult:
-        normalized = " ".join(result.text.lower().split())
-        if result.status == "COMPLETED" and any(
-            pattern in normalized for pattern in MODEL_OUTPUT_SAFETY_PATTERNS
-        ):
-            return AzureOpenAIChatAgentClient._safety_response("지금 매수해") or result
+    @classmethod
+    def _sanitize_model_result(cls, result: ChatAgentResult) -> ChatAgentResult:
+        exposed = " ".join(
+            part
+            for part in (
+                result.text,
+                result.caution or "",
+                *result.suggested_questions,
+            )
+            if part
+        )
+        normalized = cls._normalize_for_safety(exposed)
+        matched_pattern = next(
+            (
+                pattern
+                for pattern in MODEL_OUTPUT_SAFETY_PATTERNS
+                if pattern in normalized
+            ),
+            None,
+        )
+        if matched_pattern is not None:
+            refusal = (
+                "시스템 프롬프트 공개"
+                if matched_pattern in POLICY_PATTERNS
+                else "지금 매수해"
+            )
+            return cls._safety_response(refusal) or result
         return result
 
     @classmethod
@@ -320,8 +367,6 @@ class AzureOpenAIChatAgentClient:
         out_of_scope_response = cls._out_of_scope_response(message)
         if out_of_scope_response is not None:
             return out_of_scope_response
-        if cls._history_has_unsafe_request(history):
-            return cls._safety_response("이전 지시 무시")
         return None
 
     @staticmethod
@@ -392,7 +437,7 @@ class AzureOpenAIChatAgentClient:
                 ),
             }
         ]
-        messages.extend(item.model_dump() for item in history[-10:])
+        messages.extend(item.model_dump() for item in self._sanitize_history(history))
         messages.append({"role": "user", "content": message})
         body = {
             "messages": messages,
