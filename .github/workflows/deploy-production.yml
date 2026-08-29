@@ -16,6 +16,7 @@ concurrency:
 
 env:
   IMAGE_TAG: ${{ github.sha }}
+  REDIS_APP_NAME: ca-redis-fein-vnet
 
 jobs:
   deploy:
@@ -56,11 +57,111 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Ensure internal Redis Container App
+        id: redis
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+        run: |
+          set -euo pipefail
+
+          environment_id="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query properties.managedEnvironmentId \
+            --output tsv)"
+
+          if [[ -z "${environment_id}" ]]; then
+            echo "Backend Container App managed environment could not be resolved." >&2
+            exit 1
+          fi
+
+          environment_name="${environment_id##*/}"
+
+          if az containerapp show \
+            --name "${REDIS_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --output none 2>/dev/null; then
+            redis_environment_id="$(az containerapp show \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query properties.managedEnvironmentId \
+              --output tsv)"
+
+            if [[ -z "${redis_environment_id}" ]]; then
+              echo "Existing Redis Container App managed environment could not be resolved." >&2
+              exit 1
+            fi
+
+            if [[ "${redis_environment_id,,}" != "${environment_id,,}" ]]; then
+              echo "Existing Redis Container App is in a different Container Apps Environment." >&2
+              echo "Backend environment: ${environment_id}" >&2
+              echo "Redis environment: ${redis_environment_id}" >&2
+              exit 1
+            fi
+
+            echo "Reusing existing internal Redis Container App in Backend environment: ${REDIS_APP_NAME}"
+            az containerapp update \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --min-replicas 1 \
+              --max-replicas 1 \
+              --output none
+          else
+            echo "Creating internal Redis Container App: ${REDIS_APP_NAME}"
+            az containerapp create \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --environment "${environment_name}" \
+              --image redis:7-alpine \
+              --cpu 0.25 \
+              --memory 0.5Gi \
+              --min-replicas 1 \
+              --max-replicas 1 \
+              --output none
+          fi
+
+          az containerapp ingress enable \
+            --name "${REDIS_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --type internal \
+            --target-port 6379 \
+            --exposed-port 6379 \
+            --transport tcp \
+            --output none
+
+          latest_revision=""
+          ready_revision=""
+          for attempt in $(seq 1 30); do
+            latest_revision="$(az containerapp show \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query properties.latestRevisionName \
+              --output tsv)"
+            ready_revision="$(az containerapp show \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query properties.latestReadyRevisionName \
+              --output tsv)"
+
+            if [[ -n "${latest_revision}" && "${latest_revision}" == "${ready_revision}" ]]; then
+              echo "Redis ready revision: ${ready_revision}"
+              break
+            fi
+
+            if [[ "${attempt}" == "30" ]]; then
+              echo "Redis latest revision did not become ready." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          echo "url=redis://${REDIS_APP_NAME}:6379/0" >> "${GITHUB_OUTPUT}"
+
       - name: Validate backend integration configuration
         env:
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
-          REDIS_URL: ${{ secrets.REDIS_URL }}
           ACS_EMAIL_CONNECTION_STRING: ${{ secrets.ACS_EMAIL_CONNECTION_STRING }}
           KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
@@ -91,7 +192,6 @@ jobs:
 
           missing=()
           required_sensitive=(
-            REDIS_URL
             ACS_EMAIL_CONNECTION_STRING
             KIS_APP_KEY
             KIS_APP_SECRET
@@ -174,8 +274,8 @@ jobs:
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
           FRONTEND_ORIGIN: ${{ steps.frontend-origin.outputs.origin }}
+          PRODUCTION_REDIS_URL: ${{ steps.redis.outputs.url }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          REDIS_URL: ${{ secrets.REDIS_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ACS_EMAIL_CONNECTION_STRING: ${{ secrets.ACS_EMAIL_CONNECTION_STRING }}
           EMAIL_OTP_SECRET: ${{ secrets.EMAIL_OTP_SECRET }}
@@ -209,6 +309,7 @@ jobs:
           secret_args=()
           env_args=(
             DB_CONNECT_TIMEOUT_SECONDS=5
+            REDIS_URL="${PRODUCTION_REDIS_URL}"
             ACCESS_TOKEN_MINUTES=60
             CORS_ORIGINS="${FRONTEND_ORIGIN}"
             EMAIL_OTP_TTL_SECONDS=300
@@ -271,7 +372,6 @@ jobs:
           }
 
           set_secret_env DATABASE_URL database-url "${DATABASE_URL}"
-          set_secret_env REDIS_URL redis-url "${REDIS_URL}"
           set_secret_env ACS_EMAIL_CONNECTION_STRING acs-email-connection-string "${ACS_EMAIL_CONNECTION_STRING}"
           set_secret_env KIS_APP_KEY kis-app-key "${KIS_APP_KEY}"
           set_secret_env KIS_APP_SECRET kis-app-secret "${KIS_APP_SECRET}"
@@ -339,5 +439,6 @@ jobs:
             echo "latest=${latest_revision:-none}, ready=${ready_revision:-none}" >&2
             return 1
           }
+          wait_for_latest_revision "${REDIS_APP_NAME}" "Redis"
           wait_for_latest_revision "${{ vars.FRONTEND_APP_NAME }}" "Frontend"
           wait_for_latest_revision "${{ vars.BACKEND_APP_NAME }}" "Backend"
