@@ -7,7 +7,7 @@ import type { Screen } from '../types';
 export type LoginContext = 'header' | 'strategy';
 
 interface Props {
-  onLogin: () => void;
+  onLogin: () => void | Promise<void>;
   onSignup: () => void;
   onHome: () => void;
   onNavigate: (s: Screen) => void;
@@ -43,11 +43,21 @@ export default function Login({ onLogin, onSignup, onHome, context }: Props) {
     setErrorMessage('');
     try {
       await login(id.trim(), pw);
-      setInvalid(false);
-      onLogin();
     } catch (error) {
       setInvalid(true);
       setErrorMessage(error instanceof Error ? error.message : '로그인 요청을 처리하지 못했습니다.');
+      setSubmitting(false);
+      return;
+    }
+
+    setInvalid(false);
+    try {
+      await onLogin();
+    } catch (error) {
+      // 인증은 이미 성공했으므로 아이디/비밀번호 입력을 invalid 상태로 만들지 않는다.
+      // 후속 투자 준비 실패는 같은 화면에서 재시도할 수 있도록 안내만 남긴다.
+      setInvalid(false);
+      setErrorMessage(error instanceof Error ? error.message : '투자 준비 정보를 불러오지 못했습니다.');
     } finally {
       setSubmitting(false);
     }
@@ -96,7 +106,7 @@ export default function Login({ onLogin, onSignup, onHome, context }: Props) {
               {showPw ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
-          {invalid && (
+          {errorMessage && (
             <span className="text-sm text-up">
               {errorMessage || '아이디 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요.'}
             </span>
