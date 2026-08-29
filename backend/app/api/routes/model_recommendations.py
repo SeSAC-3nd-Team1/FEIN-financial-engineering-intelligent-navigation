@@ -54,6 +54,16 @@ def apply_latest_model_recommendation(
     return service.apply(user.id, payload.account_id)
 
 
+@router.post("/latest/rebalance", response_model=ModelRecommendationApplyResponse)
+def rebalance_latest_model_recommendation(
+    payload: ModelRecommendationApplyRequest,
+    user: User = Depends(current_user),
+    service: MomentumInvestmentService = Depends(get_momentum_investment_service),
+) -> ModelRecommendationApplyResponse:
+    """Execute only a safe v2 quarterly target against an existing AUTO account."""
+    return service.rebalance(user.id, payload.account_id)
+
+
 @router.get(
     "/loss-avoidance/latest",
     response_model=ModelRecommendationSnapshotResponse,

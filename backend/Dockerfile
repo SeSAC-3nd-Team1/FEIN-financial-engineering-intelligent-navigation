@@ -6,10 +6,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt ./
+COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend /app
+# Do not copy the v2 formula into Backend: expose the AI package as the shared
+# source of truth for service backtests as well.
+COPY ai /ai
+COPY shared /workspace/shared
+COPY .deploy-artifacts /model-artifacts
+ENV PYTHONPATH=/app:/ai:/workspace
 
 EXPOSE 8000
 

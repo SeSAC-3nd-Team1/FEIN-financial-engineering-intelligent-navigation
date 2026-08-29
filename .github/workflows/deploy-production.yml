@@ -226,6 +226,23 @@ jobs:
       - name: Login to Azure Container Registry
         run: az acr login --name "${{ vars.ACR_NAME }}"
 
+      - name: Generate v2 recommendation artifact for Backend image
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: stfeindata
+          AZURE_STORAGE_CONTAINER_FEATURES: features
+          PYTHONPATH: ${{ github.workspace }}/ai:${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r ai/requirements.txt
+          mkdir -p .deploy-artifacts
+          python -m inference.generate_risk_adjusted_momentum \
+            --model-version 2 \
+            --algorithm-version 2 \
+            --master-version 1 \
+            --output .deploy-artifacts/risk-adjusted-momentum-v2.json
+          test -s .deploy-artifacts/risk-adjusted-momentum-v2.json
+
       - name: Build and push frontend image
         run: |
           docker build -t "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}" ./frontend
@@ -233,8 +250,12 @@ jobs:
 
       - name: Build and push backend image
         run: |
-          docker build -t "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" ./backend
-          docker push "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}"
+          docker build \
+            -f backend/Dockerfile \
+            -t "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
+            .
+          docker push \
+            "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}"
 
       - name: Deploy frontend Container App
         run: |
@@ -336,6 +357,7 @@ jobs:
             AI_CHATBOT_PROMPT_VERSION=v1
             AI_CHATBOT_RATE_LIMIT_PER_MINUTE=30
             AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS=60
+            MODEL_RECOMMENDATION_SNAPSHOT_PATH=/model-artifacts/risk-adjusted-momentum-v2.json
             MODEL_RECOMMENDATION_ALLOW_FALLBACK=false
             MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3
           )

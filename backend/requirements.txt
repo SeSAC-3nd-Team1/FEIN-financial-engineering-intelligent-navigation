@@ -10,3 +10,7 @@ SQLAlchemy==2.0.43
 uvicorn[standard]==0.35.0
 websockets==15.0.1
 azure-communication-email==1.1.0
+# Backend backtests deliberately import the same v2 factor module as the AI job.
+numpy==2.3.3
+pandas==2.3.2
+exchange-calendars==4.11.1

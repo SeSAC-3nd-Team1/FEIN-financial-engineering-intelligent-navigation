@@ -356,6 +356,26 @@ class Order(Base):
     )
 
 
+class MomentumRebalanceRun(Base):
+    __tablename__ = "momentum_rebalance_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id", "execution_year", "execution_quarter",
+            name="uq_momentum_rebalance_runs_account_quarter",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE")
+    )
+    execution_year: Mapped[int] = mapped_column(SmallInteger)
+    execution_quarter: Mapped[int] = mapped_column(SmallInteger)
+    snapshot_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(12), default="RUNNING")
+    plan: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Execution(Base):
     __tablename__ = "executions"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

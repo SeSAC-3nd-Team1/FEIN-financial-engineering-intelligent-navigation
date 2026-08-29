@@ -42,6 +42,11 @@ class StockPricePoint:
     close: Decimal
     listed_shares: int | None = None
     market_cap: Decimal | None = None
+    volume: int | None = None
+    trading_value: Decimal | None = None
+    open_price: Decimal | None = None
+    high_price: Decimal | None = None
+    low_price: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +167,20 @@ class BacktestRepository:
             .limit(limit)
         ))
 
+    def stock_codes(self, start_date: date, end_date: date) -> list[str]:
+        """Return all symbols observed in a backtest window."""
+        return list(self.session.scalars(
+            select(MarketStockPrice.stock_code)
+            .where(
+                MarketStockPrice.trade_date >= start_date,
+                MarketStockPrice.trade_date <= end_date,
+                MarketStockPrice.market_cap.is_not(None),
+                MarketStockPrice.market_cap > 0,
+            )
+            .distinct()
+            .order_by(MarketStockPrice.stock_code)
+        ))
+
     def stock_prices(self, stock_codes: list[str], start_date: date, end_date: date) -> list[StockPricePoint]:
         rows = self.session.execute(
             select(
@@ -170,6 +189,11 @@ class BacktestRepository:
                 MarketStockPrice.close_price,
                 MarketStockPrice.listed_shares,
                 MarketStockPrice.market_cap,
+                MarketStockPrice.volume,
+                MarketStockPrice.trading_value,
+                MarketStockPrice.open_price,
+                MarketStockPrice.high_price,
+                MarketStockPrice.low_price,
             ).where(
                 MarketStockPrice.stock_code.in_(stock_codes),
                 MarketStockPrice.trade_date >= start_date,
@@ -183,8 +207,13 @@ class BacktestRepository:
                 close=close,
                 listed_shares=listed_shares,
                 market_cap=market_cap,
+                volume=volume,
+                trading_value=trading_value,
+                open_price=open_price,
+                high_price=high_price,
+                low_price=low_price,
             )
-            for code, trade_date, close, listed_shares, market_cap in rows
+            for code, trade_date, close, listed_shares, market_cap, volume, trading_value, open_price, high_price, low_price in rows
         ]
 
     def point_in_time_financials(
