@@ -373,6 +373,9 @@ jobs:
       - name: Verify FINCON model in backend image
         run: |
           docker run --rm \
+            --env DATABASE_URL=sqlite+pysqlite:///./ci.db \
+            --env REDIS_URL=redis://127.0.0.1:6379/0 \
+            --env JWT_SECRET=ci-only-image-verification-secret \
             --entrypoint python \
             "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
             -c "from app.trading_engine.model_loader_fix1 import load_model_module_fix1; module = load_model_module_fix1(); assert module.MODEL_VERSION == 'fincon-ver23-v1-fix1'"
