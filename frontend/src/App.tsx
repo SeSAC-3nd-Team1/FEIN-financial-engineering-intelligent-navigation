@@ -949,6 +949,11 @@ export default function App() {
     // investorProfileCompleted=false를 미진단으로 해석하지 않는다.
     await hydrateInvestorProfile();
     const latestAuth = useAuthStore.getState();
+    if (latestAuth.investorProfileHydrationError) {
+      throw new Error(
+        "투자성향 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+    }
     if (latestAuth.investorProfileCompleted) {
       const move = historyMode === "replace" ? replaceScreen : pushScreen;
       move("investor-check", contextOverrides);
@@ -969,7 +974,7 @@ export default function App() {
    * 비회원이면 로그인 화면으로 보내고, 로그인 완료 후 Portfolio가 아니라 여기로 다시 이어가도록
    * pendingStartAfterLogin을 세워둔다(strategyId는 이미 상태로 유지되고 있어 따로 안 챙겨도 된다).
    */
-  const handleStartInvesting = () => {
+  const handleStartInvesting = async () => {
     if (!isLoggedIn) {
       setLoginContext("strategy");
       setPendingStartAfterLogin(true);
@@ -980,7 +985,7 @@ export default function App() {
       });
       return;
     }
-    void proceedToStartInvesting();
+    await proceedToStartInvesting();
   };
 
   /**
@@ -1280,7 +1285,11 @@ export default function App() {
               if (postDiagnosisTarget === "strategy-list") {
                 setJustFinishedInvestorProfile(true);
               }
-              replaceScreen(postDiagnosisTarget);
+              replaceScreen(
+                postDiagnosisTarget === "start"
+                  ? "investor-check"
+                  : postDiagnosisTarget,
+              );
               setPostDiagnosisTarget("risk-result");
             } catch (error) {
               setRiskErrorCode(

@@ -197,6 +197,16 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     await useAuthStore.getState().hydrateInvestorProfile();
     expect(useAuthStore.getState().investorProfileHydrationError).toBe('NETWORK_ERROR');
     expect(useAuthStore.getState().investorProfileCompleted).toBe(false);
+
+    await useAuthStore.getState().logout();
+    vi.mocked(loginApi).mockResolvedValueOnce('token-c');
+    vi.mocked(currentUserApi).mockResolvedValueOnce(mockUser(3, 'c'));
+    vi.mocked(latestInvestorProfileApi).mockRejectedValueOnce(
+      new ApiError('ROUTE_NOT_FOUND', '잘못된 경로', 404),
+    );
+    await useAuthStore.getState().login('c', 'pw');
+    await useAuthStore.getState().hydrateInvestorProfile();
+    expect(useAuthStore.getState().investorProfileHydrationError).toBe('ROUTE_NOT_FOUND');
   });
 
   it('늦게 도착한 이전 사용자의 hydration 응답이 새 사용자 상태를 덮어쓰지 않는다 (race)', async () => {

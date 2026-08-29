@@ -109,7 +109,11 @@ async function hydrateInvestorProfile(
     set({
       isInvestorProfileHydrating: false,
       investorProfileHydrationError:
-        error instanceof ApiError && error.status === 404 ? null : errorCode,
+        error instanceof ApiError &&
+        error.status === 404 &&
+        error.code === "INVESTOR_PROFILE_NOT_FOUND"
+          ? null
+          : errorCode,
     });
   }
 }
@@ -193,6 +197,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     investorAssessmentId: assessmentId,
     ...toInvestorProfileFields(profile),
     investorAnswers: answers,
+    investorProfileHydrationError: null,
   }),
   resetInvestorProfile: () => set({ ...INVESTOR_PROFILE_RESET }),
 }));
