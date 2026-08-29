@@ -272,6 +272,7 @@ class PortfolioSnapshot(Base):
         PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE")
     )
     snapshot_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(12), default="RUNNING")
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     total_purchase_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     total_evaluation_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))

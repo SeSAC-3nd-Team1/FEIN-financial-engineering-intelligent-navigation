@@ -247,6 +247,7 @@ class PortfolioSnapshot(TimestampMixin, Base):
         nullable=False,
     )
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="RUNNING")
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
     total_purchase_amount: Mapped[Decimal] = mapped_column(
         Numeric(20, 2), nullable=False

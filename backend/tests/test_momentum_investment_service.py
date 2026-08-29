@@ -189,6 +189,7 @@ def test_rebalance_rejects_a_new_snapshot_after_the_quarter_was_executed() -> No
         position_count=1,
         rebalance_run=SimpleNamespace(
             snapshot_date=date(2026, 8, 20),
+            status="RUNNING",
         ),
     )
 
@@ -196,4 +197,20 @@ def test_rebalance_rejects_a_new_snapshot_after_the_quarter_was_executed() -> No
         momentum.rebalance(7, momentum.repo.account.id)  # type: ignore[attr-defined]
 
     assert error.value.code == "MOMENTUM_QUARTER_ALREADY_EXECUTED"
+    assert trading.requests == []
+
+
+def test_rebalance_completed_run_is_noop_for_the_same_snapshot() -> None:
+    momentum, _, trading = service(
+        position_count=1,
+        rebalance_run=SimpleNamespace(
+            snapshot_date=date(2026, 8, 25),
+            status="COMPLETED",
+        ),
+    )
+
+    response = momentum.rebalance(7, momentum.repo.account.id)  # type: ignore[attr-defined]
+
+    assert response.status == "ALREADY_APPLIED"
+    assert response.orders_created == 0
     assert trading.requests == []

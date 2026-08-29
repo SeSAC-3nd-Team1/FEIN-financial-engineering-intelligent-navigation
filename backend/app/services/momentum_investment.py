@@ -163,6 +163,8 @@ class MomentumInvestmentService:
             return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")
         quarter = (snapshot.as_of.month - 1) // 3 + 1
         run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
+        if run is not None and run.status == "COMPLETED":
+            return self._response(account.id, snapshot.as_of, len(targets), 0, "ALREADY_APPLIED")
         if run is not None and run.snapshot_date != snapshot.as_of:
             raise ServiceError(
                 "MOMENTUM_QUARTER_ALREADY_EXECUTED",
@@ -175,13 +177,18 @@ class MomentumInvestmentService:
                 execution_year=snapshot.as_of.year,
                 execution_quarter=quarter,
                 snapshot_date=snapshot.as_of,
+                status="RUNNING",
             ))
             self.session.commit()
         self._publish_targets(snapshot.as_of, targets)
         positions = self.repo.positions(account.id)
         if not positions:
             # Preserve the existing explicit initial-investment policy.
-            return self.apply(user_id, account_id)
+            response = self.apply(user_id, account_id)
+            run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
+            run.status = "COMPLETED"
+            self.session.commit()
+            return response
 
         prices: dict[str, Decimal] = {}
         current_values: dict[str, Decimal] = {}
@@ -216,6 +223,9 @@ class MomentumInvestmentService:
                     quantity=quantity, idempotency_key=key,
                 ))
                 created += 1
+        run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
+        run.status = "COMPLETED"
+        self.session.commit()
         return self._response(account.id, snapshot.as_of, len(targets), created, "APPLIED" if created else "ALREADY_APPLIED")
 
     def _publish_targets(
