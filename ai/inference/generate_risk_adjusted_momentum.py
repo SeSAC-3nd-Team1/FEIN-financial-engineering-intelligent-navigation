@@ -8,11 +8,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from data_access import FeatureStore, FeatureStoreConfig
-from inference.generate_latest_recommendations import (
-    _normalize_stock_codes,
-    _read_all_partitions,
-)
 from inference.risk_adjusted_recommendation_snapshot import (
     export_risk_adjusted_recommendation_snapshot,
 )
@@ -58,6 +53,9 @@ def build_v2_feature_history(
 ) -> pd.DataFrame:
     """Load full history because v2 requires 13-month momentum and 3-year volatility."""
 
+    from data_access import FeatureStore, FeatureStoreConfig
+    from inference.generate_latest_recommendations import _read_all_partitions
+
     model = _read_all_partitions(store, "model_stock_daily", model_version, MODEL_COLUMNS)
     algorithm = _read_all_partitions(
         store, "algorithm_ohlcv", algorithm_version, ALGORITHM_COLUMNS
@@ -65,8 +63,27 @@ def build_v2_feature_history(
     master = _read_all_partitions(
         store, "security_master_latest", master_version, SECURITY_MASTER_COLUMNS
     )
+    return build_v2_feature_history_from_frames(model, algorithm, master, risk_config=risk_config)
+
+
+def build_v2_feature_history_from_frames(
+    model: pd.DataFrame,
+    algorithm: pd.DataFrame,
+    master: pd.DataFrame,
+    *,
+    risk_config: StockRiskConfig = StockRiskConfig(),
+) -> pd.DataFrame:
+    """Run the production Live merge/risk path against in-memory frames."""
+    model = model.copy()
+    algorithm = algorithm.copy()
+    master = master.copy()
+    def normalize(values: pd.Series) -> pd.Series:
+        return values.astype("string").str.strip().str.replace(
+            r"^A(?=\d{6}$)", "", regex=True
+        ).str.zfill(6)
+
     for frame in (model, algorithm):
-        frame["stock_code"] = _normalize_stock_codes(frame["stock_code"])
+        frame["stock_code"] = normalize(frame["stock_code"])
         frame["trade_date"] = pd.to_datetime(frame["trade_date"], errors="raise")
         if frame[["stock_code", "trade_date"]].isna().any(axis=None):
             raise ValueError("Azure Feature join keys cannot be null")
@@ -88,7 +105,7 @@ def build_v2_feature_history(
         )
 
     master["reference_date"] = pd.to_datetime(master["reference_date"], errors="raise")
-    master["stock_code"] = _normalize_stock_codes(master["stock_code"])
+    master["stock_code"] = normalize(master["stock_code"])
     master = (
         master.sort_values(["stock_code", "reference_date"])
         .drop_duplicates("stock_code", keep="last")

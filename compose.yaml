@@ -190,7 +190,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      PYTHONPATH: /app
+      PYTHONPATH: /app:/workspace
       AZURE_CONFIG_DIR: /root/.azure
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
@@ -199,6 +199,7 @@ services:
       ALGORITHM_V23_PATH: /algorithm-output/Algorithm(ver.2.3).py
     volumes:
       - ./ai:/app
+      - ./shared:/workspace/shared:ro
       - ./output:/algorithm-output:ro
       - model_recommendation_artifacts:/model-artifacts
       - azure_cli_data:/root/.azure
