@@ -179,7 +179,9 @@ function PortfolioDetailContent({
   // 카드/시트에 결정이 그대로 보여야 두 버튼이 "모달만 닫는 동일 동작"으로 보이지 않는다.
   const [alertDecisions, setAlertDecisions] = useState<Record<string, 'adjusted' | 'held'>>({});
   const rebalanceAlert = displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
-  const rebalanceHolding = rebalanceAlert ? ALL_HOLDINGS.find((h) => h.name === rebalanceAlert.stockName) : undefined;
+  const rebalanceHolding = rebalanceAlert?.stockCode
+    ? ALL_HOLDINGS.find((h) => h.stockCode === rebalanceAlert.stockCode)
+    : undefined;
   // 실 제안이면 API가 이미 계산해 준 현재/목표 비중·조정금액을 그대로 쓴다 — 목업일 때만 보유 종목 목록에서
   // 같은 이름을 찾아(이름 매칭이라 실패할 수 있음) 대신 파생시킨다.
   const rebalanceCurrentPct = rebalanceAlert?.currentWeight ?? (rebalanceHolding ? rebalanceHolding.pct : 0);
@@ -293,10 +295,10 @@ function PortfolioDetailContent({
                   )}
                   {previewHoldings.map((h) => {
                     const stockCode = h.stockCode;
-                    const alert = displayAlerts.find((a) => a.stockName === h.name);
+                    const alert = displayAlerts.find((a) => a.stockCode === stockCode);
                     return (
                       <button
-                        key={h.name}
+                        key={h.stockCode}
                         onClick={() => stockCode && onSelectStock(stockCode)}
                         className="flex items-center gap-4 border-t border-line py-3.5 text-left first:border-0 hover:bg-canvas"
                       >

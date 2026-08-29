@@ -126,10 +126,10 @@ export default function AllHoldings({ userName, onNavigate, onSelectStock, onBac
                   )}
                   {sortedHoldings.map((h) => {
                     const stockCode = h.stockCode;
-                    const alert = displayAlerts.find((a) => a.stockName === h.name);
+                    const alert = displayAlerts.find((a) => a.stockCode === h.stockCode);
                     return (
                       <tr
-                        key={h.name}
+                        key={h.stockCode}
                         onClick={() => stockCode && onSelectStock(stockCode)}
                         className="cursor-pointer border-b border-line last:border-0 hover:bg-canvas"
                       >
