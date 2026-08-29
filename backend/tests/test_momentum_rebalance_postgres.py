@@ -151,6 +151,9 @@ def test_rebalance_uses_real_trading_service_and_resumes_immutable_plan():
             assert failed_run.status == "RUNNING"
             original_plan = failed_run.plan
             assert original_plan
+            failed_orders = list(session.scalars(select(Order).where(Order.account_id == account.id)))
+            failed_sell_ids = {order.id for order in failed_orders if order.side == "SELL"}
+            assert failed_sell_ids
             assert [leg["side"] for leg in original_plan] == sorted(
                 (leg["side"] for leg in original_plan), key=lambda side: side != "SELL"
             )
@@ -171,7 +174,13 @@ def test_rebalance_uses_real_trading_service_and_resumes_immutable_plan():
             assert completed.plan == original_plan
             orders = list(session.scalars(select(Order).where(Order.account_id == account.id).order_by(Order.requested_at, Order.id)))
             assert len(orders) == len(original_plan)
+            assert failed_sell_ids == {order.id for order in orders if order.side == "SELL"}
             assert len({order.idempotency_key for order in orders}) == len(orders)
+            assert {
+                (order.stock_code, order.side, Decimal(order.quantity)) for order in orders
+            } == {
+                (leg["symbol"], leg["side"], Decimal(leg["quantity"])) for leg in original_plan
+            }
             first_buy = next(index for index, order in enumerate(orders) if order.side == "BUY")
             assert all(order.side == "SELL" for order in orders[:first_buy])
             assert all(
@@ -183,6 +192,31 @@ def test_rebalance_uses_real_trading_service_and_resumes_immutable_plan():
             before = len(orders)
             response = retry.rebalance(user.id, account.id)
             assert response.status == "ALREADY_APPLIED"
+            assert len(list(session.scalars(select(Order).where(Order.account_id == account.id)))) == before
+        finally:
+            _cleanup(session, user, account)
+
+
+def test_empty_account_rebalance_uses_real_trading_service_transaction():
+    with SessionLocal() as session:
+        user, account = _create_fixture(session)
+        session.execute(delete(Position).where(Position.account_id == account.id))
+        account.cash_balance = Decimal("1000000")
+        session.commit()
+        try:
+            service = _service(session, TradingService(session, market=DeterministicMarket()))
+            response = service.rebalance(user.id, account.id)
+
+            assert response.status == "APPLIED"
+            assert session.scalar(select(Position).where(Position.account_id == account.id)) is not None
+            run = session.scalar(
+                select(MomentumRebalanceRun).where(MomentumRebalanceRun.account_id == account.id)
+            )
+            assert run is not None
+            assert run.status == "COMPLETED"
+            before = len(list(session.scalars(select(Order).where(Order.account_id == account.id))))
+            again = service.rebalance(user.id, account.id)
+            assert again.status == "ALREADY_APPLIED"
             assert len(list(session.scalars(select(Order).where(Order.account_id == account.id)))) == before
         finally:
             _cleanup(session, user, account)
