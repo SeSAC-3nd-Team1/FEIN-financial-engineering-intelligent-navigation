@@ -6,7 +6,7 @@
       "provider": "foundry",
       "source_agent_name": "REPLACE_WITH_FOUNDRY_AGENT_NAME",
       "enabled": true,
-      "allowed_context_keys": ["locale", "channel", "customer_segment"],
+      "allowed_context_keys": ["screen", "stock_code", "strategy_id", "verified_personal_summary"],
       "max_input_chars": 4000,
       "max_response_chars": 8000,
       "timeout_seconds": 120
