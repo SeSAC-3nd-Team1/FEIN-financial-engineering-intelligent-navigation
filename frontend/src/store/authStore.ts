@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import {
   currentUserApi, latestInvestorProfileApi, loginApi, logoutApi, signupApi, TOKEN_STORAGE_KEY,
-  type AuthUser, type SignupPayload,
+  ApiError, type AuthUser, type SignupPayload,
 } from '../lib/backendApi';
 import { mapInvestorProfileResponse, type InvestorProfileResult } from '../lib/investorProfile';
 
@@ -24,6 +24,8 @@ interface AuthState {
   /** /investor-profile/me/latest 조회가 진행 중인 동안 true — 이 값이 true 인 동안은 화면(Portfolio.tsx 등)이
    *  investorProfileCompleted=false 를 "진짜 미진단"으로 오판하지 않아야 한다(조회가 끝나기 전 스냅샷일 뿐이므로). */
   isInvestorProfileHydrating: boolean;
+  investorProfileHydrationError: string | null;
+  hydrateInvestorProfile: () => Promise<void>;
   initialize: () => Promise<void>;
   login: (userId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -56,6 +58,7 @@ const INVESTOR_PROFILE_RESET = {
   investorDescription: null,
   investorTraits: null,
   investorAnswers: null,
+  investorProfileHydrationError: null,
 } satisfies Partial<AuthState>;
 
 /** InvestorProfileResult(화면 공용 모양) → AuthState 의 flat 필드로 펼친다. */
@@ -72,8 +75,8 @@ function toInvestorProfileFields(profile: InvestorProfileResult) {
 /** 로그인 직후/새로고침 복원 시 이미 저장된 투자성향 진단이 있으면 investorProfileCompleted 를 되살린다.
  *  이 값은 완료 즉시(completeInvestorProfile) 로컬에서도 true 가 되지만, 백엔드에 저장은 되어도
  *  로컬 상태 자체는 세션이 새로 시작되면 초기화되므로(새로고침·재로그인) 매번 다시 확인해야 한다.
- *  진단 기록이 없으면(404) 또는 조회에 실패하면 조용히 무시하고 미완료 상태를 유지한다 — 로그인 자체를
- *  막을 이유는 아니다.
+ *  진단 기록이 없으면(404)은 미완료 상태로 유지하고, 그 밖의 API/네트워크 오류는 추적 가능한
+ *  오류 코드를 상태에 남긴다 — 어느 경우에도 로그인 자체를 막지는 않는다.
  *
  *  race 방지: 이 함수는 fire-and-forget(void)로 호출되기 때문에, 응답이 오는 사이 사용자가 로그아웃하거나
  *  다른 사용자로 다시 로그인하면 accessToken 이 바뀐다. 응답을 반영하기 직전 get().accessToken 이 호출 시점의
@@ -92,13 +95,38 @@ async function hydrateInvestorProfile(
       investorProfileCompletedAt: profile.created_at,
       investorAssessmentId: profile.assessment_id,
       ...toInvestorProfileFields(mapInvestorProfileResponse(profile)),
+      investorProfileHydrationError: null,
       isInvestorProfileHydrating: false,
     });
-  } catch {
-    // 진단 기록 없음(404) 또는 일시적 오류 — 미완료 상태를 그대로 둔다.
+  } catch (error) {
+    // 404(진단 기록 없음)와 네트워크/API 오류를 구분한다. 로그인 자체는 막지 않지만,
+    // 개발 환경에서는 원인을 남기고 상태에도 보존해 fire-and-forget 실패를 추적할 수 있게 한다.
     if (get().accessToken !== token) return;
-    set({ isInvestorProfileHydrating: false });
+    const errorCode = error instanceof ApiError ? error.code : "UNKNOWN_ERROR";
+    if (import.meta.env.DEV && errorCode !== "INVESTOR_PROFILE_NOT_FOUND") {
+      console.warn("[auth] investor profile hydration failed", error);
+    }
+    set({
+      isInvestorProfileHydrating: false,
+      investorProfileHydrationError:
+        error instanceof ApiError && error.status === 404 ? null : errorCode,
+    });
   }
+}
+
+let activeHydration: { token: string; promise: Promise<void> } | null = null;
+
+function startInvestorProfileHydration(
+  token: string,
+  set: (partial: Partial<AuthState>) => void,
+  get: () => AuthState,
+) {
+  if (activeHydration?.token === token) return activeHydration.promise;
+  const promise = hydrateInvestorProfile(token, set, get).finally(() => {
+    if (activeHydration?.promise === promise) activeHydration = null;
+  });
+  activeHydration = { token, promise };
+  return promise;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -108,6 +136,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   accessToken: savedToken,
   ...INVESTOR_PROFILE_RESET,
   isInvestorProfileHydrating: false,
+  investorProfileHydrationError: null,
 
   initialize: async () => {
     const token = get().accessToken;
@@ -115,7 +144,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const user = await currentUserApi(token);
       set({ user, isLoggedIn: true, isHydrating: false });
-      void hydrateInvestorProfile(token, set, get);
+      void startInvestorProfileHydration(token, set, get);
     } catch {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       sessionStorage.removeItem(APP_SESSION_NAV_KEY);
@@ -130,7 +159,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // 새 로그인을 시작하는 시점에 이전 사용자(또는 이전 세션)의 투자성향 상태를 먼저 지운다 — 아래
     // hydrateInvestorProfile 이 끝나기 전까지 잠깐이라도 이전 값이 새 사용자 것처럼 보이지 않게 한다.
     set({ accessToken: token, user, isLoggedIn: true, isHydrating: false, ...INVESTOR_PROFILE_RESET });
-    void hydrateInvestorProfile(token, set, get);
+    void startInvestorProfileHydration(token, set, get);
   },
 
   logout: async () => {
@@ -147,6 +176,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   register: async (payload) => {
     await signupApi(payload);
     await get().login(payload.user_id, payload.password);
+  },
+
+  hydrateInvestorProfile: async () => {
+    const token = get().accessToken;
+    if (!token) {
+      set({ isInvestorProfileHydrating: false });
+      return;
+    }
+    await startInvestorProfileHydration(token, set, get);
   },
 
   completeInvestorProfile: (profile, answers, completedAt, assessmentId) => set({

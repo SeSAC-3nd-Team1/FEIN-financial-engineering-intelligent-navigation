@@ -7,7 +7,7 @@ import type { Screen } from '../types';
 export type LoginContext = 'header' | 'strategy';
 
 interface Props {
-  onLogin: () => void;
+  onLogin: () => void | Promise<void>;
   onSignup: () => void;
   onHome: () => void;
   onNavigate: (s: Screen) => void;
@@ -44,7 +44,7 @@ export default function Login({ onLogin, onSignup, onHome, context }: Props) {
     try {
       await login(id.trim(), pw);
       setInvalid(false);
-      onLogin();
+      await onLogin();
     } catch (error) {
       setInvalid(true);
       setErrorMessage(error instanceof Error ? error.message : '로그인 요청을 처리하지 못했습니다.');

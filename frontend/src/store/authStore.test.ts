@@ -3,16 +3,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // 없다 — jsdom 을 새로 추가하는 대신 최소 polyfill 을 authStore 임포트보다 먼저 실행해 채워둔다.
 import '../test/setupStorage';
 
-vi.mock('../lib/backendApi', () => ({
+vi.mock('../lib/backendApi', () => {
+  class MockApiError extends Error {
+    constructor(public code: string, message: string, public status: number) {
+      super(message);
+    }
+  }
+  return {
+  ApiError: MockApiError,
   TOKEN_STORAGE_KEY: 'fein_access_token',
   loginApi: vi.fn(),
   currentUserApi: vi.fn(),
   logoutApi: vi.fn(),
   latestInvestorProfileApi: vi.fn(),
   signupApi: vi.fn(),
-}));
+  };
+});
 
-import { currentUserApi, latestInvestorProfileApi, loginApi, logoutApi, type InvestorProfileResponse } from '../lib/backendApi';
+import { ApiError, currentUserApi, latestInvestorProfileApi, loginApi, logoutApi, type InvestorProfileResponse } from '../lib/backendApi';
 import { useAuthStore } from './authStore';
 
 /** Promise 를 테스트 코드에서 원하는 시점에 직접 resolve/reject 할 수 있게 감싼다 —
@@ -149,6 +157,46 @@ describe('useAuthStore — 투자성향 상태 관리', () => {
     await flush();
     expect(useAuthStore.getState().isInvestorProfileHydrating).toBe(false);
     expect(useAuthStore.getState().investorProfileCompleted).toBe(true);
+  });
+
+  it('투자 시작 guard가 hydration 완료를 await할 수 있고 API를 중복 호출하지 않는다', async () => {
+    vi.mocked(loginApi).mockResolvedValue('token-a');
+    vi.mocked(currentUserApi).mockResolvedValue(mockUser(1, 'a'));
+    const slow = deferred<InvestorProfileResponse>();
+    vi.mocked(latestInvestorProfileApi).mockReturnValue(slow.promise);
+
+    await useAuthStore.getState().login('a', 'pw');
+    const hydration = useAuthStore.getState().hydrateInvestorProfile();
+    expect(useAuthStore.getState().isInvestorProfileHydrating).toBe(true);
+    expect(latestInvestorProfileApi).toHaveBeenCalledTimes(1);
+
+    slow.resolve(mockProfile({ profile_type: '성장추구형' }));
+    await hydration;
+    expect(useAuthStore.getState().investorProfileCompleted).toBe(true);
+    expect(useAuthStore.getState().investorType).toBe('성장추구형');
+    expect(useAuthStore.getState().investorProfileHydrationError).toBeNull();
+  });
+
+  it('진단 기록 없음과 실제 hydration API 오류를 구분한다', async () => {
+    vi.mocked(loginApi).mockResolvedValueOnce('token-a');
+    vi.mocked(currentUserApi).mockResolvedValueOnce(mockUser(1, 'a'));
+    vi.mocked(latestInvestorProfileApi).mockRejectedValueOnce(
+      new ApiError('INVESTOR_PROFILE_NOT_FOUND', '없음', 404),
+    );
+    await useAuthStore.getState().login('a', 'pw');
+    await useAuthStore.getState().hydrateInvestorProfile();
+    expect(useAuthStore.getState().investorProfileHydrationError).toBeNull();
+
+    await useAuthStore.getState().logout();
+    vi.mocked(loginApi).mockResolvedValueOnce('token-b');
+    vi.mocked(currentUserApi).mockResolvedValueOnce(mockUser(2, 'b'));
+    vi.mocked(latestInvestorProfileApi).mockRejectedValueOnce(
+      new ApiError('NETWORK_ERROR', '네트워크 오류', 0),
+    );
+    await useAuthStore.getState().login('b', 'pw');
+    await useAuthStore.getState().hydrateInvestorProfile();
+    expect(useAuthStore.getState().investorProfileHydrationError).toBe('NETWORK_ERROR');
+    expect(useAuthStore.getState().investorProfileCompleted).toBe(false);
   });
 
   it('늦게 도착한 이전 사용자의 hydration 응답이 새 사용자 상태를 덮어쓰지 않는다 (race)', async () => {

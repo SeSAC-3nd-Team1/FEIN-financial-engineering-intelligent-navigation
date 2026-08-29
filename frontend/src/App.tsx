@@ -362,8 +362,8 @@ export default function App() {
   const authenticatedUser = useAuthStore((s) => s.user);
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const isHydrating = useAuthStore((s) => s.isHydrating);
-  const investorProfileCompleted = useAuthStore(
-    (s) => s.investorProfileCompleted,
+  const hydrateInvestorProfile = useAuthStore(
+    (s) => s.hydrateInvestorProfile,
   );
   const completeInvestorProfile = useAuthStore(
     (s) => s.completeInvestorProfile,
@@ -941,11 +941,15 @@ export default function App() {
    * getState()로 최신값을 직접 읽는 이유: 로그인 직후 onLogin 콜백에서도 이 로직을 그대로 타는데,
    * 그 시점엔 아직 리렌더가 안 끝나 이 컴포넌트의 investorProfileCompleted 클로저가 낡은 값일 수 있다.
    */
-  const proceedToStartInvesting = (
+  const proceedToStartInvesting = async (
     historyMode: "push" | "replace" = "push",
     contextOverrides: ScreenHistoryContext = {},
   ) => {
-    if (useAuthStore.getState().investorProfileCompleted) {
+    // 로그인 직후/새로고침 직후의 fire-and-forget hydration이 끝나기 전에는
+    // investorProfileCompleted=false를 미진단으로 해석하지 않는다.
+    await hydrateInvestorProfile();
+    const latestAuth = useAuthStore.getState();
+    if (latestAuth.investorProfileCompleted) {
       const move = historyMode === "replace" ? replaceScreen : pushScreen;
       move("investor-check", contextOverrides);
     } else {
@@ -976,7 +980,7 @@ export default function App() {
       });
       return;
     }
-    proceedToStartInvesting();
+    void proceedToStartInvesting();
   };
 
   /**
@@ -1058,10 +1062,10 @@ export default function App() {
           // 왔으면 보고 있던 Strategy Detail로 복귀하며, 그 외에는 헤더 "나의 포트폴리오"와 동일한
           // 목적지(Portfolio)로 이동. 회원가입 유도는 이제 Home "시작하기"/"내 투자성향 알아보기"가
           // 로그인을 거치지 않고 곧장 start-signup으로 보내므로 여기서 다룰 필요가 없다.
-          onLogin={() => {
+          onLogin={async () => {
             if (pendingStartAfterLogin) {
               setPendingStartAfterLogin(false);
-              proceedToStartInvesting("replace", {
+              await proceedToStartInvesting("replace", {
                 pendingStartAfterLogin: false,
                 pendingReturnToStrategy: false,
               });
