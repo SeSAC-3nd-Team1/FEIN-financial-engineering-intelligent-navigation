@@ -103,7 +103,7 @@ class FakeRepository:
 def request(strategy_id: str = "momentum") -> BacktestRunRequest:
     return BacktestRunRequest.model_validate({
         "strategyId": strategy_id,
-        "periodId": "custom",
+        "periodId": "recent-5y",
         "periodLabel": "직접 설정",
         "periodDescription": "",
         "startDate": "2026-01-01",

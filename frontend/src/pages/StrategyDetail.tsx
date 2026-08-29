@@ -4,8 +4,7 @@ import type { TooltipProps } from 'recharts';
 import Header from '../components/Header';
 import TermTooltip from '../components/TermTooltip';
 import { fetchAiExplanation, getBacktestAvailableRange, runBacktest, USE_MOCK_BACKTEST } from '../data/backtestApi';
-import type { BacktestAvailableRange } from '../data/backtestApi';
-import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
+import { getRecommendedPeriods } from '../data/backtestPeriods';
 import type { StrategyRecommendationItemResponse, StrategyResponse } from '../lib/backendApi';
 import { won } from '../lib/validation';
 import { useTradingData } from '../hooks/useTradingData';
@@ -123,20 +122,11 @@ export default function StrategyDetail({
       setChangeSubmitting(false);
     }
   };
-  // 백테스트 "결과"는 공개, "다른 기간으로 바꿔보는" interaction만 로그인 필요 — 잠긴 상태에서
-  // 다른 기간/직접 설정을 시도하면 즉시 로그인으로 보내지 않고 이 inline 안내를 먼저 보여준다.
+  // MVP에서는 사전 계산된 추천 기간만 제공한다.
   const [showBacktestLoginLock, setShowBacktestLoginLock] = useState(false);
-  const [availableRange, setAvailableRange] = useState<BacktestAvailableRange | null>(null);
   const [periods, setPeriods] = useState<BacktestPeriod[]>([]);
 
-  const [periodMode, setPeriodMode] = useState<'preset' | 'custom'>('preset');
   const [presetPeriodId, setPresetPeriodId] = useState('');
-  const [customPeriod, setCustomPeriod] = useState<{ startDate: string; endDate: string } | null>(null);
-
-  const [customPanelOpen, setCustomPanelOpen] = useState(false);
-  const [draftStart, setDraftStart] = useState('');
-  const [draftEnd, setDraftEnd] = useState('');
-  const [customError, setCustomError] = useState<string | null>(null);
 
   const [retryToken, setRetryToken] = useState(0);
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -149,13 +139,10 @@ export default function StrategyDetail({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  // 추천 기간 또는 직접 설정 중 지금 적용된 기간 하나 — 두 모드가 항상 이 값 하나로 합쳐진다
+  // 선택한 preset 기간만 백테스트에 전달한다.
   const activePeriod: BacktestPeriod | null = useMemo(() => {
-    if (periodMode === 'custom' && customPeriod) {
-      return { id: 'custom', label: '직접 설정', startDate: customPeriod.startDate, endDate: customPeriod.endDate, description: '' };
-    }
     return periods.find((p) => p.id === presetPeriodId) ?? periods[0] ?? null;
-  }, [periodMode, customPeriod, presetPeriodId, periods]);
+  }, [presetPeriodId, periods]);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,7 +152,6 @@ export default function StrategyDetail({
       .then((range) => {
         if (cancelled) return;
         const recommended = getRecommendedPeriods(range);
-        setAvailableRange(range);
         setPeriods(recommended);
         setPresetPeriodId((current) => recommended.some((period) => period.id === current) ? current : recommended[0].id);
       })
@@ -181,26 +167,12 @@ export default function StrategyDetail({
   // 전략이 바뀌면(다른 strategyId로 재진입) 기간 선택은 추천 기간 기본값으로 되돌린다
   useEffect(() => {
     if (periods.length === 0) return;
-    setPeriodMode('preset');
     setPresetPeriodId(periods[0].id);
-    setCustomPeriod(null);
-    setCustomPanelOpen(false);
   }, [strategyId, periods]);
 
   const selectPreset = (id: string) => {
     if (!isLoggedIn && id !== presetPeriodId) { setShowBacktestLoginLock(true); return; }
-    setPeriodMode('preset');
     setPresetPeriodId(id);
-    setCustomPanelOpen(false);
-  };
-
-  const applyCustomPeriod = () => {
-    if (!availableRange) return;
-    const err = validateCustomPeriod(draftStart, draftEnd, availableRange);
-    if (err) { setCustomError(err); return; }
-    setCustomError(null);
-    setCustomPeriod({ startDate: draftStart, endDate: draftEnd });
-    setPeriodMode('custom');
   };
 
   // 기간이 바뀌면 이전 결과와 AI 설명을 함께 리셋하고 새로 받아온다 — 전략은 그대로 둔다.
@@ -321,7 +293,7 @@ export default function StrategyDetail({
                     key={p.id}
                     onClick={() => selectPreset(p.id)}
                     className={`group relative flex items-center gap-1.5 rounded-full px-6 py-3.5 text-[17px] font-semibold ${
-                      periodMode === 'preset' && p.id === presetPeriodId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
+                      p.id === presetPeriodId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
                     }`}
                   >
                     {p.label}
@@ -334,7 +306,7 @@ export default function StrategyDetail({
             <p className="text-[15px] leading-6 text-muted">
               {activePeriod && <>
                 {activePeriod.label} · {fmtDate(activePeriod.startDate)} — {fmtDate(activePeriod.endDate)}
-                {periodMode === 'preset' && activePeriod.description && <><br />{activePeriod.description}</>}
+                {activePeriod.description && <><br />{activePeriod.description}</>}
               </>}
             </p>
 
@@ -355,45 +327,6 @@ export default function StrategyDetail({
               </div>
             )}
 
-            <button
-              onClick={() => {
-                if (!isLoggedIn) { setShowBacktestLoginLock(true); return; }
-                setCustomPanelOpen((o) => !o);
-              }}
-              className="group relative inline-flex w-fit items-center gap-1.5 self-start text-[15px] font-semibold text-navy underline"
-            >
-              원하는 기간이 있나요? 직접 설정 →
-              {!isLoggedIn && <LoginLockBadge />}
-            </button>
-
-            {customPanelOpen && (
-              <div className="flex flex-col gap-3.5 rounded-[16px] bg-[#F8F9F6] p-7">
-                <span className="text-[15px] font-bold">직접 기간 설정</span>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="date"
-                    value={draftStart}
-                    min={availableRange?.minDate}
-                    max={availableRange?.maxDate}
-                    onChange={(e) => setDraftStart(e.target.value)}
-                    className="rounded-field bg-surface px-4 py-3 text-[15px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
-                  />
-                  <span className="text-muted">→</span>
-                  <input
-                    type="date"
-                    value={draftEnd}
-                    min={availableRange?.minDate}
-                    max={availableRange?.maxDate}
-                    onChange={(e) => setDraftEnd(e.target.value)}
-                    className="rounded-field bg-surface px-4 py-3 text-[15px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
-                  />
-                </div>
-                {customError && <span className="text-sm text-up">{customError}</span>}
-                <button onClick={applyCustomPeriod} className="self-start rounded-field bg-lime px-7 py-3.5 text-[15px] font-bold text-navy">
-                  이 기간으로 확인하기
-                </button>
-              </div>
-            )}
           </section>
 
           {resultLoading && (

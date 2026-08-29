@@ -556,8 +556,8 @@ jobs:
             --name "${BACKEND_APP_NAME}" \
             --resource-group "${RESOURCE_GROUP}" \
             --image "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
-            --cpu 1.0 \
-            --memory 2Gi \
+            --cpu 2.0 \
+            --memory 4Gi \
             --min-replicas 1 \
             --set-env-vars "${env_args[@]}" \
             --output none
@@ -579,8 +579,8 @@ jobs:
               (.env //= [])
               | .env |= map(if .secretRef then {name, secretRef} else {name, value} end)
               | (.resources //= {})
-              | .resources.cpu = 1.0
-              | .resources.memory = "2Gi"
+              | .resources.cpu = 2.0
+              | .resources.memory = "4Gi"
               | .probes |= map(if .tcpSocket then .tcpSocket.port = 8000 else . end)
             ')"
           backend_payload="$(jq -cn \
