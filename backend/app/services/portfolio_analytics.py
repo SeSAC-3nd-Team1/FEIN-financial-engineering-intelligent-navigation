@@ -7,6 +7,7 @@ from statistics import correlation, stdev
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ServiceError
@@ -333,6 +334,16 @@ class PortfolioAnalyticsService:
             request.account_id, request.idempotency_key
         )
         if existing:
+            if (
+                existing.stock_code != request.stock_code
+                or existing.proposal_key != request.proposal_key
+                or existing.decision != request.decision
+            ):
+                raise ServiceError(
+                    "IDEMPOTENCY_CONFLICT",
+                    "동일 요청 키가 다른 리밸런싱 판단에 사용되었습니다.",
+                    409,
+                )
             return self._decision_response(existing)
         portfolio = PortfolioService(self.session).evaluate(user_id, request.account_id)
         proposal = next(
@@ -349,10 +360,28 @@ class PortfolioAnalyticsService:
                 "현재 유효한 리밸런싱 제안이 없습니다.",
                 409,
             )
+        if proposal.proposal_key != request.proposal_key:
+            raise ServiceError(
+                "PROPOSAL_STALE",
+                "화면에 표시된 리밸런싱 제안이 변경되었습니다. 새로고침 후 다시 시도해 주세요.",
+                409,
+            )
         baseline_date = max(
             (position.price_as_of.date() for position in portfolio.positions),
             default=datetime.now(ZoneInfo("Asia/Seoul")).date(),
         )
+        proposal_identity = request.proposal_key
+        existing_proposal = getattr(
+            self.trading, "decision_by_proposal", lambda *_args: None
+        )(request.account_id, proposal_identity)
+        if existing_proposal:
+            if existing_proposal.decision != request.decision:
+                raise ServiceError(
+                    "REBALANCING_PROPOSAL_ALREADY_DECIDED",
+                    "현재 리밸런싱 제안은 이미 다른 판단이 기록되었습니다.",
+                    409,
+                )
+            return self._decision_response(existing_proposal)
         decision = RebalancingDecision(
             account_id=request.account_id,
             strategy_id=account.selected_strategy_id,
@@ -365,6 +394,7 @@ class PortfolioAnalyticsService:
             recommended_amount=proposal.recommended_amount,
             decision=request.decision,
             idempotency_key=request.idempotency_key,
+            proposal_key=proposal_identity,
             baseline_snapshot_date=baseline_date,
             baseline_total_assets=portfolio.total_assets,
         )
@@ -372,6 +402,35 @@ class PortfolioAnalyticsService:
             self.trading.add_decision(decision)
             self.session.commit()
             self.session.refresh(decision)
+        except IntegrityError:
+            self.session.rollback()
+            existing_by_key = self.trading.decision_by_idempotency(
+                request.account_id, request.idempotency_key
+            )
+            if existing_by_key is not None:
+                if (
+                    existing_by_key.stock_code != request.stock_code
+                    or existing_by_key.proposal_key != request.proposal_key
+                    or existing_by_key.decision != request.decision
+                ):
+                    raise ServiceError(
+                        "IDEMPOTENCY_CONFLICT",
+                        "동일 요청 키가 다른 리밸런싱 판단에 사용되었습니다.",
+                        409,
+                    )
+                return self._decision_response(existing_by_key)
+            existing_by_proposal = getattr(
+                self.trading, "decision_by_proposal", lambda *_args: None
+            )(request.account_id, proposal_identity)
+            if existing_by_proposal is not None:
+                if existing_by_proposal.decision != request.decision:
+                    raise ServiceError(
+                        "REBALANCING_PROPOSAL_ALREADY_DECIDED",
+                        "현재 리밸런싱 제안은 이미 다른 판단이 기록되었습니다.",
+                        409,
+                    )
+                return self._decision_response(existing_by_proposal)
+            raise
         except Exception:
             self.session.rollback()
             raise
@@ -414,6 +473,7 @@ class PortfolioAnalyticsService:
         return RebalancingDecisionResponse(
             id=decision.id,
             account_id=decision.account_id,
+            proposal_key=decision.proposal_key,
             strategy_id=decision.strategy_id,
             stock_code=decision.stock_code,
             stock_name=decision.stock_name,
