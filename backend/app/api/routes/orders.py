@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user
 from app.core.errors import NotFoundError
 from app.db.session import get_session
-from app.models import Execution, Order, User
+from app.models import Execution, MarketStock, Order, User
 from app.repositories import TradingRepository
 from app.schemas.api import ExecutionResponse, OrderCreateRequest, OrderResponse
 from app.services.trading import TradingService
@@ -28,7 +28,16 @@ def list_orders(account_id: UUID = Query(), user: User = Depends(current_user), 
 
 
 @router.get("/executions", response_model=list[ExecutionResponse])
-def list_executions(account_id: UUID = Query(), user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[Execution]:
+def list_executions(account_id: UUID = Query(), user: User = Depends(current_user), session: Session = Depends(get_session)) -> list[ExecutionResponse]:
     if not TradingRepository(session).owned_account(account_id, user.id):
         raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
-    return list(session.scalars(select(Execution).where(Execution.account_id == account_id).order_by(Execution.executed_at.desc())))
+    rows = session.execute(
+        select(Execution, MarketStock.stock_name)
+        .outerjoin(MarketStock, MarketStock.stock_code == Execution.stock_code)
+        .where(Execution.account_id == account_id)
+        .order_by(Execution.executed_at.desc(), Execution.id.desc())
+    )
+    return [
+        ExecutionResponse.model_validate(execution).model_copy(update={"stock_name": stock_name})
+        for execution, stock_name in rows
+    ]

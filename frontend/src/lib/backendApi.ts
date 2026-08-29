@@ -360,6 +360,7 @@ export interface ExecutionResponse {
   id: number;
   order_id: string;
   stock_code: string;
+  stock_name: string | null;
   side: "BUY" | "SELL";
   quantity: DecimalString;
   execution_price: DecimalString;
