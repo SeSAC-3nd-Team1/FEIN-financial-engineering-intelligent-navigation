@@ -94,6 +94,12 @@ class BacktestService:
         return BacktestAvailableRangeResponse.model_validate({"minDate": min_date, "maxDate": max_date})
 
     def run(self, request: BacktestRunRequest) -> BacktestRunResponse:
+        if request.period_id == "custom":
+            raise ServiceError(
+                "BACKTEST_CUSTOM_PERIOD_DISABLED",
+                "MVP에서는 제공되는 백테스트 기간만 선택할 수 있습니다.",
+                422,
+            )
         strategy = self.repository.strategy(request.strategy_id)
         if strategy is None:
             raise NotFoundError("STRATEGY_NOT_FOUND", "활성 투자 전략을 찾을 수 없습니다.")
