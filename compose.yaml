@@ -53,13 +53,24 @@ services:
       AZURE_OPENAI_CHATBOT_API_KEY: ${AZURE_OPENAI_CHATBOT_API_KEY:-}
       AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${AZURE_OPENAI_CHATBOT_DEPLOYMENT:-}
       AZURE_OPENAI_CHATBOT_API_VERSION: ${AZURE_OPENAI_CHATBOT_API_VERSION:-2024-10-21}
-      AI_CHATBOT_TIMEOUT_SECONDS: ${AI_CHATBOT_TIMEOUT_SECONDS:-30}
+      AI_CHATBOT_PROVIDER: ${AI_CHATBOT_PROVIDER:-foundry_orchestration}
+      FOUNDRY_PROJECT_ENDPOINT: ${FOUNDRY_PROJECT_ENDPOINT:-https://fein-agent.services.ai.azure.com/api/projects/proj-default}
+      FOUNDRY_ACCESS_TOKEN: ${FOUNDRY_ACCESS_TOKEN:-}
+      FEIN_CHATBOT_ID: ${FEIN_CHATBOT_ID:-fein-web-chatbot}
+      CHATBOT_REGISTRY_JSON: ${CHATBOT_REGISTRY_JSON:-{"chatbots":[{"chatbot_id":"fein-web-chatbot","display_name":"FE!N Web Chatbot","provider":"foundry","source_agent_name":"MBGCoordinator","enabled":true,"allowed_context_keys":["screen","stock_code","strategy_id"],"max_input_chars":4000,"max_response_chars":8000,"timeout_seconds":120}]}}
+      AI_CHATBOT_TIMEOUT_SECONDS: ${AI_CHATBOT_TIMEOUT_SECONDS:-120}
       AI_CHATBOT_MODEL_VERSION: ${AI_CHATBOT_MODEL_VERSION:-chatbot-v1}
       AI_CHATBOT_PROMPT_VERSION: ${AI_CHATBOT_PROMPT_VERSION:-v1}
       AI_CHATBOT_RATE_LIMIT_PER_MINUTE: ${AI_CHATBOT_RATE_LIMIT_PER_MINUTE:-30}
       AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS: ${AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS:-60}
       FINCON_VER23_MODEL_PATH: ${FINCON_VER23_MODEL_PATH:-/models/fincon_ver23_model_fix1.py}
       MBG_COORDINATOR_ENDPOINT: ${MBG_COORDINATOR_ENDPOINT:-https://fein-agent.services.ai.azure.com/api/projects/proj-default/agents/MBGCoordinator/endpoint/protocols/openai/responses}
+      MBG_COORDINATOR_AGENT_NAME: ${MBG_COORDINATOR_AGENT_NAME:-MBGCoordinator}
+      FINANCIAL_REPORT_AGENT_NAME: ${FINANCIAL_REPORT_AGENT_NAME:-FinancialReport}
+      NEWS_AGENT_NAME: ${NEWS_AGENT_NAME:-News}
+      MARKET_RESEARCH_AGENT_NAME: ${MARKET_RESEARCH_AGENT_NAME:-MarketResearch}
+      MACRO_AGENT_NAME: ${MACRO_AGENT_NAME:-Macro}
+      ASSET_MANAGER_AGENT_NAME: ${ASSET_MANAGER_AGENT_NAME:-AssetManager}
       MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
       LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
       MODEL_RECOMMENDATION_ALLOW_FALLBACK: ${MODEL_RECOMMENDATION_ALLOW_FALLBACK:-true}

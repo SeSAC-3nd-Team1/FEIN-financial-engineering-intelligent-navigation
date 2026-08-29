@@ -111,14 +111,17 @@ DEFAULT_LAYER_PROFILES: dict[Role, AgentLayerProfile] = {
     "News": _profile(
         "News", ("web_search_read", "news_read", "disclosure_read"), 120, 2,
         ("DART", "KRX", "CORPORATE_IR", "NEWS_PRIMARY", "NEWS_SECONDARY"),
+        16384,
     ),
     "MarketResearch": _profile(
         "MarketResearch", ("web_search_read", "industry_data_read"), 120, 2,
         ("GOV_INDUSTRY", "KRX", "CORPORATE_IR", "MARKET_RESEARCH"),
+        16384,
     ),
     "Macro": _profile(
         "Macro", ("macro_data_read", "web_search_read"), 120, 2,
         ("BOK_ECOS", "KOSTAT", "MOEF", "CUSTOMS", "CENTRAL_BANKS"),
+        8192,
     ),
     "AssetManager": _profile(
         "AssetManager", ("portfolio_read", "market_read", "agent_reports"), 120, 1,

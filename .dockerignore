@@ -5,6 +5,8 @@
 !ai/**
 !shared/
 !shared/**
+!agent-orchestration/
+!agent-orchestration/**
 !.deploy-artifacts/
 !.deploy-artifacts/**
 !output/

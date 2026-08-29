@@ -40,6 +40,7 @@ class Settings:
     azure_openai_api_version: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
 
     azure_openai_chatbot_endpoint: str = os.getenv("AZURE_OPENAI_CHATBOT_ENDPOINT", "")
+
     azure_openai_chatbot_api_key: str = os.getenv("AZURE_OPENAI_CHATBOT_API_KEY", "")
     azure_openai_chatbot_deployment: str = os.getenv(
         "AZURE_OPENAI_CHATBOT_DEPLOYMENT", ""
@@ -50,6 +51,17 @@ class Settings:
     ai_chatbot_timeout_seconds: float = float(
         os.getenv("AI_CHATBOT_TIMEOUT_SECONDS", "30")
     )
+    ai_chatbot_provider: str = os.getenv("AI_CHATBOT_PROVIDER", "foundry_orchestration")
+    foundry_project_endpoint: str = os.getenv("FOUNDRY_PROJECT_ENDPOINT", "").strip()
+    foundry_model_deployment_name: str = os.getenv("FOUNDRY_MODEL_DEPLOYMENT_NAME", "").strip()
+    mbg_coordinator_agent_name: str = os.getenv("MBG_COORDINATOR_AGENT_NAME", "MBGCoordinator")
+    financial_report_agent_name: str = os.getenv("FINANCIAL_REPORT_AGENT_NAME", "FinancialReport")
+    news_agent_name: str = os.getenv("NEWS_AGENT_NAME", "News")
+    market_research_agent_name: str = os.getenv("MARKET_RESEARCH_AGENT_NAME", "MarketResearch")
+    macro_agent_name: str = os.getenv("MACRO_AGENT_NAME", "Macro")
+    asset_manager_agent_name: str = os.getenv("ASSET_MANAGER_AGENT_NAME", "AssetManager")
+    chatbot_registry_json: str = os.getenv("CHATBOT_REGISTRY_JSON", "").strip()
+    chatbot_id: str = os.getenv("FEIN_CHATBOT_ID", "fein-web-chatbot").strip()
     ai_chatbot_model_version: str = os.getenv("AI_CHATBOT_MODEL_VERSION", "chatbot-v1")
     ai_chatbot_prompt_version: str = os.getenv("AI_CHATBOT_PROMPT_VERSION", "v1")
     ai_chatbot_rate_limit_per_minute: int = int(
