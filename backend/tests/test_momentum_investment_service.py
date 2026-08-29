@@ -30,16 +30,26 @@ class FakeSession:
     def add_all(self, values) -> None:
         self.targets.extend(values)
 
+    def add(self, _value) -> None:
+        pass
+
     def commit(self) -> None:
         self.commits += 1
 
 
 class FakeRepo:
-    def __init__(self, account) -> None:
+    def __init__(self, account, *, rebalance_run=None) -> None:
         self.account = account
+        self.rebalance_run = rebalance_run
 
     def owned_account(self, *_args, **_kwargs):
         return self.account
+
+    def momentum_rebalance_run(self, *_args, **_kwargs):
+        return self.rebalance_run
+
+    def positions(self, _account_id):
+        return [SimpleNamespace(stock_code="000001", quantity=Decimal("1"))]
 
 
 class FixedMarket:
@@ -78,6 +88,7 @@ def service(
     *,
     position_count: int = 0,
     existing_order_keys=(),
+    rebalance_run=None,
     **snapshot_options,
 ):
     account = SimpleNamespace(
@@ -97,7 +108,7 @@ def service(
         snapshot_service=FakeSnapshotService(**snapshot_options),  # type: ignore[arg-type]
         trading_service=trading,  # type: ignore[arg-type]
     )
-    result.repo = FakeRepo(account)  # type: ignore[assignment]
+    result.repo = FakeRepo(account, rebalance_run=rebalance_run)  # type: ignore[assignment]
     return result, session, trading
 
 
@@ -170,4 +181,19 @@ def test_fallback_or_stale_snapshot_is_not_applied(options) -> None:
         momentum.apply(7, momentum.repo.account.id)  # type: ignore[attr-defined]
 
     assert error.value.code == "MODEL_RECOMMENDATION_NOT_APPLICABLE"
+    assert trading.requests == []
+
+
+def test_rebalance_rejects_a_new_snapshot_after_the_quarter_was_executed() -> None:
+    momentum, _, trading = service(
+        position_count=1,
+        rebalance_run=SimpleNamespace(
+            snapshot_date=date(2026, 8, 20),
+        ),
+    )
+
+    with pytest.raises(ServiceError) as error:
+        momentum.rebalance(7, momentum.repo.account.id)  # type: ignore[attr-defined]
+
+    assert error.value.code == "MOMENTUM_QUARTER_ALREADY_EXECUTED"
     assert trading.requests == []

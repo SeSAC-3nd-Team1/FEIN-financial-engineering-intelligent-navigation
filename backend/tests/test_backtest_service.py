@@ -36,6 +36,9 @@ class FakeRepository:
     def universe_codes(self, _as_of: date, *, limit: int = 100) -> list[str]:
         return self.codes[:limit]
 
+    def stock_codes(self, _start_date: date, _end_date: date) -> list[str]:
+        return self.codes
+
     def available_dates(self, *, min_stocks: int):
         assert min_stocks == 10
         return date(2020, 1, 1), date(2026, 8, 20), date(2020, 3, 1), date(2026, 8, 18)
@@ -119,7 +122,7 @@ def test_metrics_calculate_return_cagr_mdd_volatility_and_sharpe() -> None:
 def test_available_range_uses_warmup_and_common_stock_index_end_date() -> None:
     result = BacktestService(FakeRepository()).available_range()
 
-    assert result.min_date == date(2020, 9, 17)
+    assert result.min_date == date(2024, 2, 9)
     assert result.max_date == date(2026, 8, 18)
 
 

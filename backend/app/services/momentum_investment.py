@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ServiceError
-from app.models import Order, Position, StrategyTargetWeight
+from app.models import MomentumRebalanceRun, Order, Position, StrategyTargetWeight
 from app.repositories import TradingRepository
 from app.schemas.api import ModelRecommendationApplyResponse, OrderCreateRequest
 from app.services.model_recommendation import ModelRecommendationService
@@ -141,7 +141,7 @@ class MomentumInvestmentService:
         Each leg has a stable snapshot/account/symbol/side key, so a retry after
         a partial run only submits missing legs.
         """
-        account = self.repo.owned_account(account_id, user_id)
+        account = self.repo.owned_account(account_id, user_id, lock=True)
         if account is None:
             raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
         if account.selected_strategy_id != "momentum":
@@ -158,9 +158,26 @@ class MomentumInvestmentService:
             or sum(targets.values(), Decimal("0")) != Decimal("0.95")
         ):
             raise ServiceError("INVALID_STRATEGY_TARGET_WEIGHTS", "v2 목표 주식 비중 합계는 0.95여야 합니다.", 503)
-        self._publish_targets(snapshot.as_of, targets)
         if account.operation_mode != "AUTO":
+            self._publish_targets(snapshot.as_of, targets)
             return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")
+        quarter = (snapshot.as_of.month - 1) // 3 + 1
+        run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
+        if run is not None and run.snapshot_date != snapshot.as_of:
+            raise ServiceError(
+                "MOMENTUM_QUARTER_ALREADY_EXECUTED",
+                "해당 계좌는 이번 분기 모멘텀 리밸런싱을 이미 실행했습니다.",
+                409,
+            )
+        if run is None:
+            self.session.add(MomentumRebalanceRun(
+                account_id=account.id,
+                execution_year=snapshot.as_of.year,
+                execution_quarter=quarter,
+                snapshot_date=snapshot.as_of,
+            ))
+            self.session.commit()
+        self._publish_targets(snapshot.as_of, targets)
         positions = self.repo.positions(account.id)
         if not positions:
             # Preserve the existing explicit initial-investment policy.

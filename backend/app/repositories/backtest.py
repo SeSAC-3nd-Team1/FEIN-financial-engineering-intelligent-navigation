@@ -162,6 +162,20 @@ class BacktestRepository:
             .limit(limit)
         ))
 
+    def stock_codes(self, start_date: date, end_date: date) -> list[str]:
+        """Return all symbols observed in a backtest window."""
+        return list(self.session.scalars(
+            select(MarketStockPrice.stock_code)
+            .where(
+                MarketStockPrice.trade_date >= start_date,
+                MarketStockPrice.trade_date <= end_date,
+                MarketStockPrice.market_cap.is_not(None),
+                MarketStockPrice.market_cap > 0,
+            )
+            .distinct()
+            .order_by(MarketStockPrice.stock_code)
+        ))
+
     def stock_prices(self, stock_codes: list[str], start_date: date, end_date: date) -> list[StockPricePoint]:
         rows = self.session.execute(
             select(

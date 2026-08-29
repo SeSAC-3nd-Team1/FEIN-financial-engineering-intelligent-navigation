@@ -22,7 +22,11 @@ from app.repositories.backtest import (
 from app.schemas.api import BacktestAvailableRangeResponse, BacktestRunRequest, BacktestRunResponse
 
 
-LOOKBACK_DAYS = 260
+# v2 needs 273 trading days for the 12M/skip-1M return and 156 completed
+# weekly volatility observations.  1,500 calendar days leaves enough room for
+# weekends, holidays, and sparse listings in the real repository.
+V2_LOOKBACK_DAYS = 1500
+LOOKBACK_DAYS = V2_LOOKBACK_DAYS
 LOW_VOL_WINDOW = 60
 MOMENTUM_WINDOW = 126  # legacy baseline helper; service momentum uses v2 below.
 MIN_LOW_VOL_OBSERVATIONS = LOW_VOL_WINDOW
@@ -79,7 +83,14 @@ class BacktestService:
         if factor not in {"low_volatility", "momentum", "value"}:
             raise ServiceError("BACKTEST_STRATEGY_UNAVAILABLE", "지원하지 않는 전략 규칙입니다.", 422)
 
-        universe = self.repository.universe_codes(request.start_date)
+        if factor == "momentum":
+            # Keep every code observed in the period so rank() can rebuild the
+            # top-100 investable universe at each point in time.
+            universe = self.repository.stock_codes(
+                request.start_date - timedelta(days=LOOKBACK_DAYS), request.end_date
+            )
+        else:
+            universe = self.repository.universe_codes(request.start_date)
         if len(universe) < PORTFOLIO_SIZE:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "백테스트 universe 데이터가 부족합니다.")
         warmup_start = request.start_date - timedelta(days=LOOKBACK_DAYS)

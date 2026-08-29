@@ -17,6 +17,7 @@ from app.models import (
     FundOperationOrder,
     InvestmentOnboarding,
     MarketStock,
+    MomentumRebalanceRun,
     Order,
     PortfolioSnapshot,
     Position,
@@ -229,6 +230,13 @@ class TradingRepository:
 
     def order_by_idempotency(self, account_id: UUID, key: str) -> Order | None:
         return self.session.scalar(select(Order).where(Order.account_id == account_id, Order.idempotency_key == key))
+
+    def momentum_rebalance_run(self, account_id: UUID, year: int, quarter: int) -> MomentumRebalanceRun | None:
+        return self.session.scalar(select(MomentumRebalanceRun).where(
+            MomentumRebalanceRun.account_id == account_id,
+            MomentumRebalanceRun.execution_year == year,
+            MomentumRebalanceRun.execution_quarter == quarter,
+        ))
 
     def fund_operation_by_idempotency(
         self,
