@@ -1,4 +1,6 @@
-"""Algorithm(ver.2.4) 영속 코어-위성 및 통합 위험상태 전용 손절 모듈.
+"""Algorithm(ver.2.4)_loss_cut_fix2.py
+
+Algorithm(ver.2.4)_fix2 전용 영속 코어-위성 및 통합 위험상태 손절 모듈.
 
 원본 알고리즘이 전달하는 BMA 예측분포, BOCPD/HMM 레짐, Expert 상태와
 포지션 상태를 이용한다. 기본값은 추천과 로그만 생성하며, ``auto_apply=True``일
@@ -95,7 +97,8 @@ class AlgorithmLossCutMonitor:
         if not getattr(position_state, "entry_expert", ""):
             position_state.entry_expert = dominant_expert
 
-        self._arm_or_raise_stop(position_state, atr, dominant_expert)
+        # bar 시작 시 이미 존재하던 stop만 당일 High/Low에 대조한다.
+        # 당일 관측으로 갱신한 trailing stop은 다음 bar부터 유효하다.
         action, reason, confidence = self._decision(
             close=close,
             low=float(market_row["Low"]),
@@ -108,6 +111,16 @@ class AlgorithmLossCutMonitor:
             portfolio=portfolio,
             position_state=position_state,
         )
+
+        if action not in {"EXIT", "EMERGENCY_EXIT"}:
+            self._observe_completed_bar(
+                position_state,
+                low=float(market_row["Low"]),
+                high=float(market_row["High"]),
+                close=close,
+                timestamp=timestamp,
+            )
+            self._arm_or_raise_stop(position_state, atr, dominant_expert)
 
         target = approved_equity
         if action in {"EXIT", "EMERGENCY_EXIT"}:
@@ -170,6 +183,28 @@ class AlgorithmLossCutMonitor:
             confidence,
             position_state,
         )
+
+    @staticmethod
+    def _observe_completed_bar(
+        state: object,
+        *,
+        low: float,
+        high: float,
+        close: float,
+        timestamp: pd.Timestamp,
+    ) -> None:
+        """완료된 bar를 다음 bar용 trailing state에 한 번만 반영한다."""
+        state.highest_price_since_entry = max(
+            float(state.highest_price_since_entry), high, close
+        )
+        state.lowest_price_since_entry = min(
+            float(state.lowest_price_since_entry), low, close
+        )
+        observed_at = pd.Timestamp(timestamp)
+        previous = getattr(state, "last_observed_at", None)
+        if previous is None or observed_at > pd.Timestamp(previous):
+            state.holding_bars = int(getattr(state, "holding_bars", 0)) + 1
+        state.last_observed_at = observed_at
 
     def _arm_or_raise_stop(self, state: object, atr: float, dominant_expert: str) -> None:
         c = self.config

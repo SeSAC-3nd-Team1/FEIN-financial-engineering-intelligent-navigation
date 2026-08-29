@@ -1,6 +1,6 @@
 """
-Algorithm(ver.2.4).py
-===================
+Algorithm(ver.2.4)_fix2.py
+========================
 BOCPD + HMM (Markov Switching) + LightGBM -> regime experts -> BMA -> fractional Kelly
 -> calibrated expert×regime BMA -> core/satellite -> durable execution.
 
@@ -13,8 +13,8 @@ BOCPD + HMM (Markov Switching) + LightGBM -> regime experts -> BMA -> fractional
 
 실행 예시
 ---------
-    python "Algorithm(ver.2.4).py"
-    python "Algorithm(ver.2.4).py" --csv prices.csv --state-file state.json
+    python "Algorithm(ver.2.4)_fix2.py"
+    python "Algorithm(ver.2.4)_fix2.py" --csv prices.csv --state-file state.json
 
 CSV 필수 열: Date, Open, High, Low, Close, Volume
 """
@@ -927,7 +927,18 @@ class BayesianModelAverager:
         weights = {k: v / total for k, v in raw.items()}
         count = len(weights)
         if count * self.floor > 1.0 + EPS or count * self.cap < 1.0 - EPS:
-            raise ValueError("BMA floor/cap으로 합계 1인 가중치를 만들 수 없습니다.")
+            # 유효 expert가 부족한 degraded mode에서는 cap을 억지로 깨거나
+            # 전략 전체를 중단하지 않고 명시적으로 현금/no-trade로 후퇴한다.
+            if "cash_no_trade" in forecasts:
+                fallback = {"cash_no_trade": 1.0}
+                self.previous_forecasts = {
+                    "cash_no_trade": forecasts["cash_no_trade"]
+                }
+                self.previous_regime_probabilities = dict(regime_probabilities)
+                return fallback
+            self.previous_forecasts = {}
+            self.previous_regime_probabilities = dict(regime_probabilities)
+            return {}
 
         # Lower bound를 먼저 배정하고, 남은 질량을 원래 확률에 비례해
         # 배분한다. cap에 닿은 expert는 고정한 뒤 나머지에 재분배하므로
@@ -1131,7 +1142,7 @@ def equity_weight_to_tactical(weight: float, config: Config) -> float:
 def tactical_to_equity_weight(
     tactical_weight: float, risk_reason: str, config: Config, portfolio: PortfolioState
 ) -> float:
-    """정상 시 70~100% 코어-위성 비중, 비상 시 0%를 반환한다."""
+    """정상 시 코어~설정 상한의 전체 주식 비중, 비상 시 0%를 반환한다."""
     if risk_reason in EMERGENCY_RISK_REASONS:
         return 0.0
     if risk_reason == "reentry_ramp":
@@ -1144,9 +1155,12 @@ def tactical_to_equity_weight(
             portfolio.risk_cycle_peak_equity = portfolio.equity
             portfolio.reentry_bars_elapsed = 0
             portfolio.reentry_source = ""
-        return weight
+        return float(min(weight, config.max_long_weight))
     tactical = float(np.clip(tactical_weight, 0.0, 1.0))
-    return float(config.core_equity_weight + (1.0 - config.core_equity_weight) * tactical)
+    equity_weight = config.core_equity_weight + (
+        1.0 - config.core_equity_weight
+    ) * tactical
+    return float(min(equity_weight, config.max_long_weight))
 
 
 class PaperBroker:
@@ -1167,7 +1181,8 @@ class PaperBroker:
         self.state.peak_equity = self.state.all_time_peak_equity
         if self.state.risk_state in {"NORMAL", "RISK_REDUCED"}:
             self.state.risk_cycle_peak_equity = max(self.state.risk_cycle_peak_equity, self.state.equity)
-        self.position_risk.observe_price(close, timestamp)
+        # 포지션 High/Low 갱신은 기존 stop 판정이 끝난 뒤 loss-cut 모듈이
+        # 수행한다. 여기서 Close를 먼저 반영하면 동일 bar 미래정보가 섞인다.
 
     def finalize_close(self) -> None:
         """위험 판단이 끝난 뒤 오늘 종가 자산을 다음 bar 기준값으로 확정한다."""
@@ -1658,14 +1673,14 @@ def performance_metrics(equity: pd.Series, returns: pd.Series, costs: pd.Series)
 def load_loss_cut_monitor(
     auto_apply: bool = False, cooldown_bars: int = 1, reentry_total_bars: int = 3
 ) -> object:
-    """같은 폴더의 ``Algorithm(ver.2.4)_loss_cut_fix.py``를 동적으로 로드한다."""
+    """같은 폴더의 ``Algorithm(ver.2.4)_loss_cut_fix2.py``를 동적으로 로드한다."""
     import importlib.util
     import sys
 
-    companion = Path(__file__).with_name("Algorithm(ver.2.4)_loss_cut_fix.py")
+    companion = Path(__file__).with_name("Algorithm(ver.2.4)_loss_cut_fix2.py")
     if not companion.exists():
         raise FileNotFoundError(f"손절 companion 모듈이 없습니다: {companion}")
-    module_name = "algorithm_ver_2_4_loss_cut"
+    module_name = "algorithm_ver_2_4_loss_cut_fix2"
     spec = importlib.util.spec_from_file_location(module_name, companion)
     if spec is None or spec.loader is None:
         raise ImportError(f"손절 companion 모듈을 로드할 수 없습니다: {companion}")
