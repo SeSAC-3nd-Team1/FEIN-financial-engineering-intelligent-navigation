@@ -137,20 +137,21 @@ class BacktestService:
                     "가치 전략에 필요한 공시 시점 기준 재무 데이터가 부족합니다.",
                 )
 
-        prices = self._price_map(price_points)
-        market_caps = self._market_cap_map(price_points)
-        financials = self._financial_map(financial_points)
-        corporate_actions = self._corporate_action_dates(price_points)
         dates = [point.trade_date for point in benchmark]
-        strategy_values = (
-            self._simulate_risk_adjusted_momentum_v2(price_points, dates)
-            if factor == "momentum"
-            else self._simulate(
+        if factor == "momentum":
+            # stock_price_stream is a single-pass iterator.  Do not consume it
+            # while building legacy maps before the v2 simulator reads it.
+            strategy_values = self._simulate_risk_adjusted_momentum_v2(price_points, dates)
+        else:
+            prices = self._price_map(price_points)
+            market_caps = self._market_cap_map(price_points)
+            financials = self._financial_map(financial_points)
+            corporate_actions = self._corporate_action_dates(price_points)
+            strategy_values = self._simulate(
                 factor, prices, dates, corporate_actions,
                 market_caps=market_caps, financials=financials,
                 rebalance_cycle=strategy.rebalance_cycle,
             )
-        )
         benchmark_values = self._benchmark_values(benchmark)
         metrics = calculate_metrics(strategy_values, dates)
         benchmark_metrics = calculate_metrics(benchmark_values, dates)

@@ -70,6 +70,9 @@ class FakeRepository:
             offset += 1
         return points
 
+    def stock_price_stream(self, stock_codes: list[str], start_date: date, end_date: date):
+        return iter(self.stock_prices(stock_codes, start_date, end_date))
+
     def point_in_time_financials(
         self,
         stock_codes: list[str],
