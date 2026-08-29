@@ -69,3 +69,20 @@ def test_history_120d_ready_requires_current_and_120th_prior_observation(
     result = compute_stock_features(frame)
 
     assert bool(result.iloc[-1]["history_120d_ready"]) is ready
+
+
+def test_history_120d_ready_matches_shift_semantics_with_intermediate_gap() -> None:
+    observations = 121
+    frame = pd.DataFrame(
+        {
+            "stock_code": "AAA",
+            "trade_date": pd.date_range("2025-01-01", periods=observations, freq="D"),
+            "close_price": [100.0] * observations,
+            "volume": [1000] * observations,
+        }
+    )
+    frame.loc[60, "close_price"] = None
+
+    result = compute_stock_features(frame)
+
+    assert bool(result.iloc[-1]["history_120d_ready"]) is True

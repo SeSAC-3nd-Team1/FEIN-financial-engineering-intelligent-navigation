@@ -327,9 +327,10 @@ class BacktestService:
         )
         frame["volume_ratio_20d"] = frame["volume"] / volume_average.replace(0, math.nan)
         frame["history_120d_ready"] = grouped["close_price"].transform(
-            # momentum_120d = close / close.shift(120) - 1 needs the current
-            # observation plus the observation 120 rows earlier.
-            lambda values: values.rolling(121, min_periods=121).count().ge(121)
+            # Match the live pipeline exactly: readiness means the current
+            # close and the close 120 observations earlier are present. It
+            # does not require every row between those observations.
+            lambda values: values.notna() & values.shift(120).notna()
         )
         frame = apply_stock_risk_filter(frame)
         model = RiskAdjustedMomentumModel()
