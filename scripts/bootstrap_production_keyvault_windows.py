@@ -56,16 +56,56 @@ def windows_az(*args: str, capture: bool = False, check: bool = True) -> str:
     return completed.stdout.strip() if capture and completed.stdout else ""
 
 
+def get_option(name: str, default: str) -> str:
+    try:
+        index = sys.argv.index(name)
+    except ValueError:
+        return default
+    if index + 1 >= len(sys.argv):
+        raise SystemExit(f"Missing value after {name}")
+    return sys.argv[index + 1]
+
+
+def ensure_resource_group_argument() -> None:
+    if "--resource-group" in sys.argv:
+        return
+
+    backend_app = get_option("--backend-app", bootstrap_module.DEFAULT_BACKEND_APP)
+    resource_group = windows_az(
+        "containerapp",
+        "list",
+        "--query",
+        f"[?name=='{backend_app}'].resourceGroup | [0]",
+        "--output",
+        "tsv",
+        capture=True,
+    )
+    if not resource_group:
+        raise SystemExit(
+            f"Resource group for Backend Container App {backend_app} could not be resolved. "
+            "Pass it explicitly with --resource-group."
+        )
+    sys.argv.extend(["--resource-group", resource_group])
+    print(f"Resolved Resource Group: {resource_group}")
+
+
 def main() -> None:
     if sys.platform != "win32":
         raise SystemExit(
             "This launcher is only for Windows. Use bootstrap_production_keyvault.py elsewhere."
         )
 
+    # Verify the existing Azure CLI login using the bundled Python runtime.
+    try:
+        windows_az("account", "show", "--output", "none")
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit("Azure CLI is not authenticated. Run `az login` first.") from exc
+
+    ensure_resource_group_argument()
+
     # Patch the module-level Azure CLI runner before bootstrap_module.main() calls
     # account/resource/container/key-vault commands. No shell is involved.
     bootstrap_module.az = windows_az
-    bootstrap_module.AZURE_CLI = f"{AZURE_CLI_PYTHON} -IBm azure.cli"
     bootstrap_module.main()
 
 
