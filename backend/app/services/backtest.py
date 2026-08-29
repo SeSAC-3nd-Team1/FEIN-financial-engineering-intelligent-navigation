@@ -1,6 +1,7 @@
 """시점별 실제 KRX 가격과 공시 가능 재무정보를 사용하는 전략 백테스트 엔진."""
 
 from collections import defaultdict
+from itertools import chain, groupby
 from datetime import date, timedelta
 import gc
 import math
@@ -35,7 +36,6 @@ MOMENTUM_WINDOW = 126  # legacy baseline helper; service momentum uses v2 below.
 MIN_LOW_VOL_OBSERVATIONS = LOW_VOL_WINDOW
 MIN_MOMENTUM_OBSERVATIONS = MOMENTUM_WINDOW
 PORTFOLIO_SIZE = 10
-V2_FEATURE_BATCH_SIZE = 100
 V2_FEATURE_COLUMNS = [
     "trade_date",
     "stock_code",
@@ -113,7 +113,11 @@ class BacktestService:
         if len(universe) < PORTFOLIO_SIZE:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "백테스트 universe 데이터가 부족합니다.")
         warmup_start = request.start_date - timedelta(days=lookback_days)
-        price_points = self.repository.stock_prices(universe, warmup_start, request.end_date)
+        price_points = (
+            self.repository.stock_price_stream(universe, warmup_start, request.end_date)
+            if factor == "momentum" and hasattr(self.repository, "stock_price_stream")
+            else self.repository.stock_prices(universe, warmup_start, request.end_date)
+        )
         benchmark = self.repository.kospi_prices(request.start_date, request.end_date)
         if len(benchmark) < 2:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "KOSPI 기준지수 데이터가 부족합니다.")
@@ -341,31 +345,30 @@ class BacktestService:
 
     @staticmethod
     def _build_v2_features(
-        points: list[StockPricePoint], model: RiskAdjustedMomentumModel
+        points, model: RiskAdjustedMomentumModel
     ) -> pd.DataFrame:
-        """Compute v2 features in bounded stock batches.
+        """Compute v2 features with bounded per-stock working memory.
 
         A five-year request can contain millions of OHLCV rows.  Building the
         input frame, feature frame, risk-filter frame, and model frame for the
         complete universe at once exceeds the Production Container App memory
-        limit.  Features are independent within each stock, so batch by stock
-        and retain only the columns needed for cross-sectional ranking and
-        portfolio drift.
+        limit.  Features are independent within each stock, so process one
+        stock at a time and retain only the columns needed for cross-sectional
+        ranking and portfolio drift.
         """
-        points_by_stock: dict[str, list[StockPricePoint]] = defaultdict(list)
-        for point in points:
-            points_by_stock[point.stock_code].append(point)
-        if not points_by_stock:
+        if isinstance(points, list):
+            # Test doubles and legacy repositories return lists in arbitrary
+            # order; the production stream is already ordered by stock/date.
+            points = iter(sorted(points, key=lambda point: (point.stock_code, point.trade_date)))
+        point_groups = groupby(points, key=lambda point: point.stock_code)
+        first_group = next(point_groups, None)
+        if first_group is None:
             return pd.DataFrame(columns=V2_FEATURE_COLUMNS)
 
-        stock_codes = sorted(points_by_stock)
         pieces: list[pd.DataFrame] = []
-        for offset in range(0, len(stock_codes), V2_FEATURE_BATCH_SIZE):
-            batch_points = [
-                point
-                for stock_code in stock_codes[offset : offset + V2_FEATURE_BATCH_SIZE]
-                for point in points_by_stock[stock_code]
-            ]
+        groups = chain((first_group,), point_groups)
+        for _, point_group in groups:
+            stock_points = list(point_group)
             frame = pd.DataFrame([
                 {
                     "stock_code": point.stock_code,
@@ -379,9 +382,9 @@ class BacktestService:
                     "high_price": float(point.high_price) if point.high_price is not None else None,
                     "low_price": float(point.low_price) if point.low_price is not None else None,
                 }
-                for point in batch_points
+                for point in stock_points
             ])
-            del batch_points
+            del stock_points
             if frame.empty:
                 continue
             try:
