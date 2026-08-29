@@ -163,14 +163,14 @@ class MomentumInvestmentService:
             return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")
         quarter = (snapshot.as_of.month - 1) // 3 + 1
         run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
-        if run is not None and run.status == "COMPLETED":
-            return self._response(account.id, snapshot.as_of, len(targets), 0, "ALREADY_APPLIED")
         if run is not None and run.snapshot_date != snapshot.as_of:
             raise ServiceError(
                 "MOMENTUM_QUARTER_ALREADY_EXECUTED",
                 "해당 계좌는 이번 분기 모멘텀 리밸런싱을 이미 실행했습니다.",
                 409,
             )
+        if run is not None and run.status == "COMPLETED":
+            return self._response(account.id, snapshot.as_of, len(targets), 0, "ALREADY_APPLIED")
         if run is None:
             self.session.add(MomentumRebalanceRun(
                 account_id=account.id,

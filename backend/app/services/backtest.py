@@ -11,6 +11,7 @@ import pandas as pd
 # factor implementation which produces the live recommendation artifact.
 from inference.risk_adjusted_recommendation_snapshot import _capped_score_market_cap_weights
 from models.risk_adjusted_momentum import RiskAdjustedMomentumModel
+from risk import apply_stock_risk_filter
 
 from app.core.errors import NotFoundError, ServiceError
 from app.repositories.backtest import (
@@ -273,11 +274,34 @@ class BacktestService:
                 "close_price": float(point.close),
                 "listed_shares": point.listed_shares,
                 "market_cap": point.market_cap,
+                "volume": point.volume if point.volume is not None else 1,
+                "trading_value": (
+                    float(point.trading_value)
+                    if point.trading_value is not None
+                    else float(point.close)
+                ),
             }
             for point in points
         ])
         if frame.empty:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 가격 데이터가 부족합니다.")
+        grouped = frame.sort_values(["stock_code", "trade_date"]).groupby("stock_code", group_keys=False)
+        returns = grouped["close_price"].pct_change(fill_method=None)
+        frame["trading_value_sma_20d"] = grouped["trading_value"].transform(
+            lambda values: values.rolling(20, min_periods=20).mean()
+        )
+        frame["volatility_60d"] = returns.groupby(frame["stock_code"]).transform(
+            lambda values: values.rolling(60, min_periods=60).std() * math.sqrt(252)
+        )
+        volume_average = grouped["volume"].transform(
+            lambda values: values.rolling(20, min_periods=20).mean()
+        )
+        frame["volume_ratio_20d"] = frame["volume"] / volume_average.replace(0, math.nan)
+        frame["history_120d_ready"] = grouped["close_price"].transform(
+            lambda values: values.rolling(120, min_periods=120).count().ge(120)
+        )
+        frame["is_tradable"] = frame["volume"].gt(0)
+        frame = apply_stock_risk_filter(frame)
         model = RiskAdjustedMomentumModel()
         try:
             features = model.compute_features(frame)
@@ -322,7 +346,10 @@ class BacktestService:
                 values.append(values[-1])
             bucket = BacktestService._rebalance_bucket(trade_date.date(), "QUARTERLY")
             if bucket != last_bucket:
-                cross_section = features.loc[features["trade_date"].eq(trade_date)].copy()
+                # The prior quarter's last observed trading day is the decision
+                # close; the new quarter's first day is the first return under
+                # that target, matching the AI evaluation convention.
+                cross_section = features.loc[features["trade_date"].eq(previous_date)].copy()
                 try:
                     ranked = model.rank(cross_section)
                     selected = ranked.loc[ranked["selected"]]

@@ -28,8 +28,8 @@ def upgrade() -> None:
             "account_id", "execution_year", "execution_quarter",
             name="uq_momentum_rebalance_runs_account_quarter",
         ),
-        sa.CheckConstraint("execution_quarter BETWEEN 1 AND 4", name="ck_momentum_rebalance_runs_quarter"),
-        sa.CheckConstraint("status IN ('RUNNING', 'COMPLETED')", name="ck_momentum_rebalance_runs_status"),
+        sa.CheckConstraint("execution_quarter BETWEEN 1 AND 4", name=op.f("ck_momentum_rebalance_runs_quarter")),
+        sa.CheckConstraint("status IN ('RUNNING', 'COMPLETED')", name=op.f("ck_momentum_rebalance_runs_status")),
     )
 
 

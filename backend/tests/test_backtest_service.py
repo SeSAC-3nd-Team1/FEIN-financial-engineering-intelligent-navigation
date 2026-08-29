@@ -51,7 +51,7 @@ class FakeRepository:
         offset = 0
         while day <= end_date:
             for index, code in enumerate(stock_codes):
-                price = Decimal("100") * (Decimal("1") + Decimal("0.0002") * (index + 1)) ** offset
+                price = Decimal("1000") * (Decimal("1") + Decimal("0.0002") * (index + 1)) ** offset
                 points.append(
                     StockPricePoint(
                         code,

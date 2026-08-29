@@ -166,7 +166,7 @@ export default function StrategyDetail({
         }
       });
     return () => { cancelled = true; };
-  }, [retryToken]);
+  }, [retryToken, strategy.id]);
 
   // 전략이 바뀌면(다른 strategyId로 재진입) 기간 선택은 추천 기간 기본값으로 되돌린다
   useEffect(() => {
