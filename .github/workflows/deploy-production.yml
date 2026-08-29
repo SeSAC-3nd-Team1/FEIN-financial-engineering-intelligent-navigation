@@ -575,17 +575,21 @@ jobs:
           set_plain_env CHATBOT_REGISTRY_JSON "${CHATBOT_REGISTRY_JSON}"
           set_plain_env FEIN_CHATBOT_ID "${FEIN_CHATBOT_ID}"
 
-          if [[ -z "${FOUNDRY_PROJECT_ENDPOINT}" || -z "${CHATBOT_REGISTRY_JSON}" || -z "${FEIN_CHATBOT_ID}" ]]; then
-            echo "FOUNDRY_PROJECT_ENDPOINT, CHATBOT_REGISTRY_JSON, and FEIN_CHATBOT_ID are required for the production chatbot provider." >&2
-            exit 1
+          # Foundry chatbot configuration is optional for the core investment
+          # product.  When it is configured, validate it; otherwise preserve
+          # the existing Container App environment and allow backtest,
+          # recommendation, and trading flows to deploy independently.
+          if [[ -n "${FOUNDRY_PROJECT_ENDPOINT}" && -n "${CHATBOT_REGISTRY_JSON}" && -n "${FEIN_CHATBOT_ID}" ]]; then
+            python - <<'PY'
+            import json, os
+            registry = json.loads(os.environ["CHATBOT_REGISTRY_JSON"])
+            chatbots = registry.get("chatbots", [])
+            if not any(item.get("chatbot_id") == os.environ["FEIN_CHATBOT_ID"] and item.get("enabled") is True for item in chatbots):
+                raise SystemExit("CHATBOT_REGISTRY_JSON does not enable FEIN_CHATBOT_ID")
+            PY
+          else
+            echo "Foundry chatbot configuration is absent; preserving existing chatbot settings and continuing core deployment."
           fi
-          python - <<'PY'
-          import json, os
-          registry = json.loads(os.environ["CHATBOT_REGISTRY_JSON"])
-          chatbots = registry.get("chatbots", [])
-          if not any(item.get("chatbot_id") == os.environ["FEIN_CHATBOT_ID"] and item.get("enabled") is True for item in chatbots):
-              raise SystemExit("CHATBOT_REGISTRY_JSON does not enable FEIN_CHATBOT_ID")
-          PY
 
           if (( ${#secret_args[@]} > 0 )); then
             az containerapp secret set \
