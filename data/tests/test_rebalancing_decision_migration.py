@@ -45,7 +45,7 @@ def test_upgrade_backfills_key_and_removes_legacy_duplicates(
     migration_database: tuple[Config, Engine],
 ) -> None:
     config, engine = migration_database
-    suffix = uuid4().hex[:10]
+    suffix = uuid4().hex[:8]
     account_id = uuid4()
     first_id = uuid4()
     duplicate_id = uuid4()
