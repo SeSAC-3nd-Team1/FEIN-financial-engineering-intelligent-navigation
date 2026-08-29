@@ -90,13 +90,13 @@ docker compose up -d --force-recreate
 
 ## Production Container Apps 배포 환경변수
 
-Production 배포는 GitHub Actions의 `production` Environment를 사용한다. 실제 Secret 값은 workflow 파일이나 문서에 직접 기록하지 않는다. `.github/workflows/deploy-production.yml`은 GitHub Environment에 새 값이 있으면 이를 우선 사용하고, 값이 비어 있으면 현재 `ca-backend-fein-vnet`에 이미 설정된 환경변수를 그대로 재사용한다.
+Production 배포는 GitHub Actions의 `production` Environment와 Azure Key Vault `kv-fein`을 함께 사용한다. 실제 Secret 값은 workflow, 저장소, Issue, PR, 로그에 기록하지 않는다.
 
-이 정책은 기존 운영 설정을 한 번에 GitHub로 이전하지 못한 상태에서도 배포가 기존 credential을 지우지 않도록 하기 위한 bootstrap 정책이다. GitHub에도 없고 현재 Azure Container App에도 없는 외부 연동 값은 이름만 출력하고 배포를 실패 처리한다. 실제 Secret 값은 로그에 출력하지 않는다.
+배포의 핵심 의존성은 PostgreSQL, 내부 Redis, ACS Email, KIS다. NAVER 뉴스와 Azure OpenAI 기능은 해당 credential이 있을 때 활성화되는 선택 연동이며, 값이 없다는 이유만으로 Frontend/Backend 전체 Production 배포를 차단하지 않는다.
 
 ### 반드시 GitHub production Environment에 있어야 하는 값
 
-아래 값은 Azure 로그인 및 배포 bootstrap 자체에 필요하므로 기존 Container App 값으로 대체하지 않는다.
+Azure 로그인과 배포 자체에 필요한 값이다.
 
 **Secrets**
 
@@ -112,45 +112,84 @@ Production 배포는 GitHub Actions의 `production` Environment를 사용한다.
 - `FRONTEND_APP_NAME`
 - `BACKEND_APP_NAME`
 
-### GitHub Environment Secrets
+### Production Redis
 
-아래 항목은 `production` Environment의 **Secrets**에 등록하는 것을 권장한다. 등록되어 있으면 배포 시 Container App Secret으로 갱신하고 `secretref:`로 사용한다. GitHub에 값이 없을 때 현재 Container App에 동일한 환경변수가 이미 존재하면 기존 값을 보존한다.
+Production에서는 로컬 Docker Compose 주소인 `redis://redis:6379/0`을 사용하지 않는다.
 
-| 이름 | 용도 |
+workflow가 Backend와 동일한 Azure Container Apps Environment에 `ca-redis-fein-vnet`을 생성하거나 기존 App을 재사용하고, internal TCP 6379만 활성화한다. 기존 Redis App을 재사용할 때는 Backend와 `managedEnvironmentId`가 동일한지 확인하며 다르면 배포를 실패 처리한다.
+
+Backend에는 다음 주소가 자동 설정된다.
+
+```text
+REDIS_URL=redis://ca-redis-fein-vnet:6379/0
+```
+
+따라서 Production GitHub Environment에 별도 `REDIS_URL` Secret을 등록하지 않는다. 이 Redis는 OTP 상태, rate limit, 가격·뉴스 cache 등 휘발성 상태용 MVP 구성이다. 장기 상용 운영에서는 인증/ACL 적용 또는 Azure Managed Redis 전환을 검토한다.
+
+### ACS / KIS Secret bootstrap
+
+회원가입과 실제 시세 흐름에 필요한 ACS/KIS credential은 다음 우선순위로 설정한다.
+
+1. GitHub `production` Environment Secret이 있으면 해당 값을 사용한다.
+2. GitHub에 값이 없으면 Azure Key Vault `kv-fein`의 Secret을 Container App Key Vault reference로 연결한다.
+
+GitHub에서 선택적으로 등록할 수 있는 이름은 다음과 같다.
+
+- `ACS_EMAIL_CONNECTION_STRING`
+- `KIS_APP_KEY`
+- `KIS_APP_SECRET`
+
+Key Vault 기본 Secret 이름은 다음과 같고 Variables로 재정의할 수 있다.
+
+| Variable | 기본값 | 용도 |
+| --- | --- | --- |
+| `KEY_VAULT_NAME` | `kv-fein` | Production Key Vault 이름 |
+| `ACS_EMAIL_KV_SECRET` | `email-service-key` | ACS Email 연결 credential Secret 이름 |
+| `KIS_APP_KEY_KV_SECRET` | `kis-app-key` | KIS App Key Secret 이름 |
+| `KIS_APP_SECRET_KV_SECRET` | `kis-app-secret` | KIS App Secret Secret 이름 |
+
+GitHub Secret이 비어 Key Vault reference가 필요하면 workflow가 Backend Container App의 system-assigned managed identity를 활성화한다. Key Vault가 RBAC 모드이면 `Key Vault Secrets User`, access-policy 모드이면 secret `get/list` 권한을 부여하려고 시도한다. 배포 주체에 해당 권한 부여 권한이 없으면 Secret 값을 우회해서 노출하지 않고 명시적으로 배포를 실패 처리한다.
+
+Container App 내부 Secret 이름은 Azure 제한을 고려해 `acs-email`, `kis-key`, `kis-secret`처럼 짧게 유지하고 Backend 환경변수에서는 `secretref:`로 참조한다.
+
+### Backend 인증 / 이메일 OTP Secret
+
+- `JWT_SECRET`
+- `EMAIL_OTP_SECRET`
+
+위 두 값은 GitHub `production` Secrets에 직접 등록할 수 있다. GitHub 값이 없고 기존 Backend 환경에도 값이 없으면 workflow가 충분히 긴 난수를 생성해 Container App Secret으로 저장한다. 이후 배포에서는 기존 값을 유지한다.
+
+### 선택 연동: NAVER / Azure OpenAI
+
+다음 Secret은 해당 기능을 Production에서 활성화할 때 GitHub `production` Environment에 등록한다.
+
+- `NAVER_API_HUB_CLIENT_ID`
+- `NAVER_API_HUB_CLIENT_SECRET`
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_CHATBOT_API_KEY`
+
+값이 있으면 workflow가 Container App Secret으로 저장하고 Backend 환경변수에 `secretref:`를 연결한다. 값이 없으면 해당 기능은 Backend의 기존 unavailable/error 정책을 따르지만 전체 Production 배포는 계속할 수 있다.
+
+비민감 설정은 GitHub `production` Variables로 override할 수 있다.
+
+| 이름 | 의미 |
 | --- | --- |
-| `REDIS_URL` | Production Redis 연결 문자열 |
-| `JWT_SECRET` | Backend JWT 서명 Secret |
-| `ACS_EMAIL_CONNECTION_STRING` | Azure Communication Services Email 연결 문자열 |
-| `EMAIL_OTP_SECRET` | 이메일 OTP HMAC Secret |
-| `KIS_APP_KEY` | KIS Open API App Key |
-| `KIS_APP_SECRET` | KIS Open API App Secret |
-| `NAVER_API_HUB_CLIENT_ID` | NAVER API HUB Client ID |
-| `NAVER_API_HUB_CLIENT_SECRET` | NAVER API HUB Client Secret |
-| `AZURE_OPENAI_API_KEY` | 전략추천·리밸런싱·비교용 Azure OpenAI API Key |
-| `AZURE_OPENAI_CHATBOT_API_KEY` | 물방개 챗봇 전용 Azure OpenAI API Key |
-
-`JWT_SECRET`과 `EMAIL_OTP_SECRET`은 GitHub와 기존 Container App 양쪽에 모두 없을 때 workflow가 암호학적으로 안전한 난수로 한 번 생성해 Container App Secret으로 저장한다. 이후 배포에서는 기존 환경변수가 있으므로 같은 값을 유지한다. 다른 외부 서비스 credential은 임의 생성할 수 없으므로 양쪽 모두 없으면 배포가 실패한다.
-
-### GitHub Environment Variables
-
-아래 비민감 항목도 `production` Environment의 **Variables**에 등록하는 것을 권장한다. GitHub 값이 비어 있을 때 현재 Container App에 동일한 환경변수가 존재하면 기존 값을 유지한다.
-
-| 이름 | 값/의미 |
-| --- | --- |
-| `ACS_EMAIL_SENDER_ADDRESS` | ACS Email Communication Services의 MailFrom 주소 |
+| `ACS_EMAIL_SENDER_ADDRESS` | ACS Email Communication Services MailFrom 주소 |
 | `AZURE_OPENAI_ENDPOINT` | 전략추천·리밸런싱·비교용 Azure OpenAI endpoint |
 | `AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT` | 전략 추천 deployment 이름 |
 | `AZURE_OPENAI_REBALANCING_DEPLOYMENT` | 리밸런싱 deployment 이름 |
 | `AZURE_OPENAI_COMPARISON_DEPLOYMENT` | 포트폴리오 비교 deployment 이름 |
-| `AZURE_OPENAI_CHATBOT_ENDPOINT` | 물방개 챗봇 전용 Azure OpenAI endpoint |
-| `AZURE_OPENAI_CHATBOT_DEPLOYMENT` | 물방개 챗봇 deployment 이름 |
+| `AZURE_OPENAI_CHATBOT_ENDPOINT` | 챗봇 전용 Azure OpenAI endpoint |
+| `AZURE_OPENAI_CHATBOT_DEPLOYMENT` | 챗봇 deployment 이름 |
 
-Frontend CORS origin은 고정 문자열로 저장하지 않는다. 배포 workflow가 `FRONTEND_APP_NAME`의 실제 Container App FQDN을 Azure에서 조회한 뒤 `https://<fqdn>`을 `CORS_ORIGINS`로 설정한다.
+현재 프로젝트에서 확정된 MailFrom, 공통 Azure OpenAI endpoint, 챗봇 endpoint/deployment에는 workflow의 안전한 비민감 기본값이 있다. 반면 추천·리밸런싱·비교 deployment 이름은 확정된 값이 없으므로 추측해서 채우지 않는다. 해당 기능을 활성화하려면 실제 Azure deployment 이름을 Variable에 명시한다.
 
-TTL, timeout, cache, API version 같은 비민감 운영 기본값은 workflow에서 현재 Backend 기본값과 동일하게 명시적으로 설정한다. 배포 전에는 GitHub production config와 기존 Azure Container App을 함께 확인해 필요한 외부 연동 값을 해결할 수 있는지 검증한다. 배포 후에는 각 Container App의 `latestRevisionName`과 `latestReadyRevisionName`이 동일해질 때까지 확인하며, 최신 revision이 Ready 상태가 되지 않으면 workflow를 실패 처리한다.
+Frontend CORS origin은 고정 문자열로 저장하지 않는다. workflow가 `FRONTEND_APP_NAME`의 실제 Container App FQDN을 Azure에서 조회한 뒤 `https://<fqdn>`을 `CORS_ORIGINS`로 설정한다.
+
+TTL, timeout, cache, API version 같은 비민감 운영 기본값은 workflow에서 Backend 기본값과 동일하게 명시적으로 설정한다. 배포 후에는 Redis/Frontend/Backend의 `latestRevisionName`과 `latestReadyRevisionName`이 동일해질 때까지 확인하고, 최신 revision이 Ready 상태가 되지 않으면 workflow를 실패 처리한다.
 
 ### 모델 snapshot 변수
 
-`MODEL_RECOMMENDATION_SNAPSHOT_PATH`, `LOSS_AVOIDANCE_SNAPSHOT_PATH`는 실제 모델 artifact가 Container App에서 읽을 수 있도록 volume/mount 또는 별도 artifact 전달 경로가 준비된 뒤 설정한다. Production deploy는 Azure Feature Store에서 생성한 v2 artifact를 Backend image의 `/model-artifacts`에 포함하고 `MODEL_RECOMMENDATION_SNAPSHOT_PATH=/model-artifacts/risk-adjusted-momentum-v2.json`을 설정한다. 경로만 환경변수로 추가하고 실제 파일을 제공하는 단계가 없는 구성은 사용하지 않는다.
+`MODEL_RECOMMENDATION_SNAPSHOT_PATH`, `LOSS_AVOIDANCE_SNAPSHOT_PATH`는 실제 모델 artifact가 Container App에서 읽을 수 있도록 volume/mount 또는 이미지 포함 경로가 준비된 뒤 설정한다. Production deploy는 Azure Feature Store에서 생성한 v2 artifact를 Backend image의 `/model-artifacts`에 포함하고 `MODEL_RECOMMENDATION_SNAPSHOT_PATH=/model-artifacts/risk-adjusted-momentum-v2.json`을 설정한다. 경로만 환경변수로 추가하고 실제 파일을 제공하는 단계가 없는 구성은 사용하지 않는다.
 
-실제 artifact 전달 경로가 준비되기 전 Production에서는 저장소에 포함된 시연용 snapshot이 사용자 화면에 노출되지 않도록 `MODEL_RECOMMENDATION_ALLOW_FALLBACK=false`를 강제한다. 따라서 실제 generated snapshot을 제공하지 못하는 시점에는 모델 추천 API가 명시적으로 unavailable 상태를 반환하는 것이 샘플 데이터를 실제 결과처럼 노출하는 것보다 우선한다. `MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3`도 Production workflow에서 명시적으로 유지한다.
+Production에서는 저장소의 시연용 snapshot이 실제 결과처럼 노출되지 않도록 `MODEL_RECOMMENDATION_ALLOW_FALLBACK=false`를 강제한다. 실제 generated snapshot이 없거나 stale하면 모델 추천 API가 명시적으로 unavailable 상태를 반환한다. `MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3`도 Production workflow에서 명시적으로 유지한다.
