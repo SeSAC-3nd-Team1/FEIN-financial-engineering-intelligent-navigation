@@ -47,6 +47,12 @@ SAFETY_REFUSAL_PATTERNS = (
     "매도를권",
     "매수추천",
     "매도추천",
+    "매수를추천",
+    "매도를추천",
+    "수익을보장",
+    "원금을보장",
+    "이전지시를무시",
+    "앞선지시를무시",
     "몇퍼센트오를",
     "내일오를",
     "목표주가",
@@ -56,6 +62,7 @@ SAFETY_REFUSAL_PATTERNS = (
     "시스템프롬프트",
     "내부정책",
     "apikey",
+    "api키",
     "비밀정보",
 )
 
@@ -93,7 +100,8 @@ FINANCE_SCOPE_TERMS = (
     "매도",
     "계좌",
     "전략",
-    "시장",
+    "금융시장",
+    "주식시장",
 )
 
 MODEL_OUTPUT_SAFETY_PATTERNS = SAFETY_REFUSAL_PATTERNS
@@ -103,6 +111,7 @@ POLICY_PATTERNS = (
     "시스템프롬프트",
     "내부정책",
     "apikey",
+    "api키",
     "비밀정보",
 )
 
@@ -322,11 +331,18 @@ class AzureOpenAIChatAgentClient:
         cls, history: list[ChatHistoryMessage]
     ) -> list[ChatHistoryMessage]:
         """Drop unsafe user turns instead of poisoning all later questions."""
-        return [
-            item
-            for item in history[-10:]
-            if not (item.role == "user" and cls._safety_response(item.content))
-        ]
+        sanitized: list[ChatHistoryMessage] = []
+        skip_next_assistant = False
+        for item in history[-10:]:
+            if item.role == "user" and cls._safety_response(item.content):
+                skip_next_assistant = True
+                continue
+            if item.role == "assistant" and skip_next_assistant:
+                skip_next_assistant = False
+                continue
+            skip_next_assistant = False
+            sanitized.append(item)
+        return sanitized
 
     @classmethod
     def _sanitize_model_result(cls, result: ChatAgentResult) -> ChatAgentResult:
