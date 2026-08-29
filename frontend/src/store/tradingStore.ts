@@ -89,6 +89,7 @@ function asApiError(error: unknown): ApiError {
 
 function isDecisionDomainError(error: ApiError): boolean {
   return [
+    "REBALANCING_PROPOSAL_NOT_FOUND",
     "PROPOSAL_STALE",
     "REBALANCING_PROPOSAL_ALREADY_DECIDED",
     "IDEMPOTENCY_CONFLICT",
