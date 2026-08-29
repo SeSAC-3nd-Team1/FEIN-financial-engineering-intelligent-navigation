@@ -36,7 +36,9 @@ async function get<T>(path: string): Promise<T> {
 
 async function request<T>(path: string, body: unknown): Promise<T> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 15_000);
+  // Momentum v2 uses a multi-year point-in-time universe and can legitimately
+  // take longer than a normal API request on a cold production replica.
+  const timer = setTimeout(() => ctrl.abort(), 60_000);
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
