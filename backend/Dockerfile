@@ -14,6 +14,7 @@ COPY backend /app
 # source of truth for service backtests as well.
 COPY ai /ai
 COPY shared /workspace/shared
+COPY .deploy-artifacts /model-artifacts
 ENV PYTHONPATH=/app:/ai:/workspace
 
 EXPOSE 8000
