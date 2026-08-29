@@ -336,6 +336,7 @@ class PortfolioAnalyticsService:
         if existing:
             if (
                 existing.stock_code != request.stock_code
+                or existing.proposal_key != request.proposal_key
                 or existing.decision != request.decision
             ):
                 raise ServiceError(
@@ -409,6 +410,7 @@ class PortfolioAnalyticsService:
             if existing_by_key is not None:
                 if (
                     existing_by_key.stock_code != request.stock_code
+                    or existing_by_key.proposal_key != request.proposal_key
                     or existing_by_key.decision != request.decision
                 ):
                     raise ServiceError(

@@ -83,11 +83,6 @@ function RebalanceAlertsContent({
 
   // 리밸런싱 "조정 전/후" 상세 시트
   const [rebalanceSheetId, setRebalanceSheetId] = useState<string | null>(null);
-  // 시트의 두 액션("조정하기"/"이번에는 하지 않을게요")이 실제로 다른 결과를 남기도록, 제안 id별로
-  // 어떤 결정을 내렸는지 세션 동안 기억한다 — PortfolioDetail 의 같은 위젯과 동일한 패턴.
-  const [alertDecisions, setAlertDecisions] = useState<
-    Record<string, "adjusted" | "held">
-  >({});
   const rebalanceAlert =
     displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
   const submitDecision = async (decision: "ACCEPTED" | "HELD") => {

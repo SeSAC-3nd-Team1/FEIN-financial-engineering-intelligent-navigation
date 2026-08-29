@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 import {
   ApiError,
   createAccountApi,
@@ -20,8 +20,8 @@ import {
   type PortfolioResponse,
   type RebalancingDecisionCreateRequest,
   type RebalancingDecisionHistoryResponse,
-} from '../lib/backendApi';
-import { mergeDecisionHistory } from '../lib/portfolioAnalyticsModel';
+} from "../lib/backendApi";
+import { mergeDecisionHistory } from "../lib/portfolioAnalyticsModel";
 
 interface TradingState {
   account: AccountResponse | null;
@@ -38,11 +38,29 @@ interface TradingState {
   error: ApiError | null;
   orderMessage: string | null;
   refresh: (token: string, mode: AccountOperationMode) => Promise<void>;
-  prepareAccount: (token: string, mode: AccountOperationMode) => Promise<AccountResponse>;
-  depositCash: (token: string, accountId: string, amount: number, idempotencyKey: string) => Promise<AccountCashDepositResponse>;
-  ensureAccount: (token: string, strategyId: string, mode: AccountOperationMode) => Promise<AccountResponse>;
-  placeOrder: (token: string, payload: OrderCreateRequest) => Promise<OrderResponse>;
-  recordDecision: (token: string, payload: RebalancingDecisionCreateRequest) => Promise<void>;
+  prepareAccount: (
+    token: string,
+    mode: AccountOperationMode,
+  ) => Promise<AccountResponse>;
+  depositCash: (
+    token: string,
+    accountId: string,
+    amount: number,
+    idempotencyKey: string,
+  ) => Promise<AccountCashDepositResponse>;
+  ensureAccount: (
+    token: string,
+    strategyId: string,
+    mode: AccountOperationMode,
+  ) => Promise<AccountResponse>;
+  placeOrder: (
+    token: string,
+    payload: OrderCreateRequest,
+  ) => Promise<OrderResponse>;
+  recordDecision: (
+    token: string,
+    payload: RebalancingDecisionCreateRequest,
+  ) => Promise<void>;
   clearError: () => void;
   clear: () => void;
 }
@@ -66,7 +84,15 @@ const EMPTY_STATE = {
 function asApiError(error: unknown): ApiError {
   return error instanceof ApiError
     ? error
-    : new ApiError('UNKNOWN_ERROR', '요청을 처리하지 못했습니다.', 0);
+    : new ApiError("UNKNOWN_ERROR", "요청을 처리하지 못했습니다.", 0);
+}
+
+function isDecisionDomainError(error: ApiError): boolean {
+  return [
+    "PROPOSAL_STALE",
+    "REBALANCING_PROPOSAL_ALREADY_DECIDED",
+    "IDEMPOTENCY_CONFLICT",
+  ].includes(error.code);
 }
 
 async function loadAccountData(account: AccountResponse, token: string) {
@@ -103,18 +129,30 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         set({ account, accountMissing: false });
         const data = await loadAccountData(account, token);
         if (generation !== refreshGeneration) return;
-        set({ ...data, isLoading: false, isRefreshing: false, lastUpdatedAt: new Date().toISOString() });
+        set({
+          ...data,
+          isLoading: false,
+          isRefreshing: false,
+          lastUpdatedAt: new Date().toISOString(),
+        });
       } catch (error) {
         if (generation !== refreshGeneration) return;
         const apiError = asApiError(error);
-        if (apiError.code === 'ACCOUNT_NOT_FOUND') {
+        if (apiError.code === "ACCOUNT_NOT_FOUND") {
           set({
-            account: null, portfolio: null, decisions: null, orders: [], executions: [], accountMissing: true,
-            isLoading: false, isRefreshing: false, error: null,
+            account: null,
+            portfolio: null,
+            decisions: null,
+            orders: [],
+            executions: [],
+            accountMissing: true,
+            isLoading: false,
+            isRefreshing: false,
+            error: null,
           });
           return;
         }
-                set({
+        set({
           account: null,
           portfolio: null,
           decisions: null,
@@ -144,11 +182,17 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         account = await getMyAccountApi(token, mode);
       } catch (error) {
         const apiError = asApiError(error);
-        if (apiError.code !== 'ACCOUNT_NOT_FOUND') throw apiError;
-        account = await createAccountApi('나의 가상 투자계좌', mode, token);
+        if (apiError.code !== "ACCOUNT_NOT_FOUND") throw apiError;
+        account = await createAccountApi("나의 가상 투자계좌", mode, token);
       }
       const data = await loadAccountData(account, token);
-      set({ account, ...data, accountMissing: false, isSubmitting: false, lastUpdatedAt: new Date().toISOString() });
+      set({
+        account,
+        ...data,
+        accountMissing: false,
+        isSubmitting: false,
+        lastUpdatedAt: new Date().toISOString(),
+      });
       return account;
     } catch (error) {
       const apiError = asApiError(error);
@@ -160,7 +204,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   depositCash: async (token, accountId, amount, idempotencyKey) => {
     set({ isSubmitting: true, error: null, orderMessage: null });
     try {
-      const result = await depositAccountCashApi(accountId, amount, idempotencyKey, token);
+      const result = await depositAccountCashApi(
+        accountId,
+        amount,
+        idempotencyKey,
+        token,
+      );
       const data = await loadAccountData(result.account, token);
       set({
         account: result.account,
@@ -168,7 +217,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         accountMissing: false,
         isSubmitting: false,
         lastUpdatedAt: new Date().toISOString(),
-        orderMessage: `${amount.toLocaleString('ko-KR')}원이 입금됐습니다.`,
+        orderMessage: `${amount.toLocaleString("ko-KR")}원이 입금됐습니다.`,
       });
       return result;
     } catch (error) {
@@ -186,14 +235,20 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         account = await getMyAccountApi(token, mode);
       } catch (error) {
         const apiError = asApiError(error);
-        if (apiError.code !== 'ACCOUNT_NOT_FOUND') throw apiError;
-        account = await createAccountApi('나의 가상 투자계좌', mode, token);
+        if (apiError.code !== "ACCOUNT_NOT_FOUND") throw apiError;
+        account = await createAccountApi("나의 가상 투자계좌", mode, token);
       }
       if (account.selected_strategy_id !== strategyId) {
         account = await selectStrategyApi(account.id, strategyId, token);
       }
       const data = await loadAccountData(account, token);
-      set({ account, ...data, accountMissing: false, isSubmitting: false, lastUpdatedAt: new Date().toISOString() });
+      set({
+        account,
+        ...data,
+        accountMissing: false,
+        isSubmitting: false,
+        lastUpdatedAt: new Date().toISOString(),
+      });
       return account;
     } catch (error) {
       const apiError = asApiError(error);
@@ -204,18 +259,26 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 
   placeOrder: async (token, payload) => {
     if (get().isSubmitting) {
-      throw new ApiError('ORDER_IN_PROGRESS', '처리 중인 주문이 있습니다.', 409);
+      throw new ApiError(
+        "ORDER_IN_PROGRESS",
+        "처리 중인 주문이 있습니다.",
+        409,
+      );
     }
     set({ isSubmitting: true, error: null, orderMessage: null });
     try {
       const order = await createOrderApi(payload, token);
       // placeOrder 는 항상 이미 로드된 계좌(get().account)가 있는 상태에서만 호출된다 — 계좌가 없다면
       // 애초에 주문 화면에 진입할 수 없다. 그래도 방어적으로 폴백할 때는 반자동(기본값)으로 조회한다.
-      const account = get().account ?? await getMyAccountApi(token, 'SEMI_AUTO');
+      const account =
+        get().account ?? (await getMyAccountApi(token, "SEMI_AUTO"));
       const data = await loadAccountData(account, token);
       set({
-        account, ...data, isSubmitting: false, lastUpdatedAt: new Date().toISOString(),
-        orderMessage: `${order.stock_code} ${order.side === 'BUY' ? '매수' : '매도'} 주문이 체결됐습니다.`,
+        account,
+        ...data,
+        isSubmitting: false,
+        lastUpdatedAt: new Date().toISOString(),
+        orderMessage: `${order.stock_code} ${order.side === "BUY" ? "매수" : "매도"} 주문이 체결됐습니다.`,
       });
       return order;
     } catch (error) {
@@ -227,9 +290,13 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 
   recordDecision: async (token, payload) => {
     if (get().isDecisionSubmitting) {
-      throw new ApiError('DECISION_IN_PROGRESS', '판단을 기록하고 있습니다.', 409);
+      throw new ApiError(
+        "DECISION_IN_PROGRESS",
+        "판단을 기록하고 있습니다.",
+        409,
+      );
     }
-    set({ isDecisionSubmitting: true, error: null });
+    set({ isDecisionSubmitting: true });
     try {
       const decision = await createRebalancingDecisionApi(payload, token);
       set((state) => ({
@@ -238,7 +305,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       }));
     } catch (error) {
       const apiError = asApiError(error);
-      set({ error: apiError, isDecisionSubmitting: false });
+      // 판단 자체의 충돌/만료는 모달에서 재시도·안내할 수 있는 업무 오류다.
+      // 공용 error에 저장하면 포트폴리오 전체가 조회 실패 화면으로 바뀐다.
+      if (!isDecisionDomainError(apiError)) {
+        set({ error: apiError });
+      }
+      set({ isDecisionSubmitting: false });
       throw apiError;
     }
   },
