@@ -41,6 +41,9 @@ jobs:
           AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT }}
           AZURE_OPENAI_CHATBOT_ENDPOINT: ${{ vars.AZURE_OPENAI_CHATBOT_ENDPOINT }}
           AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHATBOT_DEPLOYMENT }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
@@ -67,6 +70,9 @@ jobs:
             AZURE_OPENAI_COMPARISON_DEPLOYMENT
             AZURE_OPENAI_CHATBOT_ENDPOINT
             AZURE_OPENAI_CHATBOT_DEPLOYMENT
+            AZURE_CLIENT_ID
+            AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID
             DATABASE_URL
             REDIS_URL
             JWT_SECRET
@@ -256,27 +262,45 @@ jobs:
               AI_CHATBOT_MODEL_VERSION=chatbot-v1 \
               AI_CHATBOT_PROMPT_VERSION=v1 \
               AI_CHATBOT_RATE_LIMIT_PER_MINUTE=30 \
-              AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS=60
+              AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS=60 \
+              MODEL_RECOMMENDATION_ALLOW_FALLBACK=false \
+              MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3
 
       - name: Verify deployed Container App revisions
         run: |
           set -euo pipefail
 
-          frontend_revision="$(az containerapp show \
-            --name "${{ vars.FRONTEND_APP_NAME }}" \
-            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --query properties.latestReadyRevisionName \
-            --output tsv)"
-          backend_revision="$(az containerapp show \
-            --name "${{ vars.BACKEND_APP_NAME }}" \
-            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --query properties.latestReadyRevisionName \
-            --output tsv)"
+          wait_for_latest_revision() {
+            local app_name="$1"
+            local label="$2"
+            local latest_revision=""
+            local ready_revision=""
 
-          if [[ -z "${frontend_revision}" || -z "${backend_revision}" ]]; then
-            echo "A Container App does not have a ready production revision." >&2
-            exit 1
-          fi
+            for attempt in $(seq 1 30); do
+              latest_revision="$(az containerapp show \
+                --name "${app_name}" \
+                --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+                --query properties.latestRevisionName \
+                --output tsv)"
+              ready_revision="$(az containerapp show \
+                --name "${app_name}" \
+                --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+                --query properties.latestReadyRevisionName \
+                --output tsv)"
 
-          echo "Frontend ready revision: ${frontend_revision}"
-          echo "Backend ready revision: ${backend_revision}"
+              if [[ -n "${latest_revision}" && "${latest_revision}" == "${ready_revision}" ]]; then
+                echo "${label} ready revision: ${ready_revision}"
+                return 0
+              fi
+
+              echo "${label} revision not ready yet (attempt ${attempt}/30, latest=${latest_revision:-none}, ready=${ready_revision:-none})"
+              sleep 10
+            done
+
+            echo "${label} latest revision did not become ready." >&2
+            echo "latest=${latest_revision:-none}, ready=${ready_revision:-none}" >&2
+            return 1
+          }
+
+          wait_for_latest_revision "${{ vars.FRONTEND_APP_NAME }}" "Frontend"
+          wait_for_latest_revision "${{ vars.BACKEND_APP_NAME }}" "Backend"
