@@ -357,13 +357,16 @@ jobs:
 
       - name: Build and push frontend image
         run: |
-          docker build -t "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}" ./frontend
+          docker build \
+            -f frontend/Dockerfile.prod \
+            -t "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
+            ./frontend
           docker push "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}"
 
       - name: Build backend image
         run: |
           docker build \
-            -f backend/Dockerfile \
+            -f backend/Dockerfile.prod \
             -t "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
             .
 
@@ -381,10 +384,22 @@ jobs:
 
       - name: Deploy frontend Container App
         run: |
+          backend_fqdn="$(az containerapp show \
+            --name "${{ vars.BACKEND_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)"
+          [[ -n "${backend_fqdn}" ]] || {
+            echo "Backend Container App ingress FQDN is missing." >&2
+            exit 1
+          }
           az containerapp update \
             --name "${{ vars.FRONTEND_APP_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --image "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
+            --set-env-vars \
+              "BACKEND_UPSTREAM=https://${backend_fqdn}" \
+              "BACKEND_HOST=${backend_fqdn}" \
             --output none
 
       - name: Resolve production frontend origin
@@ -539,6 +554,34 @@ jobs:
             --resource-group "${RESOURCE_GROUP}" \
             --image "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
             --set-env-vars "${env_args[@]}" \
+            --output none
+
+          # The existing Container App was created with TCP probes on port 80,
+          # while the Backend listens on the ingress target port 8000. Preserve
+          # the current container configuration and update every TCP probe by
+          # probe shape, instead of relying on a particular array ordering.
+          backend_id="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query id \
+            --output tsv)"
+          backend_container="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query properties.template.containers[0] \
+            --output json | jq '
+              (.env //= [])
+              | .env |= map(if .secretRef then {name, secretRef} else {name, value} end)
+              | .probes |= map(if .tcpSocket then .tcpSocket.port = 8000 else . end)
+            ')"
+          backend_payload="$(jq -cn \
+            --argjson container "${backend_container}" \
+            '{properties: {template: {containers: [$container]}}}')"
+          az rest \
+            --method PATCH \
+            --url "${backend_id}?api-version=2024-03-01" \
+            --headers Content-Type=application/json \
+            --body "${backend_payload}" \
             --output none
 
       - name: Verify deployed Container App revisions

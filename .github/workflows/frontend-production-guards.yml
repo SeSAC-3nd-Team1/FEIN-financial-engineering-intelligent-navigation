@@ -43,3 +43,10 @@ jobs:
             echo "Expected the production build to reject VITE_USE_MOCK_BACKTEST=true"
             exit 1
           fi
+
+      - name: Build Frontend production image
+        run: docker build -f frontend/Dockerfile.prod -t fein-frontend-prod-ci frontend
+
+      - name: Verify Frontend production entrypoint
+        run: |
+          test "$(docker inspect --format '{{json .Config.Cmd}}' fein-frontend-prod-ci)" = '["/docker-entrypoint.sh"]'
