@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import Header from '../components/Header';
-import { HOLD_TOTAL as MOCK_HOLD_TOTAL } from '../data/holdings';
+import PortfolioDataState from '../components/PortfolioDataState';
+import { useTradingRetry } from '../hooks/useTradingRetry';
+import { useAuthStore } from '../store/authStore';
 import { won } from '../lib/validation';
 import type { StrategyResponse } from '../lib/backendApi';
 import { useTradingData } from '../hooks/useTradingData';
@@ -34,18 +36,30 @@ const MAX_AMOUNT = 10 ** MAX_DIGITS - 1;
 export default function FundWithdrawAmount({ strategy, initialAmount, userName, onNavigate, onBack, onContinue }: Props) {
   const [amount, setAmount] = useState(initialAmount);
 
-  // Portfolio.tsx와 동일한 real/mock 판단 — accountMissing일 때만 mock 값을 쓰고, 그 외(로딩 중/실 계좌)는
-  // 실제 계좌 값(아직 없으면 0)을 쓴다. 이 화면은 Portfolio를 거쳐서만 들어오므로 같은 값을 그대로 이어 보여준다.
-  useTradingData();
-  const portfolio = useTradingStore((s) => s.portfolio);
-  const accountMissing = useTradingStore((s) => s.accountMissing);
-  const currentValuation = accountMissing ? MOCK_HOLD_TOTAL : Number(portfolio?.total_assets ?? 0);
+      const token = useAuthStore((s) => s.accessToken);
+      const loading = useTradingStore((s) => s.isLoading);
+      const accountMissing = useTradingStore((s) => s.accountMissing);
+      const error = useTradingStore((s) => s.error);
+      const retry = useTradingRetry();
+      // 포트폴리오 조회 결과가 없으면 임의의 평가금액 대신 0원을 표시한다.
+      useTradingData();
+      const portfolio = useTradingStore((s) => s.portfolio);
+  const currentValuation = Number(portfolio?.total_assets ?? 0);
 
   const addQuick = (value: number) => {
     setAmount((prev) => Math.min(prev + value, MAX_AMOUNT));
   };
 
   return (
+    <PortfolioDataState
+      userName={userName}
+      onNavigate={onNavigate}
+      authRequired={!token}
+      loading={loading}
+      accountMissing={accountMissing}
+      error={error}
+      onRetry={retry}
+    >
     <div className="min-h-screen bg-canvas">
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
 
@@ -120,6 +134,7 @@ export default function FundWithdrawAmount({ strategy, initialAmount, userName, 
           </button>
         </div>
       </main>
-    </div>
+        </div>
+    </PortfolioDataState>
   );
 }

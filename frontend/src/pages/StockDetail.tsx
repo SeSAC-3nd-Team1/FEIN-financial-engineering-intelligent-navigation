@@ -37,7 +37,6 @@ import {
   signed,
   toChartPoints,
 } from "../lib/stockDetailModel";
-import { hybridEvaluation } from "../lib/hybridMockData";
 import { useAuthStore } from "../store/authStore";
 import { useTradingStore } from "../store/tradingStore";
 import type { Screen, TermKey } from "../types";
@@ -81,9 +80,12 @@ export default function StockDetail({
   const [summaryError, setSummaryError] = useState(false);
   const [quoteError, setQuoteError] = useState(false);
   const [chartError, setChartError] = useState(false);
-  const [evaluation, setEvaluation] = useState<StockEvaluationResponse | null>(
+    const [evaluation, setEvaluation] = useState<StockEvaluationResponse | null>(
     null,
   );
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState(false);
+  const [evaluationRetry, setEvaluationRetry] = useState(0);
 
   useEffect(() => {
     if (!token) return;
@@ -147,25 +149,34 @@ export default function StockDetail({
   }, [logout, period, stockCode, token]);
 
   useEffect(() => {
-    if (!token || !account) {
+        if (!token || !account) {
       setEvaluation(null);
+      setEvaluationLoading(false);
+      setEvaluationError(false);
       return;
     }
-    let active = true;
+        let active = true;
     setEvaluation(null);
+    setEvaluationLoading(true);
+    setEvaluationError(false);
     void getStockEvaluationApi(account.id, stockCode, token)
       .then((response) => {
-        if (active) setEvaluation(response);
+                if (active) {
+          setEvaluation(response);
+          setEvaluationLoading(false);
+        }
       })
       .catch((error: unknown) => {
         if (!active) return;
         setEvaluation(null);
+        setEvaluationLoading(false);
+        setEvaluationError(true);
         if ((error as { status?: number }).status === 401) void logout();
       });
     return () => {
       active = false;
     };
-  }, [account, logout, stockCode, token]);
+  }, [account, evaluationRetry, logout, stockCode, token]);
 
   const position = portfolio?.positions.find(
     (item) => item.stock_code === stockCode,
@@ -232,13 +243,10 @@ export default function StockDetail({
       key: "roe",
     },
   ];
-  const term = activeTooltip ? TERMS[activeTooltip] : null;
+    const term = activeTooltip ? TERMS[activeTooltip] : null;
   const timeframe = TIMEFRAMES[tfIndex];
-  const evaluationDisplay = useMemo(
-    () => hybridEvaluation(evaluation, stockCode),
-    [evaluation, stockCode],
-  );
-  const availableAxes = evaluationDisplay.axes.filter(
+  const evaluationDisplay = evaluation;
+  const availableAxes = (evaluationDisplay?.axes ?? []).filter(
     (axis) => axis.score != null,
   );
 
@@ -435,9 +443,23 @@ export default function StockDetail({
                 </Toggle>
               </div>
             </div>
-            {aiMode === "bar" ? (
+                        {evaluationLoading ? (
+              <div className="flex h-[340px] items-center justify-center text-[17px] text-muted">
+                평가 데이터를 불러오는 중이에요.
+              </div>
+            ) : evaluationError ? (
+              <div className="flex h-[340px] flex-col items-center justify-center gap-3 text-center text-[17px] text-down">
+                <span>평가 데이터를 불러오지 못했습니다.</span>
+                <button
+                  onClick={() => setEvaluationRetry((value) => value + 1)}
+                  className="rounded-full bg-navy px-4 py-2 text-sm font-semibold text-white"
+                >
+                  다시 시도
+                </button>
+              </div>
+            ) : aiMode === "bar" ? (
               <div className="flex min-h-[340px] flex-col justify-center gap-5">
-                {evaluationDisplay.axes.map((axis) => (
+                {(evaluationDisplay?.axes ?? []).map((axis) => (
                   <div
                     key={axis.key}
                     className="grid grid-cols-[120px_1fr_52px] items-center gap-5"
@@ -461,7 +483,7 @@ export default function StockDetail({
                     </span>
                   </div>
                 ))}
-                {!evaluationDisplay.axes.length && (
+                {!evaluationDisplay?.axes.length && (
                   <div className="text-center text-[17px] text-muted">
                     계산 가능한 feature 데이터를 불러오지 못했습니다.
                   </div>
@@ -505,7 +527,7 @@ export default function StockDetail({
                   왜 이 비중으로 담았나요?
                 </span>
                 <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">
-                  {evaluationDisplay.roleSummary ??
+                                                      {evaluationDisplay?.role_summary ??
                     "계산 가능한 feature 또는 전략 목표 비중 데이터가 아직 없습니다."}
                 </p>
               </div>
