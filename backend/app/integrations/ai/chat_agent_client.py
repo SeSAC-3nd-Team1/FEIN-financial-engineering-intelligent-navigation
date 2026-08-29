@@ -37,8 +37,6 @@ SAFETY_REFUSAL_PATTERNS = (
     "지금매수",
     "지금팔",
     "지금매도",
-    "사세요",
-    "파세요",
     "사는게좋",
     "매입추천",
     "매입을추천",
@@ -93,6 +91,12 @@ OUT_OF_SCOPE_PATTERNS = (
     "정치이야기",
     "정치얘기",
     "정치에대해",
+    "서울날씨",
+    "날씨알려",
+    "영화추천",
+    "영화알려",
+    "축구결과",
+    "축구경기",
 )
 
 FINANCE_SCOPE_TERMS = (
@@ -113,6 +117,13 @@ FINANCE_SCOPE_TERMS = (
     "전략",
     "금융시장",
     "주식시장",
+)
+
+OUT_OF_SCOPE_QUESTION_MARKERS = (
+    "어디서",
+    "어떻게",
+    "방법",
+    "무슨뜻",
 )
 
 MODEL_OUTPUT_SAFETY_PATTERNS = SAFETY_REFUSAL_PATTERNS
@@ -242,6 +253,7 @@ SYSTEM_PROMPT = """당신은 FE!N의 금융 학습 도우미 '물방개'입니�
 7. suggested_questions는 현재 답변과 관련된 짧은 후속 질문만 최대 3개 제안하세요.
 8. 조회 숫자와 계좌 정보는 반드시 Tool 결과에 있는 값만 사용하고, 결과에 없는 값은 추측하지 마세요.
 9. Tool이 반환하지 않은 내부 식별자, 계좌 UUID, 사용자 식별자를 답변에 포함하지 마세요.
+10. 금융 개념·투자 일반 원칙·FE!N 서비스 사용법과 무관한 질문에는 답하지 말고 status=NEEDS_CLARIFICATION으로 금융 질문을 유도하세요.
 """
 
 
@@ -319,8 +331,22 @@ class AzureOpenAIChatAgentClient:
             )
         )
 
+    @staticmethod
+    def _contains_direct_trade_instruction(normalized: str) -> bool:
+        if any(marker in normalized for marker in OUT_OF_SCOPE_QUESTION_MARKERS):
+            return False
+        return bool(
+            re.search(
+                r"(?:[가-힣0-9]{2,}(?:을|를|은|는)?|이종목|이주식|해당종목)"
+                r"(?:사세요|파세요|사는게좋|파는게좋)",
+                normalized,
+            )
+        )
+
     @classmethod
     def _contains_safety_pattern(cls, normalized: str) -> bool:
+        if cls._contains_direct_trade_instruction(normalized):
+            return True
         for pattern in SAFETY_REFUSAL_PATTERNS:
             start = 0
             while (index := normalized.find(pattern, start)) >= 0:

@@ -136,7 +136,14 @@ def test_client_refuses_prompt_injection_before_provider_call(question: str) -> 
 
 @pytest.mark.parametrize(
     "question",
-    ["오늘저녁메뉴추천해줘", "파이썬으로 코드 짜줘", "정치 얘기 좀 해줘"],
+    [
+        "오늘저녁메뉴추천해줘",
+        "파이썬으로 코드 짜줘",
+        "정치 얘기 좀 해줘",
+        "서울 날씨 알려줘",
+        "영화 추천해줘",
+        "축구 결과 알려줘",
+    ],
 )
 def test_client_redirects_out_of_scope_questions_before_provider_call(
     question: str,
@@ -227,6 +234,48 @@ def test_client_refuses_safety_variants_before_provider_call(question: str) -> N
         asyncio.run(client.client.aclose())
 
     assert result.status == "REFUSED"
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["ETF는 어디서 사세요?", "주식은 어떻게 사세요?"],
+)
+def test_client_allows_trade_how_to_questions(question: str) -> None:
+    client = make_client(
+        lambda _: httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(MODEL_RESULT)}}]},
+        )
+    )
+    try:
+        result = asyncio.run(
+            client.answer(question, [], ChatScreenContext(screen="home"))
+        )
+    finally:
+        asyncio.run(client.client.aclose())
+
+    assert result.status == "COMPLETED"
+
+
+def test_client_includes_explicit_scope_rule_in_system_prompt() -> None:
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(MODEL_RESULT)}}]},
+        )
+
+    client = make_client(handler)
+    try:
+        asyncio.run(
+            client.answer("투자 원칙을 알려줘", [], ChatScreenContext(screen="home"))
+        )
+    finally:
+        asyncio.run(client.client.aclose())
+
+    assert "무관한 질문에는 답하지 말고" in requests[0]["messages"][0]["content"]
 
 
 def test_client_filters_unsafe_assistant_history_injection() -> None:
