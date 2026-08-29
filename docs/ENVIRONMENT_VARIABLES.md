@@ -87,3 +87,56 @@ docker compose up -d --force-recreate
 ```
 
 공용 Azure DB migration 절차와 테스트 제한은 [Azure PostgreSQL 단일 프로젝트 DB 가이드](AZURE_POSTGRESQL_DEV.md)를 따른다.
+
+## Production Container Apps 배포 환경변수
+
+Production 배포는 GitHub Actions의 `production` Environment를 사용한다. 실제 Secret 값은 workflow 파일이나 문서에 직접 기록하지 않고 GitHub Environment Secret으로 저장한다. `.github/workflows/deploy-production.yml`은 해당 값을 `ca-backend-fein-vnet`의 Container App Secret으로 동기화한 뒤 Backend 환경변수에서 `secretref:`로 참조한다.
+
+### GitHub Environment Secrets
+
+아래 항목은 `production` Environment의 **Secrets**에 등록한다.
+
+| 이름 | 용도 |
+| --- | --- |
+| `AZURE_CLIENT_ID` | GitHub Actions OIDC Azure 로그인 Client ID |
+| `AZURE_TENANT_ID` | Azure Tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure Subscription ID |
+| `DATABASE_URL` | Azure PostgreSQL 연결 문자열 |
+| `REDIS_URL` | Production Redis 연결 문자열 |
+| `JWT_SECRET` | Backend JWT 서명 Secret |
+| `ACS_EMAIL_CONNECTION_STRING` | Azure Communication Services Email 연결 문자열 |
+| `EMAIL_OTP_SECRET` | 이메일 OTP HMAC Secret |
+| `KIS_APP_KEY` | KIS Open API App Key |
+| `KIS_APP_SECRET` | KIS Open API App Secret |
+| `NAVER_API_HUB_CLIENT_ID` | NAVER API HUB Client ID |
+| `NAVER_API_HUB_CLIENT_SECRET` | NAVER API HUB Client Secret |
+| `AZURE_OPENAI_API_KEY` | 전략추천·리밸런싱·비교용 Azure OpenAI API Key |
+| `AZURE_OPENAI_CHATBOT_API_KEY` | 물방개 챗봇 전용 Azure OpenAI API Key |
+
+### GitHub Environment Variables
+
+아래 항목은 `production` Environment의 **Variables**에 등록한다.
+
+| 이름 | 값/의미 |
+| --- | --- |
+| `ACR_NAME` | Production Azure Container Registry 이름 |
+| `AZURE_RESOURCE_GROUP` | Container Apps가 속한 Resource Group |
+| `FRONTEND_APP_NAME` | Production Frontend Container App 이름 |
+| `BACKEND_APP_NAME` | `ca-backend-fein-vnet` |
+| `ACS_EMAIL_SENDER_ADDRESS` | ACS Email Communication Services의 MailFrom 주소 |
+| `AZURE_OPENAI_ENDPOINT` | 전략추천·리밸런싱·비교용 Azure OpenAI endpoint |
+| `AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT` | 전략 추천 deployment 이름 |
+| `AZURE_OPENAI_REBALANCING_DEPLOYMENT` | 리밸런싱 deployment 이름 |
+| `AZURE_OPENAI_COMPARISON_DEPLOYMENT` | 포트폴리오 비교 deployment 이름 |
+| `AZURE_OPENAI_CHATBOT_ENDPOINT` | 물방개 챗봇 전용 Azure OpenAI endpoint |
+| `AZURE_OPENAI_CHATBOT_DEPLOYMENT` | 물방개 챗봇 deployment 이름 |
+
+Frontend CORS origin은 고정 문자열로 저장하지 않는다. 배포 workflow가 `FRONTEND_APP_NAME`의 실제 Container App FQDN을 Azure에서 조회한 뒤 `https://<fqdn>`을 `CORS_ORIGINS`로 설정한다.
+
+TTL, timeout, cache, API version 같은 비민감 운영 기본값은 workflow에서 현재 Backend 기본값과 동일하게 명시적으로 설정한다. 필요한 Secret/Variable이 하나라도 비어 있으면 배포를 중단해 이미지 배포만 성공하고 기능이 깨지는 상태를 방지한다. 배포 후에는 각 Container App의 `latestRevisionName`과 `latestReadyRevisionName`이 동일해질 때까지 확인하며, 최신 revision이 Ready 상태가 되지 않으면 workflow를 실패 처리한다.
+
+### 모델 snapshot 변수
+
+`MODEL_RECOMMENDATION_SNAPSHOT_PATH`, `LOSS_AVOIDANCE_SNAPSHOT_PATH`는 실제 모델 artifact가 Container App에서 읽을 수 있도록 volume/mount 또는 별도 artifact 전달 경로가 준비된 뒤 설정한다. 경로만 환경변수로 추가하고 실제 파일을 제공하지 않는 구성은 사용하지 않는다.
+
+실제 artifact 전달 경로가 준비되기 전 Production에서는 저장소에 포함된 시연용 snapshot이 사용자 화면에 노출되지 않도록 `MODEL_RECOMMENDATION_ALLOW_FALLBACK=false`를 강제한다. 따라서 실제 generated snapshot을 제공하지 못하는 시점에는 모델 추천 API가 명시적으로 unavailable 상태를 반환하는 것이 샘플 데이터를 실제 결과처럼 노출하는 것보다 우선한다. `MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3`도 Production workflow에서 명시적으로 유지한다.
