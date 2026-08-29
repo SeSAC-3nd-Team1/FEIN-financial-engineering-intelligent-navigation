@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "backend/**"
+      - "ai/**"
+      - "shared/**"
       - "frontend/**"
       - "data/db/**"
       - "data/scripts/init_local_db.py"
@@ -76,7 +78,18 @@ jobs:
 
       - name: Run Backend unit and E2E tests
         working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
         run: pytest -q
+
+      - name: Run Live and Backend v2 target parity test
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
+        run: pytest ../ai/tests/test_live_backtest_target_parity.py -q
+
+      - name: Build production Backend image
+        run: docker build -f backend/Dockerfile -t fein-backend-ci .
 
       - name: Set up Node
         uses: actions/setup-node@v4

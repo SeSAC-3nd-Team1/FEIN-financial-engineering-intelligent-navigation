@@ -5,9 +5,11 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from exchange_calendars import get_calendar
 from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
+from exchange_calendars import get_calendar
 
 from app.models import (
     AccountCashDeposit,
@@ -17,6 +19,8 @@ from app.models import (
     FundOperationOrder,
     InvestmentOnboarding,
     MarketStock,
+    MarketIndex,
+    MomentumRebalanceRun,
     Order,
     PortfolioSnapshot,
     Position,
@@ -295,6 +299,40 @@ class TradingRepository:
                 Order.account_id == account_id, Order.idempotency_key == key
             )
         )
+
+    def momentum_rebalance_run(
+        self, account_id: UUID, year: int, quarter: int, *, lock: bool = False
+    ) -> MomentumRebalanceRun | None:
+        query = select(MomentumRebalanceRun).where(
+            MomentumRebalanceRun.account_id == account_id,
+            MomentumRebalanceRun.execution_year == year,
+            MomentumRebalanceRun.execution_quarter == quarter,
+        )
+        if lock:
+            query = query.with_for_update()
+        return self.session.scalar(query)
+
+    def quarter_end_trade_date(self, year: int, quarter: int):
+        start_month = (quarter - 1) * 3 + 1
+        start = date(year, start_month, 1)
+        end_month = start_month + 2
+        end = date(year, end_month + 1, 1) if end_month < 12 else date(year + 1, 1, 1)
+        end = date.fromordinal(end.toordinal() - 1)
+        # A partially loaded current quarter must never be treated as an
+        # official decision period.
+        if date.today() <= end:
+            return None
+        sessions = get_calendar("XKRX").sessions_in_range(start, end)
+        if len(sessions) == 0:
+            return None
+        expected = sessions[-1].date()
+        # The exchange calendar determines the date; DB data only confirms
+        # that the official session has been ingested. Never fall back to an
+        # earlier MAX(trade_date) when the expected session is missing.
+        return self.session.scalar(select(MarketIndex.trade_date).where(
+            MarketIndex.market == "KOSPI",
+            MarketIndex.trade_date == expected,
+        ).limit(1))
 
     def fund_operation_by_idempotency(
         self,

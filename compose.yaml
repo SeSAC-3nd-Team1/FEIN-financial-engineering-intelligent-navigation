@@ -58,7 +58,9 @@ services:
       AI_CHATBOT_PROMPT_VERSION: ${AI_CHATBOT_PROMPT_VERSION:-v1}
       AI_CHATBOT_RATE_LIMIT_PER_MINUTE: ${AI_CHATBOT_RATE_LIMIT_PER_MINUTE:-30}
       AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS: ${AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS:-60}
-      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+      FINCON_VER23_MODEL_PATH: ${FINCON_VER23_MODEL_PATH:-/models/fincon_ver23_model_fix1.py}
+      MBG_COORDINATOR_ENDPOINT: ${MBG_COORDINATOR_ENDPOINT:-https://fein-agent.services.ai.azure.com/api/projects/proj-default/agents/MBGCoordinator/endpoint/protocols/openai/responses}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
       LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
       MODEL_RECOMMENDATION_ALLOW_FALLBACK: ${MODEL_RECOMMENDATION_ALLOW_FALLBACK:-true}
       MODEL_RECOMMENDATION_STALE_AFTER_DAYS: ${MODEL_RECOMMENDATION_STALE_AFTER_DAYS:-3}
@@ -95,12 +97,11 @@ services:
       EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: ${EMAIL_VERIFICATION_TOKEN_TTL_SECONDS:-1800}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       WATCHFILES_FORCE_POLLING: "true"
-      FINCON_VER23_MODEL_PATH: /models/fincon_ver23_model_fix1.py
-      MBG_COORDINATOR_ENDPOINT: ${MBG_COORDINATOR_ENDPOINT:-https://fein-agent.services.ai.azure.com/api/projects/proj-default/agents/MBGCoordinator/endpoint/protocols/openai/responses}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+      - ./shared:/workspace/shared:ro
       - ./output:/models:ro
       - model_recommendation_artifacts:/model-artifacts:ro
     depends_on:
@@ -139,19 +140,21 @@ services:
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
     volumes:
       - ./data:/app
+      - ./shared:/workspace/shared:ro
     command: ["python", "-m", "scripts.init_local_db"]
     restart: "no"
 
   data:
     build:
-      context: ./data
+      context: .
+      dockerfile: data/Dockerfile
     profiles:
       - data
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      PYTHONPATH: /app
+      PYTHONPATH: /app:/workspace
       DATA_GO_KR_API_KEY: ${DATA_GO_KR_API_KEY:-}
       KRX_AUTH_KEY: ${KRX_AUTH_KEY:-}
       KRX_BASE_URL: ${KRX_BASE_URL:-https://data-dbg.krx.co.kr/svc/apis}
@@ -174,6 +177,7 @@ services:
       MODEL_RAW_CHECKPOINT_EVERY: ${MODEL_RAW_CHECKPOINT_EVERY:-5}
     volumes:
       - ./data:/app
+      - ./shared:/workspace/shared:ro
       - azure_cli_data:/root/.azure
     depends_on:
       redis:
@@ -189,15 +193,16 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      PYTHONPATH: /app
+      PYTHONPATH: /app:/workspace
       AZURE_CONFIG_DIR: /root/.azure
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
-      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
       LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
       ALGORITHM_V23_PATH: /algorithm-output/Algorithm(ver.2.3).py
     volumes:
       - ./ai:/app
+      - ./shared:/workspace/shared:ro
       - ./output:/algorithm-output:ro
       - model_recommendation_artifacts:/model-artifacts
       - azure_cli_data:/root/.azure
@@ -216,7 +221,8 @@ services:
       AZURE_CONFIG_DIR: /root/.azure
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
-      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
+      RISK_ADJUSTED_MOMENTUM_V2_OUTPUT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
     volumes:
       - ./ai:/app
       - model_recommendation_artifacts:/model-artifacts
@@ -224,15 +230,13 @@ services:
     command:
       - python
       - -m
-      - inference.generate_latest_recommendations
+      - inference.generate_risk_adjusted_momentum
       - --model-version
       - ${MODEL_FEATURE_VERSION:-2}
       - --algorithm-version
       - ${ALGORITHM_FEATURE_VERSION:-2}
       - --master-version
       - ${SECURITY_MASTER_FEATURE_VERSION:-1}
-      - --top-n
-      - ${MODEL_RECOMMENDATION_TOP_N:-5}
     restart: "no"
 
   loss-avoidance-generator:

@@ -338,6 +338,28 @@ class Order(Base):
     )
 
 
+class MomentumRebalanceRun(Base):
+    """분기별 모멘텀 자동 실행을 계정 단위로 한 번만 시작했음을 기록한다."""
+
+    __tablename__ = "momentum_rebalance_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id", "execution_year", "execution_quarter",
+            name="uq_momentum_rebalance_runs_account_quarter",
+        ),
+    )
+    id: Mapped[PythonUUID] = mapped_column(UUID(as_uuid=True), default=uuid4, primary_key=True)
+    account_id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE"), nullable=False
+    )
+    execution_year: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    execution_quarter: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="RUNNING")
+    plan: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class Execution(Base):
     """내부 가상 거래 엔진이 만든 체결 사실이다."""
 

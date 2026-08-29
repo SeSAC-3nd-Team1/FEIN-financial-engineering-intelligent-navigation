@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "data/**"
+      - "backend/**"
+      - "ai/**"
+      - "shared/**"
       - ".github/workflows/data-unit-tests.yml"
   workflow_dispatch:
 
