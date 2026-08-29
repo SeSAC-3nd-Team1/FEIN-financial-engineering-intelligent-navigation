@@ -17,7 +17,7 @@ COPY data/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY data .
-COPY shared /shared
-ENV PYTHONPATH=/app:/shared
+COPY shared /workspace/shared
+ENV PYTHONPATH=/app:/workspace
 
 CMD ["sleep", "infinity"]

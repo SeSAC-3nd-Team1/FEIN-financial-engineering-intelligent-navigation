@@ -149,7 +149,7 @@ class MomentumInvestmentService:
         Each leg has a stable snapshot/account/symbol/side key, so a retry after
         a partial run only submits missing legs.
         """
-        account = self.repo.owned_account(account_id, user_id, lock=True)
+        account = self.repo.owned_account(account_id, user_id)
         if account is None:
             raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
         if account.selected_strategy_id != "momentum":
@@ -183,7 +183,14 @@ class MomentumInvestmentService:
         if account.operation_mode != "AUTO":
             self._publish_targets(snapshot.as_of, targets)
             return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")
-        run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
+        # Publishing is deliberately outside the critical section. Re-acquire
+        # the account lock immediately before creating/reading the run and
+        # keep that transaction open through plan persistence.
+        self._publish_targets(snapshot.as_of, targets)
+        account = self.repo.owned_account(account_id, user_id, lock=True)
+        if account is None:
+            raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
+        run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter, lock=True)
         if run is not None and run.snapshot_date != snapshot.as_of:
             raise ServiceError(
                 "MOMENTUM_QUARTER_ALREADY_EXECUTED",
@@ -201,11 +208,7 @@ class MomentumInvestmentService:
                 status="RUNNING",
             )
             self.session.add(run)
-            self.session.commit()
-            persisted_run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
-            if persisted_run is not None:
-                run = persisted_run
-        self._publish_targets(snapshot.as_of, targets)
+            self.session.flush()
         positions = self.repo.positions(account.id)
         if not positions:
             # Preserve the existing explicit initial-investment policy.
@@ -241,7 +244,8 @@ class MomentumInvestmentService:
                     if quantity > 0:
                         plan.append({"symbol": symbol, "side": side, "quantity": str(quantity)})
             run.plan = plan
-            self.session.commit()
+        # The first commit fixes the plan while the account/run locks are held.
+        self.session.commit()
         plan = run.plan or []
         created = 0
         for leg in plan:
@@ -249,7 +253,18 @@ class MomentumInvestmentService:
             side = str(leg["side"])
             quantity = Decimal(str(leg["quantity"]))
             key = f"momentum-rebalance-{snapshot.as_of.isoformat()}-{account.id}-{symbol}-{side}"
-            if self.repo.order_by_idempotency(account.id, key):
+            existing = self.repo.order_by_idempotency(account.id, key)
+            if existing:
+                if (
+                    existing.stock_code != symbol
+                    or existing.side != side
+                    or Decimal(existing.quantity) != quantity
+                ):
+                    raise ServiceError(
+                        "MOMENTUM_REBALANCE_PLAN_CONFLICT",
+                        "저장된 리밸런싱 계획과 기존 주문이 일치하지 않습니다.",
+                        409,
+                    )
                 continue
             self.trading_service.execute_market_order(user_id, OrderCreateRequest(
                 account_id=account.id, stock_code=symbol, side=side,

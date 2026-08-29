@@ -99,6 +99,7 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+      - ./shared:/workspace/shared:ro
       - model_recommendation_artifacts:/model-artifacts:ro
     depends_on:
       redis:
@@ -136,6 +137,7 @@ services:
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
     volumes:
       - ./data:/app
+      - ./shared:/workspace/shared:ro
     command: ["python", "-m", "scripts.init_local_db"]
     restart: "no"
 
@@ -149,7 +151,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      PYTHONPATH: /app:/shared
+      PYTHONPATH: /app:/workspace
       DATA_GO_KR_API_KEY: ${DATA_GO_KR_API_KEY:-}
       KRX_AUTH_KEY: ${KRX_AUTH_KEY:-}
       KRX_BASE_URL: ${KRX_BASE_URL:-https://data-dbg.krx.co.kr/svc/apis}
@@ -172,6 +174,7 @@ services:
       MODEL_RAW_CHECKPOINT_EVERY: ${MODEL_RAW_CHECKPOINT_EVERY:-5}
     volumes:
       - ./data:/app
+      - ./shared:/workspace/shared:ro
       - azure_cli_data:/root/.azure
     depends_on:
       redis:

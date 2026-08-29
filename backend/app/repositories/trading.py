@@ -300,12 +300,17 @@ class TradingRepository:
             )
         )
 
-    def momentum_rebalance_run(self, account_id: UUID, year: int, quarter: int) -> MomentumRebalanceRun | None:
-        return self.session.scalar(select(MomentumRebalanceRun).where(
+    def momentum_rebalance_run(
+        self, account_id: UUID, year: int, quarter: int, *, lock: bool = False
+    ) -> MomentumRebalanceRun | None:
+        query = select(MomentumRebalanceRun).where(
             MomentumRebalanceRun.account_id == account_id,
             MomentumRebalanceRun.execution_year == year,
             MomentumRebalanceRun.execution_quarter == quarter,
-        ))
+        )
+        if lock:
+            query = query.with_for_update()
+        return self.session.scalar(query)
 
     def quarter_end_trade_date(self, year: int, quarter: int):
         start_month = (quarter - 1) * 3 + 1
