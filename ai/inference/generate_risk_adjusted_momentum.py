@@ -164,6 +164,8 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    from data_access import FeatureStore, FeatureStoreConfig
+
     args = _parser().parse_args()
     snapshot = generate_risk_adjusted_momentum(
         FeatureStore(FeatureStoreConfig.from_env()),
