@@ -361,6 +361,12 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/ai:${{ github.workspace }}
         run: |
           set -euo pipefail
+          # Use the Python 3.13 virtualenv directly.  A symlink from
+          # /usr/local/bin/python does not make Python discover pyvenv.cfg,
+          # which can otherwise load Ubuntu's incompatible system pip.
+          export PATH="/opt/fein-python/bin:${PATH}"
+          python --version
+          python -m pip --version
           python -m pip install --upgrade pip
           python -m pip install -r ai/requirements.txt
           mkdir -p .deploy-artifacts
