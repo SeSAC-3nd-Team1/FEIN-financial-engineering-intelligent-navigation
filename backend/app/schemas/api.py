@@ -567,6 +567,7 @@ class PortfolioContributionResponse(BaseModel):
 
 
 class RebalancingProposalResponse(BaseModel):
+    proposal_key: str | None = None
     stock_code: str
     stock_name: str | None
     current_weight: Decimal
@@ -753,6 +754,7 @@ class RebalancingDecisionCreateRequest(BaseModel):
 class RebalancingDecisionResponse(BaseModel):
     id: UUID
     account_id: UUID
+    proposal_key: str
     strategy_id: str | None
     stock_code: str
     stock_name: str | None
