@@ -218,7 +218,11 @@ def test_client_does_not_poison_normal_question_after_unsafe_history() -> None:
         "삼성전자는 사는 게 좋습니다",
         "삼성전자 매입을 추천합니다",
         "삼성전자 비중을 늘리는 게 좋습니다",
+        "삼성전자를 어떻게든 사세요",
+        "삼성전자를 어디서든 사세요",
         "수익은 보장됩니다",
+        "수익은 확실히 보장됩니다",
+        "원금은 100% 보장됩니다",
         "원금이 보장됩니다",
         "수익이 보장됩니다",
         "원금은 보장됩니다",
@@ -238,7 +242,10 @@ def test_client_refuses_safety_variants_before_provider_call(question: str) -> N
 
 @pytest.mark.parametrize(
     "question",
-    ["ETF는 어디서 사세요?", "주식은 어떻게 사세요?"],
+    [
+        "ETF는 어디서 사세요?",
+        "주식은 어떻게 매수하나요?",
+    ],
 )
 def test_client_allows_trade_how_to_questions(question: str) -> None:
     client = make_client(
@@ -396,6 +403,8 @@ def test_client_sanitizes_unsafe_model_output(field: str) -> None:
         "과거 성과는 미래 수익을 보장하지 않습니다.",
         "수익 보장을 하지 않습니다.",
         "원금 보장이 되지 않습니다.",
+        "수익은 전혀 보장되지 않습니다.",
+        "원금은 절대 보장되지 않습니다.",
     ],
 )
 def test_client_allows_negative_safety_context(question: str) -> None:
@@ -413,6 +422,39 @@ def test_client_allows_negative_safety_context(question: str) -> None:
         asyncio.run(client.client.aclose())
 
     assert result.status == "COMPLETED"
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["이 상품은 원금 보장인가요?", "원금 보장 여부를 알려줘"],
+)
+def test_client_allows_guarantee_questions(question: str) -> None:
+    client = make_client(
+        lambda _: httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(MODEL_RESULT)}}]},
+        )
+    )
+    try:
+        result = asyncio.run(
+            client.answer(question, [], ChatScreenContext(screen="home"))
+        )
+    finally:
+        asyncio.run(client.client.aclose())
+
+    assert result.status == "COMPLETED"
+
+
+def test_client_refuses_trade_advice_with_how_to_words() -> None:
+    for question in ("삼성전자를 어떻게든 사세요", "삼성전자를 어디서든 사세요"):
+        client = make_client(lambda _: pytest.fail("provider must not be called"))
+        try:
+            result = asyncio.run(
+                client.answer(question, [], ChatScreenContext(screen="home"))
+            )
+        finally:
+            asyncio.run(client.client.aclose())
+        assert result.status == "REFUSED"
 
 
 def test_client_redirects_market_food_request() -> None:

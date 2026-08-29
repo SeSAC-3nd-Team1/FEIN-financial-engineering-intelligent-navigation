@@ -29,8 +29,6 @@ from app.services.chat_tools import (
 # classifier in the request path.
 SAFETY_REFUSAL_PATTERNS = (
     "무조건수익",
-    "수익보장",
-    "원금보장",
     "손실없",
     "확정수익",
     "지금사",
@@ -108,15 +106,15 @@ FINANCE_SCOPE_TERMS = (
     "주식시장",
 )
 
-OUT_OF_SCOPE_QUESTION_MARKERS = (
-    "어디서",
-    "어떻게",
-    "방법",
-    "무슨뜻",
+TRADE_HOW_TO_RE = re.compile(
+    r"(?:etf|주식|종목|펀드)[가-힣0-9]*(?:어디서|어떻게)[가-힣0-9]*"
+    r"(?:사|매수|매도)(?:세요|나요|하나요|는법|방법)?"
 )
-
 GUARANTEE_RE = re.compile(
-    r"(?:수익|원금)(?:은|는|이|가|을|를)?보장(?:은|는|이|가|을|를)?"
+    r"(?:수익|원금)(?:은|는|이|가|을|를)?[0-9가-힣]{0,8}" r"보장(?:은|는|이|가|을|를)?"
+)
+GUARANTEE_QUESTION_RE = re.compile(
+    r"^(?:[0-9가-힣]{0,8})(?:인가요|인지|여부|되나요|알려줘|알려주세요)"
 )
 TRADE_ADVICE_RES = (
     re.compile(
@@ -337,14 +335,21 @@ class AzureOpenAIChatAgentClient:
 
     @staticmethod
     def _has_unsafe_guarantee(normalized: str) -> bool:
-        return any(
-            not normalized[match.end() :].startswith(NEGATIVE_SUFFIXES)
-            for match in GUARANTEE_RE.finditer(normalized)
-        )
+        for match in GUARANTEE_RE.finditer(normalized):
+            suffix = normalized[match.end() :]
+            if GUARANTEE_QUESTION_RE.match(suffix):
+                continue
+            if re.match(
+                r"^(?:[0-9가-힣]{0,8})(?:" + "|".join(NEGATIVE_SUFFIXES) + r")",
+                suffix,
+            ):
+                continue
+            return True
+        return False
 
     @staticmethod
     def _has_trade_advice(normalized: str) -> bool:
-        if any(marker in normalized for marker in OUT_OF_SCOPE_QUESTION_MARKERS):
+        if TRADE_HOW_TO_RE.search(normalized):
             return False
         return any(pattern.search(normalized) for pattern in TRADE_ADVICE_RES)
 
