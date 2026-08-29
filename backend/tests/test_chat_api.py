@@ -204,6 +204,7 @@ def test_chat_rejects_other_users_account(monkeypatch) -> None:
 
     assert response.status_code == 403
     assert response.json()["code"] == "ACCOUNT_ACCESS_DENIED"
+    assert response.headers["X-Request-ID"]
     assert client.calls == []
 
 
@@ -224,6 +225,20 @@ def test_chat_rejects_invalid_account_uuid() -> None:
 
     assert response.status_code == 422
     assert client.calls == []
+
+
+def test_metrics_endpoint_exports_chat_metrics() -> None:
+    response = TestClient(app).get("/metrics")
+
+    assert response.status_code == 200
+    assert "# HELP chat_agent_metric" in response.text
+
+
+def test_metrics_endpoint_preserves_request_id() -> None:
+    request_id = "test-request-id"
+    response = TestClient(app).get("/metrics", headers={"X-Request-ID": request_id})
+
+    assert response.headers["X-Request-ID"] == request_id
 
 
 def test_chat_rejects_unknown_context_fields() -> None:

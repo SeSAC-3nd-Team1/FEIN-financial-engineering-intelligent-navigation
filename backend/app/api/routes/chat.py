@@ -3,11 +3,15 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from redis import asyncio as redis_async
 from sqlalchemy.orm import Session
 
 from app.api.deps import optional_current_user
 from app.core.config import settings
+from app.core.chat_observability import (
+    check_rate_limit,
+)
 from app.core.errors import ServiceError
 from app.db.session import get_session
 from app.integrations.ai.chat_agent_client import (
@@ -99,11 +103,33 @@ def _require_personalization_access(
 
 @router.post("/messages", response_model=ChatMessageResponse)
 async def create_chat_message(
+    request: Request,
     payload: ChatMessageRequest,
     user: User | None = Depends(optional_current_user),
     session: Session = Depends(get_session),
     client: ChatAgentClient = Depends(get_chat_agent_client),
 ) -> ChatMessageResponse:
+    client_ip = request.client.host if request.client else "unknown"
+    limiter = getattr(request.app.state, "chat_redis", None)
+    if limiter is None:
+        limiter = request.app.state.chat_redis = redis_async.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=3,
+        )
+    user_key = f"user:{user.id}" if user else f"ip:{client_ip}"
+    if not await check_rate_limit(
+        limiter,
+        key=user_key,
+        limit=settings.ai_chatbot_rate_limit_per_minute,
+        window_seconds=settings.ai_chatbot_rate_limit_window_seconds,
+    ):
+        raise ServiceError(
+            "CHAT_AGENT_RATE_LIMITED",
+            "챗봇 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+            429,
+        )
     fallback = _require_personalization_access(payload, user, session)
     if fallback is not None:
         return fallback

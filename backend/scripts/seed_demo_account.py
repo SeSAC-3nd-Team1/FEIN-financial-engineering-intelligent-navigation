@@ -66,8 +66,10 @@ def ensure_demo_environment(enabled: str, environment: str) -> None:
         raise RuntimeError(
             "DEMO_SEED_ENABLED=true를 명시해야 데모 시드를 실행할 수 있습니다."
         )
-    if environment.strip().lower() in {"prod", "production", "live"}:
-        raise RuntimeError("운영 환경에서는 데모 시드를 실행할 수 없습니다.")
+    if environment.strip().lower() not in {"development", "dev", "local", "test", "demo"}:
+        raise RuntimeError(
+            "데모 시드는 명시적인 개발 환경에서만 실행할 수 있습니다."
+        )
 
 
 def _historical_model_history(
@@ -475,7 +477,7 @@ def main() -> None:
     args = parse_args()
     ensure_demo_environment(
         os.getenv("DEMO_SEED_ENABLED", ""),
-        os.getenv("APP_ENV", "development"),
+        os.getenv("APP_ENV", ""),
     )
     password = os.getenv("DEMO_ACCOUNT_PASSWORD", "")
     if not password:

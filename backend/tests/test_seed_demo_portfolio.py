@@ -2,9 +2,12 @@
 
 from decimal import Decimal
 
+import pytest
+
 from scripts.seed_demo_portfolio import (
     DEMO_ALLOCATIONS,
     allocation_quantity,
+    ensure_demo_environment,
     idempotency_key,
 )
 
@@ -20,6 +23,16 @@ def test_allocation_quantity_uses_fractional_shares_without_exceeding_target() -
 
     assert quantity == Decimal("22.95918367")
     assert quantity * Decimal("78400") <= Decimal("1800000")
+
+
+def test_demo_seed_requires_explicit_opt_in_and_fails_closed_for_unknown_environments() -> None:
+    with pytest.raises(RuntimeError, match="DEMO_SEED_ENABLED"):
+        ensure_demo_environment("", "development")
+    for environment in ("", "production", "unknown"):
+        with pytest.raises(RuntimeError, match="명시적인 개발 환경"):
+            ensure_demo_environment("true", environment)
+    ensure_demo_environment("true", "development")
+
 
 
 def test_idempotency_key_is_stable_per_portfolio_version_and_stock() -> None:

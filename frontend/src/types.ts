@@ -119,6 +119,7 @@ export interface TransactionRecord {
  *  아직 모델이 없어 서술형 reason과 함께 리밸런싱 모델이 붙기 전까지는 만들 수 없다(그때까지는 목업만 '손절'을 쓴다). */
 export interface AiAlert {
   id: string;
+    stockCode?: string;
   stockName: string;
   kind: "손절" | "리밸런싱";
   badge: string; // 종목 배지에 쓰는 짧은 라벨
@@ -157,7 +158,10 @@ export interface KnowledgeArticle {
   excerpt: string;
   category: string;
   readingMinutes: number;
-  link: string;
+  sourceName: string;
+  sourceUrl: string;
+  reviewedAt: string;
+  contentVersion: string;
 }
 export interface ListResponse<T> {
   items: T[];

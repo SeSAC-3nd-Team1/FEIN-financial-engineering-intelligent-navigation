@@ -396,6 +396,7 @@ class ExecutionResponse(BaseModel):
     id: int
     order_id: UUID
     stock_code: str
+    stock_name: str | None = None
     side: str
     quantity: Decimal
     execution_price: Decimal

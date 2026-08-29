@@ -33,7 +33,7 @@ class MomentumInvestmentService:
         if account is None:
             raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
         if account.selected_strategy_id != "momentum":
-            raise ServiceError(
+                        raise ServiceError(
                 "MOMENTUM_STRATEGY_REQUIRED",
                 "모멘텀 전략이 선택된 계좌에서만 모델 추천을 적용할 수 있습니다.",
                 409,
