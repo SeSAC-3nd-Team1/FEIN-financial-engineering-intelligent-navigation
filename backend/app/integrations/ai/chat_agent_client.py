@@ -37,11 +37,6 @@ SAFETY_REFUSAL_PATTERNS = (
     "지금매수",
     "지금팔",
     "지금매도",
-    "사는게좋",
-    "매입추천",
-    "매입을추천",
-    "비중을늘리는게좋",
-    "비중을늘리세요",
     "매수해",
     "매도해",
     "매수하세요",
@@ -54,12 +49,6 @@ SAFETY_REFUSAL_PATTERNS = (
     "매도추천",
     "매수를추천",
     "매도를추천",
-    "수익을보장",
-    "수익은보장",
-    "수익이보장",
-    "원금을보장",
-    "원금은보장",
-    "원금이보장",
     "이전지시를무시",
     "앞선지시를무시",
     "몇퍼센트오를",
@@ -124,6 +113,37 @@ OUT_OF_SCOPE_QUESTION_MARKERS = (
     "어떻게",
     "방법",
     "무슨뜻",
+)
+
+GUARANTEE_RE = re.compile(
+    r"(?:수익|원금)(?:은|는|이|가|을|를)?보장(?:은|는|이|가|을|를)?"
+)
+TRADE_ADVICE_RES = (
+    re.compile(
+        r"(?:[가-힣0-9]{2,}|이종목|이주식|해당종목)(?:을|를|은|는)?(?:사|파)(?:세요|는게좋|는것이좋|는편이좋)"
+    ),
+    re.compile(
+        r"(?:[가-힣0-9]{2,}|이종목|이주식|해당종목)(?:을|를|은|는)?(?:매수|매도|매입)(?:를|을)?(?:추천|권장|권유)"
+    ),
+    re.compile(
+        r"(?:[가-힣0-9]{2,}|이종목|이주식|해당종목)(?:을|를|은|는)?비중(?:을|를)?(?:늘리|줄이)(?:는게좋|는것이좋|는편이좋)"
+    ),
+)
+NEGATIVE_SUFFIXES = (
+    "하지않",
+    "하지못",
+    "되지않",
+    "될수없",
+    "할수없",
+    "아니",
+    "을하지않",
+    "이하지않",
+    "은하지않",
+    "는하지않",
+    "을되지않",
+    "이되지않",
+    "은되지않",
+    "는되지않",
 )
 
 MODEL_OUTPUT_SAFETY_PATTERNS = SAFETY_REFUSAL_PATTERNS
@@ -313,39 +333,24 @@ class AzureOpenAIChatAgentClient:
 
     @staticmethod
     def _is_negated_safety_suffix(suffix: str) -> bool:
-        return suffix.startswith(
-            (
-                "하지않",
-                "되지않",
-                "않습",
-                "않는",
-                "않다",
-                "을하지않",
-                "이하지않",
-                "은하지않",
-                "는하지않",
-                "을되지않",
-                "이되지않",
-                "은되지않",
-                "는되지않",
-            )
+        return suffix.startswith(NEGATIVE_SUFFIXES)
+
+    @staticmethod
+    def _has_unsafe_guarantee(normalized: str) -> bool:
+        return any(
+            not normalized[match.end() :].startswith(NEGATIVE_SUFFIXES)
+            for match in GUARANTEE_RE.finditer(normalized)
         )
 
     @staticmethod
-    def _contains_direct_trade_instruction(normalized: str) -> bool:
+    def _has_trade_advice(normalized: str) -> bool:
         if any(marker in normalized for marker in OUT_OF_SCOPE_QUESTION_MARKERS):
             return False
-        return bool(
-            re.search(
-                r"(?:[가-힣0-9]{2,}(?:을|를|은|는)?|이종목|이주식|해당종목)"
-                r"(?:사세요|파세요|사는게좋|파는게좋)",
-                normalized,
-            )
-        )
+        return any(pattern.search(normalized) for pattern in TRADE_ADVICE_RES)
 
     @classmethod
     def _contains_safety_pattern(cls, normalized: str) -> bool:
-        if cls._contains_direct_trade_instruction(normalized):
+        if cls._has_unsafe_guarantee(normalized) or cls._has_trade_advice(normalized):
             return True
         for pattern in SAFETY_REFUSAL_PATTERNS:
             start = 0
