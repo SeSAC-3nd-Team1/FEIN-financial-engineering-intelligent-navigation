@@ -443,23 +443,23 @@ export default function StockDetail({
                 </Toggle>
               </div>
             </div>
-            {aiMode === "bar" ? (
+                        {evaluationLoading ? (
+              <div className="flex h-[340px] items-center justify-center text-[17px] text-muted">
+                평가 데이터를 불러오는 중이에요.
+              </div>
+            ) : evaluationError ? (
+              <div className="flex h-[340px] flex-col items-center justify-center gap-3 text-center text-[17px] text-down">
+                <span>평가 데이터를 불러오지 못했습니다.</span>
+                <button
+                  onClick={() => setEvaluationRetry((value) => value + 1)}
+                  className="rounded-full bg-navy px-4 py-2 text-sm font-semibold text-white"
+                >
+                  다시 시도
+                </button>
+              </div>
+            ) : aiMode === "bar" ? (
               <div className="flex min-h-[340px] flex-col justify-center gap-5">
-                {evaluationLoading ? (
-                  <div className="text-center text-[17px] text-muted">
-                    평가 데이터를 불러오는 중이에요.
-                  </div>
-                ) : evaluationError ? (
-                  <div className="flex flex-col items-center gap-3 text-center text-[17px] text-down">
-                    <span>평가 데이터를 불러오지 못했습니다.</span>
-                    <button
-                      onClick={() => setEvaluationRetry((value) => value + 1)}
-                      className="rounded-full bg-navy px-4 py-2 text-sm font-semibold text-white"
-                    >
-                      다시 시도
-                    </button>
-                  </div>
-                ) : (evaluationDisplay?.axes ?? []).map((axis) => (
+                {(evaluationDisplay?.axes ?? []).map((axis) => (
                   <div
                     key={axis.key}
                     className="grid grid-cols-[120px_1fr_52px] items-center gap-5"
