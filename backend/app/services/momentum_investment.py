@@ -40,7 +40,11 @@ class MomentumInvestmentService:
             )
 
         snapshot = self.snapshot_service.latest()
-        if snapshot.source != "generated" or snapshot.is_stale:
+        if (
+            snapshot.source != "generated"
+            or snapshot.is_stale
+            or getattr(snapshot, "model_version", None) != "risk-adjusted-momentum-v2"
+        ):
             raise ServiceError(
                 "MODEL_RECOMMENDATION_NOT_APPLICABLE",
                 "최신 실제 모델 추천이 없어 포트폴리오에 적용할 수 없습니다.",
@@ -54,7 +58,12 @@ class MomentumInvestmentService:
         total_weight = sum(target_weights.values(), Decimal("0"))
         # momentum 모델만 주식 95% + 현금 5% 정책을 허용한다. 다른 비중 누락은
         # 모델 산출 오류로 간주해 적용하지 않는다.
-        if not target_weights or total_weight != Decimal("0.95"):
+        if (
+            not target_weights
+            or len(target_weights) != len(snapshot.recommendations)
+            or any(weight > Decimal("0.05") for weight in target_weights.values())
+            or total_weight != Decimal("0.95")
+        ):
             raise ServiceError(
                 "INVALID_STRATEGY_TARGET_WEIGHTS",
                 "모멘텀 목표 주식 비중 합계는 0.95여야 합니다(현금 0.05 포함).",
@@ -123,6 +132,74 @@ class MomentumInvestmentService:
         return self._response(
             account.id, snapshot.as_of, len(target_weights), created, status
         )
+
+    def rebalance(self, user_id: int, account_id) -> ModelRecommendationApplyResponse:
+        """Apply a generated v2 quarter target to an existing AUTO account.
+
+        This intentionally remains an internal service operation: scheduling is
+        outside the request path, and no external brokerage order is involved.
+        Each leg has a stable snapshot/account/symbol/side key, so a retry after
+        a partial run only submits missing legs.
+        """
+        account = self.repo.owned_account(account_id, user_id)
+        if account is None:
+            raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
+        if account.selected_strategy_id != "momentum":
+            raise ServiceError("MOMENTUM_STRATEGY_REQUIRED", "모멘텀 계좌만 리밸런싱할 수 있습니다.", 409)
+        snapshot = self.snapshot_service.latest()
+        if (snapshot.source != "generated" or snapshot.is_stale or
+                getattr(snapshot, "model_version", None) != "risk-adjusted-momentum-v2"):
+            raise ServiceError("MODEL_RECOMMENDATION_NOT_APPLICABLE", "안전한 v2 스냅샷이 없어 리밸런싱하지 않습니다.", 409)
+        targets = {item.symbol: Decimal(str(item.target_weight)) for item in snapshot.recommendations if item.target_weight > 0}
+        if (
+            not targets
+            or len(targets) != len(snapshot.recommendations)
+            or any(weight > Decimal("0.05") for weight in targets.values())
+            or sum(targets.values(), Decimal("0")) != Decimal("0.95")
+        ):
+            raise ServiceError("INVALID_STRATEGY_TARGET_WEIGHTS", "v2 목표 주식 비중 합계는 0.95여야 합니다.", 503)
+        self._publish_targets(snapshot.as_of, targets)
+        if account.operation_mode != "AUTO":
+            return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")
+        positions = self.repo.positions(account.id)
+        if not positions:
+            # Preserve the existing explicit initial-investment policy.
+            return self.apply(user_id, account_id)
+
+        prices: dict[str, Decimal] = {}
+        current_values: dict[str, Decimal] = {}
+        for position in positions:
+            price, _, _ = self.trading_service.market.get_price(position.stock_code)
+            prices[position.stock_code] = Decimal(price)
+            current_values[position.stock_code] = Decimal(position.quantity) * Decimal(price)
+        total_assets = Decimal(account.cash_balance) + sum(current_values.values(), Decimal("0"))
+        if total_assets <= 0:
+            raise ServiceError("INVALID_PORTFOLIO_VALUE", "리밸런싱할 포트폴리오 가치가 없습니다.", 409)
+        created = 0
+        symbols = sorted(set(current_values) | set(targets))
+        # Sell first to release virtual cash.  Quantization matches TradingService.
+        for side in ("SELL", "BUY"):
+            for symbol in symbols:
+                current_value = current_values.get(symbol, Decimal("0"))
+                target_value = total_assets * targets.get(symbol, Decimal("0"))
+                delta = target_value - current_value
+                if (side == "SELL" and delta >= 0) or (side == "BUY" and delta <= 0):
+                    continue
+                if symbol not in prices:
+                    price, _, _ = self.trading_service.market.get_price(symbol)
+                    prices[symbol] = Decimal(price)
+                quantity = (abs(delta) / prices[symbol]).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+                if quantity <= 0:
+                    continue
+                key = f"momentum-rebalance-{snapshot.as_of.isoformat()}-{account.id}-{symbol}-{side}"
+                if self.repo.order_by_idempotency(account.id, key):
+                    continue
+                self.trading_service.execute_market_order(user_id, OrderCreateRequest(
+                    account_id=account.id, stock_code=symbol, side=side,
+                    quantity=quantity, idempotency_key=key,
+                ))
+                created += 1
+        return self._response(account.id, snapshot.as_of, len(targets), created, "APPLIED" if created else "ALREADY_APPLIED")
 
     def _publish_targets(
         self,

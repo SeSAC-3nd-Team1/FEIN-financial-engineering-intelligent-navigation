@@ -21,7 +21,7 @@ class FakeRepository:
     def __init__(self, factor: str = "momentum") -> None:
         self.factor = factor
         self.start = date(2026, 1, 1)
-        self.codes = [f"{index:06d}" for index in range(12)]
+        self.codes = [f"{index:06d}" for index in range(25)]
 
     def strategy(self, strategy_id: str):
         if strategy_id not in {"low", "value", "momentum"}:
@@ -41,7 +41,8 @@ class FakeRepository:
         return date(2020, 1, 1), date(2026, 8, 20), date(2020, 3, 1), date(2026, 8, 18)
 
     def stock_prices(self, stock_codes: list[str], _start_date: date, end_date: date) -> list[StockPricePoint]:
-        first = self.start - timedelta(days=150)
+        # v2 needs 12M skip-1M plus three years of weekly volatility history.
+        first = self.start - timedelta(days=1_200)
         points: list[StockPricePoint] = []
         day = first
         offset = 0
@@ -53,6 +54,7 @@ class FakeRepository:
                         code,
                         day,
                         price,
+                        listed_shares=1_000_000 + index,
                         market_cap=Decimal("1000000") + Decimal(index * 10000),
                     )
                 )

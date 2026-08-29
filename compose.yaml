@@ -25,7 +25,8 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
@@ -57,7 +58,7 @@ services:
       AI_CHATBOT_PROMPT_VERSION: ${AI_CHATBOT_PROMPT_VERSION:-v1}
       AI_CHATBOT_RATE_LIMIT_PER_MINUTE: ${AI_CHATBOT_RATE_LIMIT_PER_MINUTE:-30}
       AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS: ${AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS:-60}
-      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
       LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
       MODEL_RECOMMENDATION_ALLOW_FALLBACK: ${MODEL_RECOMMENDATION_ALLOW_FALLBACK:-true}
       MODEL_RECOMMENDATION_STALE_AFTER_DAYS: ${MODEL_RECOMMENDATION_STALE_AFTER_DAYS:-3}
@@ -189,7 +190,7 @@ services:
       AZURE_CONFIG_DIR: /root/.azure
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
-      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
       LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
       ALGORITHM_V23_PATH: /algorithm-output/Algorithm(ver.2.3).py
     volumes:
@@ -212,7 +213,8 @@ services:
       AZURE_CONFIG_DIR: /root/.azure
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
-      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/model_recommendation_snapshot.json}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
+      RISK_ADJUSTED_MOMENTUM_V2_OUTPUT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
     volumes:
       - ./ai:/app
       - model_recommendation_artifacts:/model-artifacts
@@ -220,15 +222,13 @@ services:
     command:
       - python
       - -m
-      - inference.generate_latest_recommendations
+      - inference.generate_risk_adjusted_momentum
       - --model-version
       - ${MODEL_FEATURE_VERSION:-2}
       - --algorithm-version
       - ${ALGORITHM_FEATURE_VERSION:-2}
       - --master-version
       - ${SECURITY_MASTER_FEATURE_VERSION:-1}
-      - --top-n
-      - ${MODEL_RECOMMENDATION_TOP_N:-5}
     restart: "no"
 
   loss-avoidance-generator:
