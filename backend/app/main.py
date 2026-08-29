@@ -27,6 +27,7 @@ from app.api.routes import (
     portfolio,
     strategies,
     strategy_recommendations,
+    trading_engine_fix1,
 )
 from app.core.chat_observability import (
     configure_logging,
@@ -143,5 +144,6 @@ for router in (
     strategy_recommendations.router,
     model_recommendations.router,
     companies.router,
+    trading_engine_fix1.router,
 ):
     app.include_router(router, prefix="/api/v1")
