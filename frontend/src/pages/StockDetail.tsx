@@ -37,7 +37,6 @@ import {
   signed,
   toChartPoints,
 } from "../lib/stockDetailModel";
-import { hybridEvaluation } from "../lib/hybridMockData";
 import { useAuthStore } from "../store/authStore";
 import { useTradingStore } from "../store/tradingStore";
 import type { Screen, TermKey } from "../types";
@@ -232,13 +231,10 @@ export default function StockDetail({
       key: "roe",
     },
   ];
-  const term = activeTooltip ? TERMS[activeTooltip] : null;
+    const term = activeTooltip ? TERMS[activeTooltip] : null;
   const timeframe = TIMEFRAMES[tfIndex];
-  const evaluationDisplay = useMemo(
-    () => hybridEvaluation(evaluation, stockCode),
-    [evaluation, stockCode],
-  );
-  const availableAxes = evaluationDisplay.axes.filter(
+  const evaluationDisplay = evaluation;
+  const availableAxes = (evaluationDisplay?.axes ?? []).filter(
     (axis) => axis.score != null,
   );
 
@@ -437,7 +433,7 @@ export default function StockDetail({
             </div>
             {aiMode === "bar" ? (
               <div className="flex min-h-[340px] flex-col justify-center gap-5">
-                {evaluationDisplay.axes.map((axis) => (
+                {(evaluationDisplay?.axes ?? []).map((axis) => (
                   <div
                     key={axis.key}
                     className="grid grid-cols-[120px_1fr_52px] items-center gap-5"
@@ -461,7 +457,7 @@ export default function StockDetail({
                     </span>
                   </div>
                 ))}
-                {!evaluationDisplay.axes.length && (
+                {!evaluationDisplay?.axes.length && (
                   <div className="text-center text-[17px] text-muted">
                     계산 가능한 feature 데이터를 불러오지 못했습니다.
                   </div>
@@ -505,7 +501,7 @@ export default function StockDetail({
                   왜 이 비중으로 담았나요?
                 </span>
                 <p className="max-w-[720px] text-lg leading-[30px] text-[#3F4A43]">
-                  {evaluationDisplay.roleSummary ??
+                                                      {evaluationDisplay?.role_summary ??
                     "계산 가능한 feature 또는 전략 목표 비중 데이터가 아직 없습니다."}
                 </p>
               </div>
