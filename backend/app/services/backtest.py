@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from datetime import date, timedelta
+import gc
 import math
 from statistics import fmean, pstdev
 
@@ -34,6 +35,20 @@ MOMENTUM_WINDOW = 126  # legacy baseline helper; service momentum uses v2 below.
 MIN_LOW_VOL_OBSERVATIONS = LOW_VOL_WINDOW
 MIN_MOMENTUM_OBSERVATIONS = MOMENTUM_WINDOW
 PORTFOLIO_SIZE = 10
+V2_FEATURE_BATCH_SIZE = 100
+V2_FEATURE_COLUMNS = [
+    "trade_date",
+    "stock_code",
+    "market_cap",
+    "risk_adjusted_momentum_6m",
+    "risk_adjusted_momentum_12m",
+    "v2_history_ready",
+    "corporate_action_safe",
+    "corporate_action_event_safe",
+    "is_tradable",
+    "risk_eligible",
+    "point_in_time_adjusted_close",
+]
 
 
 def _round(value: float, digits: int = 4) -> float:
@@ -268,30 +283,10 @@ class BacktestService:
         on the next available benchmark trading day.  Unsafe/missing observations
         fail closed instead of inventing a return.
         """
-        frame = pd.DataFrame([
-            {
-                "stock_code": point.stock_code,
-                "trade_date": point.trade_date,
-                "close_price": float(point.close),
-                "listed_shares": point.listed_shares,
-                "market_cap": point.market_cap,
-                "volume": point.volume,
-                "trading_value": float(point.trading_value) if point.trading_value is not None else None,
-                "open_price": float(point.open_price) if point.open_price is not None else None,
-                "high_price": float(point.high_price) if point.high_price is not None else None,
-                "low_price": float(point.low_price) if point.low_price is not None else None,
-            }
-            for point in points
-        ])
-        if frame.empty:
-            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 가격 데이터가 부족합니다.")
-        frame = add_momentum_features(frame)
-        frame = apply_stock_risk_filter(frame)
         model = RiskAdjustedMomentumModel()
-        try:
-            features = model.compute_features(frame)
-        except ValueError as exc:
-            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 입력 데이터가 안전하지 않습니다.") from exc
+        features = BacktestService._build_v2_features(points, model)
+        if features.empty:
+            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 가격 데이터가 부족합니다.")
         price_matrix = features.pivot(index="trade_date", columns="stock_code", values="point_in_time_adjusted_close").sort_index()
         safe_matrix = features.pivot(index="trade_date", columns="stock_code", values="corporate_action_event_safe").sort_index()
         ordered_dates = [pd.Timestamp(day) for day in dates]
@@ -343,6 +338,67 @@ class BacktestService:
             else:
                 values.append(values[-1])
         return values
+
+    @staticmethod
+    def _build_v2_features(
+        points: list[StockPricePoint], model: RiskAdjustedMomentumModel
+    ) -> pd.DataFrame:
+        """Compute v2 features in bounded stock batches.
+
+        A five-year request can contain millions of OHLCV rows.  Building the
+        input frame, feature frame, risk-filter frame, and model frame for the
+        complete universe at once exceeds the Production Container App memory
+        limit.  Features are independent within each stock, so batch by stock
+        and retain only the columns needed for cross-sectional ranking and
+        portfolio drift.
+        """
+        points_by_stock: dict[str, list[StockPricePoint]] = defaultdict(list)
+        for point in points:
+            points_by_stock[point.stock_code].append(point)
+        if not points_by_stock:
+            return pd.DataFrame(columns=V2_FEATURE_COLUMNS)
+
+        stock_codes = sorted(points_by_stock)
+        pieces: list[pd.DataFrame] = []
+        for offset in range(0, len(stock_codes), V2_FEATURE_BATCH_SIZE):
+            batch_points = [
+                point
+                for stock_code in stock_codes[offset : offset + V2_FEATURE_BATCH_SIZE]
+                for point in points_by_stock[stock_code]
+            ]
+            frame = pd.DataFrame([
+                {
+                    "stock_code": point.stock_code,
+                    "trade_date": point.trade_date,
+                    "close_price": float(point.close),
+                    "listed_shares": point.listed_shares,
+                    "market_cap": point.market_cap,
+                    "volume": point.volume,
+                    "trading_value": float(point.trading_value) if point.trading_value is not None else None,
+                    "open_price": float(point.open_price) if point.open_price is not None else None,
+                    "high_price": float(point.high_price) if point.high_price is not None else None,
+                    "low_price": float(point.low_price) if point.low_price is not None else None,
+                }
+                for point in batch_points
+            ])
+            del batch_points
+            if frame.empty:
+                continue
+            try:
+                enriched = add_momentum_features(frame)
+                filtered = apply_stock_risk_filter(enriched)
+                computed = model.compute_features(filtered)
+            except ValueError as exc:
+                raise NotFoundError(
+                    "BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 입력 데이터가 안전하지 않습니다."
+                ) from exc
+            pieces.append(computed.loc[:, V2_FEATURE_COLUMNS].copy())
+            del computed, filtered, enriched, frame
+            gc.collect()
+
+        if not pieces:
+            return pd.DataFrame(columns=V2_FEATURE_COLUMNS)
+        return pd.concat(pieces, ignore_index=True)
 
     @staticmethod
     def _rebalance_bucket(trade_date: date, rebalance_cycle: str) -> tuple[int, int]:
