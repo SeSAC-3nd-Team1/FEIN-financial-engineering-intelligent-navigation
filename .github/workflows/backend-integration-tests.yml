@@ -65,9 +65,13 @@ jobs:
             backend/requirements.txt
             data/requirements.txt
             data/requirements-db-init.txt
+            agent-orchestration/pyproject.toml
 
       - name: Install dependencies
-        run: python -m pip install -r data/requirements.txt -r backend/requirements.txt
+
+        run: |
+          python -m pip install -r data/requirements.txt -r backend/requirements.txt
+          python -m pip install -e 'agent-orchestration[test]'
 
       - name: Initialize schema and seed test terms twice
         working-directory: data

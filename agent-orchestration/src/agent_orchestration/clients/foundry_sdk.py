@@ -87,10 +87,12 @@ class FoundrySDKAgentClient:
                 TimeoutError,
                 ConnectionError,
                 FoundrySDKAgentError,
-            ):
+                        ):
                 if attempt + 1 >= attempts:
+
                     raise FoundrySDKAgentError("agent request failed") from None
-                    await asyncio.sleep(min(0.25 * (2 ** attempt), 2.0))
+                await asyncio.sleep(min(0.25 * (2 ** attempt), 2.0))
+
         raise FoundrySDKAgentError("agent request failed")
 
     @staticmethod

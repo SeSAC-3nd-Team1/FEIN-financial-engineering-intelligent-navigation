@@ -240,6 +240,12 @@ jobs:
             core_secret_args+=("kis-secret=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${KIS_APP_SECRET_KV_SECRET},identityref:system")
           fi
 
+          az containerapp identity assign \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --system-assigned \
+              --output none
+
           if [[ "${need_key_vault}" == "true" ]]; then
             az containerapp identity assign \
               --name "${BACKEND_APP_NAME}" \
@@ -551,10 +557,17 @@ jobs:
           set_plain_env CHATBOT_REGISTRY_JSON "${CHATBOT_REGISTRY_JSON}"
           set_plain_env FEIN_CHATBOT_ID "${FEIN_CHATBOT_ID}"
 
-          if [[ -z "${FOUNDRY_PROJECT_ENDPOINT}" ]]; then
-            echo "FOUNDRY_PROJECT_ENDPOINT is required for the production chatbot provider." >&2
+          if [[ -z "${FOUNDRY_PROJECT_ENDPOINT}" || -z "${CHATBOT_REGISTRY_JSON}" || -z "${FEIN_CHATBOT_ID}" ]]; then
+            echo "FOUNDRY_PROJECT_ENDPOINT, CHATBOT_REGISTRY_JSON, and FEIN_CHATBOT_ID are required for the production chatbot provider." >&2
             exit 1
           fi
+          python - <<'PY'
+          import json, os
+          registry = json.loads(os.environ["CHATBOT_REGISTRY_JSON"])
+          chatbots = registry.get("chatbots", [])
+          if not any(item.get("chatbot_id") == os.environ["FEIN_CHATBOT_ID"] and item.get("enabled") is True for item in chatbots):
+              raise SystemExit("CHATBOT_REGISTRY_JSON does not enable FEIN_CHATBOT_ID")
+          PY
 
           if (( ${#secret_args[@]} > 0 )); then
             az containerapp secret set \

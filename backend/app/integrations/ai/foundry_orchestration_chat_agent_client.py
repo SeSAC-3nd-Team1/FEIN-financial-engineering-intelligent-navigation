@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
-import time
 from typing import Any
 from uuid import uuid4
 
 from azure.ai.projects.aio import AIProjectClient
-from azure.core.credentials import AccessToken
 from azure.identity.aio import DefaultAzureCredential
 
 from agent_orchestration.chatbot_bridge import (
@@ -27,18 +24,6 @@ from agent_orchestration.coordinator import AgentOrchestrator
 from agent_orchestration.layers import LayerController
 from app.core.errors import ServiceError
 from app.schemas.chat import ChatAgentResult, ChatHistoryMessage, ChatScreenContext
-
-
-class _StaticAccessTokenCredential:
-    def __init__(self, token: str) -> None:
-        self._token = token
-
-    async def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
-        del scopes, kwargs
-        return AccessToken(self._token, int(time.time()) + 3000)
-
-    async def close(self) -> None:
-        return None
 
 
 ROLES: tuple[Role, ...] = (
@@ -87,10 +72,16 @@ class FoundryOrchestrationChatAgentClient:
         self.timeout_seconds = timeout_seconds
 
     @staticmethod
-    def _public_context(context: ChatScreenContext) -> dict[str, Any]:
-        return context.model_dump(
+    def _public_context(
+        context: ChatScreenContext,
+        personal_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        public_context = context.model_dump(
             include={"screen", "stock_code", "strategy_id"}, exclude_none=True
         )
+        if personal_context:
+            public_context["verified_personal_summary"] = personal_context
+        return public_context
 
     @staticmethod
     def _result(output: str) -> ChatAgentResult:
@@ -117,6 +108,10 @@ class FoundryOrchestrationChatAgentClient:
         message: str,
         history: list[ChatHistoryMessage],
         context: ChatScreenContext,
+        *,
+        session: Any | None = None,
+        user_id: int | None = None,
+        account_id: Any | None = None,
     ) -> ChatAgentResult:
         del history  # Bridge owns the coordinator conversation boundary.
         if not self.registry_json.strip():
@@ -126,12 +121,23 @@ class FoundryOrchestrationChatAgentClient:
         except ChatbotConfigurationError as exc:
             raise ServiceError("CHAT_AGENT_NOT_CONFIGURED", "물방개 AI가 설정되지 않았습니다.", 503) from exc
 
-        access_token = os.getenv("FOUNDRY_ACCESS_TOKEN", "").strip()
-        credential = (
-            _StaticAccessTokenCredential(access_token)
-            if access_token
-            else DefaultAzureCredential()
-        )
+        personal_context: dict[str, Any] | None = None
+        if session is not None and user_id is not None:
+            from app.services.chat_tools import (
+                get_my_account_summary,
+                get_my_portfolio_summary,
+            )
+
+            personal_context = {
+                "account": get_my_account_summary(
+                    session, user_id, account_id=account_id
+                ),
+                "portfolio": get_my_portfolio_summary(
+                    session, user_id, account_id=account_id
+                ),
+            }
+
+        credential = DefaultAzureCredential()
         try:
             async with AIProjectClient(
                 endpoint=self.project_endpoint,
@@ -154,7 +160,7 @@ class FoundryOrchestrationChatAgentClient:
                             chatbot_id=self.chatbot_id,
                             message=message,
                             request_id=str(uuid4()),
-                            context=self._public_context(context),
+                            context=self._public_context(context, personal_context),
                         )
                     )
                     if reply.execution_allowed is not False:
