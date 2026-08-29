@@ -7,6 +7,7 @@ from statistics import correlation, stdev
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ServiceError
@@ -362,6 +363,29 @@ class PortfolioAnalyticsService:
             (position.price_as_of.date() for position in portfolio.positions),
             default=datetime.now(ZoneInfo("Asia/Seoul")).date(),
         )
+        proposal_key = ":".join(
+            (
+                str(account.selected_strategy_id or ""),
+                proposal.stock_code,
+                str(proposal.action),
+                str(proposal.current_weight),
+                str(proposal.target_weight),
+                str(proposal.weight_diff),
+                str(proposal.recommended_amount),
+                baseline_date.isoformat(),
+            )
+        )
+        existing_proposal = getattr(
+            self.trading, "decision_by_proposal", lambda *_args: None
+        )(request.account_id, proposal_key)
+        if existing_proposal:
+            if existing_proposal.decision != request.decision:
+                raise ServiceError(
+                    "REBALANCING_PROPOSAL_ALREADY_DECIDED",
+                    "현재 리밸런싱 제안은 이미 다른 판단이 기록되었습니다.",
+                    409,
+                )
+            return self._decision_response(existing_proposal)
         decision = RebalancingDecision(
             account_id=request.account_id,
             strategy_id=account.selected_strategy_id,
@@ -374,6 +398,7 @@ class PortfolioAnalyticsService:
             recommended_amount=proposal.recommended_amount,
             decision=request.decision,
             idempotency_key=request.idempotency_key,
+            proposal_key=proposal_key,
             baseline_snapshot_date=baseline_date,
             baseline_total_assets=portfolio.total_assets,
         )
@@ -381,6 +406,25 @@ class PortfolioAnalyticsService:
             self.trading.add_decision(decision)
             self.session.commit()
             self.session.refresh(decision)
+        except IntegrityError:
+            self.session.rollback()
+            existing = self.trading.decision_by_idempotency(
+                request.account_id, request.idempotency_key
+            ) or getattr(self.trading, "decision_by_proposal", lambda *_args: None)(
+                request.account_id, proposal_key
+            )
+            if existing is None:
+                raise
+            if (
+                existing.stock_code != request.stock_code
+                or existing.decision != request.decision
+            ):
+                raise ServiceError(
+                    "IDEMPOTENCY_CONFLICT",
+                    "동일 요청 키가 다른 리밸런싱 판단에 사용되었습니다.",
+                    409,
+                )
+            return self._decision_response(existing)
         except Exception:
             self.session.rollback()
             raise

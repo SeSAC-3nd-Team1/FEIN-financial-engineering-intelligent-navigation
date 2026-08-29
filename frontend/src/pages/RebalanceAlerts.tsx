@@ -46,6 +46,7 @@ export default function RebalanceAlerts({
   // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
   const account = useTradingStore((state) => state.account);
+  const decisions = useTradingStore((state) => state.decisions);
   const recordDecision = useTradingStore((state) => state.recordDecision);
   const isDecisionSubmitting = useTradingStore(
     (state) => state.isDecisionSubmitting,
@@ -93,11 +94,21 @@ export default function RebalanceAlerts({
   const [rebalanceSheetId, setRebalanceSheetId] = useState<string | null>(null);
   // 시트의 두 액션("조정하기"/"이번에는 하지 않을게요")이 실제로 다른 결과를 남기도록, 제안 id별로
   // 어떤 결정을 내렸는지 세션 동안 기억한다 — PortfolioDetail 의 같은 위젯과 동일한 패턴.
-  const [alertDecisions, setAlertDecisions] = useState<
-    Record<string, "adjusted" | "held">
-  >({});
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const decisionKeys = useRef<Record<string, string>>({});
+  const decisionFor = (alert: (typeof displayAlerts)[number]) => {
+    const item = decisions?.items.find(
+      (candidate) =>
+        candidate.stock_code === alert.id.replace("rebalance-", "") &&
+        Number(candidate.recommended_amount) ===
+          Number(alert.recommendedAmount ?? 0),
+    );
+    return item?.decision === "ACCEPTED"
+      ? "adjusted"
+      : item
+        ? "held"
+        : undefined;
+  };
   const rebalanceAlert =
     displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
 
@@ -114,10 +125,6 @@ export default function RebalanceAlerts({
         decision,
         idempotency_key: idempotencyKey,
       });
-      setAlertDecisions((prev) => ({
-        ...prev,
-        [rebalanceAlert.id]: decision === "ACCEPTED" ? "adjusted" : "held",
-      }));
     } catch (error) {
       setDecisionError(
         error instanceof ApiError
@@ -183,7 +190,7 @@ export default function RebalanceAlerts({
               </p>
             ) : (
               displayAlerts.map((a) => {
-                const decision = alertDecisions[a.id];
+                const decision = decisionFor(a);
                 return (
                   <div
                     key={a.id}
@@ -351,19 +358,19 @@ export default function RebalanceAlerts({
                   확인했어요
                 </button>
               </div>
-            ) : alertDecisions[rebalanceAlert.id] ? (
+            ) : decisionFor(rebalanceAlert) ? (
               <div className="flex items-center gap-4 rounded-[18px] bg-[#F4F6F1] px-8 py-7">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-lime text-navy">
                   <Check size={18} />
                 </span>
                 <div className="flex flex-1 flex-col gap-1">
                   <span className="text-[17px] font-bold text-ink">
-                    {alertDecisions[rebalanceAlert.id] === "adjusted"
+                    {decisionFor(rebalanceAlert) === "adjusted"
                       ? "이 제안을 승인했어요"
                       : "이번엔 보류했어요"}
                   </span>
                   <span className="text-[15px] text-muted">
-                    {alertDecisions[rebalanceAlert.id] === "adjusted"
+                    {decisionFor(rebalanceAlert) === "adjusted"
                       ? "AI가 다음 리밸런싱에 반영해요."
                       : "다음에 다시 확인할 수 있어요."}
                   </span>

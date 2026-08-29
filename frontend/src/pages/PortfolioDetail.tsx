@@ -237,11 +237,21 @@ export default function PortfolioDetail({
   // 시트의 두 액션("조정하기"/"이번에는 하지 않을게요")이 실제로 다른 결과를 남기도록, 제안 id별로
   // 어떤 결정을 내렸는지 세션 동안 기억한다 — 백엔드에 실행 로직이 없는 목업이라 서버에 반영하진 않지만,
   // 카드/시트에 결정이 그대로 보여야 두 버튼이 "모달만 닫는 동일 동작"으로 보이지 않는다.
-  const [alertDecisions, setAlertDecisions] = useState<
-    Record<string, "adjusted" | "held">
-  >({});
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const decisionKeys = useRef<Record<string, string>>({});
+  const decisionFor = (alert: (typeof displayAlerts)[number]) => {
+    const item = decisions?.items.find(
+      (candidate) =>
+        candidate.stock_code === alert.id.replace("rebalance-", "") &&
+        Number(candidate.recommended_amount) ===
+          Number(alert.recommendedAmount ?? 0),
+    );
+    return item?.decision === "ACCEPTED"
+      ? "adjusted"
+      : item
+        ? "held"
+        : undefined;
+  };
   const rebalanceAlert =
     displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
   const submitDecision = async (decision: "ACCEPTED" | "HELD") => {
@@ -257,10 +267,6 @@ export default function PortfolioDetail({
         decision,
         idempotency_key: idempotencyKey,
       });
-      setAlertDecisions((prev) => ({
-        ...prev,
-        [rebalanceAlert.id]: decision === "ACCEPTED" ? "adjusted" : "held",
-      }));
     } catch (error) {
       setDecisionError(
         error instanceof Error ? error.message : "판단을 저장하지 못했습니다.",
@@ -559,7 +565,7 @@ export default function PortfolioDetail({
                 </div>
                 <div className="flex flex-col gap-3">
                   {displayAlerts.slice(0, 3).map((a) => {
-                    const decision = alertDecisions[a.id];
+                    const decision = decisionFor(a);
                     return (
                       <div
                         key={a.id}
@@ -957,19 +963,19 @@ export default function PortfolioDetail({
                 흔들릴 수 있어요.
               </p>
             </div>
-            {alertDecisions[rebalanceAlert.id] ? (
+            {decisionFor(rebalanceAlert) ? (
               <div className="flex items-center gap-4 rounded-[18px] bg-[#F4F6F1] px-8 py-7">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-lime text-navy">
                   <Check size={18} />
                 </span>
                 <div className="flex flex-1 flex-col gap-1">
                   <span className="text-[17px] font-bold text-ink">
-                    {alertDecisions[rebalanceAlert.id] === "adjusted"
+                    {decisionFor(rebalanceAlert) === "adjusted"
                       ? "이 제안을 승인했어요"
                       : "이번엔 보류했어요"}
                   </span>
                   <span className="text-[15px] text-muted">
-                    {alertDecisions[rebalanceAlert.id] === "adjusted"
+                    {decisionFor(rebalanceAlert) === "adjusted"
                       ? "AI가 다음 리밸런싱에 반영해요."
                       : "다음에 다시 확인할 수 있어요."}
                   </span>
