@@ -37,6 +37,8 @@ SAFETY_REFUSAL_PATTERNS = (
     "지금매수",
     "지금팔",
     "지금매도",
+    "사세요",
+    "파세요",
     "매수해",
     "매도해",
     "매수하세요",
@@ -289,9 +291,20 @@ class AzureOpenAIChatAgentClient:
         return re.sub(r"[^0-9a-z가-힣]+", "", value.lower())
 
     @classmethod
+    def _contains_safety_pattern(cls, normalized: str) -> bool:
+        for pattern in SAFETY_REFUSAL_PATTERNS:
+            start = 0
+            while (index := normalized.find(pattern, start)) >= 0:
+                suffix = normalized[index + len(pattern) :]
+                if not suffix.startswith(("하지않", "되지않", "않습", "않는", "않다")):
+                    return True
+                start = index + len(pattern)
+        return False
+
+    @classmethod
     def _safety_response(cls, message: str) -> ChatAgentResult | None:
         normalized = cls._normalize_for_safety(message)
-        if not any(pattern in normalized for pattern in SAFETY_REFUSAL_PATTERNS):
+        if not cls._contains_safety_pattern(normalized):
             return None
         is_policy_request = any(pattern in normalized for pattern in POLICY_PATTERNS)
         return ChatAgentResult(
@@ -334,8 +347,8 @@ class AzureOpenAIChatAgentClient:
         sanitized: list[ChatHistoryMessage] = []
         skip_next_assistant = False
         for item in history[-10:]:
-            if item.role == "user" and cls._safety_response(item.content):
-                skip_next_assistant = True
+            if cls._safety_response(item.content):
+                skip_next_assistant = item.role == "user"
                 continue
             if item.role == "assistant" and skip_next_assistant:
                 skip_next_assistant = False
@@ -356,15 +369,18 @@ class AzureOpenAIChatAgentClient:
             if part
         )
         normalized = cls._normalize_for_safety(exposed)
-        matched_pattern = next(
-            (
-                pattern
-                for pattern in MODEL_OUTPUT_SAFETY_PATTERNS
-                if pattern in normalized
-            ),
-            None,
-        )
-        if matched_pattern is not None:
+        if cls._contains_safety_pattern(normalized):
+            matched_pattern = next(
+                (
+                    pattern
+                    for pattern in MODEL_OUTPUT_SAFETY_PATTERNS
+                    if pattern in normalized
+                    and not normalized[
+                        normalized.find(pattern) + len(pattern) :
+                    ].startswith(("하지않", "되지않", "않습", "않는", "않다"))
+                ),
+                "지금매수",
+            )
             refusal = (
                 "시스템 프롬프트 공개"
                 if matched_pattern in POLICY_PATTERNS
