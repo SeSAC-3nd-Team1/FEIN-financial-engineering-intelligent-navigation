@@ -614,7 +614,7 @@ jobs:
                 replicas="$(az containerapp revision show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --revision "${latest_revision}" --query properties.replicas --output tsv 2>/dev/null || true)"
               fi
               if [[ -n "${latest_revision}" && "${latest_revision}" == "${ready_revision}" && "${health_state}" == "Healthy" ]] \
-                && [[ "${require_running}" != "true" || ( "${running_state}" == "Running" && "${replicas:-0}" -ge 1 ) ]]; then
+                && [[ "${require_running}" != "true" || ( ( "${running_state}" == "Running" || "${running_state}" == "RunningAtMaxScale" ) && "${replicas:-0}" -ge 1 ) ]]; then
                 echo "${label} ready revision: ${ready_revision}"
                 return 0
               fi
