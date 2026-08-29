@@ -80,9 +80,12 @@ export default function StockDetail({
   const [summaryError, setSummaryError] = useState(false);
   const [quoteError, setQuoteError] = useState(false);
   const [chartError, setChartError] = useState(false);
-  const [evaluation, setEvaluation] = useState<StockEvaluationResponse | null>(
+    const [evaluation, setEvaluation] = useState<StockEvaluationResponse | null>(
     null,
   );
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState(false);
+  const [evaluationRetry, setEvaluationRetry] = useState(0);
 
   useEffect(() => {
     if (!token) return;
@@ -146,25 +149,34 @@ export default function StockDetail({
   }, [logout, period, stockCode, token]);
 
   useEffect(() => {
-    if (!token || !account) {
+        if (!token || !account) {
       setEvaluation(null);
+      setEvaluationLoading(false);
+      setEvaluationError(false);
       return;
     }
-    let active = true;
+        let active = true;
     setEvaluation(null);
+    setEvaluationLoading(true);
+    setEvaluationError(false);
     void getStockEvaluationApi(account.id, stockCode, token)
       .then((response) => {
-        if (active) setEvaluation(response);
+                if (active) {
+          setEvaluation(response);
+          setEvaluationLoading(false);
+        }
       })
       .catch((error: unknown) => {
         if (!active) return;
         setEvaluation(null);
+        setEvaluationLoading(false);
+        setEvaluationError(true);
         if ((error as { status?: number }).status === 401) void logout();
       });
     return () => {
       active = false;
     };
-  }, [account, logout, stockCode, token]);
+  }, [account, evaluationRetry, logout, stockCode, token]);
 
   const position = portfolio?.positions.find(
     (item) => item.stock_code === stockCode,
@@ -433,7 +445,21 @@ export default function StockDetail({
             </div>
             {aiMode === "bar" ? (
               <div className="flex min-h-[340px] flex-col justify-center gap-5">
-                {(evaluationDisplay?.axes ?? []).map((axis) => (
+                {evaluationLoading ? (
+                  <div className="text-center text-[17px] text-muted">
+                    평가 데이터를 불러오는 중이에요.
+                  </div>
+                ) : evaluationError ? (
+                  <div className="flex flex-col items-center gap-3 text-center text-[17px] text-down">
+                    <span>평가 데이터를 불러오지 못했습니다.</span>
+                    <button
+                      onClick={() => setEvaluationRetry((value) => value + 1)}
+                      className="rounded-full bg-navy px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      다시 시도
+                    </button>
+                  </div>
+                ) : (evaluationDisplay?.axes ?? []).map((axis) => (
                   <div
                     key={axis.key}
                     className="grid grid-cols-[120px_1fr_52px] items-center gap-5"

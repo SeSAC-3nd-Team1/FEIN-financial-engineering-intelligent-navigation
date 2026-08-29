@@ -5,6 +5,7 @@ import { useTradingData } from '../hooks/useTradingData';
 import PortfolioDataState from '../components/PortfolioDataState';
 import { useTradingRetry } from '../hooks/useTradingRetry';
 import { useTradingStore } from '../store/tradingStore';
+import { useAuthStore } from '../store/authStore';
 import type { Screen, TransactionRecord } from '../types';
 
 interface Props {
@@ -23,6 +24,7 @@ const TX_BADGE: Record<TransactionRecord['type'], string> = {
 
 /** `/transactions` — 백엔드 체결 내역을 표시한다. 체결이 없으면 실제 빈 상태를 표시한다. */
 export default function TransactionHistory({ userName, onNavigate, onSelectTransaction, onBack }: Props) {
+    const token = useAuthStore((state) => state.accessToken);
   useTradingData();
   const executions = useTradingStore((state) => state.executions);
   const loading = useTradingStore((state) => state.isLoading);
@@ -35,6 +37,7 @@ export default function TransactionHistory({ userName, onNavigate, onSelectTrans
     <PortfolioDataState
       userName={userName}
       onNavigate={onNavigate}
+            authRequired={!token}
       loading={loading}
       accountMissing={accountMissing}
       error={error}

@@ -5,6 +5,7 @@ import { useTradingData } from '../hooks/useTradingData';
 import PortfolioDataState from '../components/PortfolioDataState';
 import { useTradingRetry } from '../hooks/useTradingRetry';
 import { useTradingStore } from '../store/tradingStore';
+import { useAuthStore } from '../store/authStore';
 import type { Screen, TransactionRecord } from '../types';
 
 interface Props {
@@ -32,6 +33,7 @@ const BACK_LABEL: Partial<Record<Screen, string>> = {
 
 /** `/transactions/:id` — 백엔드 체결 내역에서 거래 1건을 표시한다. */
 export default function TransactionDetail({ transactionId, backTarget, userName, onNavigate, onBack }: Props) {
+    const token = useAuthStore((state) => state.accessToken);
   useTradingData();
   const executions = useTradingStore((state) => state.executions);
   const loading = useTradingStore((state) => state.isLoading);
@@ -47,6 +49,7 @@ export default function TransactionDetail({ transactionId, backTarget, userName,
     <PortfolioDataState
       userName={userName}
       onNavigate={onNavigate}
+            authRequired={!token}
       loading={loading}
       accountMissing={accountMissing}
       error={error}

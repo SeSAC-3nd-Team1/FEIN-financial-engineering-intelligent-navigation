@@ -5,6 +5,7 @@ interface Props {
   userName: string;
   onNavigate: (screen: Screen) => void;
   loading: boolean;
+  authRequired?: boolean;
   accountMissing: boolean;
   error: unknown;
   onRetry: () => void;
@@ -16,20 +17,25 @@ export default function PortfolioDataState({
   userName,
   onNavigate,
   loading,
+  authRequired = false,
   accountMissing,
   error,
   onRetry,
   onAccountMissingAction,
   children,
 }: Props) {
-  if (!loading && !accountMissing && !error) return <>{children}</>;
+    if (!authRequired && !loading && !accountMissing && !error) return <>{children}</>;
 
-  const title = loading
+  const title = authRequired
+    ? '로그인이 필요해요'
+    : loading
     ? '포트폴리오를 불러오는 중이에요'
     : accountMissing
       ? '투자 계좌를 준비해주세요'
       : '포트폴리오를 불러오지 못했어요';
-  const message = loading
+    const message = authRequired
+    ? '로그인하면 거래 내역과 투자 현황을 확인할 수 있어요.'
+    : loading
     ? '잠시만 기다려주세요.'
     : accountMissing
       ? '계좌를 준비하면 보유 종목과 투자 현황을 확인할 수 있어요.'
@@ -44,7 +50,11 @@ export default function PortfolioDataState({
       <main className="flex min-h-[520px] flex-col items-center justify-center gap-4 px-6 text-center">
         <h1 className="text-2xl font-bold text-ink">{title}</h1>
         <p className="text-base text-subtle">{message}</p>
-        {accountMissing ? (
+                {authRequired ? (
+          <button onClick={() => onNavigate('login')} className="rounded-field bg-navy px-6 py-3 font-bold text-white">
+            로그인하기
+          </button>
+        ) : accountMissing ? (
           <button onClick={onAccountMissingAction ?? (() => onNavigate('strategy-list'))} className="rounded-field bg-navy px-6 py-3 font-bold text-white">
             계좌 준비하기
           </button>

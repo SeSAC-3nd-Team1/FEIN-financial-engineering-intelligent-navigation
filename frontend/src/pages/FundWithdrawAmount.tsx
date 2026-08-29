@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import Header from '../components/Header';
+import PortfolioDataState from '../components/PortfolioDataState';
+import { useTradingRetry } from '../hooks/useTradingRetry';
+import { useAuthStore } from '../store/authStore';
 import { won } from '../lib/validation';
 import type { StrategyResponse } from '../lib/backendApi';
 import { useTradingData } from '../hooks/useTradingData';
@@ -33,9 +36,14 @@ const MAX_AMOUNT = 10 ** MAX_DIGITS - 1;
 export default function FundWithdrawAmount({ strategy, initialAmount, userName, onNavigate, onBack, onContinue }: Props) {
   const [amount, setAmount] = useState(initialAmount);
 
+      const token = useAuthStore((s) => s.accessToken);
+      const loading = useTradingStore((s) => s.isLoading);
+      const accountMissing = useTradingStore((s) => s.accountMissing);
+      const error = useTradingStore((s) => s.error);
+      const retry = useTradingRetry();
       // 포트폴리오 조회 결과가 없으면 임의의 평가금액 대신 0원을 표시한다.
-  useTradingData();
-  const portfolio = useTradingStore((s) => s.portfolio);
+      useTradingData();
+      const portfolio = useTradingStore((s) => s.portfolio);
   const currentValuation = Number(portfolio?.total_assets ?? 0);
 
   const addQuick = (value: number) => {
@@ -43,6 +51,15 @@ export default function FundWithdrawAmount({ strategy, initialAmount, userName, 
   };
 
   return (
+    <PortfolioDataState
+      userName={userName}
+      onNavigate={onNavigate}
+      authRequired={!token}
+      loading={loading}
+      accountMissing={accountMissing}
+      error={error}
+      onRetry={retry}
+    >
     <div className="min-h-screen bg-canvas">
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
 
@@ -117,6 +134,7 @@ export default function FundWithdrawAmount({ strategy, initialAmount, userName, 
           </button>
         </div>
       </main>
-    </div>
+        </div>
+    </PortfolioDataState>
   );
 }
