@@ -21,7 +21,7 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
-  onStart: () => void;
+  onStart: () => void | Promise<void>;
   /** 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보낼 때 사용 —
    * 로그인 후 Portfolio가 아니라 이 화면으로 복귀시키기 위해 App.tsx가 별도로 처리한다 */
   onRequestLoginForBacktest: () => void;
@@ -97,6 +97,16 @@ export default function StrategyDetail({
   const [changeConfirmOpen, setChangeConfirmOpen] = useState(false);
   const [changeSubmitting, setChangeSubmitting] = useState(false);
   const [changeError, setChangeError] = useState('');
+  const [startError, setStartError] = useState('');
+
+  const startInvesting = async () => {
+    setStartError('');
+    try {
+      await onStart();
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : '투자 시작을 준비하지 못했어요. 잠시 후 다시 시도해주세요.');
+    }
+  };
 
   // 실제 계좌 전략 변경 API 호출까지 기다린 뒤에만 모달을 닫는다 — 성공 시 이동(Portfolio)은
   // App.tsx의 onConfirmStrategyChange 구현이 처리하고, 실패하면 모달에 에러를 보여주고 계속 띄워둔다.
@@ -524,9 +534,10 @@ export default function StrategyDetail({
             <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-8">
               <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략이 마음에 드시나요?</span>
               <div className="flex shrink-0 flex-col items-end gap-2.5">
-                <button onClick={onStart} className="rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
+                <button onClick={() => void startInvesting()} className="rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
                   이 전략으로 시작하기 →
                 </button>
+                {startError && <p className="mt-3 text-sm text-up">{startError}</p>}
                 {/* "시작하기"가 곧바로 주문 체결이 아니라는 걸 CTA 바로 옆에서 명확히 알려준다 —
                    다음 화면(약관/계좌)을 거치는 동안 실제 편입 종목/전략 구성을 먼저 보여준다.
                    neutral-muted(#B9C2BA)는 navy 배경에서 너무 흐려 보여, 한 단계 밝은 neutral-100로 올림. */}
