@@ -396,6 +396,7 @@ class ExecutionResponse(BaseModel):
     id: int
     order_id: UUID
     stock_code: str
+    stock_name: str | None = None
     side: str
     quantity: Decimal
     execution_price: Decimal
@@ -567,7 +568,7 @@ class PortfolioContributionResponse(BaseModel):
 
 
 class RebalancingProposalResponse(BaseModel):
-    proposal_key: str | None = None
+    proposal_key: str
     stock_code: str
     stock_name: str | None
     current_weight: Decimal
@@ -747,6 +748,7 @@ class RebalancingDecisionCreateRequest(BaseModel):
 
     account_id: UUID
     stock_code: str = Field(pattern=r"^[0-9A-Z]{6,12}$")
+    proposal_key: str = Field(min_length=1, max_length=255)
     decision: Literal["ACCEPTED", "HELD"]
     idempotency_key: str = Field(min_length=1, max_length=100)
 

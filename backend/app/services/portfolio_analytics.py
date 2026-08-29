@@ -22,7 +22,6 @@ from app.schemas.api import (
     StockEvaluationResponse,
 )
 from app.services.portfolio import PortfolioService, validate_target_weights
-from app.services.rebalancing_identity import proposal_key
 
 FEATURE_WINDOW_DAYS = 180
 MIN_PRICE_RETURNS = 40
@@ -360,20 +359,17 @@ class PortfolioAnalyticsService:
                 "현재 유효한 리밸런싱 제안이 없습니다.",
                 409,
             )
+        if proposal.proposal_key != request.proposal_key:
+            raise ServiceError(
+                "PROPOSAL_STALE",
+                "화면에 표시된 리밸런싱 제안이 변경되었습니다. 새로고침 후 다시 시도해 주세요.",
+                409,
+            )
         baseline_date = max(
             (position.price_as_of.date() for position in portfolio.positions),
             default=datetime.now(ZoneInfo("Asia/Seoul")).date(),
         )
-        proposal_identity = getattr(proposal, "proposal_key", None) or proposal_key(
-            account.selected_strategy_id,
-            proposal.stock_code,
-            proposal.action,
-            proposal.current_weight,
-            proposal.target_weight,
-            proposal.weight_diff,
-            proposal.recommended_amount,
-            baseline_date,
-        )
+        proposal_identity = request.proposal_key
         existing_proposal = getattr(
             self.trading, "decision_by_proposal", lambda *_args: None
         )(request.account_id, proposal_identity)

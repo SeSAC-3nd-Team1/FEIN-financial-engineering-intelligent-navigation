@@ -98,6 +98,7 @@ def test_stock_evaluation_and_decision_endpoints_use_authenticated_owner() -> No
             json={
                 "account_id": str(ACCOUNT_ID),
                 "stock_code": "005930",
+                "proposal_key": "low|005930|SELL|20.00|15.00|5.00|50000.00|2026-08-25",
                 "decision": "HELD",
                 "idempotency_key": "decision-1",
             },

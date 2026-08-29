@@ -103,6 +103,7 @@ def test_record_decision_persists_server_side_proposal(monkeypatch) -> None:
         target_weight=Decimal("15"),
         weight_diff=Decimal("5"),
         recommended_amount=Decimal("50000"),
+        proposal_key="low-volatility|005930|SELL|20|15|5|50000|2026-08-25",
     )
 
     class FakeTrading:
@@ -151,6 +152,7 @@ def test_record_decision_persists_server_side_proposal(monkeypatch) -> None:
     request = RebalancingDecisionCreateRequest(
         account_id=account_id,
         stock_code="005930",
+        proposal_key="low-volatility|005930|SELL|20|15|5|50000|2026-08-25",
         decision="ACCEPTED",
         idempotency_key="decision-1",
     )

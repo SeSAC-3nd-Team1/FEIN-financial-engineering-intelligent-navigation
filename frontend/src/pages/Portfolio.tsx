@@ -19,7 +19,7 @@ import { Maximize2, X } from "lucide-react";
 import Header from "../components/Header";
 import ModelRecommendations from "../components/ModelRecommendations";
 import { buildDetailedPortfolioHoldings } from "../lib/portfolioModel";
-import { PORTFOLIO_TREND, ALL_HOLDINGS as MOCK_HOLDINGS } from "../data/holdings";
+import { PORTFOLIO_TREND } from "../data/holdings";
 import { useTradingData } from "../hooks/useTradingData";
 import {
   getPortfolioHistoryApi,

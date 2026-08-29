@@ -233,8 +233,9 @@ function PortfolioDetailContent({
   const rebalanceAlert =
     displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
   const submitDecision = async (decision: "ACCEPTED" | "HELD") => {
-    if (!rebalanceAlert || !account || !token) return;
-    const key = `${rebalanceAlert.id}:${decision}`;
+    if (!rebalanceAlert || !account || !token || !rebalanceAlert.proposalKey)
+      return;
+    const key = `${rebalanceAlert.proposalKey}:${decision}`;
     const idempotencyKey = decisionKeys.current[key] ?? crypto.randomUUID();
     decisionKeys.current[key] = idempotencyKey;
     setDecisionError(null);
@@ -244,6 +245,7 @@ function PortfolioDetailContent({
         stock_code:
           rebalanceAlert.stockCode ??
           rebalanceAlert.id.replace("rebalance-", ""),
+        proposal_key: rebalanceAlert.proposalKey,
         decision,
         idempotency_key: idempotencyKey,
       });
@@ -253,8 +255,8 @@ function PortfolioDetailContent({
       );
     }
   };
-  const rebalanceHolding = rebalanceAlert
-    ? ALL_HOLDINGS.find((h) => h.name === rebalanceAlert.stockName)
+  const rebalanceHolding = rebalanceAlert?.stockCode
+    ? ALL_HOLDINGS.find((h) => h.stockCode === rebalanceAlert.stockCode)
     : undefined;
   // 실 제안이면 API가 이미 계산해 준 현재/목표 비중·조정금액을 그대로 쓴다 — 목업일 때만 보유 종목 목록에서
   // 같은 이름을 찾아(이름 매칭이라 실패할 수 있음) 대신 파생시킨다.
@@ -422,11 +424,11 @@ function PortfolioDetailContent({
                   {previewHoldings.map((h) => {
                     const stockCode = h.stockCode;
                     const alert = displayAlerts.find(
-                      (a) => a.stockName === h.name,
+                      (a) => a.stockCode === stockCode,
                     );
                     return (
                       <button
-                        key={h.name}
+                        key={h.stockCode}
                         onClick={() => stockCode && onSelectStock(stockCode)}
                         className="flex items-center gap-4 border-t border-line py-3.5 text-left first:border-0 hover:bg-canvas"
                       >

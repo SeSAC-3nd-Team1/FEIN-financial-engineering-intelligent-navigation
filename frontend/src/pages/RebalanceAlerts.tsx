@@ -91,8 +91,9 @@ function RebalanceAlertsContent({
   const rebalanceAlert =
     displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
   const submitDecision = async (decision: "ACCEPTED" | "HELD") => {
-    if (!rebalanceAlert || !account || !token) return;
-    const key = `${rebalanceAlert.proposalKey ?? rebalanceAlert.id}:${decision}`;
+    if (!rebalanceAlert || !account || !token || !rebalanceAlert.proposalKey)
+      return;
+    const key = `${rebalanceAlert.proposalKey}:${decision}`;
     const idempotencyKey = decisionKeys.current[key] ?? crypto.randomUUID();
     decisionKeys.current[key] = idempotencyKey;
     setDecisionError(null);
@@ -102,6 +103,7 @@ function RebalanceAlertsContent({
         stock_code:
           rebalanceAlert.stockCode ??
           rebalanceAlert.id.replace("rebalance-", ""),
+        proposal_key: rebalanceAlert.proposalKey,
         decision,
         idempotency_key: idempotencyKey,
       });

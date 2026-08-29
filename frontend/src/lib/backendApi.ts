@@ -230,7 +230,7 @@ export interface PortfolioContributionResponse {
 }
 
 export interface RebalancingProposalResponse {
-  proposal_key?: string | null;
+  proposal_key: string;
   stock_code: string;
   stock_name: string | null;
   current_weight: DecimalString;
@@ -331,6 +331,7 @@ export interface RebalancingDecisionHistoryResponse {
 export interface RebalancingDecisionCreateRequest {
   account_id: string;
   stock_code: string;
+  proposal_key: string;
   decision: "ACCEPTED" | "HELD";
   idempotency_key: string;
 }
@@ -360,6 +361,7 @@ export interface ExecutionResponse {
   id: number;
   order_id: string;
   stock_code: string;
+  stock_name: string | null;
   side: "BUY" | "SELL";
   quantity: DecimalString;
   execution_price: DecimalString;

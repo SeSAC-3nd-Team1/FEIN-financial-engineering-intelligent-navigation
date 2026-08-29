@@ -39,12 +39,26 @@ def upgrade() -> None:
                        ) AS duplicate_rank
                 FROM canonical
             )
+            DELETE FROM rebalancing_decisions decision
+            USING ranked duplicate
+            WHERE decision.id = duplicate.id
+              AND duplicate.duplicate_rank > 1
+            """))
+    op.execute(sa.text("""
             UPDATE rebalancing_decisions decision
-            SET proposal_key = ranked.key || CASE
-                WHEN ranked.duplicate_rank = 1 THEN ''
-                ELSE '|legacy-' || ranked.id::text
-            END
-            FROM ranked
+            SET proposal_key = ranked.key
+            FROM (
+                SELECT id,
+                       concat_ws('|',
+                           coalesce(strategy_id, ''), stock_code, action,
+                           to_char(current_weight, 'FM999999999999990.00'),
+                           to_char(target_weight, 'FM999999999999990.00'),
+                           to_char(weight_diff, 'FM999999999999990.00'),
+                           to_char(recommended_amount, 'FM9999999999999999990.00'),
+                           coalesce(baseline_snapshot_date, created_at::date, current_date)
+                       ) AS key
+                FROM rebalancing_decisions
+            ) ranked
             WHERE decision.id = ranked.id
             """))
     op.alter_column("rebalancing_decisions", "proposal_key", nullable=False)

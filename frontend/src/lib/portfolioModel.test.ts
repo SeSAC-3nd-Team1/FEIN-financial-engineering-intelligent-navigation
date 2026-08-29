@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { buildPortfolioHoldings } from './portfolioModel';
+import { buildPortfolioHoldings, getPositionDisplayName, getPositionSector } from './portfolioModel';
 import type { PortfolioResponse } from './backendApi';
 
 describe('buildPortfolioHoldings', () => {
   it('returns an empty list when no real portfolio is available', () => {
     expect(buildPortfolioHoldings(null)).toEqual([]);
+  });
+
+  it('shows the real code and honest unavailable metadata when API metadata is missing', () => {
+    expect(getPositionDisplayName('999999', null)).toBe('999999');
+    expect(getPositionSector(null)).toBe('-');
   });
 
   it('keeps actual portfolio metadata ahead of the Mock fallback', () => {
