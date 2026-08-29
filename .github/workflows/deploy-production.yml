@@ -20,7 +20,6 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     environment:
       name: production
 
@@ -28,73 +27,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate production configuration
+      - name: Validate bootstrap configuration
         env:
           ACR_NAME: ${{ vars.ACR_NAME }}
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
           BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
-          ACS_EMAIL_SENDER_ADDRESS: ${{ vars.ACS_EMAIL_SENDER_ADDRESS }}
-          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
-          AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${{ vars.AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT }}
-          AZURE_OPENAI_REBALANCING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_REBALANCING_DEPLOYMENT }}
-          AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT }}
-          AZURE_OPENAI_CHATBOT_ENDPOINT: ${{ vars.AZURE_OPENAI_CHATBOT_ENDPOINT }}
-          AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHATBOT_DEPLOYMENT }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          REDIS_URL: ${{ secrets.REDIS_URL }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ACS_EMAIL_CONNECTION_STRING: ${{ secrets.ACS_EMAIL_CONNECTION_STRING }}
-          EMAIL_OTP_SECRET: ${{ secrets.EMAIL_OTP_SECRET }}
-          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
-          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
-          NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
-          NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          AZURE_OPENAI_CHATBOT_API_KEY: ${{ secrets.AZURE_OPENAI_CHATBOT_API_KEY }}
         run: |
           set -euo pipefail
-
-          required=(
-            ACR_NAME
-            AZURE_RESOURCE_GROUP
-            FRONTEND_APP_NAME
-            BACKEND_APP_NAME
-            ACS_EMAIL_SENDER_ADDRESS
-            AZURE_OPENAI_ENDPOINT
-            AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT
-            AZURE_OPENAI_REBALANCING_DEPLOYMENT
-            AZURE_OPENAI_COMPARISON_DEPLOYMENT
-            AZURE_OPENAI_CHATBOT_ENDPOINT
-            AZURE_OPENAI_CHATBOT_DEPLOYMENT
-            AZURE_CLIENT_ID
-            AZURE_TENANT_ID
-            AZURE_SUBSCRIPTION_ID
-            DATABASE_URL
-            REDIS_URL
-            JWT_SECRET
-            ACS_EMAIL_CONNECTION_STRING
-            EMAIL_OTP_SECRET
-            KIS_APP_KEY
-            KIS_APP_SECRET
-            NAVER_API_HUB_CLIENT_ID
-            NAVER_API_HUB_CLIENT_SECRET
-            AZURE_OPENAI_API_KEY
-            AZURE_OPENAI_CHATBOT_API_KEY
-          )
-
+          required=(ACR_NAME AZURE_RESOURCE_GROUP FRONTEND_APP_NAME BACKEND_APP_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID DATABASE_URL)
           missing=()
           for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              missing+=("${name}")
-            fi
+            [[ -n "${!name:-}" ]] || missing+=("${name}")
           done
-
           if (( ${#missing[@]} > 0 )); then
-            printf 'Missing production configuration: %s\n' "${missing[*]}" >&2
+            printf 'Missing bootstrap configuration: %s\n' "${missing[*]}" >&2
             exit 1
           fi
 
@@ -105,38 +56,93 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Validate backend integration configuration
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          ACS_EMAIL_CONNECTION_STRING: ${{ secrets.ACS_EMAIL_CONNECTION_STRING }}
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
+          NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_CHATBOT_API_KEY: ${{ secrets.AZURE_OPENAI_CHATBOT_API_KEY }}
+          ACS_EMAIL_SENDER_ADDRESS: ${{ vars.ACS_EMAIL_SENDER_ADDRESS }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${{ vars.AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT }}
+          AZURE_OPENAI_REBALANCING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_REBALANCING_DEPLOYMENT }}
+          AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT }}
+          AZURE_OPENAI_CHATBOT_ENDPOINT: ${{ vars.AZURE_OPENAI_CHATBOT_ENDPOINT }}
+          AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHATBOT_DEPLOYMENT }}
+        run: |
+          set -euo pipefail
+
+          has_existing_env() {
+            local name="$1"
+            local count
+            count="$(az containerapp show \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query "length(properties.template.containers[0].env[?name=='${name}'])" \
+              --output tsv)"
+            [[ "${count}" != "0" ]]
+          }
+
+          missing=()
+          required_sensitive=(
+            REDIS_URL
+            ACS_EMAIL_CONNECTION_STRING
+            KIS_APP_KEY
+            KIS_APP_SECRET
+            NAVER_API_HUB_CLIENT_ID
+            NAVER_API_HUB_CLIENT_SECRET
+            AZURE_OPENAI_API_KEY
+            AZURE_OPENAI_CHATBOT_API_KEY
+          )
+          required_plain=(
+            ACS_EMAIL_SENDER_ADDRESS
+            AZURE_OPENAI_ENDPOINT
+            AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT
+            AZURE_OPENAI_REBALANCING_DEPLOYMENT
+            AZURE_OPENAI_COMPARISON_DEPLOYMENT
+            AZURE_OPENAI_CHATBOT_ENDPOINT
+            AZURE_OPENAI_CHATBOT_DEPLOYMENT
+          )
+
+          for name in "${required_sensitive[@]}" "${required_plain[@]}"; do
+            if [[ -z "${!name:-}" ]] && ! has_existing_env "${name}"; then
+              missing+=("${name}")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing in both GitHub production config and current Azure Container App: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+          echo "Backend integration configuration can be resolved from GitHub production config and/or the existing Azure Container App."
+
       - name: Login to Azure Container Registry
-        run: |
-          az acr login --name "${{ vars.ACR_NAME }}"
+        run: az acr login --name "${{ vars.ACR_NAME }}"
 
-      - name: Build frontend image
+      - name: Build and push frontend image
         run: |
-          docker build \
-            -t "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
-            ./frontend
+          docker build -t "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}" ./frontend
+          docker push "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}"
 
-      - name: Push frontend image
+      - name: Build and push backend image
         run: |
-          docker push \
-            "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}"
-
-      - name: Build backend image
-        run: |
-          docker build \
-            -t "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
-            ./backend
-
-      - name: Push backend image
-        run: |
-          docker push \
-            "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}"
+          docker build -t "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" ./backend
+          docker push "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}"
 
       - name: Deploy frontend Container App
         run: |
           az containerapp update \
             --name "${{ vars.FRONTEND_APP_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --image "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}"
+            --image "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
+            --output none
 
       - name: Resolve production frontend origin
         id: frontend-origin
@@ -147,16 +153,14 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --query properties.configuration.ingress.fqdn \
             --output tsv)"
-
-          if [[ -z "${frontend_fqdn}" ]]; then
-            echo "Frontend Container App ingress FQDN is missing." >&2
-            exit 1
-          fi
-
+          [[ -n "${frontend_fqdn}" ]] || { echo "Frontend Container App ingress FQDN is missing." >&2; exit 1; }
           echo "origin=https://${frontend_fqdn}" >> "${GITHUB_OUTPUT}"
 
-      - name: Sync backend Container App secrets
+      - name: Deploy backend with bootstrapped production configuration
         env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+          FRONTEND_ORIGIN: ${{ steps.frontend-origin.outputs.origin }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
@@ -168,28 +172,6 @@ jobs:
           NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_CHATBOT_API_KEY: ${{ secrets.AZURE_OPENAI_CHATBOT_API_KEY }}
-        run: |
-          set -euo pipefail
-
-          az containerapp secret set \
-            --name "${{ vars.BACKEND_APP_NAME }}" \
-            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --secrets \
-              database-url="${DATABASE_URL}" \
-              redis-url="${REDIS_URL}" \
-              jwt-secret="${JWT_SECRET}" \
-              acs-email-connection-string="${ACS_EMAIL_CONNECTION_STRING}" \
-              email-otp-secret="${EMAIL_OTP_SECRET}" \
-              kis-app-key="${KIS_APP_KEY}" \
-              kis-app-secret="${KIS_APP_SECRET}" \
-              naver-api-hub-client-id="${NAVER_API_HUB_CLIENT_ID}" \
-              naver-api-hub-client-secret="${NAVER_API_HUB_CLIENT_SECRET}" \
-              azure-openai-api-key="${AZURE_OPENAI_API_KEY}" \
-              azure-openai-chatbot-api-key="${AZURE_OPENAI_CHATBOT_API_KEY}"
-
-      - name: Deploy backend Container App with production configuration
-        env:
-          FRONTEND_ORIGIN: ${{ steps.frontend-origin.outputs.origin }}
           ACS_EMAIL_SENDER_ADDRESS: ${{ vars.ACS_EMAIL_SENDER_ADDRESS }}
           AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${{ vars.AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT }}
@@ -200,107 +182,149 @@ jobs:
         run: |
           set -euo pipefail
 
+          has_existing_env() {
+            local name="$1"
+            local count
+            count="$(az containerapp show \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query "length(properties.template.containers[0].env[?name=='${name}'])" \
+              --output tsv)"
+            [[ "${count}" != "0" ]]
+          }
+
+          secret_args=()
+          env_args=(
+            DB_CONNECT_TIMEOUT_SECONDS=5
+            ACCESS_TOKEN_MINUTES=60
+            CORS_ORIGINS="${FRONTEND_ORIGIN}"
+            EMAIL_OTP_TTL_SECONDS=300
+            EMAIL_OTP_MAX_ATTEMPTS=5
+            EMAIL_OTP_RESEND_SECONDS=60
+            EMAIL_OTP_HOURLY_LIMIT=5
+            EMAIL_OTP_IP_HOURLY_LIMIT=20
+            EMAIL_VERIFICATION_TOKEN_TTL_SECONDS=1800
+            KIS_BASE_URL=https://openapi.koreainvestment.com:9443
+            KIS_WEBSOCKET_URL=ws://ops.koreainvestment.com:21000
+            KIS_TIMEOUT_SECONDS=3
+            KIS_REST_PAGE_INTERVAL_SECONDS=0.5
+            PRICE_CACHE_TTL_SECONDS=5
+            MINUTE_CANDLE_CACHE_TTL_SECONDS=15
+            REALTIME_PRICE_CACHE_TTL_SECONDS=30
+            REALTIME_PRICE_STALE_SECONDS=10
+            KIS_REALTIME_RECONNECT_MAX_SECONDS=30
+            KIS_REALTIME_CLIENT_QUEUE_SIZE=100
+            KIS_REALTIME_MAX_SYMBOLS_PER_CLIENT=20
+            NAVER_NEWS_BASE_URL=https://naverapihub.apigw.ntruss.com
+            NEWS_SEARCH_QUERY=증시
+            NEWS_CACHE_TTL_SECONDS=300
+            NEWS_REQUEST_TIMEOUT_SECONDS=5
+            AZURE_OPENAI_API_VERSION=2024-10-21
+            AI_RECOMMENDATION_TIMEOUT_SECONDS=15
+            AI_RECOMMENDATION_MODEL_VERSION=strategy-recommender-v1
+            AI_RECOMMENDATION_PROMPT_VERSION=v1
+            AI_RECOMMENDATION_DATASET_VERSION=financial-8y-v1
+            AI_REBALANCING_TIMEOUT_SECONDS=15
+            AI_REBALANCING_MODEL_VERSION=rebalancing-v1
+            AI_COMPARISON_TIMEOUT_SECONDS=15
+            AI_COMPARISON_MODEL_VERSION=portfolio-comparison-v1
+            STRATEGY_CATALOG_VERSION=v2
+            AZURE_OPENAI_CHATBOT_API_VERSION=2024-10-21
+            AI_CHATBOT_TIMEOUT_SECONDS=30
+            AI_CHATBOT_MODEL_VERSION=chatbot-v1
+            AI_CHATBOT_PROMPT_VERSION=v1
+            AI_CHATBOT_RATE_LIMIT_PER_MINUTE=30
+            AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS=60
+            MODEL_RECOMMENDATION_ALLOW_FALLBACK=false
+            MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3
+          )
+
+          set_secret_env() {
+            local env_name="$1"
+            local secret_name="$2"
+            local value="$3"
+            if [[ -n "${value}" ]]; then
+              secret_args+=("${secret_name}=${value}")
+              env_args+=("${env_name}=secretref:${secret_name}")
+            fi
+          }
+
+          set_plain_env() {
+            local env_name="$1"
+            local value="$2"
+            if [[ -n "${value}" ]]; then
+              env_args+=("${env_name}=${value}")
+            fi
+          }
+
+          set_secret_env DATABASE_URL database-url "${DATABASE_URL}"
+          set_secret_env REDIS_URL redis-url "${REDIS_URL}"
+          set_secret_env ACS_EMAIL_CONNECTION_STRING acs-email-connection-string "${ACS_EMAIL_CONNECTION_STRING}"
+          set_secret_env KIS_APP_KEY kis-app-key "${KIS_APP_KEY}"
+          set_secret_env KIS_APP_SECRET kis-app-secret "${KIS_APP_SECRET}"
+          set_secret_env NAVER_API_HUB_CLIENT_ID naver-api-hub-client-id "${NAVER_API_HUB_CLIENT_ID}"
+          set_secret_env NAVER_API_HUB_CLIENT_SECRET naver-api-hub-client-secret "${NAVER_API_HUB_CLIENT_SECRET}"
+          set_secret_env AZURE_OPENAI_API_KEY azure-openai-api-key "${AZURE_OPENAI_API_KEY}"
+          set_secret_env AZURE_OPENAI_CHATBOT_API_KEY azure-openai-chatbot-api-key "${AZURE_OPENAI_CHATBOT_API_KEY}"
+
+          if [[ -n "${JWT_SECRET}" ]]; then
+            set_secret_env JWT_SECRET jwt-secret "${JWT_SECRET}"
+          elif ! has_existing_env JWT_SECRET; then
+            generated_jwt="$(openssl rand -hex 64)"
+            set_secret_env JWT_SECRET jwt-secret "${generated_jwt}"
+          fi
+
+          if [[ -n "${EMAIL_OTP_SECRET}" ]]; then
+            set_secret_env EMAIL_OTP_SECRET email-otp-secret "${EMAIL_OTP_SECRET}"
+          elif ! has_existing_env EMAIL_OTP_SECRET; then
+            generated_otp="$(openssl rand -hex 64)"
+            set_secret_env EMAIL_OTP_SECRET email-otp-secret "${generated_otp}"
+          fi
+
+          set_plain_env ACS_EMAIL_SENDER_ADDRESS "${ACS_EMAIL_SENDER_ADDRESS}"
+          set_plain_env AZURE_OPENAI_ENDPOINT "${AZURE_OPENAI_ENDPOINT}"
+          set_plain_env AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT "${AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT}"
+          set_plain_env AZURE_OPENAI_REBALANCING_DEPLOYMENT "${AZURE_OPENAI_REBALANCING_DEPLOYMENT}"
+          set_plain_env AZURE_OPENAI_COMPARISON_DEPLOYMENT "${AZURE_OPENAI_COMPARISON_DEPLOYMENT}"
+          set_plain_env AZURE_OPENAI_CHATBOT_ENDPOINT "${AZURE_OPENAI_CHATBOT_ENDPOINT}"
+          set_plain_env AZURE_OPENAI_CHATBOT_DEPLOYMENT "${AZURE_OPENAI_CHATBOT_DEPLOYMENT}"
+
+          if (( ${#secret_args[@]} > 0 )); then
+            az containerapp secret set \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --secrets "${secret_args[@]}" \
+              --output none
+          fi
+
           az containerapp update \
-            --name "${{ vars.BACKEND_APP_NAME }}" \
-            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
             --image "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
-            --set-env-vars \
-              DATABASE_URL=secretref:database-url \
-              DB_CONNECT_TIMEOUT_SECONDS=5 \
-              REDIS_URL=secretref:redis-url \
-              JWT_SECRET=secretref:jwt-secret \
-              ACCESS_TOKEN_MINUTES=60 \
-              CORS_ORIGINS="${FRONTEND_ORIGIN}" \
-              ACS_EMAIL_CONNECTION_STRING=secretref:acs-email-connection-string \
-              ACS_EMAIL_SENDER_ADDRESS="${ACS_EMAIL_SENDER_ADDRESS}" \
-              EMAIL_OTP_SECRET=secretref:email-otp-secret \
-              EMAIL_OTP_TTL_SECONDS=300 \
-              EMAIL_OTP_MAX_ATTEMPTS=5 \
-              EMAIL_OTP_RESEND_SECONDS=60 \
-              EMAIL_OTP_HOURLY_LIMIT=5 \
-              EMAIL_OTP_IP_HOURLY_LIMIT=20 \
-              EMAIL_VERIFICATION_TOKEN_TTL_SECONDS=1800 \
-              KIS_APP_KEY=secretref:kis-app-key \
-              KIS_APP_SECRET=secretref:kis-app-secret \
-              KIS_BASE_URL=https://openapi.koreainvestment.com:9443 \
-              KIS_WEBSOCKET_URL=ws://ops.koreainvestment.com:21000 \
-              KIS_TIMEOUT_SECONDS=3 \
-              KIS_REST_PAGE_INTERVAL_SECONDS=0.5 \
-              PRICE_CACHE_TTL_SECONDS=5 \
-              MINUTE_CANDLE_CACHE_TTL_SECONDS=15 \
-              REALTIME_PRICE_CACHE_TTL_SECONDS=30 \
-              REALTIME_PRICE_STALE_SECONDS=10 \
-              KIS_REALTIME_RECONNECT_MAX_SECONDS=30 \
-              KIS_REALTIME_CLIENT_QUEUE_SIZE=100 \
-              KIS_REALTIME_MAX_SYMBOLS_PER_CLIENT=20 \
-              NAVER_API_HUB_CLIENT_ID=secretref:naver-api-hub-client-id \
-              NAVER_API_HUB_CLIENT_SECRET=secretref:naver-api-hub-client-secret \
-              NAVER_NEWS_BASE_URL=https://naverapihub.apigw.ntruss.com \
-              NEWS_SEARCH_QUERY=증시 \
-              NEWS_CACHE_TTL_SECONDS=300 \
-              NEWS_REQUEST_TIMEOUT_SECONDS=5 \
-              AZURE_OPENAI_ENDPOINT="${AZURE_OPENAI_ENDPOINT}" \
-              AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key \
-              AZURE_OPENAI_API_VERSION=2024-10-21 \
-              AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT="${AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT}" \
-              AI_RECOMMENDATION_TIMEOUT_SECONDS=15 \
-              AI_RECOMMENDATION_MODEL_VERSION=strategy-recommender-v1 \
-              AI_RECOMMENDATION_PROMPT_VERSION=v1 \
-              AI_RECOMMENDATION_DATASET_VERSION=financial-8y-v1 \
-              AZURE_OPENAI_REBALANCING_DEPLOYMENT="${AZURE_OPENAI_REBALANCING_DEPLOYMENT}" \
-              AI_REBALANCING_TIMEOUT_SECONDS=15 \
-              AI_REBALANCING_MODEL_VERSION=rebalancing-v1 \
-              AZURE_OPENAI_COMPARISON_DEPLOYMENT="${AZURE_OPENAI_COMPARISON_DEPLOYMENT}" \
-              AI_COMPARISON_TIMEOUT_SECONDS=15 \
-              AI_COMPARISON_MODEL_VERSION=portfolio-comparison-v1 \
-              STRATEGY_CATALOG_VERSION=v2 \
-              AZURE_OPENAI_CHATBOT_ENDPOINT="${AZURE_OPENAI_CHATBOT_ENDPOINT}" \
-              AZURE_OPENAI_CHATBOT_API_KEY=secretref:azure-openai-chatbot-api-key \
-              AZURE_OPENAI_CHATBOT_DEPLOYMENT="${AZURE_OPENAI_CHATBOT_DEPLOYMENT}" \
-              AZURE_OPENAI_CHATBOT_API_VERSION=2024-10-21 \
-              AI_CHATBOT_TIMEOUT_SECONDS=30 \
-              AI_CHATBOT_MODEL_VERSION=chatbot-v1 \
-              AI_CHATBOT_PROMPT_VERSION=v1 \
-              AI_CHATBOT_RATE_LIMIT_PER_MINUTE=30 \
-              AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS=60 \
-              MODEL_RECOMMENDATION_ALLOW_FALLBACK=false \
-              MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3
+            --set-env-vars "${env_args[@]}" \
+            --output none
 
       - name: Verify deployed Container App revisions
         run: |
           set -euo pipefail
-
           wait_for_latest_revision() {
             local app_name="$1"
             local label="$2"
             local latest_revision=""
             local ready_revision=""
-
             for attempt in $(seq 1 30); do
-              latest_revision="$(az containerapp show \
-                --name "${app_name}" \
-                --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-                --query properties.latestRevisionName \
-                --output tsv)"
-              ready_revision="$(az containerapp show \
-                --name "${app_name}" \
-                --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-                --query properties.latestReadyRevisionName \
-                --output tsv)"
-
+              latest_revision="$(az containerapp show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --query properties.latestRevisionName --output tsv)"
+              ready_revision="$(az containerapp show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --query properties.latestReadyRevisionName --output tsv)"
               if [[ -n "${latest_revision}" && "${latest_revision}" == "${ready_revision}" ]]; then
                 echo "${label} ready revision: ${ready_revision}"
                 return 0
               fi
-
               echo "${label} revision not ready yet (attempt ${attempt}/30, latest=${latest_revision:-none}, ready=${ready_revision:-none})"
               sleep 10
             done
-
             echo "${label} latest revision did not become ready." >&2
             echo "latest=${latest_revision:-none}, ready=${ready_revision:-none}" >&2
             return 1
           }
-
           wait_for_latest_revision "${{ vars.FRONTEND_APP_NAME }}" "Frontend"
           wait_for_latest_revision "${{ vars.BACKEND_APP_NAME }}" "Backend"
