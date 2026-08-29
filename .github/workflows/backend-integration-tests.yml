@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "backend/**"
+      - "ai/**"
       - "frontend/**"
       - "data/db/**"
       - "data/scripts/init_local_db.py"
@@ -76,7 +77,12 @@ jobs:
 
       - name: Run Backend unit and E2E tests
         working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai
         run: pytest -q
+
+      - name: Build production Backend image
+        run: docker build -f backend/Dockerfile -t fein-backend-ci .
 
       - name: Set up Node
         uses: actions/setup-node@v4

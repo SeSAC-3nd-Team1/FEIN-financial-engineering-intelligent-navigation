@@ -151,7 +151,7 @@ export default function StrategyDetail({
     let cancelled = false;
     setResultLoading(true);
     setResultError(null);
-    getBacktestAvailableRange()
+    getBacktestAvailableRange(strategy.id)
       .then((range) => {
         if (cancelled) return;
         const recommended = getRecommendedPeriods(range);

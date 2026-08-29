@@ -20,7 +20,7 @@ DATA_ROOT = Path(__file__).resolve().parents[1]
 PRE_STRATEGY_REVISION = "20260827_0024"
 SKIPPED_STRATEGY_REVISION = "20260828_0025"
 DRIFTED_REVISION = "20260828_0026"
-HEAD_REVISION = "20260828_0030"
+HEAD_REVISION = "20260829_0032"
 STRATEGY_COLUMNS = {
     "product_group",
     "availability_status",
@@ -173,10 +173,30 @@ def test_reconciliation_repairs_revision_only_strategy_migration(
     assert dict(momentum) == {
         "product_group": "BANG",
         "availability_status": "AVAILABLE",
-        "engine_key": "price_momentum_v1",
+        "engine_key": "risk_adjusted_momentum_v2",
         "display_order": 10,
     }
     assert {"low", "value", "momentum", "stat_arb", "event_driven"} <= strategy_ids
+
+    run_columns = {
+        column["name"]: column
+        for column in inspect(engine).get_columns("momentum_rebalance_runs")
+    }
+    assert run_columns["status"]["nullable"] is False
+    assert run_columns["status"]["default"] == "'RUNNING'::character varying"
+    run_constraints = {
+        constraint["name"]
+        for constraint in inspect(engine).get_unique_constraints("momentum_rebalance_runs")
+    }
+    assert "uq_momentum_rebalance_runs_account_quarter" in run_constraints
+    run_checks = {
+        constraint["name"]
+        for constraint in inspect(engine).get_check_constraints("momentum_rebalance_runs")
+    }
+    assert {
+        "ck_momentum_rebalance_runs_quarter",
+        "ck_momentum_rebalance_runs_status",
+    } <= run_checks
 
     # 복구 후 ORM metadata와 새 DB schema 사이에 추가 DDL 차이가 없어야 한다.
     command.check(config)

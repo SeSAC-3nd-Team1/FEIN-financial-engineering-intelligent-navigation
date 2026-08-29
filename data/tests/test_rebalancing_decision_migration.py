@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(
 
 DATA_ROOT = Path(__file__).resolve().parents[1]
 PREVIOUS_REVISION = "20260828_0029"
-HEAD_REVISION = "20260828_0030"
+HEAD_REVISION = "20260829_0032"
 
 
 def _alembic_config() -> Config:
@@ -141,6 +141,10 @@ def test_upgrade_backfills_key_and_removes_legacy_duplicates(
     assert "uq_rebalancing_decisions_account_proposal" in unique_constraints
 
     with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM virtual_accounts WHERE user_id = :user_id"),
+            {"user_id": user_id},
+        )
         connection.execute(
             text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id}
         )

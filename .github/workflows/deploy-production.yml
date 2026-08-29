@@ -53,8 +53,9 @@ jobs:
       - name: Build backend image
         run: |
           docker build \
+            -f backend/Dockerfile \
             -t "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
-            ./backend
+            .
 
       - name: Push backend image
         run: |

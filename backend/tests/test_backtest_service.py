@@ -122,7 +122,7 @@ def test_metrics_calculate_return_cagr_mdd_volatility_and_sharpe() -> None:
 def test_available_range_uses_warmup_and_common_stock_index_end_date() -> None:
     result = BacktestService(FakeRepository()).available_range()
 
-    assert result.min_date == date(2024, 2, 9)
+    assert result.min_date == date(2020, 9, 17)
     assert result.max_date == date(2026, 8, 18)
 
 

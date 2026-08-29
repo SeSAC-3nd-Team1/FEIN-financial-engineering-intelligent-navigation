@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_session
@@ -10,8 +10,11 @@ router = APIRouter(prefix="/backtest", tags=["backtest"])
 
 
 @router.get("/available-range", response_model=BacktestAvailableRangeResponse)
-def get_available_range(session: Session = Depends(get_session)) -> BacktestAvailableRangeResponse:
-    return BacktestService(BacktestRepository(session)).available_range()
+def get_available_range(
+    strategy_id: str | None = Query(default=None, alias="strategyId"),
+    session: Session = Depends(get_session),
+) -> BacktestAvailableRangeResponse:
+    return BacktestService(BacktestRepository(session)).available_range(strategy_id)
 
 
 @router.post("/run", response_model=BacktestRunResponse)

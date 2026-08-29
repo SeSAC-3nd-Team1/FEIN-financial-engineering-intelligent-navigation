@@ -26,7 +26,7 @@ from app.schemas.api import BacktestAvailableRangeResponse, BacktestRunRequest, 
 # weekly volatility observations.  1,500 calendar days leaves enough room for
 # weekends, holidays, and sparse listings in the real repository.
 V2_LOOKBACK_DAYS = 1500
-LOOKBACK_DAYS = V2_LOOKBACK_DAYS
+LOOKBACK_DAYS = 260
 LOW_VOL_WINDOW = 60
 MOMENTUM_WINDOW = 126  # legacy baseline helper; service momentum uses v2 below.
 MIN_LOW_VOL_OBSERVATIONS = LOW_VOL_WINDOW
@@ -65,11 +65,12 @@ class BacktestService:
     def __init__(self, repository: BacktestRepository) -> None:
         self.repository = repository
 
-    def available_range(self) -> BacktestAvailableRangeResponse:
+    def available_range(self, strategy_id: str | None = None) -> BacktestAvailableRangeResponse:
         stock_min, stock_max, index_min, index_max = self.repository.available_dates(min_stocks=PORTFOLIO_SIZE)
         if None in {stock_min, stock_max, index_min, index_max}:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "백테스트 기간 정보를 찾을 수 없습니다.")
-        min_date = max(stock_min + timedelta(days=LOOKBACK_DAYS), index_min)
+        lookback_days = V2_LOOKBACK_DAYS if strategy_id == "momentum" else LOOKBACK_DAYS
+        min_date = max(stock_min + timedelta(days=lookback_days), index_min)
         max_date = min(stock_max, index_max)
         if min_date >= max_date:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "백테스트 가능한 공통 기간이 없습니다.")
@@ -83,17 +84,18 @@ class BacktestService:
         if factor not in {"low_volatility", "momentum", "value"}:
             raise ServiceError("BACKTEST_STRATEGY_UNAVAILABLE", "지원하지 않는 전략 규칙입니다.", 422)
 
+        lookback_days = V2_LOOKBACK_DAYS if factor == "momentum" else LOOKBACK_DAYS
         if factor == "momentum":
             # Keep every code observed in the period so rank() can rebuild the
             # top-100 investable universe at each point in time.
             universe = self.repository.stock_codes(
-                request.start_date - timedelta(days=LOOKBACK_DAYS), request.end_date
+                request.start_date - timedelta(days=lookback_days), request.end_date
             )
         else:
             universe = self.repository.universe_codes(request.start_date)
         if len(universe) < PORTFOLIO_SIZE:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "백테스트 universe 데이터가 부족합니다.")
-        warmup_start = request.start_date - timedelta(days=LOOKBACK_DAYS)
+        warmup_start = request.start_date - timedelta(days=lookback_days)
         price_points = self.repository.stock_prices(universe, warmup_start, request.end_date)
         benchmark = self.repository.kospi_prices(request.start_date, request.end_date)
         if len(benchmark) < 2:

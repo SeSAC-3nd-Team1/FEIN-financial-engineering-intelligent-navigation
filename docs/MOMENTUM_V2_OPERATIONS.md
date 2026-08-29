@@ -15,3 +15,17 @@ The service default for `strategy_id=momentum` is `risk-adjusted-momentum-v2`.
 Artifact publication is atomic. A failed generator run does not replace the
 previous artifact. Automatic investment and rebalancing reject missing, fallback,
 stale, non-ready, non-v2, or invalid-weight snapshots; they never fall back to v1.
+
+## Production boundary and remaining risks
+
+The repository currently provides the generator command and an internal Backend
+rebalance operation. Production deployment does not yet schedule the generator,
+mount `/model-artifacts` into the Container App, or invoke quarterly rebalancing
+automatically. Until those Azure Job/volume/scheduler resources are configured,
+AUTO execution is intentionally manual and must be treated as an operational
+precondition rather than an unattended production workflow.
+
+The service backtest keeps correctness by loading the full point-in-time symbol
+set and recomputing v2 features. A production-sized dataset should be benchmarked
+before enabling long-range requests; a versioned feature/target cache is the next
+recommended optimization without changing the point-in-time universe contract.

@@ -247,7 +247,6 @@ class PortfolioSnapshot(TimestampMixin, Base):
         nullable=False,
     )
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
-    status: Mapped[str] = mapped_column(String(12), nullable=False, default="RUNNING")
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
     total_purchase_amount: Mapped[Decimal] = mapped_column(
         Numeric(20, 2), nullable=False
@@ -356,6 +355,7 @@ class MomentumRebalanceRun(Base):
     execution_year: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     execution_quarter: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="RUNNING")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

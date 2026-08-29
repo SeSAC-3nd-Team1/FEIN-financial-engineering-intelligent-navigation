@@ -272,7 +272,6 @@ class PortfolioSnapshot(Base):
         PGUUID(as_uuid=True), ForeignKey("virtual_accounts.id", ondelete="CASCADE")
     )
     snapshot_date: Mapped[date] = mapped_column(Date)
-    status: Mapped[str] = mapped_column(String(12), default="RUNNING")
     cash_balance: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     total_purchase_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
     total_evaluation_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
@@ -372,6 +371,7 @@ class MomentumRebalanceRun(Base):
     execution_year: Mapped[int] = mapped_column(SmallInteger)
     execution_quarter: Mapped[int] = mapped_column(SmallInteger)
     snapshot_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(12), default="RUNNING")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

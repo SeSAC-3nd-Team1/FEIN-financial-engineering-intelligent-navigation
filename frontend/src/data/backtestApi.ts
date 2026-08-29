@@ -70,9 +70,9 @@ export function runBacktest(
   });
 }
 
-export function getBacktestAvailableRange(): Promise<BacktestAvailableRange> {
+export function getBacktestAvailableRange(strategyId?: string): Promise<BacktestAvailableRange> {
   if (USE_MOCK_BACKTEST) return Promise.resolve(MOCK_AVAILABLE_RANGE);
-  return get<BacktestAvailableRange>('/available-range');
+  return get<BacktestAvailableRange>(`/available-range${strategyId ? `?strategyId=${encodeURIComponent(strategyId)}` : ''}`);
 }
 
 const fmtShort = (iso: string) => `${iso.slice(0, 4)}.${iso.slice(5, 7)}`;
