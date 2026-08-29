@@ -199,6 +199,21 @@ class MomentumInvestmentService:
             )
         if run is not None and run.status == "COMPLETED":
             return self._response(account.id, snapshot.as_of, len(targets), 0, "ALREADY_APPLIED")
+        positions = self.repo.positions(account.id)
+        if not positions:
+            # Do not create an uncommitted run before apply(): TradingService
+            # owns a rollback boundary and would otherwise erase that run.
+            response = self.apply(user_id, account_id)
+            run = MomentumRebalanceRun(
+                account_id=account.id,
+                execution_year=snapshot.as_of.year,
+                execution_quarter=quarter,
+                snapshot_date=snapshot.as_of,
+                status="COMPLETED",
+            )
+            self.session.add(run)
+            self.session.commit()
+            return response
         if run is None:
             run = MomentumRebalanceRun(
                 account_id=account.id,
@@ -209,15 +224,6 @@ class MomentumInvestmentService:
             )
             self.session.add(run)
             self.session.flush()
-        positions = self.repo.positions(account.id)
-        if not positions:
-            # Preserve the existing explicit initial-investment policy.
-            response = self.apply(user_id, account_id)
-            run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
-            run.status = "COMPLETED"
-            self.session.commit()
-            return response
-
         if getattr(run, "plan", None) is None:
             prices: dict[str, Decimal] = {}
             current_values: dict[str, Decimal] = {}

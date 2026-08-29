@@ -38,9 +38,10 @@ class FakeSession:
 
 
 class FakeRepo:
-    def __init__(self, account, *, rebalance_run=None) -> None:
+    def __init__(self, account, *, rebalance_run=None, empty_positions=False) -> None:
         self.account = account
         self.rebalance_run = rebalance_run
+        self.empty_positions = empty_positions
 
     def owned_account(self, *_args, **_kwargs):
         return self.account
@@ -52,7 +53,7 @@ class FakeRepo:
         return date(2026, 9, 30)
 
     def positions(self, _account_id):
-        return [SimpleNamespace(stock_code="000001", quantity=Decimal("1"))]
+        return [] if self.empty_positions else [SimpleNamespace(stock_code="000001", quantity=Decimal("1"))]
 
 
 class FixedMarket:
@@ -92,6 +93,7 @@ def service(
     position_count: int = 0,
     existing_order_keys=(),
     rebalance_run=None,
+    empty_positions=False,
     **snapshot_options,
 ):
     account = SimpleNamespace(
@@ -111,7 +113,7 @@ def service(
         snapshot_service=FakeSnapshotService(**snapshot_options),  # type: ignore[arg-type]
         trading_service=trading,  # type: ignore[arg-type]
     )
-    result.repo = FakeRepo(account, rebalance_run=rebalance_run)  # type: ignore[assignment]
+    result.repo = FakeRepo(account, rebalance_run=rebalance_run, empty_positions=empty_positions)  # type: ignore[assignment]
     return result, session, trading
 
 
@@ -244,3 +246,16 @@ def test_rebalance_rejects_a_mid_quarter_snapshot() -> None:
 
     assert error.value.code == "MOMENTUM_QUARTER_END_SNAPSHOT_REQUIRED"
     assert trading.requests == []
+
+
+def test_rebalance_empty_account_delegates_before_creating_run() -> None:
+    momentum, session, trading = service(empty_positions=True)
+
+    response = momentum.rebalance(7, momentum.repo.account.id)  # type: ignore[attr-defined]
+
+    assert response.status == "APPLIED"
+    assert response.orders_created == 19
+    assert trading.requests
+    # The fake apply path has no persisted run, but importantly it did not
+    # attempt to mutate a flushed run after TradingService rollback.
+    assert session.commits > 0

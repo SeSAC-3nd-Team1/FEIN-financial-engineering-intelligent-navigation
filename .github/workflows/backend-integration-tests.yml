@@ -5,6 +5,7 @@ on:
     paths:
       - "backend/**"
       - "ai/**"
+      - "shared/**"
       - "frontend/**"
       - "data/db/**"
       - "data/scripts/init_local_db.py"
@@ -78,7 +79,7 @@ jobs:
       - name: Run Backend unit and E2E tests
         working-directory: backend
         env:
-          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
         run: pytest -q
 
       - name: Build production Backend image
