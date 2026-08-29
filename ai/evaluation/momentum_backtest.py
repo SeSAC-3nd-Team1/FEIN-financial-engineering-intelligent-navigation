@@ -105,6 +105,32 @@ def _turnover(previous: dict[str, float], target: dict[str, float]) -> float:
     return (stock + cash) / 2.0
 
 
+def _apply_daily_returns(
+    weights: dict[str, float],
+    observed_returns: pd.Series,
+    *,
+    transaction_cost: float = 0.0,
+) -> tuple[float, dict[str, float]]:
+    """Apply one day's returns and preserve the resulting portfolio-weight drift."""
+
+    cash_weight = 1.0 - sum(weights.values())
+    closing_stock_values = {
+        symbol: weight * (1.0 + float(observed_returns[symbol]))
+        for symbol, weight in weights.items()
+    }
+    closing_portfolio_value = (
+        cash_weight + sum(closing_stock_values.values()) - transaction_cost
+    )
+    if not math.isfinite(closing_portfolio_value) or closing_portfolio_value <= 0:
+        raise BacktestUnavailableError("portfolio value became non-positive or non-finite")
+    closing_weights = {
+        symbol: value / closing_portfolio_value
+        for symbol, value in closing_stock_values.items()
+        if value > 0
+    }
+    return closing_portfolio_value - 1.0, closing_weights
+
+
 def _run_strategy(
     history: pd.DataFrame,
     rebalance_dates: list[pd.Timestamp],
@@ -148,8 +174,10 @@ def _run_strategy(
                 raise BacktestUnavailableError(
                     f"held-security return missing on {trade_date.date()}"
                 )
-            gross = sum(weights[symbol] * float(observed[symbol]) for symbol in symbols)
-            realized.append((trade_date, gross - pending_cost))
+            net_return, weights = _apply_daily_returns(
+                weights, observed, transaction_cost=pending_cost
+            )
+            realized.append((trade_date, net_return))
             pending_cost = 0.0
 
         if trade_date in rebalance_set:

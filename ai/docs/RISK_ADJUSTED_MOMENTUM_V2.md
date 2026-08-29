@@ -65,7 +65,9 @@ python -m inference.generate_risk_adjusted_momentum \
 
 `evaluation.run_momentum_comparison`은 동일 Azure 주식 history에서 v1, v2를 공통 분기말에
 리밸런싱하고 KOSPI와 비교한다. 의사결정일 종가까지의 feature만 사용하며 새 목표는 다음 거래일
-수익률부터 적용한다. forward return은 평가에만 쓰인다. cumulative return, CAGR, MDD,
+수익률부터 적용한다. 리밸런싱 사이에는 종목별 일별 수익률에 따라 보유 비중이 drift하며,
+다음 분기 turnover는 이 drift된 비중과 새 목표 비중의 차이로 계산한다. forward return은
+평가에만 쓰인다. cumulative return, CAGR, MDD,
 연환산 변동성, Sharpe, 평균/총 one-way turnover를 출력한다. 거래비용 기본값은 0이며
 `--transaction-cost-bps`를 명시했을 때만 turnover에 비례해 반영한다.
 
@@ -95,13 +97,13 @@ python -m evaluation.run_momentum_comparison \
 
 | Metric | price-momentum-v1 | risk-adjusted-momentum-v2 | KOSPI |
 |---|---:|---:|---:|
-| Cumulative Return | 139.25% | 127.27% | 62.51% |
-| CAGR | 44.52% | 41.42% | 22.75% |
-| MDD | -44.13% | -25.81% | -20.67% |
-| Annualized Volatility | 40.95% | 26.88% | 19.99% |
-| Sharpe | 1.104 | 1.424 | 1.126 |
-| Average Turnover | 72.20% | 50.87% | 0.00% |
+| Cumulative Return | 140.60% | 132.08% | 62.51% |
+| CAGR | 44.86% | 42.67% | 22.75% |
+| MDD | -46.28% | -27.88% | -20.67% |
+| Annualized Volatility | 41.89% | 27.65% | 19.99% |
+| Sharpe | 1.094 | 1.424 | 1.126 |
+| Average Turnover | 73.37% | 52.95% | 0.00% |
 
 동일 구간에 리밸런싱 one-way turnover당 10bp를 적용하면 v1/v2 CAGR은 각각
-44.08%/41.11%, Sharpe는 1.097/1.416이다. 이 값은 특정 기간의 과거 실험 결과이며
+44.44%/42.38%, Sharpe는 1.087/1.416이다. 이 값은 특정 기간의 과거 실험 결과이며
 미래 성과를 보장하지 않는다.

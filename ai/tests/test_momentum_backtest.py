@@ -5,6 +5,7 @@ import pytest
 
 from evaluation.momentum_backtest import (
     BacktestUnavailableError,
+    _apply_daily_returns,
     compare_momentum_strategies,
 )
 from models.risk_adjusted_momentum import RiskAdjustedMomentumConfig
@@ -106,6 +107,18 @@ def test_transaction_cost_is_explicit_and_configurable() -> None:
 
     assert costly.price_momentum_v1.metrics.cumulative_return < free.price_momentum_v1.metrics.cumulative_return
     assert costly.risk_adjusted_momentum_v2.metrics.cumulative_return < free.risk_adjusted_momentum_v2.metrics.cumulative_return
+
+
+def test_portfolio_weights_drift_with_held_security_returns() -> None:
+    net_return, closing_weights = _apply_daily_returns(
+        {"winner": 0.475, "flat": 0.475},
+        pd.Series({"winner": 0.50, "flat": 0.0}),
+    )
+
+    assert net_return == pytest.approx(0.2375)
+    assert closing_weights["winner"] > 0.475
+    assert closing_weights["winner"] > closing_weights["flat"]
+    assert closing_weights["winner"] == pytest.approx(0.7125 / 1.2375)
 
 
 def test_evaluation_start_keeps_warmup_history_but_delays_common_rebalancing() -> None:
