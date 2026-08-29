@@ -531,6 +531,23 @@ jobs:
             --set-env-vars "${env_args[@]}" \
             --output none
 
+          # The existing Container App was created with TCP probes on port 80,
+          # while the Backend listens on the ingress target port 8000. Update
+          # all probe ports with the same revision so a newly deployed replica
+          # can pass startup/readiness checks.
+          backend_id="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query id \
+            --output tsv)"
+          az resource update \
+            --ids "${backend_id}" \
+            --set \
+              properties.template.containers[0].probes[0].tcpSocket.port=8000 \
+              properties.template.containers[0].probes[1].tcpSocket.port=8000 \
+              properties.template.containers[0].probes[2].tcpSocket.port=8000 \
+            --output none
+
       - name: Verify deployed Container App revisions
         run: |
           set -euo pipefail
