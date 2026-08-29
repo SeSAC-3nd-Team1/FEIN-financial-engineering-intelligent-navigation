@@ -15,7 +15,9 @@ COPY backend /app
 COPY ai /ai
 COPY shared /workspace/shared
 COPY .deploy-artifacts /model-artifacts
-ENV PYTHONPATH=/app:/ai:/workspace
+COPY output/fincon_ver23_model.py output/fincon_ver23_model_fix1.py /models/
+ENV PYTHONPATH=/app:/ai:/workspace \
+    FINCON_VER23_MODEL_PATH=/models/fincon_ver23_model_fix1.py
 
 EXPOSE 8000
 
