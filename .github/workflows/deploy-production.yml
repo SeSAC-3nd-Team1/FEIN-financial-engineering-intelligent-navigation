@@ -82,7 +82,25 @@ jobs:
             --name "${REDIS_APP_NAME}" \
             --resource-group "${RESOURCE_GROUP}" \
             --output none 2>/dev/null; then
-            echo "Reusing existing internal Redis Container App: ${REDIS_APP_NAME}"
+            redis_environment_id="$(az containerapp show \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query properties.managedEnvironmentId \
+              --output tsv)"
+
+            if [[ -z "${redis_environment_id}" ]]; then
+              echo "Existing Redis Container App managed environment could not be resolved." >&2
+              exit 1
+            fi
+
+            if [[ "${redis_environment_id,,}" != "${environment_id,,}" ]]; then
+              echo "Existing Redis Container App is in a different Container Apps Environment." >&2
+              echo "Backend environment: ${environment_id}" >&2
+              echo "Redis environment: ${redis_environment_id}" >&2
+              exit 1
+            fi
+
+            echo "Reusing existing internal Redis Container App in Backend environment: ${REDIS_APP_NAME}"
             az containerapp update \
               --name "${REDIS_APP_NAME}" \
               --resource-group "${RESOURCE_GROUP}" \
