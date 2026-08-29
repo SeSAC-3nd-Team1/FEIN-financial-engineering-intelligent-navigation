@@ -41,7 +41,10 @@ env:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, Linux, X64]
+    # The v2 artifact generator needs more memory than Azure Cloud Shell.
+    # Register the Azure runner with the `azure-large` label on a host with
+    # at least 16 GiB RAM before running Production Deploy.
+    runs-on: [self-hosted, Linux, X64, azure-large]
     environment:
       name: production
 
