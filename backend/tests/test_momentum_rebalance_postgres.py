@@ -157,7 +157,10 @@ def test_rebalance_uses_real_trading_service_and_resumes_immutable_plan():
             assert session.scalar(select(Execution).where(Execution.account_id == account.id)) is not None
 
             # A retry must use the persisted quantities even after market prices change.
-            market.price = Decimal("137")
+            # Change the quote without making the persisted plan unaffordable;
+            # the quantity must still come from the original plan, not from a
+            # fresh delta calculation at this new price.
+            market.price = Decimal("101")
             retry = _service(session, TradingService(session, market=market))
             retry.rebalance(user.id, account.id)
 
