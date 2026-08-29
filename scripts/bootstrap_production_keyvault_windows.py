@@ -5,6 +5,9 @@ Calling that batch wrapper through cmd.exe makes quoting fragile, especially whe
 secret values contain shell metacharacters. This launcher bypasses az.cmd and
 invokes Azure CLI with the Python runtime bundled in the Azure CLI installation.
 
+It also sanitizes Azure CLI failures so secret values passed through --value are
+never echoed by Python exception tracebacks.
+
 Usage:
     python scripts/bootstrap_production_keyvault_windows.py --env-file .env
 """
@@ -44,17 +47,48 @@ def resolve_windows_azure_cli_python() -> Path:
 AZURE_CLI_PYTHON = resolve_windows_azure_cli_python()
 
 
+def _safe_cli_error(stderr: str, returncode: int) -> SystemExit:
+    message = (stderr or "").strip()
+
+    if "ForbiddenByConnection" in message or "not an approved private link" in message:
+        return SystemExit(
+            "Key Vault network access is blocked. kv-fein allows private-endpoint "
+            "traffic only. Connect this PC to the FE!N Azure VNet through the P2S "
+            "VPN (or run the bootstrap from a workload inside that VNet), verify "
+            "kv-fein.vault.azure.net resolves to a private IP, then run the script again."
+        )
+
+    if "az login" in message.lower() or "please run 'az login'" in message.lower():
+        return SystemExit("Azure CLI is not authenticated. Run `az login` first.")
+
+    if message:
+        return SystemExit(
+            f"Azure CLI command failed with exit code {returncode}.\n{message}"
+        )
+    return SystemExit(f"Azure CLI command failed with exit code {returncode}.")
+
+
 def windows_az(*args: str, capture: bool = False, check: bool = True) -> str:
-    # Pass every argument directly to the bundled Python runtime. This avoids
-    # cmd.exe parsing entirely, so secret values are not interpreted as shell syntax.
+    # Pass every argument directly to the bundled Python runtime. No cmd.exe or
+    # shell is involved, so secret values are not interpreted as shell syntax.
     command = [str(AZURE_CLI_PYTHON), "-IBm", "azure.cli", *args]
     completed = subprocess.run(
         command,
-        check=check,
+        check=False,
         text=True,
         stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-        stderr=None,
+        stderr=subprocess.PIPE,
     )
+
+    if completed.returncode != 0 and check:
+        # Never raise CalledProcessError here: its repr includes the full argv and
+        # would expose values supplied to `az keyvault secret set --value`.
+        raise _safe_cli_error(completed.stderr, completed.returncode)
+
+    if completed.stderr and completed.returncode == 0:
+        # Azure CLI sometimes writes non-sensitive warnings to stderr on success.
+        print(completed.stderr.strip(), file=sys.stderr)
+
     return completed.stdout.strip() if capture and completed.stdout else ""
 
 
@@ -91,19 +125,37 @@ def ensure_resource_group_argument() -> None:
     print(f"Resolved Resource Group: {resource_group}")
 
 
+def preflight_keyvault_network() -> None:
+    """Fail before any secret value is passed if the Key Vault data plane is unreachable."""
+    vault_name = get_option("--key-vault", bootstrap_module.DEFAULT_KEY_VAULT)
+    windows_az(
+        "keyvault",
+        "secret",
+        "list",
+        "--vault-name",
+        vault_name,
+        "--maxresults",
+        "1",
+        "--query",
+        "length(@)",
+        "--output",
+        "tsv",
+        capture=True,
+    )
+
+
 def main() -> None:
     if sys.platform != "win32":
         raise SystemExit(
             "This launcher is only for Windows. Use bootstrap_production_keyvault.py elsewhere."
         )
 
-    # Verify the existing Azure CLI login using the bundled Python runtime.
-    try:
-        windows_az("account", "show", "--output", "none")
-    except subprocess.CalledProcessError as exc:
-        raise SystemExit("Azure CLI is not authenticated. Run `az login` first.") from exc
-
+    windows_az("account", "show", "--output", "none")
     ensure_resource_group_argument()
+
+    # Test Key Vault network/data-plane access before passing any secret value to
+    # Azure CLI. This prevents a network failure from occurring on --value calls.
+    preflight_keyvault_network()
 
     # Patch the module-level Azure CLI runner before bootstrap_module.main() calls
     # account/resource/container/key-vault commands. No shell is involved.
