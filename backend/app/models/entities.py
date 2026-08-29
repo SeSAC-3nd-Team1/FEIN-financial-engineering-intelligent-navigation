@@ -372,6 +372,7 @@ class MomentumRebalanceRun(Base):
     execution_quarter: Mapped[int] = mapped_column(SmallInteger)
     snapshot_date: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(12), default="RUNNING")
+    plan: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

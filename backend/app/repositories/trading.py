@@ -17,6 +17,7 @@ from app.models import (
     FundOperationOrder,
     InvestmentOnboarding,
     MarketStock,
+    MarketIndex,
     MomentumRebalanceRun,
     Order,
     PortfolioSnapshot,
@@ -302,6 +303,21 @@ class TradingRepository:
             MomentumRebalanceRun.account_id == account_id,
             MomentumRebalanceRun.execution_year == year,
             MomentumRebalanceRun.execution_quarter == quarter,
+        ))
+
+    def quarter_end_trade_date(self, year: int, quarter: int):
+        start_month = (quarter - 1) * 3 + 1
+        start = date(year, start_month, 1)
+        end = date(year, start_month + 2, 1)
+        if end.month == 12:
+            end = date(year, 12, 31)
+        else:
+            end = date(year, start_month + 3, 1)
+            end = end.fromordinal(end.toordinal() - 1)
+        return self.session.scalar(select(func.max(MarketIndex.trade_date)).where(
+            MarketIndex.market == "KOSPI",
+            MarketIndex.trade_date >= start,
+            MarketIndex.trade_date <= end,
         ))
 
     def fund_operation_by_idempotency(

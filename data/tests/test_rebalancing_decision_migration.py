@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(
 
 DATA_ROOT = Path(__file__).resolve().parents[1]
 PREVIOUS_REVISION = "20260828_0029"
-HEAD_REVISION = "20260829_0032"
+HEAD_REVISION = "20260829_0033"
 
 
 def _alembic_config() -> Config:

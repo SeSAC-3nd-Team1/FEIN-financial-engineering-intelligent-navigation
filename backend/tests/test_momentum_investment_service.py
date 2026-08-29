@@ -48,6 +48,9 @@ class FakeRepo:
     def momentum_rebalance_run(self, *_args, **_kwargs):
         return self.rebalance_run
 
+    def quarter_end_trade_date(self, *_args, **_kwargs):
+        return date(2026, 9, 30)
+
     def positions(self, _account_id):
         return [SimpleNamespace(stock_code="000001", quantity=Decimal("1"))]
 

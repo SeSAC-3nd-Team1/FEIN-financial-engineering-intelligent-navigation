@@ -165,6 +165,14 @@ class MomentumInvestmentService:
                 "분기 말 공식 모멘텀 스냅샷만 리밸런싱할 수 있습니다.",
                 409,
             )
+        quarter = (snapshot.as_of.month - 1) // 3 + 1
+        expected_date = self.repo.quarter_end_trade_date(snapshot.as_of.year, quarter)
+        if expected_date != snapshot.as_of:
+            raise ServiceError(
+                "MOMENTUM_QUARTER_END_SNAPSHOT_REQUIRED",
+                "KRX 해당 분기의 마지막 거래일 snapshot만 리밸런싱할 수 있습니다.",
+                409,
+            )
         targets = {item.symbol: Decimal(str(item.target_weight)) for item in snapshot.recommendations if item.target_weight > 0}
         if (
             not targets
@@ -176,7 +184,6 @@ class MomentumInvestmentService:
         if account.operation_mode != "AUTO":
             self._publish_targets(snapshot.as_of, targets)
             return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")
-        quarter = (snapshot.as_of.month - 1) // 3 + 1
         run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
         if run is not None and run.snapshot_date != snapshot.as_of:
             raise ServiceError(
@@ -187,14 +194,18 @@ class MomentumInvestmentService:
         if run is not None and run.status == "COMPLETED":
             return self._response(account.id, snapshot.as_of, len(targets), 0, "ALREADY_APPLIED")
         if run is None:
-            self.session.add(MomentumRebalanceRun(
+            run = MomentumRebalanceRun(
                 account_id=account.id,
                 execution_year=snapshot.as_of.year,
                 execution_quarter=quarter,
                 snapshot_date=snapshot.as_of,
                 status="RUNNING",
-            ))
+            )
+            self.session.add(run)
             self.session.commit()
+            persisted_run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
+            if persisted_run is not None:
+                run = persisted_run
         self._publish_targets(snapshot.as_of, targets)
         positions = self.repo.positions(account.id)
         if not positions:
@@ -205,39 +216,47 @@ class MomentumInvestmentService:
             self.session.commit()
             return response
 
-        prices: dict[str, Decimal] = {}
-        current_values: dict[str, Decimal] = {}
-        for position in positions:
-            price, _, _ = self.trading_service.market.get_price(position.stock_code)
-            prices[position.stock_code] = Decimal(price)
-            current_values[position.stock_code] = Decimal(position.quantity) * Decimal(price)
-        total_assets = Decimal(account.cash_balance) + sum(current_values.values(), Decimal("0"))
-        if total_assets <= 0:
-            raise ServiceError("INVALID_PORTFOLIO_VALUE", "리밸런싱할 포트폴리오 가치가 없습니다.", 409)
+        if getattr(run, "plan", None) is None:
+            prices: dict[str, Decimal] = {}
+            current_values: dict[str, Decimal] = {}
+            for position in positions:
+                price, _, _ = self.trading_service.market.get_price(position.stock_code)
+                prices[position.stock_code] = Decimal(price)
+                current_values[position.stock_code] = Decimal(position.quantity) * Decimal(price)
+            total_assets = Decimal(account.cash_balance) + sum(current_values.values(), Decimal("0"))
+            if total_assets <= 0:
+                raise ServiceError("INVALID_PORTFOLIO_VALUE", "리밸런싱할 포트폴리오 가치가 없습니다.", 409)
+            symbols = sorted(set(current_values) | set(targets))
+            plan: list[dict[str, str]] = []
+            for side in ("SELL", "BUY"):
+                for symbol in symbols:
+                    current_value = current_values.get(symbol, Decimal("0"))
+                    target_value = total_assets * targets.get(symbol, Decimal("0"))
+                    delta = target_value - current_value
+                    if (side == "SELL" and delta >= 0) or (side == "BUY" and delta <= 0):
+                        continue
+                    if symbol not in prices:
+                        price, _, _ = self.trading_service.market.get_price(symbol)
+                        prices[symbol] = Decimal(price)
+                    quantity = (abs(delta) / prices[symbol]).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+                    if quantity > 0:
+                        plan.append({"symbol": symbol, "side": side, "quantity": str(quantity)})
+            run.plan = plan
+            self.session.commit()
+        plan = run.plan or []
         created = 0
-        symbols = sorted(set(current_values) | set(targets))
-        # Sell first to release virtual cash.  Quantization matches TradingService.
-        for side in ("SELL", "BUY"):
-            for symbol in symbols:
-                current_value = current_values.get(symbol, Decimal("0"))
-                target_value = total_assets * targets.get(symbol, Decimal("0"))
-                delta = target_value - current_value
-                if (side == "SELL" and delta >= 0) or (side == "BUY" and delta <= 0):
-                    continue
-                if symbol not in prices:
-                    price, _, _ = self.trading_service.market.get_price(symbol)
-                    prices[symbol] = Decimal(price)
-                quantity = (abs(delta) / prices[symbol]).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
-                if quantity <= 0:
-                    continue
-                key = f"momentum-rebalance-{snapshot.as_of.isoformat()}-{account.id}-{symbol}-{side}"
-                if self.repo.order_by_idempotency(account.id, key):
-                    continue
-                self.trading_service.execute_market_order(user_id, OrderCreateRequest(
-                    account_id=account.id, stock_code=symbol, side=side,
-                    quantity=quantity, idempotency_key=key,
-                ))
-                created += 1
+        for leg in plan:
+            symbol = str(leg["symbol"])
+            side = str(leg["side"])
+            quantity = Decimal(str(leg["quantity"]))
+            key = f"momentum-rebalance-{snapshot.as_of.isoformat()}-{account.id}-{symbol}-{side}"
+            if self.repo.order_by_idempotency(account.id, key):
+                continue
+            self.trading_service.execute_market_order(user_id, OrderCreateRequest(
+                account_id=account.id, stock_code=symbol, side=side,
+                quantity=quantity, idempotency_key=key,
+            ))
+            created += 1
         run = self.repo.momentum_rebalance_run(account.id, snapshot.as_of.year, quarter)
         run.status = "COMPLETED"
         self.session.commit()
