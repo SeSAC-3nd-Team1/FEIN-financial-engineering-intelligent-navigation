@@ -55,9 +55,8 @@ services:
       AZURE_OPENAI_CHATBOT_API_VERSION: ${AZURE_OPENAI_CHATBOT_API_VERSION:-2024-10-21}
       AI_CHATBOT_PROVIDER: ${AI_CHATBOT_PROVIDER:-foundry_orchestration}
       FOUNDRY_PROJECT_ENDPOINT: ${FOUNDRY_PROJECT_ENDPOINT:-https://fein-agent.services.ai.azure.com/api/projects/proj-default}
-      FOUNDRY_ACCESS_TOKEN: ${FOUNDRY_ACCESS_TOKEN:-}
       FEIN_CHATBOT_ID: ${FEIN_CHATBOT_ID:-fein-web-chatbot}
-      CHATBOT_REGISTRY_JSON: ${CHATBOT_REGISTRY_JSON:-{"chatbots":[{"chatbot_id":"fein-web-chatbot","display_name":"FE!N Web Chatbot","provider":"foundry","source_agent_name":"MBGCoordinator","enabled":true,"allowed_context_keys":["screen","stock_code","strategy_id"],"max_input_chars":4000,"max_response_chars":8000,"timeout_seconds":120}]}}
+      CHATBOT_REGISTRY_JSON: ${CHATBOT_REGISTRY_JSON:-{"chatbots":[{"chatbot_id":"fein-web-chatbot","display_name":"FE!N Web Chatbot","provider":"foundry","source_agent_name":"MBGCoordinator","enabled":true,"allowed_context_keys":["screen","stock_code","strategy_id","verified_personal_summary"],"max_input_chars":4000,"max_response_chars":8000,"timeout_seconds":120}]}}
       AI_CHATBOT_TIMEOUT_SECONDS: ${AI_CHATBOT_TIMEOUT_SECONDS:-120}
       AI_CHATBOT_MODEL_VERSION: ${AI_CHATBOT_MODEL_VERSION:-chatbot-v1}
       AI_CHATBOT_PROMPT_VERSION: ${AI_CHATBOT_PROMPT_VERSION:-v1}

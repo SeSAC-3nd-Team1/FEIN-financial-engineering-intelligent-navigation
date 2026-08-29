@@ -11,7 +11,7 @@ REGISTRY = (
     '{"chatbots":[{"chatbot_id":"fein-web-chatbot",'
     '"display_name":"FE!N Web Chatbot","provider":"foundry",'
     '"source_agent_name":"MBGCoordinator","enabled":true,'
-    '"allowed_context_keys":["screen","stock_code","strategy_id"],'
+    '"allowed_context_keys":["screen","stock_code","strategy_id","verified_personal_summary"],'
     '"max_input_chars":4000,"max_response_chars":8000,"timeout_seconds":120}]}'
 )
 
