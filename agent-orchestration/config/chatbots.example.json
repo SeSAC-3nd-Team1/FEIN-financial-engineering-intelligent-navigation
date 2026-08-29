@@ -1,0 +1,15 @@
+{
+  "chatbots": [
+    {
+      "chatbot_id": "new-service-chatbot",
+      "display_name": "New Service Chatbot",
+      "provider": "foundry",
+      "source_agent_name": "REPLACE_WITH_FOUNDRY_AGENT_NAME",
+      "enabled": true,
+      "allowed_context_keys": ["locale", "channel", "customer_segment"],
+      "max_input_chars": 4000,
+      "max_response_chars": 8000,
+      "timeout_seconds": 120
+    }
+  ]
+}
