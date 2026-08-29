@@ -6,6 +6,7 @@ import math
 from statistics import fmean, pstdev
 
 import pandas as pd
+from shared.momentum_features import add_momentum_features
 
 # Kept in the AI package on purpose.  The service must consume exactly the
 # factor implementation which produces the live recommendation artifact.
@@ -284,54 +285,7 @@ class BacktestService:
         ])
         if frame.empty:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 가격 데이터가 부족합니다.")
-        # Keep this row-level quality contract aligned with
-        # data/scripts/build_algorithm_dataset.py.  A zero-volume row is not
-        # automatically invalid (the live dataset distinguishes it from
-        # negative volume and missing/inconsistent OHLC); the row is simply
-        # excluded by the shared risk filter when its quality is unsafe.
-        intraday = frame[["open_price", "high_price", "low_price"]]
-        prices = frame[["open_price", "high_price", "low_price", "close_price"]]
-        positive_prices = prices.notna().all(axis=1) & prices.gt(0).all(axis=1)
-        no_intraday_price = intraday.notna().all(axis=1) & intraday.eq(0).all(axis=1)
-        partial_non_positive_ohl = (
-            (intraday.notna() & intraday.le(0)).any(axis=1) & ~no_intraday_price
-        )
-        inconsistent_ohlc = positive_prices & (
-            frame["high_price"].lt(frame["low_price"])
-            | frame["high_price"].lt(frame["open_price"])
-            | frame["high_price"].lt(frame["close_price"])
-            | frame["low_price"].gt(frame["open_price"])
-            | frame["low_price"].gt(frame["close_price"])
-        )
-        missing_ohlcv = frame[
-            ["volume", "open_price", "high_price", "low_price", "close_price"]
-        ].isna().any(axis=1)
-        frame["is_tradable"] = ~(
-            missing_ohlcv
-            | (frame["close_price"].notna() & frame["close_price"].le(0))
-            | (frame["volume"].notna() & frame["volume"].lt(0))
-            | no_intraday_price
-            | partial_non_positive_ohl
-            | inconsistent_ohlc
-        )
-        grouped = frame.sort_values(["stock_code", "trade_date"]).groupby("stock_code", group_keys=False)
-        returns = grouped["close_price"].pct_change(fill_method=None)
-        frame["trading_value_sma_20d"] = grouped["trading_value"].transform(
-            lambda values: values.rolling(20, min_periods=20).mean()
-        )
-        frame["volatility_60d"] = returns.groupby(frame["stock_code"]).transform(
-            lambda values: values.rolling(60, min_periods=60).std() * math.sqrt(252)
-        )
-        volume_average = grouped["volume"].transform(
-            lambda values: values.rolling(20, min_periods=20).mean()
-        )
-        frame["volume_ratio_20d"] = frame["volume"] / volume_average.replace(0, math.nan)
-        frame["history_120d_ready"] = grouped["close_price"].transform(
-            # Match the live pipeline exactly: readiness means the current
-            # close and the close 120 observations earlier are present. It
-            # does not require every row between those observations.
-            lambda values: values.notna() & values.shift(120).notna()
-        )
+        frame = add_momentum_features(frame)
         frame = apply_stock_risk_filter(frame)
         model = RiskAdjustedMomentumModel()
         try:

@@ -13,9 +13,11 @@ RUN apt-get update \
     && curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY data/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY data .
+COPY shared /shared
+ENV PYTHONPATH=/app:/shared
 
 CMD ["sleep", "infinity"]

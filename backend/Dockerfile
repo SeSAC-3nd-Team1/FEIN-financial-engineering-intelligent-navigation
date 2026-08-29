@@ -13,7 +13,8 @@ COPY backend /app
 # Do not copy the v2 formula into Backend: expose the AI package as the shared
 # source of truth for service backtests as well.
 COPY ai /ai
-ENV PYTHONPATH=/app:/ai
+COPY shared /shared
+ENV PYTHONPATH=/app:/ai:/shared
 
 EXPOSE 8000
 
