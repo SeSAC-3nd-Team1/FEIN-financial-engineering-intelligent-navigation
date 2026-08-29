@@ -1,18 +1,15 @@
-import { useMemo, useRef, useState } from "react";
-import { Check, X } from "lucide-react";
-import Header from "../components/Header";
-import {
-  ALL_HOLDINGS as MOCK_HOLDINGS,
-  HOLD_TOTAL as MOCK_HOLD_TOTAL,
-  STOCK_INFO,
-} from "../data/holdings";
-import { useTradingData } from "../hooks/useTradingData";
-import type { StrategyResponse } from "../lib/backendApi";
-import { ApiError } from "../lib/backendApi";
-import { getDisplayAlerts } from "../lib/rebalancing";
-import { won } from "../lib/validation";
-import { useTradingStore } from "../store/tradingStore";
-import type { Screen } from "../types";
+import { useMemo, useState } from 'react';
+import { Check, X } from 'lucide-react';
+import Header from '../components/Header';
+import { buildDetailedPortfolioHoldings } from '../lib/portfolioModel';
+import { useTradingData } from '../hooks/useTradingData';
+import type { StrategyResponse } from '../lib/backendApi';
+import { getDisplayAlerts } from '../lib/rebalancing';
+import { won } from '../lib/validation';
+import { useTradingStore } from '../store/tradingStore';
+import type { Screen } from '../types';
+import PortfolioDataState from '../components/PortfolioDataState';
+import { useTradingRetry } from '../hooks/useTradingRetry';
 
 interface Props {
   userName: string;
@@ -24,6 +21,7 @@ interface Props {
    *  포트폴리오 로딩 중이거나 조회에 실패해 portfolio가 잠깐/계속 null인 동안 완료 톤으로 잘못 보인다.
    *  반자동은 이 값과 무관하게 항상 "제안" 톤이어야 한다. */
   isAutoMode: boolean;
+  onAccountMissingAction?: () => void;
 }
 
 /** AI 제안 종류별 배지 색 — PortfolioDetail 의 요약 카드와 동일한 배색을 공유한다 */
@@ -34,123 +32,48 @@ const ALERT_BADGE: Record<"손절" | "리밸런싱", string> = {
 
 /** `/rebalance-alerts` — AI 손절·리밸런싱 제안 전체 목록. PortfolioDetail "AI의 리밸런싱 제안"의 "더보기"에서 진입한다.
  *  실 계좌에 리밸런싱 제안(규칙기반)이 있으면 그 값을, 없으면 AI_ALERTS(목업)를 그대로 쓴다 — lib/rebalancing.ts 참고. */
-export default function RebalanceAlerts({
-  userName,
-  strategy,
-  onNavigate,
-  onBack,
-  isAutoMode,
-}: Props) {
-  const portfolio = useTradingStore((state) => state.portfolio);
+function RebalanceAlertsContent({ userName, strategy, onNavigate, onBack, isAutoMode }: Props) {
+    const portfolio = useTradingStore((state) => state.portfolio);
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
   // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
-  const account = useTradingStore((state) => state.account);
-  const decisions = useTradingStore((state) => state.decisions);
-  const recordDecision = useTradingStore((state) => state.recordDecision);
-  const isDecisionSubmitting = useTradingStore(
-    (state) => state.isDecisionSubmitting,
-  );
-  const token = useTradingData();
-  const displayAlerts = useMemo(
-    () => getDisplayAlerts(portfolio, accountMissing),
-    [portfolio, accountMissing],
-  );
+  const isLoading = useTradingStore((state) => state.isLoading);
+  const error = useTradingStore((state) => state.error);
+  
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+
+  
+
   // displayAlerts는 실 계좌가 있으면(portfolio) portfolio.rebalancing_proposals(아직 실행 전인 "제안")를,
   // 없으면 AI_ALERTS(이미 실행됐다는 설정의 스토리 목업)를 쓴다 — lib/rebalancing.ts 참고. 그래서 자동매매
   // 실계좌라도 제안은 아직 제안일 뿐이라, 실데이터면 반자동과 같은 "제안" 톤을 쓰고 mock일 때만 과거형/완료
   // 톤을 써야 한다. 다만 portfolio!==null만으로 판단하면 반자동 유저도 로딩 중/조회 실패로 portfolio가
   // 잠깐 null인 동안 완료 톤으로 잘못 보일 수 있어, 애초에 자동매매가 아니면(!isAutoMode) 실데이터 여부와
   // 무관하게 항상 "제안" 톤을 쓰도록 activeMode를 우선 확인한다.
-  const usingRealAlerts = !isAutoMode || portfolio !== null;
+  const usingRealAlerts = true;
 
   // 계좌가 없다고 확인된 경우(accountMissing)에만 목업 20종목을 쓰고, 그 외(실 계좌 포지션이 0개, 또는
   // 아직 로딩 중/조회 실패로 portfolio를 못 받은 경우)에는 빈 배열/0원을 써서 실제 빈 상태로 보여준다.
-  const HOLD_TOTAL = accountMissing
-    ? MOCK_HOLD_TOTAL
-    : Number(portfolio?.total_assets ?? 0);
-  const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return MOCK_HOLDINGS;
-    if (!portfolio) return [];
-    const assets = Number(portfolio.total_assets);
-    return portfolio.positions.map((position) => {
-      const matched = MOCK_HOLDINGS.find(
-        (holding) => STOCK_INFO[holding.name]?.code === position.stock_code,
-      );
-      const metadata = matched ?? MOCK_HOLDINGS[0];
-      return {
-        ...metadata,
-        name: matched?.name ?? position.stock_code,
-        pct:
-          assets > 0 ? (Number(position.evaluation_amount) / assets) * 100 : 0,
-        chg: Number(position.return_rate),
-        principal: Number(position.purchase_amount),
-        returnRate: Number(position.return_rate),
-      };
-    });
-  }, [portfolio, accountMissing]);
+  const HOLD_TOTAL = Number(portfolio?.total_assets ?? 0);
+    const ALL_HOLDINGS = useMemo(
+    () => buildDetailedPortfolioHoldings(portfolio),
+    [portfolio],
+  );
 
   // 리밸런싱 "조정 전/후" 상세 시트
   const [rebalanceSheetId, setRebalanceSheetId] = useState<string | null>(null);
   // 시트의 두 액션("조정하기"/"이번에는 하지 않을게요")이 실제로 다른 결과를 남기도록, 제안 id별로
   // 어떤 결정을 내렸는지 세션 동안 기억한다 — PortfolioDetail 의 같은 위젯과 동일한 패턴.
-  const [decisionError, setDecisionError] = useState<string | null>(null);
-  const decisionKeys = useRef<Record<string, string>>({});
-  const decisionFor = (alert: (typeof displayAlerts)[number]) => {
-    const item = decisions?.items.find(
-      (candidate) =>
-        candidate.stock_code === alert.id.replace("rebalance-", "") &&
-        Number(candidate.recommended_amount) ===
-          Number(alert.recommendedAmount ?? 0),
-    );
-    return item?.decision === "ACCEPTED"
-      ? "adjusted"
-      : item
-        ? "held"
-        : undefined;
-  };
-  const rebalanceAlert =
-    displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
-
-  const submitDecision = async (decision: "ACCEPTED" | "HELD") => {
-    if (!rebalanceAlert || !account || !token) return;
-    const key = `${rebalanceAlert.id}:${decision}`;
-    const idempotencyKey = decisionKeys.current[key] ?? crypto.randomUUID();
-    decisionKeys.current[key] = idempotencyKey;
-    setDecisionError(null);
-    try {
-      await recordDecision(token, {
-        account_id: account.id,
-        stock_code: rebalanceAlert.id.replace("rebalance-", ""),
-        decision,
-        idempotency_key: idempotencyKey,
-      });
-    } catch (error) {
-      setDecisionError(
-        error instanceof ApiError
-          ? error.message
-          : "판단을 저장하지 못했습니다.",
-      );
-    }
-  };
-  const rebalanceHolding = rebalanceAlert
-    ? ALL_HOLDINGS.find((h) => h.name === rebalanceAlert.stockName)
-    : undefined;
+  const [alertDecisions, setAlertDecisions] = useState<Record<string, 'adjusted' | 'held'>>({});
+  const rebalanceAlert = displayAlerts.find((a) => a.id === rebalanceSheetId) ?? null;
+    const rebalanceHolding = rebalanceAlert
+  ? ALL_HOLDINGS.find((h) => h.stockCode === rebalanceAlert.stockCode)
+  : undefined;
   // 실 제안이면 API가 이미 계산해 준 현재/목표 비중·조정금액을 그대로 쓴다 — 목업일 때만 보유 종목 목록에서
   // 같은 이름을 찾아(이름 매칭이라 실패할 수 있음) 대신 파생시킨다.
-  const rebalanceCurrentPct =
-    rebalanceAlert?.currentWeight ??
-    (rebalanceHolding ? rebalanceHolding.pct : 0);
-  const rebalanceTargetPct =
-    rebalanceAlert?.targetWeight ??
-    (rebalanceHolding ? (rebalanceHolding.target ?? rebalanceHolding.pct) : 0);
-  const rebalanceAdjustAmount =
-    rebalanceAlert?.recommendedAmount ??
-    (rebalanceHolding
-      ? Math.round(
-          (HOLD_TOTAL * (rebalanceHolding.pct - rebalanceTargetPct)) / 100,
-        )
-      : 0);
+  const rebalanceCurrentPct = rebalanceAlert?.currentWeight ?? (rebalanceHolding ? rebalanceHolding.pct : 0);
+  const rebalanceTargetPct = rebalanceAlert?.targetWeight ?? 0;
+    const rebalanceAdjustAmount = rebalanceAlert?.recommendedAmount ?? 0;
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -411,7 +334,20 @@ export default function RebalanceAlerts({
             )}
           </div>
         </div>
-      )}
+            )}
     </div>
   );
 }
+
+export default function RebalanceAlerts(props: Props) {
+  useTradingData();
+  const loading = useTradingStore((state) => state.isLoading);
+  const accountMissing = useTradingStore((state) => state.accountMissing);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
+  if (loading || accountMissing || error) {
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry} onAccountMissingAction={props.onAccountMissingAction}><div /></PortfolioDataState>;
+  }
+  return <RebalanceAlertsContent {...props} />;
+}
+

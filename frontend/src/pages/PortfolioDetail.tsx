@@ -1,35 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, X } from "lucide-react";
-import Header from "../components/Header";
+import { useEffect, useMemo, useState } from 'react';
+import { Check, X } from 'lucide-react';
+import Header from '../components/Header';
+import { buildDetailedPortfolioHoldings } from '../lib/portfolioModel';
+import { toAccountOperationMode } from '../data/fees';
+import { useTradingData } from '../hooks/useTradingData';
 import {
-  ALL_HOLDINGS as MOCK_HOLDINGS,
-  HOLD_TOTAL as MOCK_HOLD_TOTAL,
-  STOCK_INFO,
-} from "../data/holdings";
-import { toAccountOperationMode } from "../data/fees";
-import { useTradingData } from "../hooks/useTradingData";
-import {
-  ApiError,
-  getPortfolioComparisonApi,
-  type PortfolioComparisonResponse,
-  type PortfolioHistoryPeriod,
-  type StrategyResponse,
-} from "../lib/backendApi";
-import {
-  getDisplayDecisions,
-  type DisplayDecisionSummary,
-} from "../lib/decisions";
-import { getDisplayAlerts } from "../lib/rebalancing";
-import {
-  strategyRebalanceLabel,
-  strategyRiskLabel,
-} from "../lib/strategyCatalog";
-import { getDisplayTransactions } from "../lib/transactions";
-import { won } from "../lib/validation";
-import { useAuthStore } from "../store/authStore";
-import { useInvestmentStore } from "../store/investmentStore";
-import { useTradingStore } from "../store/tradingStore";
-import type { Screen, TransactionRecord } from "../types";
+  ApiError, getPortfolioComparisonApi, type PortfolioComparisonResponse, type PortfolioHistoryPeriod, type StrategyResponse,
+} from '../lib/backendApi';
+import { getDisplayDecisions, type DisplayDecisionSummary } from '../lib/decisions';
+import { getDisplayAlerts } from '../lib/rebalancing';
+import { strategyRebalanceLabel, strategyRiskLabel } from '../lib/strategyCatalog';
+import { getDisplayTransactions } from '../lib/transactions';
+import { won } from '../lib/validation';
+import { useAuthStore } from '../store/authStore';
+import { useInvestmentStore } from '../store/investmentStore';
+import { useTradingStore } from '../store/tradingStore';
+import PortfolioDataState from '../components/PortfolioDataState';
+import { useTradingRetry } from '../hooks/useTradingRetry';
+import type { Screen, TransactionRecord } from '../types';
 
 interface Props {
   userName: string;
@@ -46,6 +34,7 @@ interface Props {
   onOpenRebalanceAlerts: () => void;
   /** 모달의 "다시 진단하기" — 투자성향 진단으로 되돌린다 */
   onRediagnose: () => void;
+  onAccountMissingAction?: () => void;
   /** 상단 "돌아가기" — PowerBI 컨테이너만 있는 `/portfolio` 로 되돌아간다 */
   onBack: () => void;
 }
@@ -84,25 +73,20 @@ type ComparisonState =
  *  PowerBI 차트(도넛/라인/바/레이더)는 `/portfolio`(Portfolio.tsx)에만 있고, 여기는 그 아래 실무 기능 전부:
  *  오늘의 스토리, 전략 설정, AI 손절·리밸런싱 제안(목업), 보유 종목, 거래 내역(실 체결), 자동매매 비교(실 API), 판단 회고(목업).
  *  매매 방식(반자동/전체자동) 토글은 백엔드에 그런 구분이 없어 넣지 않았다 — PR #57 에서도 같은 이유로 제거된 것으로 보인다. */
-export default function PortfolioDetail({
-  userName,
-  strategy,
-  strategies,
-  onStrategyChange,
-  onNavigate,
-  onSelectStock,
-  onSelectTransaction,
-  onOpenRebalanceAlerts,
-  onRediagnose,
-  onBack,
+function PortfolioDetailContent({
+  userName, strategy, strategies, onStrategyChange, onNavigate, onSelectStock, onSelectTransaction, onOpenRebalanceAlerts,
+  onRediagnose, onBack,
 }: Props) {
-  const token = useTradingData();
+  const token = useAuthStore((state) => state.accessToken);
   const logout = useAuthStore((state) => state.logout);
   const portfolio = useTradingStore((state) => state.portfolio);
   const executions = useTradingStore((state) => state.executions);
   // 계좌 자체가 없다고 "확인된" 상태(404) — 이 값만 mock 전환의 기준으로 쓴다. portfolio===null은
   // "계좌 없음"과 "계좌는 있는데 아직 로딩 중/조회 실패"를 구분하지 못해(둘 다 null) 기준으로 삼지 않는다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
+  const isLoading = useTradingStore((state) => state.isLoading);
+  const error = useTradingStore((state) => state.error);
+  
   const decisions = useTradingStore((state) => state.decisions);
   const account = useTradingStore((state) => state.account);
   const recordDecision = useTradingStore((state) => state.recordDecision);
@@ -111,13 +95,12 @@ export default function PortfolioDetail({
   );
   const ensureAccount = useTradingStore((state) => state.ensureAccount);
   const activeMode = useInvestmentStore((state) => state.activeMode);
-  const displayAlerts = useMemo(
-    () => getDisplayAlerts(portfolio, accountMissing),
-    [portfolio, accountMissing],
-  );
+  const displayAlerts = useMemo(() => getDisplayAlerts(portfolio), [portfolio]);
+
+  
   const displayDecisions: DisplayDecisionSummary = useMemo(
-    () => getDisplayDecisions(decisions, accountMissing),
-    [decisions, accountMissing],
+    () => getDisplayDecisions(decisions),
+    [decisions],
   );
 
   // AI 자동투자 vs 내 투자 비교 — AUTO/SEMI_AUTO 두 계좌가 모두 있어야 하는 별도 API라 account_id가
@@ -183,46 +166,26 @@ export default function PortfolioDetail({
   // 상태를 보여준다 — portfolio===null 하나만으로 판단하면 "계좌 없음"과 "계좌는 있는데 로딩 중/조회
   // 실패"를 구분하지 못해, 로딩/오류 중에 실계좌 사용자에게 목업 데이터가 노출될 수 있다.
   // 실 포지션에는 investor-facing 메타(섹터/AI 편입 사유 등)가 없어 STOCK_INFO 코드로 목업과 매칭해 보완한다.
-  const HOLD_TOTAL = accountMissing
-    ? MOCK_HOLD_TOTAL
-    : Number(portfolio?.total_assets ?? 0);
-  const ALL_HOLDINGS = useMemo(() => {
-    if (accountMissing) return MOCK_HOLDINGS;
-    if (!portfolio) return [];
-    const assets = Number(portfolio.total_assets);
-    return portfolio.positions.map((position) => {
-      const matched = MOCK_HOLDINGS.find(
-        (holding) => STOCK_INFO[holding.name]?.code === position.stock_code,
-      );
-      const metadata = matched ?? MOCK_HOLDINGS[0];
-      return {
-        ...metadata,
-        name: matched?.name ?? position.stock_code,
-        pct:
-          assets > 0 ? (Number(position.evaluation_amount) / assets) * 100 : 0,
-        chg: Number(position.return_rate),
-        principal: Number(position.purchase_amount),
-        returnRate: Number(position.return_rate),
-      };
-    });
-  }, [portfolio, accountMissing]);
+  const HOLD_TOTAL = Number(portfolio?.total_assets ?? 0);
+    const ALL_HOLDINGS = useMemo(
+    () => buildDetailedPortfolioHoldings(portfolio),
+    [portfolio],
+  );
 
   /** 오늘 손익 = 실 포지션이 있으면 평가손익(unrealized_profit), 없으면 평가금액×등락률(목업 근사) */
   const gains = useMemo(
-    () =>
-      ALL_HOLDINGS.map((h) => {
-        const code = STOCK_INFO[h.name]?.code;
-        const position = portfolio?.positions.find(
-          (item) => item.stock_code === code,
-        );
-        return {
-          ...h,
-          gain: position
-            ? Number(position.unrealized_profit)
-            : ((HOLD_TOTAL * h.pct) / 100) * ((h.chg ?? 0) / 100),
-        };
-      }),
-    [ALL_HOLDINGS, HOLD_TOTAL, portfolio],
+    () => ALL_HOLDINGS.map((h) => {
+            const position = portfolio?.positions.find(
+        (item) => item.stock_code === h.stockCode,
+      );
+      return {
+        ...h,
+        gain: position
+          ? Number(position.unrealized_profit)
+          : (HOLD_TOTAL * h.pct) / 100 * ((h.chg ?? 0) / 100),
+      };
+    }),
+    [ALL_HOLDINGS, HOLD_TOTAL, portfolio]
   );
   const todayTotal = gains.reduce((a, g) => a + g.gain, 0);
   // Dashboard.tsx 병합 — "오늘 무슨 일이 있었나요" 스토리 카드가 쓰는 오늘의 최고 기여 종목
@@ -300,10 +263,7 @@ export default function PortfolioDetail({
 
   // 최근 거래 — 계좌가 없다고 확인된 경우에만 목업을 쓰고, 그 외(체결 0건, 로딩 중/조회 실패)에는
   // 실 체결 내역(빈 배열이어도)을 그대로 쓴다
-  const displayTransactions = useMemo(
-    () => getDisplayTransactions(executions, !accountMissing),
-    [executions, accountMissing],
-  );
+  const displayTransactions = useMemo(() => getDisplayTransactions(executions), [executions]);
 
   if (view === "review") {
     return (
@@ -440,10 +400,8 @@ export default function PortfolioDetail({
                     </p>
                   )}
                   {previewHoldings.map((h) => {
-                    const stockCode = STOCK_INFO[h.name]?.code;
-                    const alert = displayAlerts.find(
-                      (a) => a.stockName === h.name,
-                    );
+                    const stockCode = h.stockCode;
+                    const alert = displayAlerts.find((a) => a.stockName === h.name);
                     return (
                       <button
                         key={h.name}
@@ -1019,6 +977,18 @@ export default function PortfolioDetail({
       )}
     </div>
   );
+}
+
+export default function PortfolioDetail(props: Props) {
+  useTradingData();
+  const loading = useTradingStore((state) => state.isLoading);
+  const accountMissing = useTradingStore((state) => state.accountMissing);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
+  if (loading || accountMissing || error) {
+    return <PortfolioDataState userName={props.userName} onNavigate={props.onNavigate} loading={loading} accountMissing={accountMissing} error={error} onRetry={retry} onAccountMissingAction={props.onAccountMissingAction}><div /></PortfolioDataState>;
+  }
+  return <PortfolioDetailContent {...props} />;
 }
 
 /** PDF Page 5 — "내 투자 판단 돌아보기" 서브뷰. 라우터가 생기면 `/portfolio/review` 로 그대로 옮길 수 있다.

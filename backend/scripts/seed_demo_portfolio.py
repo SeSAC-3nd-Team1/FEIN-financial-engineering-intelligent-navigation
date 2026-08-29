@@ -4,6 +4,7 @@ from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
 from datetime import datetime, time
 from decimal import Decimal, ROUND_FLOOR
+import os
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -18,6 +19,19 @@ from app.services.trading import TradingService
 
 
 DEMO_PORTFOLIO_VERSION = "mock-holdings-v1"
+
+
+def ensure_demo_environment(enabled: str, environment: str) -> None:
+    if enabled.lower() not in {"1", "true", "yes"}:
+        raise RuntimeError(
+            "DEMO_SEED_ENABLED=true를 명시해야 데모 포트폴리오 시드를 실행할 수 있습니다."
+        )
+    if environment.strip().lower() not in {"development", "dev", "local", "test", "demo"}:
+        raise RuntimeError(
+            "데모 포트폴리오 시드는 명시적인 개발 환경에서만 실행할 수 있습니다."
+        )
+
+
 DEMO_ALLOCATIONS = (
     ("005930", "삼성전자", Decimal("0.180")),
     ("000660", "SK하이닉스", Decimal("0.162")),
@@ -184,6 +198,10 @@ def parse_args() -> Namespace:
 
 def main() -> None:
     args = parse_args()
+    ensure_demo_environment(
+        os.getenv("DEMO_SEED_ENABLED", ""),
+        os.getenv("APP_ENV", ""),
+    )
     with SessionLocal() as session:
         account, results = seed_demo_portfolio(
             session,

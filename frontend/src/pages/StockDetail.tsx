@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
@@ -36,7 +37,7 @@ import {
   signed,
   toChartPoints,
 } from "../lib/stockDetailModel";
-import { hybridEvaluation, mockStockByCode } from "../lib/hybridMockData";
+import { hybridEvaluation } from "../lib/hybridMockData";
 import { useAuthStore } from "../store/authStore";
 import { useTradingStore } from "../store/tradingStore";
 import type { Screen, TermKey } from "../types";
@@ -168,17 +169,17 @@ export default function StockDetail({
 
   const position = portfolio?.positions.find(
     (item) => item.stock_code === stockCode,
-  );
-  const fallback = useMemo(() => mockStockByCode(stockCode), [stockCode]);
+    );
+
   const portfolioWeight =
     position && portfolio && Number(portfolio.total_assets) > 0
       ? (Number(position.evaluation_amount) / Number(portfolio.total_assets)) *
         100
       : null;
   const portfolioAmount = position ? Number(position.evaluation_amount) : null;
-  const currentPrice = numeric(quote?.price) ?? fallback?.info.price ?? null;
+  const currentPrice = numeric(quote?.price) ?? null;
   const changeRate =
-    numeric(quote?.change_rate) ?? fallback?.holding?.chg ?? null;
+    numeric(quote?.change_rate) ?? null;
   const changeAmount =
     numeric(quote?.change_amount) ??
     (currentPrice != null && changeRate != null
@@ -193,8 +194,8 @@ export default function StockDetail({
     {
       label: "시가 총액",
       value:
-        summary?.market_cap == null
-          ? (fallback?.info.cap ?? "-")
+                summary?.market_cap == null
+          ? "-"
           : formatMarketCap(summary.market_cap),
       key: null,
     },
@@ -209,24 +210,24 @@ export default function StockDetail({
     {
       label: "PBR",
       value:
-        summary?.pbr == null
-          ? (fallback?.info.pbr ?? "-")
+                summary?.pbr == null
+          ? "-"
           : formatMetric(summary.pbr, "배"),
       key: "pbr",
     },
     {
       label: "PER",
       value:
-        summary?.per == null
-          ? (fallback?.info.per ?? "-")
+                summary?.per == null
+          ? "-"
           : formatMetric(summary.per, "배"),
       key: "per",
     },
     {
       label: "ROE",
       value:
-        summary?.roe == null
-          ? (fallback?.info.roe ?? "-")
+                summary?.roe == null
+          ? "-"
           : formatMetric(summary.roe, "%"),
       key: "roe",
     },
@@ -240,14 +241,6 @@ export default function StockDetail({
   const availableAxes = evaluationDisplay.axes.filter(
     (axis) => axis.score != null,
   );
-  const summaryUsesMock =
-    Boolean(fallback) &&
-    (summary?.description == null ||
-      summary?.sector == null ||
-      summary?.market_cap == null ||
-      summary?.pbr == null ||
-      summary?.per == null ||
-      summary?.roe == null);
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -265,11 +258,11 @@ export default function StockDetail({
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
                 <h1 className="text-[40px] font-bold tracking-[-0.035em]">
-                  {summary?.stock_name ?? fallback?.name ?? stockCode}
+                  {summary?.stock_name ?? stockCode}
                 </h1>
                 <span className="text-[17px] text-subtle">{stockCode}</span>
                 <span className="rounded-full bg-[#F1F3EE] px-3 py-1.5 text-sm font-semibold text-muted">
-                  {summary?.sector ?? fallback?.holding?.sector ?? "-"}
+                  {summary?.sector ?? "-"}
                 </span>
               </div>
               <div className="flex items-baseline gap-4">
@@ -283,17 +276,12 @@ export default function StockDetail({
                   ({signed(changeRate)}%)
                 </span>
               </div>
-              {quoteError && (
-                <span className="text-[15px] text-muted">
-                  실시간 시세 대신 기존 데모 값을 표시합니다.
+                            {quoteError && (
+                <span className="text-[15px] text-down">
+                  시세를 불러올 수 없습니다.
                 </span>
               )}
-              {summaryError && fallback && (
-                <span className="text-[15px] text-muted">
-                  연동되지 않은 기업 정보는 기존 데모 값으로 보완했습니다.
-                </span>
-              )}
-              {summaryError && !fallback && (
+                            {summaryError && (
                 <span className="text-[15px] text-down">
                   종목 정보를 불러올 수 없습니다.
                 </span>
@@ -417,14 +405,9 @@ export default function StockDetail({
             <h2 className="text-[26px] font-bold tracking-[-0.025em]">
               어떤 회사인가요?
             </h2>
-            <p className="text-lg leading-8 text-[#3F4A43] [text-wrap:pretty]">
-              {summary?.description ??
-                fallback?.info.desc ??
-                "기업 정보를 제공할 수 없습니다."}
+                        <p className="text-lg leading-8 text-[#3F4A43] [text-wrap:pretty]">
+              {summary?.description ?? "기업 정보를 제공할 수 없습니다."}
             </p>
-            {summary?.description == null && fallback && (
-              <span className="text-sm text-subtle">기존 데모 기업 설명</span>
-            )}
           </section>
 
           <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
@@ -512,7 +495,6 @@ export default function StockDetail({
               {evaluation
                 ? `기준일 ${evaluation.as_of ?? "-"} · 산식 ${evaluation.feature_version} · 출처 ${evaluation.sources.join(", ") || "-"}`
                 : "실제 평가 데이터 없음"}
-              {evaluationDisplay.usesMock ? " · 일부 축 기존 데모 보완" : ""}
             </p>
             <div className="flex gap-5 rounded-[20px] bg-[#F8FCEE] px-9 py-8">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime text-lg text-navy">
@@ -597,9 +579,7 @@ export default function StockDetail({
           <p className="text-sm leading-[22px] text-subtle">
             ※ 현재가는 KIS, 일별 시세·시가총액은 KRX, 재무지표는 OpenDART
             데이터를 우선 사용합니다.
-            {summaryUsesMock || evaluationDisplay.usesMock || quoteError
-              ? " 미연동 항목은 기존 데모 값으로 보완했습니다."
-              : ""}{" "}
+                        {quoteError ? " 일부 시세 데이터를 불러오지 못했습니다." : ""}{" "}
             투자 권유가 아닙니다.
           </p>
         </div>

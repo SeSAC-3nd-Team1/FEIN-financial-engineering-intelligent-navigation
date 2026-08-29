@@ -294,7 +294,8 @@ export default function StrategyDetail({
             </section>
           )}
 
-          <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
+                    <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
+            {USE_MOCK_BACKTEST && <DemoModeBanner />}
             <div className="flex flex-col gap-2.5">
               <h2 className="text-[26px] font-bold tracking-[-0.025em]">시장이 흔들릴 때, 이 전략은 어땠을까요?</h2>
               <p className="text-[17px] text-muted">
@@ -567,14 +568,9 @@ export default function StrategyDetail({
               >
                 이 전략으로 변경하기 →
               </button>
-            </section>
+                        </section>
           )}
 
-          {USE_MOCK_BACKTEST && (
-            <p className="text-sm leading-[22px] text-subtle">
-              ※ 현재 백테스트 결과는 화면 구현을 위한 예시 데이터이며 실제 투자 성과를 나타내지 않습니다.
-            </p>
-          )}
           <p className="text-sm leading-[22px] text-subtle">
             ※ 백테스트 결과는 과거 데이터 기반 예시이며 미래 수익을 보장하지 않습니다.
           </p>
@@ -656,6 +652,18 @@ function StrategyChangeModal({
  * hover가 걸리면(desktop) CSS group-hover로만 tooltip을 보여주는 순수 장식 요소라 자체 클릭 핸들러는
  * 없다 — 실제 클릭 시 안내는 이미 구현된 Inline Login CTA(showBacktestLoginLock)가 담당한다.
  */
+function DemoModeBanner() {
+  return (
+    <div
+      role="status"
+      className="flex items-center gap-3 rounded-[16px] border-2 border-dashed border-warn bg-warn-soft-2 px-6 py-4 text-[15px] font-bold text-status-amber-text"
+    >
+      <span className="rounded-full bg-warn px-3 py-1 text-xs font-extrabold text-white">DEMO</span>
+      <span>개발용 예시 백테스트입니다. 실제 투자 성과나 미래 수익을 나타내지 않습니다.</span>
+    </div>
+  );
+}
+
 function LoginLockBadge() {
   return (
     <>

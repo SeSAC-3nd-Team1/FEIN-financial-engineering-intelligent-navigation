@@ -35,7 +35,7 @@ export default function TransactionDetail({ transactionId, backTarget, userName,
   // 계좌 자체가 없다고 "확인된" 상태(404)일 때만 목업을 쓴다. account !== null 은 로딩 직후/조회
   // 실패 상태에서 account 가 아직 null이라 실계좌 사용자에게도 mock 거래내역이 노출될 수 있다.
   const accountMissing = useTradingStore((state) => state.accountMissing);
-  const transactions = useMemo(() => getDisplayTransactions(executions, !accountMissing), [executions, accountMissing]);
+  const transactions = useMemo(() => getDisplayTransactions(executions), [executions]);
   const t = transactions.find((item) => item.id === transactionId);
   const backLabel = BACK_LABEL[backTarget] ?? '이전으로 돌아가기';
 
