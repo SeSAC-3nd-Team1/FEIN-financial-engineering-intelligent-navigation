@@ -39,6 +39,11 @@ SAFETY_REFUSAL_PATTERNS = (
     "지금매도",
     "사세요",
     "파세요",
+    "사는게좋",
+    "매입추천",
+    "매입을추천",
+    "비중을늘리는게좋",
+    "비중을늘리세요",
     "매수해",
     "매도해",
     "매수하세요",
@@ -52,7 +57,11 @@ SAFETY_REFUSAL_PATTERNS = (
     "매수를추천",
     "매도를추천",
     "수익을보장",
+    "수익은보장",
+    "수익이보장",
     "원금을보장",
+    "원금은보장",
+    "원금이보장",
     "이전지시를무시",
     "앞선지시를무시",
     "몇퍼센트오를",
@@ -290,13 +299,33 @@ class AzureOpenAIChatAgentClient:
     def _normalize_for_safety(value: str) -> str:
         return re.sub(r"[^0-9a-z가-힣]+", "", value.lower())
 
+    @staticmethod
+    def _is_negated_safety_suffix(suffix: str) -> bool:
+        return suffix.startswith(
+            (
+                "하지않",
+                "되지않",
+                "않습",
+                "않는",
+                "않다",
+                "을하지않",
+                "이하지않",
+                "은하지않",
+                "는하지않",
+                "을되지않",
+                "이되지않",
+                "은되지않",
+                "는되지않",
+            )
+        )
+
     @classmethod
     def _contains_safety_pattern(cls, normalized: str) -> bool:
         for pattern in SAFETY_REFUSAL_PATTERNS:
             start = 0
             while (index := normalized.find(pattern, start)) >= 0:
                 suffix = normalized[index + len(pattern) :]
-                if not suffix.startswith(("하지않", "되지않", "않습", "않는", "않다")):
+                if not cls._is_negated_safety_suffix(suffix):
                     return True
                 start = index + len(pattern)
         return False
@@ -375,9 +404,9 @@ class AzureOpenAIChatAgentClient:
                     pattern
                     for pattern in MODEL_OUTPUT_SAFETY_PATTERNS
                     if pattern in normalized
-                    and not normalized[
-                        normalized.find(pattern) + len(pattern) :
-                    ].startswith(("하지않", "되지않", "않습", "않는", "않다"))
+                    and not cls._is_negated_safety_suffix(
+                        normalized[normalized.find(pattern) + len(pattern) :]
+                    )
                 ),
                 "지금매수",
             )
