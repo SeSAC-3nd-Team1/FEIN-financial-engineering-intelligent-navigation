@@ -44,6 +44,9 @@ class StockPricePoint:
     market_cap: Decimal | None = None
     volume: int | None = None
     trading_value: Decimal | None = None
+    open_price: Decimal | None = None
+    high_price: Decimal | None = None
+    low_price: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -188,6 +191,9 @@ class BacktestRepository:
                 MarketStockPrice.market_cap,
                 MarketStockPrice.volume,
                 MarketStockPrice.trading_value,
+                MarketStockPrice.open_price,
+                MarketStockPrice.high_price,
+                MarketStockPrice.low_price,
             ).where(
                 MarketStockPrice.stock_code.in_(stock_codes),
                 MarketStockPrice.trade_date >= start_date,
@@ -203,8 +209,11 @@ class BacktestRepository:
                 market_cap=market_cap,
                 volume=volume,
                 trading_value=trading_value,
+                open_price=open_price,
+                high_price=high_price,
+                low_price=low_price,
             )
-            for code, trade_date, close, listed_shares, market_cap, volume, trading_value in rows
+            for code, trade_date, close, listed_shares, market_cap, volume, trading_value, open_price, high_price, low_price in rows
         ]
 
     def point_in_time_financials(

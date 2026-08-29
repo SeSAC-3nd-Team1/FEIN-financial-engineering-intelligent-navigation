@@ -274,17 +274,23 @@ class BacktestService:
                 "close_price": float(point.close),
                 "listed_shares": point.listed_shares,
                 "market_cap": point.market_cap,
-                "volume": point.volume if point.volume is not None else 1,
-                "trading_value": (
-                    float(point.trading_value)
-                    if point.trading_value is not None
-                    else float(point.close)
-                ),
+                "volume": point.volume,
+                "trading_value": float(point.trading_value) if point.trading_value is not None else None,
+                "open_price": float(point.open_price) if point.open_price is not None else None,
+                "high_price": float(point.high_price) if point.high_price is not None else None,
+                "low_price": float(point.low_price) if point.low_price is not None else None,
             }
             for point in points
         ])
         if frame.empty:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 가격 데이터가 부족합니다.")
+        if frame[["volume", "trading_value", "open_price", "high_price", "low_price"]].isna().any(axis=None):
+            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "v2 거래 품질 입력이 누락되어 백테스트를 중단했습니다.")
+        frame["is_tradable"] = (
+            frame[["open_price", "high_price", "low_price", "close_price", "volume"]].gt(0).all(axis=1)
+            & frame["high_price"].ge(frame[["open_price", "low_price", "close_price"]].max(axis=1))
+            & frame["low_price"].le(frame[["open_price", "high_price", "close_price"]].min(axis=1))
+        )
         grouped = frame.sort_values(["stock_code", "trade_date"]).groupby("stock_code", group_keys=False)
         returns = grouped["close_price"].pct_change(fill_method=None)
         frame["trading_value_sma_20d"] = grouped["trading_value"].transform(
@@ -300,7 +306,6 @@ class BacktestService:
         frame["history_120d_ready"] = grouped["close_price"].transform(
             lambda values: values.rolling(120, min_periods=120).count().ge(120)
         )
-        frame["is_tradable"] = frame["volume"].gt(0)
         frame = apply_stock_risk_filter(frame)
         model = RiskAdjustedMomentumModel()
         try:

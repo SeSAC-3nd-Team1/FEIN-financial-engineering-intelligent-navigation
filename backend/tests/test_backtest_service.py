@@ -59,6 +59,11 @@ class FakeRepository:
                         price,
                         listed_shares=1_000_000 + index,
                         market_cap=Decimal("1000000") + Decimal(index * 10000),
+                        volume=1_000_000,
+                        trading_value=price * Decimal("1000000"),
+                        open_price=price,
+                        high_price=price,
+                        low_price=price,
                     )
                 )
             day += timedelta(days=1)

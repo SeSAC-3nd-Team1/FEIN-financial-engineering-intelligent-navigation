@@ -22,7 +22,9 @@ class MomentumInvestmentService:
     def _is_quarter_end_snapshot(as_of: date) -> bool:
         if as_of.month not in (3, 6, 9, 12):
             return False
-        return as_of.day == calendar.monthrange(as_of.year, as_of.month)[1]
+        # KRX may close before calendar month-end due to a weekend or holiday.
+        last_day = calendar.monthrange(as_of.year, as_of.month)[1]
+        return as_of.day >= last_day - 3
     def __init__(
         self,
         session: Session,
