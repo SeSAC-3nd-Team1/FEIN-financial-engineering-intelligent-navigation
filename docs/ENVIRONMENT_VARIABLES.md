@@ -90,18 +90,34 @@ docker compose up -d --force-recreate
 
 ## Production Container Apps 배포 환경변수
 
-Production 배포는 GitHub Actions의 `production` Environment를 사용한다. 실제 Secret 값은 workflow 파일이나 문서에 직접 기록하지 않고 GitHub Environment Secret으로 저장한다. `.github/workflows/deploy-production.yml`은 해당 값을 `ca-backend-fein-vnet`의 Container App Secret으로 동기화한 뒤 Backend 환경변수에서 `secretref:`로 참조한다.
+Production 배포는 GitHub Actions의 `production` Environment를 사용한다. 실제 Secret 값은 workflow 파일이나 문서에 직접 기록하지 않는다. `.github/workflows/deploy-production.yml`은 GitHub Environment에 새 값이 있으면 이를 우선 사용하고, 값이 비어 있으면 현재 `ca-backend-fein-vnet`에 이미 설정된 환경변수를 그대로 재사용한다.
+
+이 정책은 기존 운영 설정을 한 번에 GitHub로 이전하지 못한 상태에서도 배포가 기존 credential을 지우지 않도록 하기 위한 bootstrap 정책이다. GitHub에도 없고 현재 Azure Container App에도 없는 외부 연동 값은 이름만 출력하고 배포를 실패 처리한다. 실제 Secret 값은 로그에 출력하지 않는다.
+
+### 반드시 GitHub production Environment에 있어야 하는 값
+
+아래 값은 Azure 로그인 및 배포 bootstrap 자체에 필요하므로 기존 Container App 값으로 대체하지 않는다.
+
+**Secrets**
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `DATABASE_URL`
+
+**Variables**
+
+- `ACR_NAME`
+- `AZURE_RESOURCE_GROUP`
+- `FRONTEND_APP_NAME`
+- `BACKEND_APP_NAME`
 
 ### GitHub Environment Secrets
 
-아래 항목은 `production` Environment의 **Secrets**에 등록한다.
+아래 항목은 `production` Environment의 **Secrets**에 등록하는 것을 권장한다. 등록되어 있으면 배포 시 Container App Secret으로 갱신하고 `secretref:`로 사용한다. GitHub에 값이 없을 때 현재 Container App에 동일한 환경변수가 이미 존재하면 기존 값을 보존한다.
 
 | 이름 | 용도 |
 | --- | --- |
-| `AZURE_CLIENT_ID` | GitHub Actions OIDC Azure 로그인 Client ID |
-| `AZURE_TENANT_ID` | Azure Tenant ID |
-| `AZURE_SUBSCRIPTION_ID` | Azure Subscription ID |
-| `DATABASE_URL` | Azure PostgreSQL 연결 문자열 |
 | `REDIS_URL` | Production Redis 연결 문자열 |
 | `JWT_SECRET` | Backend JWT 서명 Secret |
 | `ACS_EMAIL_CONNECTION_STRING` | Azure Communication Services Email 연결 문자열 |
@@ -113,16 +129,14 @@ Production 배포는 GitHub Actions의 `production` Environment를 사용한다.
 | `AZURE_OPENAI_API_KEY` | 전략추천·리밸런싱·비교용 Azure OpenAI API Key |
 | `AZURE_OPENAI_CHATBOT_API_KEY` | 물방개 챗봇 전용 Azure OpenAI API Key |
 
+`JWT_SECRET`과 `EMAIL_OTP_SECRET`은 GitHub와 기존 Container App 양쪽에 모두 없을 때 workflow가 암호학적으로 안전한 난수로 한 번 생성해 Container App Secret으로 저장한다. 이후 배포에서는 기존 환경변수가 있으므로 같은 값을 유지한다. 다른 외부 서비스 credential은 임의 생성할 수 없으므로 양쪽 모두 없으면 배포가 실패한다.
+
 ### GitHub Environment Variables
 
-아래 항목은 `production` Environment의 **Variables**에 등록한다.
+아래 비민감 항목도 `production` Environment의 **Variables**에 등록하는 것을 권장한다. GitHub 값이 비어 있을 때 현재 Container App에 동일한 환경변수가 존재하면 기존 값을 유지한다.
 
 | 이름 | 값/의미 |
 | --- | --- |
-| `ACR_NAME` | Production Azure Container Registry 이름 |
-| `AZURE_RESOURCE_GROUP` | Container Apps가 속한 Resource Group |
-| `FRONTEND_APP_NAME` | Production Frontend Container App 이름 |
-| `BACKEND_APP_NAME` | `ca-backend-fein-vnet` |
 | `ACS_EMAIL_SENDER_ADDRESS` | ACS Email Communication Services의 MailFrom 주소 |
 | `AZURE_OPENAI_ENDPOINT` | 전략추천·리밸런싱·비교용 Azure OpenAI endpoint |
 | `AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT` | 전략 추천 deployment 이름 |
@@ -133,7 +147,7 @@ Production 배포는 GitHub Actions의 `production` Environment를 사용한다.
 
 Frontend CORS origin은 고정 문자열로 저장하지 않는다. 배포 workflow가 `FRONTEND_APP_NAME`의 실제 Container App FQDN을 Azure에서 조회한 뒤 `https://<fqdn>`을 `CORS_ORIGINS`로 설정한다.
 
-TTL, timeout, cache, API version 같은 비민감 운영 기본값은 workflow에서 현재 Backend 기본값과 동일하게 명시적으로 설정한다. 필요한 Secret/Variable이 하나라도 비어 있으면 배포를 중단해 이미지 배포만 성공하고 기능이 깨지는 상태를 방지한다. 배포 후에는 각 Container App의 `latestRevisionName`과 `latestReadyRevisionName`이 동일해질 때까지 확인하며, 최신 revision이 Ready 상태가 되지 않으면 workflow를 실패 처리한다.
+TTL, timeout, cache, API version 같은 비민감 운영 기본값은 workflow에서 현재 Backend 기본값과 동일하게 명시적으로 설정한다. 배포 전에는 GitHub production config와 기존 Azure Container App을 함께 확인해 필요한 외부 연동 값을 해결할 수 있는지 검증한다. 배포 후에는 각 Container App의 `latestRevisionName`과 `latestReadyRevisionName`이 동일해질 때까지 확인하며, 최신 revision이 Ready 상태가 되지 않으면 workflow를 실패 처리한다.
 
 ### 모델 snapshot 변수
 
