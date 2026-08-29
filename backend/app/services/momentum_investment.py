@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_DOWN
-import calendar
 from datetime import date
 
 from sqlalchemy import func, select
@@ -20,11 +19,11 @@ from app.services.trading import TradingService
 class MomentumInvestmentService:
     @staticmethod
     def _is_quarter_end_snapshot(as_of: date) -> bool:
-        if as_of.month not in (3, 6, 9, 12):
-            return False
-        # KRX may close before calendar month-end due to a weekend or holiday.
-        last_day = calendar.monthrange(as_of.year, as_of.month)[1]
-        return as_of.day >= last_day - 3
+        # This is only a cheap quarter-membership guard.  The authoritative
+        # decision date is the latest KOSPI trade date returned by the
+        # repository below; never use a calendar-day tolerance here.
+        return as_of.month in (3, 6, 9, 12)
+
     def __init__(
         self,
         session: Session,

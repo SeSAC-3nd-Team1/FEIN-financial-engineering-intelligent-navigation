@@ -284,12 +284,35 @@ class BacktestService:
         ])
         if frame.empty:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 가격 데이터가 부족합니다.")
-        if frame[["volume", "trading_value", "open_price", "high_price", "low_price"]].isna().any(axis=None):
-            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "v2 거래 품질 입력이 누락되어 백테스트를 중단했습니다.")
-        frame["is_tradable"] = (
-            frame[["open_price", "high_price", "low_price", "close_price", "volume"]].gt(0).all(axis=1)
-            & frame["high_price"].ge(frame[["open_price", "low_price", "close_price"]].max(axis=1))
-            & frame["low_price"].le(frame[["open_price", "high_price", "close_price"]].min(axis=1))
+        # Keep this row-level quality contract aligned with
+        # data/scripts/build_algorithm_dataset.py.  A zero-volume row is not
+        # automatically invalid (the live dataset distinguishes it from
+        # negative volume and missing/inconsistent OHLC); the row is simply
+        # excluded by the shared risk filter when its quality is unsafe.
+        intraday = frame[["open_price", "high_price", "low_price"]]
+        prices = frame[["open_price", "high_price", "low_price", "close_price"]]
+        positive_prices = prices.notna().all(axis=1) & prices.gt(0).all(axis=1)
+        no_intraday_price = intraday.notna().all(axis=1) & intraday.eq(0).all(axis=1)
+        partial_non_positive_ohl = (
+            (intraday.notna() & intraday.le(0)).any(axis=1) & ~no_intraday_price
+        )
+        inconsistent_ohlc = positive_prices & (
+            frame["high_price"].lt(frame["low_price"])
+            | frame["high_price"].lt(frame["open_price"])
+            | frame["high_price"].lt(frame["close_price"])
+            | frame["low_price"].gt(frame["open_price"])
+            | frame["low_price"].gt(frame["close_price"])
+        )
+        missing_ohlcv = frame[
+            ["volume", "trading_value", "open_price", "high_price", "low_price", "close_price"]
+        ].isna().any(axis=1)
+        frame["is_tradable"] = ~(
+            missing_ohlcv
+            | (frame["close_price"].notna() & frame["close_price"].le(0))
+            | (frame["volume"].notna() & frame["volume"].lt(0))
+            | no_intraday_price
+            | partial_non_positive_ohl
+            | inconsistent_ohlc
         )
         grouped = frame.sort_values(["stock_code", "trade_date"]).groupby("stock_code", group_keys=False)
         returns = grouped["close_price"].pct_change(fill_method=None)
