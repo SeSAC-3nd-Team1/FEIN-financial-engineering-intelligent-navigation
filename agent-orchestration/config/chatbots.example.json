@@ -1,8 +1,8 @@
 {
   "chatbots": [
     {
-      "chatbot_id": "new-service-chatbot",
-      "display_name": "New Service Chatbot",
+      "chatbot_id": "fein-web-chatbot",
+      "display_name": "FE!N Web Chatbot",
       "provider": "foundry",
       "source_agent_name": "REPLACE_WITH_FOUNDRY_AGENT_NAME",
       "enabled": true,

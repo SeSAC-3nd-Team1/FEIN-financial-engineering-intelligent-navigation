@@ -90,8 +90,22 @@ class FoundrySDKAgentClient:
             ):
                 if attempt + 1 >= attempts:
                     raise FoundrySDKAgentError("agent request failed") from None
-                await asyncio.sleep(min(0.25 * (2 ** attempt), 2.0))
+                    await asyncio.sleep(min(0.25 * (2 ** attempt), 2.0))
         raise FoundrySDKAgentError("agent request failed")
+
+    @staticmethod
+    def _normalize_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        sources = payload.get("sources")
+        if isinstance(sources, list):
+            payload["sources"] = [
+                {"title": item} if isinstance(item, str) else item
+                for item in sources
+            ]
+        if payload.get("status") == "OK":
+            payload["status"] = "OK"
+        elif payload.get("status") in {"COMPLETED", "SUCCESS"}:
+            payload["status"] = "OK"
+        return payload
 
     async def invoke(
         self, request: AgentRequest, *, timeout_seconds: float, idempotency_key: str
@@ -102,7 +116,7 @@ class FoundrySDKAgentClient:
             idempotency_key=idempotency_key,
         )
         try:
-            payload = extract_json_object(text)
+            payload = self._normalize_report_payload(extract_json_object(text))
             payload.setdefault("agent", request.role)
             payload.setdefault("request_id", request.request_id)
             payload.setdefault("summary", payload.get("message", ""))

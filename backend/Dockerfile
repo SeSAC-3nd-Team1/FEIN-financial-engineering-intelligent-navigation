@@ -7,7 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY agent-orchestration /agent-orchestration
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir /agent-orchestration
 
 COPY backend /app
 # Do not copy the v2 formula into Backend: expose the AI package as the shared

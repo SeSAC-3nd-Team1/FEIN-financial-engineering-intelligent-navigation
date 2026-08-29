@@ -18,6 +18,9 @@ from app.integrations.ai.chat_agent_client import (
     AzureOpenAIChatAgentClient,
     ChatAgentClient,
 )
+from app.integrations.ai.foundry_orchestration_chat_agent_client import (
+    FoundryOrchestrationChatAgentClient,
+)
 from app.models import User
 from app.repositories.recommendation import RecommendationRepository
 from app.repositories.trading import TradingRepository
@@ -27,6 +30,24 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 def get_chat_agent_client() -> ChatAgentClient:
+    if settings.ai_chatbot_provider == "foundry_orchestration":
+        registry = settings.chatbot_registry_json
+        if not settings.foundry_project_endpoint or not registry:
+            raise ServiceError("CHAT_AGENT_NOT_CONFIGURED", "물방개 AI가 설정되지 않았습니다.", 503)
+        return FoundryOrchestrationChatAgentClient(
+            project_endpoint=settings.foundry_project_endpoint,
+            agent_names={
+                "MBGCoordinator": settings.mbg_coordinator_agent_name,
+                "FinancialReport": settings.financial_report_agent_name,
+                "News": settings.news_agent_name,
+                "MarketResearch": settings.market_research_agent_name,
+                "Macro": settings.macro_agent_name,
+                "AssetManager": settings.asset_manager_agent_name,
+            },
+            registry_json=registry,
+            chatbot_id=settings.chatbot_id,
+            timeout_seconds=settings.ai_chatbot_timeout_seconds,
+        )
     return AzureOpenAIChatAgentClient(
         endpoint=settings.azure_openai_chatbot_endpoint,
         api_key=settings.azure_openai_chatbot_api_key,

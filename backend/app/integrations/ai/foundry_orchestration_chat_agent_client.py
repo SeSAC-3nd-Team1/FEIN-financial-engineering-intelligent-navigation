@@ -1,0 +1,170 @@
+"""Backend adapter for the in-process FE!N chatbot -> MBGCoordinator path."""
+
+from __future__ import annotations
+
+import json
+import os
+import time
+from typing import Any
+from uuid import uuid4
+
+from azure.ai.projects.aio import AIProjectClient
+from azure.core.credentials import AccessToken
+from azure.identity.aio import DefaultAzureCredential
+
+from agent_orchestration.chatbot_bridge import (
+    ChatbotMessage,
+    ChatbotRegistry,
+    MBGChatbotBridge,
+    ChatbotConfigurationError,
+    ChatbotDisabledError,
+    ChatbotNotRegisteredError,
+)
+from agent_orchestration.clients.foundry_sdk import FoundrySDKAgentClient
+from agent_orchestration.config import Role
+from agent_orchestration.contracts import AgentRequest, extract_json_object
+from agent_orchestration.coordinator import AgentOrchestrator
+from agent_orchestration.layers import LayerController
+from app.core.errors import ServiceError
+from app.schemas.chat import ChatAgentResult, ChatHistoryMessage, ChatScreenContext
+
+
+class _StaticAccessTokenCredential:
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    async def get_token(self, *scopes: str, **kwargs: Any) -> AccessToken:
+        del scopes, kwargs
+        return AccessToken(self._token, int(time.time()) + 3000)
+
+    async def close(self) -> None:
+        return None
+
+
+ROLES: tuple[Role, ...] = (
+    "MBGCoordinator",
+    "FinancialReport",
+    "News",
+    "MarketResearch",
+    "Macro",
+    "AssetManager",
+)
+
+
+class _CoordinatorBridgeClient:
+    def __init__(self, orchestrator: AgentOrchestrator) -> None:
+        self._orchestrator = orchestrator
+
+    async def invoke_text(
+        self, request: AgentRequest, *, timeout_seconds: float, idempotency_key: str
+    ) -> str:
+        del timeout_seconds, idempotency_key
+        result = await self._orchestrator.run(
+            request.user_query,
+            ticker=request.ticker,
+            company_name=request.company_name,
+            runtime_context=request.context,
+        )
+        return result.final_report.model_dump_json()
+
+
+class FoundryOrchestrationChatAgentClient:
+    """Use Managed Identity/CLI credentials without invoking the orchestration CLI."""
+
+    def __init__(
+        self,
+        *,
+        project_endpoint: str,
+        agent_names: dict[Role, str],
+        registry_json: str,
+        chatbot_id: str,
+        timeout_seconds: float,
+    ) -> None:
+        self.project_endpoint = project_endpoint
+        self.agent_names = agent_names
+        self.registry_json = registry_json
+        self.chatbot_id = chatbot_id
+        self.timeout_seconds = timeout_seconds
+
+    @staticmethod
+    def _public_context(context: ChatScreenContext) -> dict[str, Any]:
+        return context.model_dump(
+            include={"screen", "stock_code", "strategy_id"}, exclude_none=True
+        )
+
+    @staticmethod
+    def _result(output: str) -> ChatAgentResult:
+        text = output.strip()
+        caution = "답변은 금융 교육 및 정보 제공 목적이며, 최종 투자 결정은 사용자에게 있습니다."
+        suggested = ["관련 금융 지표를 더 알려줘", "이 화면에서 무엇을 볼 수 있나요?"]
+        try:
+            payload = extract_json_object(text)
+            if isinstance(payload, dict):
+                text = str(payload.get("summary") or payload.get("message") or text)
+                caution = str(payload.get("caution") or caution)
+                suggested = [str(item) for item in payload.get("suggested_questions", suggested)][:3]
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        return ChatAgentResult(
+            status="COMPLETED",
+            text=text[:2000],
+            caution=caution[:500],
+            suggested_questions=suggested,
+        )
+
+    async def answer(
+        self,
+        message: str,
+        history: list[ChatHistoryMessage],
+        context: ChatScreenContext,
+    ) -> ChatAgentResult:
+        del history  # Bridge owns the coordinator conversation boundary.
+        if not self.registry_json.strip():
+            raise ServiceError("CHAT_AGENT_NOT_CONFIGURED", "물방개 AI가 설정되지 않았습니다.", 503)
+        try:
+            registry = ChatbotRegistry.from_json(self.registry_json)
+        except ChatbotConfigurationError as exc:
+            raise ServiceError("CHAT_AGENT_NOT_CONFIGURED", "물방개 AI가 설정되지 않았습니다.", 503) from exc
+
+        access_token = os.getenv("FOUNDRY_ACCESS_TOKEN", "").strip()
+        credential = (
+            _StaticAccessTokenCredential(access_token)
+            if access_token
+            else DefaultAzureCredential()
+        )
+        try:
+            async with AIProjectClient(
+                endpoint=self.project_endpoint,
+                credential=credential,
+            ) as project_client:
+                async with project_client.get_openai_client(max_retries=0) as openai_client:
+                    layers = LayerController()
+                    clients = {
+                        role: FoundrySDKAgentClient(
+                            openai_client,
+                            self.agent_names[role],
+                            layers.profile_for(role),
+                        )
+                        for role in ROLES
+                    }
+                    reply = await MBGChatbotBridge(
+                        _CoordinatorBridgeClient(AgentOrchestrator(clients)), registry
+                    ).handle(
+                        ChatbotMessage(
+                            chatbot_id=self.chatbot_id,
+                            message=message,
+                            request_id=str(uuid4()),
+                            context=self._public_context(context),
+                        )
+                    )
+                    if reply.execution_allowed is not False:
+                        raise ServiceError("CHAT_AGENT_POLICY_BLOCKED", "허용되지 않은 실행 요청입니다.", 502)
+                    return self._result(reply.output_text)
+        except (ChatbotNotRegisteredError, ChatbotDisabledError) as exc:
+            raise ServiceError("CHAT_AGENT_CHANNEL_UNAVAILABLE", "물방개 채널을 사용할 수 없습니다.", 503) from exc
+        except ServiceError:
+            raise
+        except Exception as exc:
+            raise ServiceError("CHAT_AGENT_UNAVAILABLE", "물방개 AI를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.", 503) from exc
+        finally:
+            await credential.close()
