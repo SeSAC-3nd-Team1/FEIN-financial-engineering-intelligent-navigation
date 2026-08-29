@@ -4,6 +4,11 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import optional_current_user
 from app.api.routes.chat import get_chat_agent_client
+from app.integrations.ai.chat_agent_client import AzureOpenAIChatAgentClient
+from app.integrations.ai.foundry_orchestration_chat_agent_client import (
+    FoundryOrchestrationChatAgentClient,
+)
+
 from app.repositories.recommendation import RecommendationRepository
 from app.repositories.trading import TradingRepository
 from app.main import app
@@ -241,7 +246,76 @@ def test_metrics_endpoint_preserves_request_id() -> None:
     assert response.headers["X-Request-ID"] == request_id
 
 
+def test_chat_returns_response_for_azure_provider_branch(monkeypatch) -> None:
+    client = AzureOpenAIChatAgentClient(
+        endpoint="https://example.test",
+        api_key="test-key",
+        deployment="test-deployment",
+        api_version="2024-10-21",
+        timeout_seconds=1,
+    )
+
+    async def fake_answer_with_tools(*args, **kwargs):
+        return ChatAgentResult(
+            status="COMPLETED",
+            text="Azure 응답",
+            caution=None,
+            suggested_questions=[],
+        )
+
+    monkeypatch.setattr(client, "answer_with_tools", fake_answer_with_tools)
+    app.dependency_overrides[get_chat_agent_client] = lambda: client
+    try:
+        response = TestClient(app).post(
+            "/api/v1/chat/messages",
+            json={"message": "PER이 뭐야?", "history": [], "context": {"screen": "home"}},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Azure 응답"
+    assert response.json()["status"] == "COMPLETED"
+
+
+def test_chat_returns_response_for_foundry_provider_branch(monkeypatch) -> None:
+    client = FoundryOrchestrationChatAgentClient(
+        project_endpoint="https://example.test/api/projects/test",
+        agent_names={},
+        registry_json=(
+            '{"chatbots":[{"chatbot_id":"fein-web-chatbot",'
+            '"display_name":"FE!N Web Chatbot","provider":"foundry",'
+            '"source_agent_name":"MBGCoordinator","enabled":true}]}'
+        ),
+        chatbot_id="fein-web-chatbot",
+        timeout_seconds=1,
+    )
+
+    async def fake_answer(*args, **kwargs):
+        return ChatAgentResult(
+            status="COMPLETED",
+            text="Foundry 응답",
+            caution=None,
+            suggested_questions=[],
+        )
+
+    monkeypatch.setattr(client, "answer", fake_answer)
+    app.dependency_overrides[get_chat_agent_client] = lambda: client
+    try:
+        response = TestClient(app).post(
+            "/api/v1/chat/messages",
+            json={"message": "PER이 뭐야?", "history": [], "context": {"screen": "home"}},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Foundry 응답"
+    assert response.json()["status"] == "COMPLETED"
+
+
 def test_chat_rejects_unknown_context_fields() -> None:
+
     client = FakeClient()
     app.dependency_overrides[get_chat_agent_client] = lambda: client
     app.dependency_overrides[optional_current_user] = lambda: SimpleNamespace(id=7)
