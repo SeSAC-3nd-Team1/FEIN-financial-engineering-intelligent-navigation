@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_DOWN
+import calendar
+from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,6 +18,11 @@ from app.services.trading import TradingService
 
 
 class MomentumInvestmentService:
+    @staticmethod
+    def _is_quarter_end_snapshot(as_of: date) -> bool:
+        if as_of.month not in (3, 6, 9, 12):
+            return False
+        return as_of.day == calendar.monthrange(as_of.year, as_of.month)[1]
     def __init__(
         self,
         session: Session,
@@ -150,6 +157,12 @@ class MomentumInvestmentService:
         if (snapshot.source != "generated" or snapshot.is_stale or
                 getattr(snapshot, "model_version", None) != "risk-adjusted-momentum-v2"):
             raise ServiceError("MODEL_RECOMMENDATION_NOT_APPLICABLE", "안전한 v2 스냅샷이 없어 리밸런싱하지 않습니다.", 409)
+        if not self._is_quarter_end_snapshot(snapshot.as_of):
+            raise ServiceError(
+                "MOMENTUM_QUARTER_END_SNAPSHOT_REQUIRED",
+                "분기 말 공식 모멘텀 스냅샷만 리밸런싱할 수 있습니다.",
+                409,
+            )
         targets = {item.symbol: Decimal(str(item.target_weight)) for item in snapshot.recommendations if item.target_weight > 0}
         if (
             not targets

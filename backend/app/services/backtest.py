@@ -326,6 +326,19 @@ class BacktestService:
                 weights = pending_target
                 pending_target = None
             previous_date = ordered_dates[index - 1]
+            bucket = BacktestService._rebalance_bucket(trade_date.date(), "QUARTERLY")
+            if bucket != last_bucket:
+                cross_section = features.loc[features["trade_date"].eq(previous_date)].copy()
+                try:
+                    ranked = model.rank(cross_section)
+                    selected = ranked.loc[ranked["selected"]]
+                    target = _capped_score_market_cap_weights(selected)
+                except (ValueError, RuntimeError) as exc:
+                    raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 목표 포트폴리오를 안전하게 산출할 수 없습니다.") from exc
+                # The prior quarter-end close is the decision close; apply the
+                # new target before calculating the first return of this quarter.
+                weights = {symbol: float(weight) for symbol, weight in target.items()}
+                last_bucket = bucket
             if weights:
                 symbols = list(weights)
                 try:
@@ -344,20 +357,6 @@ class BacktestService:
                 values.append(values[-1] * total)
             else:
                 values.append(values[-1])
-            bucket = BacktestService._rebalance_bucket(trade_date.date(), "QUARTERLY")
-            if bucket != last_bucket:
-                # The prior quarter's last observed trading day is the decision
-                # close; the new quarter's first day is the first return under
-                # that target, matching the AI evaluation convention.
-                cross_section = features.loc[features["trade_date"].eq(previous_date)].copy()
-                try:
-                    ranked = model.rank(cross_section)
-                    selected = ranked.loc[ranked["selected"]]
-                    target = _capped_score_market_cap_weights(selected)
-                except (ValueError, RuntimeError) as exc:
-                    raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 목표 포트폴리오를 안전하게 산출할 수 없습니다.") from exc
-                pending_target = {symbol: float(weight) for symbol, weight in target.items()}
-                last_bucket = bucket
         return values
 
     @staticmethod

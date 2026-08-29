@@ -69,7 +69,7 @@ class FakeTradingService:
 class FakeSnapshotService:
     def __init__(self, *, source: str = "generated", is_stale: bool = False) -> None:
         self.snapshot = SimpleNamespace(
-            as_of=date(2026, 8, 25),
+            as_of=date(2026, 9, 30),
             model_version="risk-adjusted-momentum-v2",
             source=source,
             is_stale=is_stale,
@@ -149,7 +149,7 @@ def test_semi_auto_account_only_publishes_proposals() -> None:
 
 
 def test_partial_initial_orders_resume_with_original_investment_amount() -> None:
-    first_key = "momentum-2026-08-25-000000"
+    first_key = "momentum-2026-09-30-000000"
     momentum, _, trading = service(
         position_count=1,
         existing_order_keys=[first_key],
@@ -204,7 +204,7 @@ def test_rebalance_completed_run_is_noop_for_the_same_snapshot() -> None:
     momentum, _, trading = service(
         position_count=1,
         rebalance_run=SimpleNamespace(
-            snapshot_date=date(2026, 8, 25),
+            snapshot_date=date(2026, 9, 30),
             status="COMPLETED",
         ),
     )
@@ -213,4 +213,31 @@ def test_rebalance_completed_run_is_noop_for_the_same_snapshot() -> None:
 
     assert response.status == "ALREADY_APPLIED"
     assert response.orders_created == 0
+    assert trading.requests == []
+
+
+def test_rebalance_completed_run_rejects_a_different_snapshot_in_same_quarter() -> None:
+    momentum, _, trading = service(
+        position_count=1,
+        rebalance_run=SimpleNamespace(
+            snapshot_date=date(2026, 8, 20),
+            status="COMPLETED",
+        ),
+    )
+
+    with pytest.raises(ServiceError) as error:
+        momentum.rebalance(7, momentum.repo.account.id)  # type: ignore[attr-defined]
+
+    assert error.value.code == "MOMENTUM_QUARTER_ALREADY_EXECUTED"
+    assert trading.requests == []
+
+
+def test_rebalance_rejects_a_mid_quarter_snapshot() -> None:
+    momentum, _, trading = service(position_count=1)
+    momentum.snapshot_service.snapshot.as_of = date(2026, 8, 25)
+
+    with pytest.raises(ServiceError) as error:
+        momentum.rebalance(7, momentum.repo.account.id)  # type: ignore[attr-defined]
+
+    assert error.value.code == "MOMENTUM_QUARTER_END_SNAPSHOT_REQUIRED"
     assert trading.requests == []
