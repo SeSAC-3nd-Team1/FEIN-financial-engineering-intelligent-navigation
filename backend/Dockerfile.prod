@@ -21,8 +21,10 @@ COPY ai /ai
 COPY shared /workspace/shared
 COPY .deploy-artifacts /model-artifacts
 COPY output/fincon_ver23_model.py output/fincon_ver23_model_fix1.py /models/
+COPY output/Algorithm(ver.2.4)_fix2.py output/Algorithm(ver.2.4)_loss_cut_fix2.py /models/
 ENV PYTHONPATH=/app:/ai:/workspace \
-    FINCON_VER23_MODEL_PATH=/models/fincon_ver23_model_fix1.py
+    FINCON_VER23_MODEL_PATH=/models/fincon_ver23_model_fix1.py \
+    LOSS_AVOIDANCE_MODEL_PATH=/models/Algorithm(ver.2.4)_fix2.py
 
 EXPOSE 8000
 
