@@ -182,7 +182,7 @@ Container App 내부 Secret 이름은 Azure 제한을 고려해 `acs-email`, `ki
 | `AZURE_OPENAI_CHATBOT_ENDPOINT` | 챗봇 전용 Azure OpenAI endpoint |
 | `AZURE_OPENAI_CHATBOT_DEPLOYMENT` | 챗봇 deployment 이름 |
 
-현재 프로젝트에서 확정된 MailFrom, 공통 Azure OpenAI endpoint, 챗봇 endpoint/deployment에는 workflow의 안전한 비민감 기본값이 있다. 반면 추천·리밸런싱·비교 deployment 이름은 확정된 값이 없으므로 추측해서 채우지 않는다. 해당 기능을 활성화하려면 실제 Azure deployment 이름을 Variable에 명시한다.
+현재 Azure `fndr-fein` 리소스에는 `gpt-5.6-luna` deployment가 `Succeeded` 상태로 존재한다. 따라서 Production workflow는 추천·리밸런싱·비교 기능에 이 deployment를 기본 사용하며, 기능별로 다른 deployment를 사용하려면 GitHub `production` Variables에서 개별 override할 수 있다.
 
 Frontend CORS origin은 고정 문자열로 저장하지 않는다. workflow가 `FRONTEND_APP_NAME`의 실제 Container App FQDN을 Azure에서 조회한 뒤 `https://<fqdn>`을 `CORS_ORIGINS`로 설정한다.
 

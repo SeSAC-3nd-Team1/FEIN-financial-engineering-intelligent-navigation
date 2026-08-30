@@ -28,9 +28,12 @@ env:
   KIS_APP_SECRET_KV_SECRET: ${{ vars.KIS_APP_SECRET_KV_SECRET || 'kis-app-secret' }}
   ACS_EMAIL_SENDER_ADDRESS: ${{ vars.ACS_EMAIL_SENDER_ADDRESS || 'DoNotReply@5160acac-2538-427a-8d6c-ff0e9a748e3b.azurecomm.net' }}
   AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT || 'https://fndr-fein.openai.azure.com/' }}
-  AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${{ vars.AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT }}
-  AZURE_OPENAI_REBALANCING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_REBALANCING_DEPLOYMENT }}
-  AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT }}
+  # fndr-fein already has a healthy gpt-5.6-luna deployment. Keep each
+  # feature independently overrideable while making the production default
+  # usable even when the GitHub Variables have not been populated yet.
+  AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${{ vars.AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT || 'gpt-5.6-luna' }}
+  AZURE_OPENAI_REBALANCING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_REBALANCING_DEPLOYMENT || 'gpt-5.6-luna' }}
+  AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT || 'gpt-5.6-luna' }}
   AZURE_OPENAI_CHATBOT_ENDPOINT: ${{ vars.AZURE_OPENAI_CHATBOT_ENDPOINT || 'https://fein-chatbot.openai.azure.com/' }}
   AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHATBOT_DEPLOYMENT || 'gpt-5.6-luna' }}
   FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT || 'https://fein-agent.services.ai.azure.com/api/projects/proj-default' }}
