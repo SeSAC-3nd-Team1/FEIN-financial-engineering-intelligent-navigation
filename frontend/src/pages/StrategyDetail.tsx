@@ -3,7 +3,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import type { TooltipProps } from 'recharts';
 import Header from '../components/Header';
 import TermTooltip from '../components/TermTooltip';
-import { fetchAiExplanation, getBacktestAvailableRange, runBacktest, USE_MOCK_BACKTEST } from '../data/backtestApi';
+import { fetchAiExplanation, getBacktestAvailableRange, getFallbackAiExplanation, runBacktest, USE_MOCK_BACKTEST } from '../data/backtestApi';
 import { getRecommendedPeriods } from '../data/backtestPeriods';
 import type { StrategyRecommendationItemResponse, StrategyResponse } from '../lib/backendApi';
 import { won } from '../lib/validation';
@@ -199,8 +199,9 @@ export default function StrategyDetail({
 
   // AI 설명은 백테스트 결과가 성공적으로 온 뒤에만, 그 결과 값 그대로를 근거로 요청한다.
   // 백테스트 계산과는 완전히 분리된 상태라 AI 호출이 실패해도 위 결과·차트·지표는 그대로 남는다.
-  useEffect(() => {
+    useEffect(() => {
     if (!result) return;
+    const ctrl = new AbortController();
     let cancelled = false;
     setAiLoading(true);
     setAiError(null);
@@ -221,14 +222,23 @@ export default function StrategyDetail({
       benchmarkName: result.benchmarkName,
       benchmarkReturn: result.benchmarkMetrics.cumulativeReturn,
       benchmarkMdd: result.benchmarkMetrics.mdd,
-    };
+      benchmarkDifference: Math.round((result.metrics.cumulativeReturn - result.benchmarkMetrics.cumulativeReturn) * 10) / 10,
+        };
 
-    fetchAiExplanation(ctx)
+    fetchAiExplanation(ctx, ctrl.signal)
       .then((r) => { if (!cancelled) { setAiHeadline(r.headline); setAiOverview(r.overview); setAiCaution(r.caution); } })
-      .catch(() => { if (!cancelled) setAiError('물방개가 설명을 준비하지 못했어요. 백테스트 결과는 위 지표에서 확인할 수 있어요.'); })
+      .catch(() => {
+        if (!cancelled) {
+          const fallback = getFallbackAiExplanation(ctx);
+          setAiHeadline(fallback.headline);
+          setAiOverview(fallback.overview);
+          setAiCaution(fallback.caution);
+          setAiError('물방개가 자동 설명을 준비하지 못해 기본 설명을 보여드리고 있어요.');
+        }
+      })
       .finally(() => { if (!cancelled) setAiLoading(false); });
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; ctrl.abort(); };
   }, [result]);
 
   const chartData = result?.series.map((p) => ({ t: p.t, [result.strategyName]: p.strategy, [result.benchmarkName]: p.benchmark })) ?? [];
