@@ -129,21 +129,27 @@ def test_summary_combines_real_sources_and_calculates_metrics() -> None:
     result = StockMarketService(FakeRepository(), FakeLiveMarket()).summary("005930")
 
     assert result.stock_name == "삼성전자"
-    assert result.price is None
+    assert result.price == Decimal("75000")
     assert result.previous_close is None
     assert result.change_amount is None
     assert result.change_rate is None
     assert result.volume is None
+
     assert result.market_cap == Decimal("438000000000000")
     assert result.per == Decimal("14.6")
     assert result.pbr == pytest.approx(Decimal("1.216666666666666666666666667"))
     assert result.roe == pytest.approx(Decimal("8.333333333333333333333333333"))
     assert result.dividend_yield == Decimal("1.8")
     assert result.sources == {
-        "price": None,
+                "price": "KIS_WS",
+
         "market": "KRX",
-        "financial": "OpenDART",
+                "financial": "OpenDART",
+        "per": "OpenDART",
+        "pbr": "OpenDART",
+        "roe": "OpenDART",
         "dividend": "OpenDART_ALOT_MATTER",
+
         "dividend_price": None,
     }
 
@@ -213,6 +219,10 @@ def test_summary_returns_null_financial_metrics_when_statement_is_missing() -> N
     assert result.pbr is None
     assert result.roe is None
     assert result.sources["financial"] is None
+    assert result.sources["per"] is None
+    assert result.sources["pbr"] is None
+    assert result.sources["roe"] is None
+
 
 
 def test_historical_chart_uses_only_repository_prices() -> None:
