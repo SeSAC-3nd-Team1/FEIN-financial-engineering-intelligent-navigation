@@ -4,7 +4,10 @@ import Header from "../components/Header";
 import { buildDetailedPortfolioHoldings } from "../lib/portfolioModel";
 import { useTradingData } from "../hooks/useTradingData";
 import type { StrategyResponse } from "../lib/backendApi";
-import { rebalanceLatestLossAvoidanceRecommendationApi } from "../lib/backendApi";
+import {
+  rebalanceLatestLossAvoidanceRecommendationApi,
+  rebalanceLatestModelRecommendationsApi,
+} from "../lib/backendApi";
 import { toAccountOperationMode } from "../data/fees";
 import { useAuthStore } from "../store/authStore";
 import { getDisplayAlerts } from "../lib/rebalancing";
@@ -104,8 +107,12 @@ function RebalanceAlertsContent({
         decision,
         idempotency_key: idempotencyKey,
       });
-      if (decision === "ACCEPTED" && strategy.id === "low") {
-        await rebalanceLatestLossAvoidanceRecommendationApi(account.id, token);
+      if (decision === "ACCEPTED") {
+        if (strategy.id === "low") {
+          await rebalanceLatestLossAvoidanceRecommendationApi(account.id, token);
+        } else if (strategy.id === "momentum") {
+          await rebalanceLatestModelRecommendationsApi(account.id, token);
+        }
         await useTradingStore.getState().refresh(token, toAccountOperationMode(isAutoMode ? "auto" : "manual"));
       }
     } catch (error) {
