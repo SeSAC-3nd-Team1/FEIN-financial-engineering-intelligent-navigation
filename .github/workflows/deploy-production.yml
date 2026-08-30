@@ -322,7 +322,7 @@ jobs:
                         {"name": "FOUNDRY_PROJECT_ENDPOINT", "value": "https://fein-agent.services.ai.azure.com/api/projects/proj-default"},
                         {"name": "FOUNDRY_MODEL_DEPLOYMENT_NAME", "value": "gpt-5.6-luna"},
                         {"name": "CHATBOT_REGISTRY_JSON", "value": $chatbot_registry},
-                        {"name": "AI_CHATBOT_PROVIDER", "value": "foundry_orchestration"},
+                        {"name": "AI_CHATBOT_PROVIDER", "value": "azure_openai"},
                         {"name": "AGENT_PROTOCOL", "value": "responses"},
                         {"name": "AGENT_CLIENT_BACKEND", "value": "foundry_sdk"},
                         {"name": "ALLOW_PREVIEW_A2A", "value": "false"},
