@@ -88,8 +88,9 @@ class BacktestService:
 
     def available_range(self, strategy_id: str | None = None) -> BacktestAvailableRangeResponse:
         snapshot = self._snapshot()
-        if snapshot is not None and (strategy_id in {None, "momentum"}):
-            periods = list(snapshot.get("periods", {}).values())
+        snapshot_strategy = self._snapshot_strategy(snapshot, strategy_id)
+        if snapshot_strategy is not None:
+            periods = list(snapshot_strategy.get("periods", {}).values())
             if periods:
                 return BacktestAvailableRangeResponse.model_validate({
                     "minDate": min(period["period"]["startDate"] for period in periods),
@@ -112,8 +113,9 @@ class BacktestService:
 
     def run(self, request: BacktestRunRequest) -> BacktestRunResponse:
         snapshot = self._snapshot()
-        if snapshot is not None and request.strategy_id == "momentum":
-            cached = snapshot.get("periods", {}).get(request.period_id)
+        snapshot_strategy = self._snapshot_strategy(snapshot, request.strategy_id)
+        if snapshot_strategy is not None:
+            cached = snapshot_strategy.get("periods", {}).get(request.period_id)
             if cached is not None:
                 return BacktestRunResponse.model_validate(cached)
         if request.period_id == "custom":
@@ -223,6 +225,20 @@ class BacktestService:
             return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
         except (OSError, json.JSONDecodeError):
             return None
+
+    @staticmethod
+    def _snapshot_strategy(
+        snapshot: dict[str, object] | None, strategy_id: str | None
+    ) -> dict[str, object] | None:
+        if snapshot is None:
+            return None
+        strategies = snapshot.get("strategies")
+        if isinstance(strategies, dict):
+            selected = strategies.get(strategy_id or "momentum")
+            return selected if isinstance(selected, dict) else None
+        if strategy_id in {None, "momentum"} and "periods" in snapshot:
+            return snapshot
+        return None
 
     @staticmethod
     def _price_map(points: list[StockPricePoint]) -> dict[str, dict[date, float]]:

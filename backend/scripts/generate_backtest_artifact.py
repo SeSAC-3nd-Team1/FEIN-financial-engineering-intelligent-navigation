@@ -22,37 +22,38 @@ PRESETS = (
 def main() -> int:
     output = Path(sys.argv[1] if len(sys.argv) > 1 else ".deploy-artifacts/backtest-results.json")
     service = BacktestService(BacktestRepository(SessionLocal()))
-    available = service.available_range("momentum")
-    periods = list(PRESETS)
-    recent_start = date.fromisoformat(available.max_date.isoformat()).replace(
-        year=available.max_date.year - 5
-    )
-    periods.append(("recent-5y", "최근 5년", max(recent_start, available.min_date), available.max_date, "상승과 하락을 포함한 장기적인 성과를 확인해보세요."))
-
-    results: dict[str, dict[str, object]] = {}
+    results_by_strategy: dict[str, dict[str, object]] = {}
     try:
-        for period_id, label, start, end, description in periods:
-            if start < available.min_date or end > available.max_date:
-                print(f"Skipping unavailable preset: {period_id} ({start}..{end})")
-                continue
-            request = BacktestRunRequest.model_validate({
-                "strategyId": "momentum",
-                "periodId": period_id,
-                "periodLabel": label,
-                "periodDescription": description,
-                "startDate": start,
-                "endDate": end,
-            })
-            results[period_id] = service.run(request).model_dump(mode="json", by_alias=True)
-            print(f"Generated preset: {period_id}")
+        for strategy_id in ("momentum", "low"):
+            available = service.available_range(strategy_id)
+            periods = list(PRESETS)
+            recent_start = available.max_date.replace(year=available.max_date.year - 5)
+            periods.append(("recent-5y", "최근 5년", max(recent_start, available.min_date), available.max_date, "상승과 하락을 포함한 장기적인 성과를 확인해보세요."))
+            strategy_results: dict[str, object] = {}
+            for period_id, label, start, end, description in periods:
+                if start < available.min_date or end > available.max_date:
+                    print(f"Skipping unavailable preset: {strategy_id}/{period_id} ({start}..{end})")
+                    continue
+                request = BacktestRunRequest.model_validate({
+                    "strategyId": strategy_id,
+                    "periodId": period_id,
+                    "periodLabel": label,
+                    "periodDescription": description,
+                    "startDate": start,
+                    "endDate": end,
+                })
+                strategy_results[period_id] = service.run(request).model_dump(mode="json", by_alias=True)
+                print(f"Generated preset: {strategy_id}/{period_id}")
+            if strategy_results:
+                results_by_strategy[strategy_id] = {"strategyId": strategy_id, "periods": strategy_results}
     finally:
         service.repository.session.close()
 
-    if not results:
+    if not results_by_strategy:
         raise RuntimeError("No production backtest preset could be generated")
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps({"version": 1, "strategyId": "momentum", "periods": results}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"Wrote {len(results)} precomputed backtest presets to {output}")
+    output.write_text(json.dumps({"version": 2, "strategies": results_by_strategy}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {sum(len(item['periods']) for item in results_by_strategy.values())} precomputed backtest presets to {output}")
     return 0
 
 
