@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from uuid import uuid4
 
-from azure.ai.projects.aio import AIProjectClient
 from azure.identity.aio import DefaultAzureCredential
+from openai import AsyncOpenAI
 
 from agent_orchestration.chatbot_bridge import (
     ChatbotMessage,
@@ -24,6 +25,9 @@ from agent_orchestration.coordinator import AgentOrchestrator
 from agent_orchestration.layers import LayerController
 from app.core.errors import ServiceError
 from app.schemas.chat import ChatAgentResult, ChatHistoryMessage, ChatScreenContext
+
+
+logger = logging.getLogger(__name__)
 
 
 ROLES: tuple[Role, ...] = (
@@ -138,39 +142,48 @@ class FoundryOrchestrationChatAgentClient:
             }
 
         credential = DefaultAzureCredential()
+        openai_client: AsyncOpenAI | None = None
         try:
-            async with AIProjectClient(
-                endpoint=self.project_endpoint,
-                credential=credential,
-            ) as project_client:
-                async with project_client.get_openai_client(max_retries=0) as openai_client:
-                    layers = LayerController()
-                    clients = {
-                        role: FoundrySDKAgentClient(
-                            openai_client,
-                            self.agent_names[role],
-                            layers.profile_for(role),
-                        )
-                        for role in ROLES
-                    }
-                    reply = await MBGChatbotBridge(
-                        _CoordinatorBridgeClient(AgentOrchestrator(clients)), registry
-                    ).handle(
-                        ChatbotMessage(
-                            chatbot_id=self.chatbot_id,
-                            message=message,
-                            request_id=str(uuid4()),
-                            context=self._public_context(context, personal_context),
-                        )
-                    )
-                    if reply.execution_allowed is not False:
-                        raise ServiceError("CHAT_AGENT_POLICY_BLOCKED", "허용되지 않은 실행 요청입니다.", 502)
-                    return self._result(reply.output_text)
+            token = await credential.get_token("https://ai.azure.com/.default")
+            openai_client = AsyncOpenAI(
+                api_key=token.token,
+                base_url=f"{self.project_endpoint.rstrip('/')}/openai/v1",
+                max_retries=0,
+            )
+            layers = LayerController()
+            clients = {
+                role: FoundrySDKAgentClient(
+                    openai_client,
+                    self.agent_names[role],
+                    layers.profile_for(role),
+                )
+                for role in ROLES
+            }
+            reply = await MBGChatbotBridge(
+                _CoordinatorBridgeClient(AgentOrchestrator(clients)), registry
+            ).handle(
+                ChatbotMessage(
+                    chatbot_id=self.chatbot_id,
+                    message=message,
+                    request_id=str(uuid4()),
+                    context=self._public_context(context, personal_context),
+                )
+            )
+            if reply.execution_allowed is not False:
+                raise ServiceError("CHAT_AGENT_POLICY_BLOCKED", "허용되지 않은 실행 요청입니다.", 502)
+            return self._result(reply.output_text)
         except (ChatbotNotRegisteredError, ChatbotDisabledError) as exc:
             raise ServiceError("CHAT_AGENT_CHANNEL_UNAVAILABLE", "물방개 채널을 사용할 수 없습니다.", 503) from exc
         except ServiceError:
             raise
         except Exception as exc:
+            logger.exception(
+                "Foundry chatbot request failed type=%s chatbot_id=%s",
+                type(exc).__name__,
+                self.chatbot_id,
+            )
             raise ServiceError("CHAT_AGENT_UNAVAILABLE", "물방개 AI를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.", 503) from exc
         finally:
+            if openai_client is not None:
+                await openai_client.close()
             await credential.close()
