@@ -14,9 +14,9 @@ permissions:
   id-token: write
 
 concurrency:
-  # Versioned group releases new deployments from stale runs created by the
-  # old self-hosted runner configuration. Newer deploys supersede older ones.
-  group: production-deployment-v2
+  # Keep only one production deployment active and let the newest deploy
+  # replace stale runs from an unavailable runner.
+  group: production-deployment-v3
   cancel-in-progress: true
 
 env:
@@ -46,12 +46,10 @@ env:
 
 jobs:
   deploy:
-    # The push trigger fires only for commits that land on develop. The
-    # concurrency group below also serializes manual retries with deployments.
-    # Use a GitHub-hosted runner so deployment cannot remain queued behind an
-    # unavailable azure-large self-hosted runner. Azure CLI, Python, jq, and
-    # Docker are available on ubuntu-latest.
-    runs-on: ubuntu-latest
+    # Run on the Azure VM's self-hosted runner. This avoids GitHub-hosted
+    # Actions billing and provides the memory required by artifact generation.
+    # The runner must be online and carry all four labels below.
+    runs-on: [self-hosted, Linux, X64, azure-large]
     timeout-minutes: 60
     environment:
       name: production
