@@ -33,6 +33,12 @@ class FakeSession:
     def add(self, _value) -> None:
         pass
 
+    def delete(self, _value) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
     def commit(self) -> None:
         self.commits += 1
 
