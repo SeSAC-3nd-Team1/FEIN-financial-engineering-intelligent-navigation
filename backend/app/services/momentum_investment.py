@@ -158,10 +158,11 @@ class MomentumInvestmentService:
         )
 
     def rebalance(self, user_id: int, account_id) -> ModelRecommendationApplyResponse:
-        """Apply a generated v2 quarter target to an existing AUTO account.
+        """Apply a generated v2 quarter target after explicit user approval.
 
-        This intentionally remains an internal service operation: scheduling is
-        outside the request path, and no external brokerage order is involved.
+        Onboarding remains proposal-only for semi-auto accounts, but this
+        endpoint is an explicit user action. Scheduling is outside the request
+        path, and no external brokerage order is involved.
         Each leg has a stable snapshot/account/symbol/side key, so a retry after
         a partial run only submits missing legs.
         """
@@ -196,9 +197,6 @@ class MomentumInvestmentService:
             or sum(targets.values(), Decimal("0")) != Decimal("0.95")
         ):
             raise ServiceError("INVALID_STRATEGY_TARGET_WEIGHTS", "v2 목표 주식 비중 합계는 0.95여야 합니다.", 503)
-        if account.operation_mode != "AUTO":
-            self._publish_targets(snapshot.as_of, targets)
-            return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")
         # Publishing is deliberately outside the critical section. Re-acquire
         # the account lock immediately before creating/reading the run and
         # keep that transaction open through plan persistence.

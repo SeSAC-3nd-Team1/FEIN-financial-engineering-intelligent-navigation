@@ -151,7 +151,12 @@ class LossAvoidanceInvestmentService:
         )
 
     def rebalance(self, user_id: int, account_id) -> ModelRecommendationApplyResponse:
-        """최신 fix2 목표와 현재 보유분의 차이를 매도 후 매수로 조정한다."""
+        """사용자가 승인한 최신 fix2 목표를 매도 후 매수로 조정한다.
+
+        ``apply`` is used during onboarding and remains proposal-only for a
+        semi-auto account. ``rebalance`` is an explicit user action, so it
+        executes for both operation modes.
+        """
 
         account = self.repo.owned_account(account_id, user_id, lock=True)
         if account is None:
@@ -168,8 +173,6 @@ class LossAvoidanceInvestmentService:
         validate_target_weights(targets, allow_cash_buffer=True)
 
         self._publish_targets(snapshot.as_of, targets)
-        if account.operation_mode != "AUTO":
-            return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")
 
         positions = self.repo.positions(account.id)
         prices: dict[str, Decimal] = {}

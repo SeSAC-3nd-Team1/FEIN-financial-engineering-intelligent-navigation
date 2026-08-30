@@ -24,8 +24,11 @@ class FakeSession:
 
     def scalars(self, _query):
         self.scalars_calls += 1
-        # 첫 조회는 같은 기준일의 목표 비중, 두 번째 조회는 현재 스냅샷 주문 키다.
-        return [] if self.scalars_calls == 1 else self.existing_order_keys
+        # apply() checks existing snapshot orders before publishing targets.
+        # Rebalance() only needs the target query, so keep that path empty.
+        if self.existing_order_keys and self.scalars_calls == 1:
+            return self.existing_order_keys
+        return []
 
     def add_all(self, values) -> None:
         self.targets.extend(values)
