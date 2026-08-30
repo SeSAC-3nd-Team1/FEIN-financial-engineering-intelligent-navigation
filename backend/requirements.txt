@@ -15,3 +15,4 @@ numpy==2.3.3
 pandas==2.3.2
 exchange-calendars==4.11.1
 azure-identity>=1.25,<2
+azure-ai-projects==2.5.0
