@@ -297,8 +297,10 @@ class BacktestService:
         """Run quarterly v2 targets with drift, using the AI factor source of truth.
 
         Targets are decided with rows through the decision close and become active
-        on the next available benchmark trading day.  Unsafe/missing observations
-        fail closed instead of inventing a return.
+        on the next available benchmark trading day. Missing observations and
+        unsafe corporate-action rows carry the holding value forward for that
+        day; the simulation never invents a price return or aborts the whole
+        report because one listed stock was suspended.
         """
         model = RiskAdjustedMomentumModel()
         features = BacktestService._build_v2_features(points, model)
@@ -311,6 +313,14 @@ class BacktestService:
         # every historical feature row.
         price_matrix.columns = price_matrix.columns.map(str)
         safe_matrix.columns = safe_matrix.columns.map(str)
+        # A suspended/delisted stock may have no row on a benchmark trading
+        # date. Forward-filling only the already observed adjusted close lets
+        # the next real observation capture the full move, while the missing
+        # day itself contributes a flat return. This matches the legacy
+        # simulator's suspension handling and keeps one bad row from making
+        # every preset unavailable.
+        observed_price_matrix = price_matrix
+        price_matrix = price_matrix.ffill()
         ordered_dates = [pd.Timestamp(day) for day in dates]
         values = [1.0]
         # The initial decision is made at the requested start close; its target
@@ -349,9 +359,23 @@ class BacktestService:
                     safe = safe_matrix.loc[trade_date, symbols]
                 except KeyError as exc:
                     raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "보유 종목 가격 관측치가 없습니다.") from exc
-                if current.isna().any() or previous.isna().any() or not safe.eq(True).all():
-                    raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "기업행위 또는 결측 가격으로 v2 백테스트를 중단했습니다.")
-                closing = {symbol: weight * float(current[symbol] / previous[symbol]) for symbol, weight in weights.items()}
+                closing = {}
+                for symbol, weight in weights.items():
+                    current_price = current[symbol]
+                    previous_price = previous[symbol]
+                    observed_price = observed_price_matrix.loc[trade_date, symbol]
+                    # No observed history yet: keep the position unchanged.
+                    # An unsafe event is deliberately flat for the event day;
+                    # the following observed close starts a new return period.
+                    if (
+                        pd.isna(current_price)
+                        or pd.isna(previous_price)
+                        or pd.isna(observed_price)
+                        or not bool(safe.get(symbol, False))
+                    ):
+                        closing[symbol] = weight
+                    else:
+                        closing[symbol] = weight * float(current_price / previous_price)
                 total = (1.0 - sum(weights.values())) + sum(closing.values())
                 if total <= 0 or not math.isfinite(total):
                     raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 포트폴리오 가치가 유효하지 않습니다.")
