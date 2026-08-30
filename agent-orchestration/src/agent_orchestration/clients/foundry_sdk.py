@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 from azure.core.exceptions import ClientAuthenticationError, HttpResponseError
@@ -10,6 +11,9 @@ from pydantic import ValidationError
 
 from agent_orchestration.contracts import AgentReport, AgentRequest, extract_json_object
 from agent_orchestration.layers import AgentLayerProfile
+
+
+logger = logging.getLogger(__name__)
 
 
 class FoundrySDKAgentError(RuntimeError):
@@ -77,7 +81,13 @@ class FoundrySDKAgentClient:
                 return await asyncio.wait_for(
                     self._once(request, idempotency_key), timeout=timeout_seconds
                 )
-            except (AuthenticationError, ClientAuthenticationError, ValidationError):
+            except (AuthenticationError, ClientAuthenticationError, ValidationError) as exc:
+                logger.warning(
+                    "Foundry agent request rejected agent=%s error_type=%s status_code=%s",
+                    self._agent_name,
+                    type(exc).__name__,
+                    getattr(exc, "status_code", None),
+                )
                 raise FoundrySDKAgentError("agent authentication or schema validation failed") from None
             except (
                 APIConnectionError,
@@ -87,9 +97,14 @@ class FoundrySDKAgentClient:
                 TimeoutError,
                 ConnectionError,
                 FoundrySDKAgentError,
-                        ):
+            ) as exc:
                 if attempt + 1 >= attempts:
-
+                    logger.warning(
+                        "Foundry agent request failed agent=%s error_type=%s status_code=%s",
+                        self._agent_name,
+                        type(exc).__name__,
+                        getattr(exc, "status_code", None),
+                    )
                     raise FoundrySDKAgentError("agent request failed") from None
                 await asyncio.sleep(min(0.25 * (2 ** attempt), 2.0))
 
