@@ -447,7 +447,7 @@ jobs:
         run: |
           az acr run \
             --registry "${ACR_NAME}" \
-            --cmd "\$Registry/fein-backend:${IMAGE_TAG} python -c \"from app.trading_engine.model_loader_fix1 import load_model_module_fix1; module = load_model_module_fix1(); assert module.MODEL_VERSION == 'fincon-ver23-v1-fix1'\"" \
+            --cmd "\$Registry/fein-backend:${IMAGE_TAG} env DATABASE_URL=postgresql://artifact-check:artifact-check@127.0.0.1:5432/artifact_check python -c \"from app.trading_engine.model_loader_fix1 import load_model_module_fix1; module = load_model_module_fix1(); assert module.MODEL_VERSION == 'fincon-ver23-v1-fix1'\"" \
             /dev/null
 
       - name: Deploy frontend Container App
