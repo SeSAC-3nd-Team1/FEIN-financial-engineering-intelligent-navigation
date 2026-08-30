@@ -22,7 +22,9 @@ jobs:
     # Keep backend integration tests on the existing Azure runner. The runner
     # provides Docker for PostgreSQL, Redis, and the production image build.
     runs-on: [self-hosted, Linux, X64, azure-large]
-    timeout-minutes: 15
+    # The full integration suite plus production image build can exceed 15
+    # minutes on the self-hosted runner.
+    timeout-minutes: 30
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/sesac
       REDIS_URL: redis://localhost:6379/0

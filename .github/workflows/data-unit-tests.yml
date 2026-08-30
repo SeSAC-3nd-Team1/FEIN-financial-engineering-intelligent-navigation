@@ -18,7 +18,9 @@ jobs:
     # Use the existing Azure VM runner so CI is not blocked by GitHub-hosted
     # runner billing limits. It has Docker for the PostgreSQL service below.
     runs-on: [self-hosted, Linux, X64, azure-large]
-    timeout-minutes: 15
+    # The migration-backed test suite can legitimately exceed 15 minutes on
+    # the self-hosted runner while PostgreSQL is being initialized.
+    timeout-minutes: 30
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/sesac
     services:
