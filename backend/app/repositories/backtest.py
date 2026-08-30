@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal
 import re
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, over, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -180,6 +180,36 @@ class BacktestRepository:
             )
             .distinct()
             .order_by(MarketStockPrice.stock_code)
+        ))
+
+    def momentum_decision_stock_codes(self, decision_dates: list[date], *, limit: int = 100) -> list[str]:
+        """Return the historical candidates that can enter a v2 decision universe.
+
+        The v2 ranker keeps only the largest ``limit`` stocks by market cap on
+        each decision date. Loading every listed symbol's full warm-up history
+        is therefore redundant and can make a production request exceed the
+        Container App timeout. The window function preserves the exact
+        point-in-time universe rule before feature calculation.
+        """
+        if not decision_dates:
+            return []
+        ranked = select(
+            MarketStockPrice.stock_code,
+            over(
+                func.row_number(),
+                partition_by=MarketStockPrice.trade_date,
+                order_by=(MarketStockPrice.market_cap.desc(), MarketStockPrice.stock_code),
+            ).label("market_cap_rank"),
+        ).where(
+            MarketStockPrice.trade_date.in_(decision_dates),
+            MarketStockPrice.market_cap.is_not(None),
+            MarketStockPrice.market_cap > 0,
+        ).subquery()
+        return list(self.session.scalars(
+            select(ranked.c.stock_code)
+            .where(ranked.c.market_cap_rank <= limit)
+            .distinct()
+            .order_by(ranked.c.stock_code)
         ))
 
     def stock_prices(self, stock_codes: list[str], start_date: date, end_date: date) -> list[StockPricePoint]:
