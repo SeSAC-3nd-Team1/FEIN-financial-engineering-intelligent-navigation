@@ -107,6 +107,7 @@ def service(
         selected_strategy_id="momentum",
         operation_mode=operation_mode,
         initial_cash=Decimal("10000000"),
+        invested_principal=Decimal("10000000"),
         cash_balance=Decimal("10000000"),
     )
     session = FakeSession(
@@ -133,6 +134,16 @@ def test_auto_account_publishes_targets_and_executes_initial_orders() -> None:
     assert {target.stock_code for target in session.targets} == {f"{index:06d}" for index in range(19)}
     assert sum((target.target_weight for target in session.targets), Decimal("0")) == Decimal("0.950")
     assert [request.quantity for _, request in trading.requests] == [Decimal("500.00000000")] * 19
+
+
+def test_initial_orders_use_invested_principal_not_stale_initial_cash() -> None:
+    momentum, _, trading = service()
+    momentum.repo.account.initial_cash = Decimal("100000000")  # type: ignore[attr-defined]
+    momentum.repo.account.invested_principal = Decimal("1000000")  # type: ignore[attr-defined]
+
+    momentum.apply(7, momentum.repo.account.id)  # type: ignore[attr-defined]
+
+    assert [request.quantity for _, request in trading.requests] == [Decimal("50.00000000")] * 19
 
 
 def test_apply_does_not_restore_a_strategy_changed_after_momentum_onboarding() -> None:
