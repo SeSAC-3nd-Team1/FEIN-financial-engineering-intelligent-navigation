@@ -38,11 +38,5 @@ logs/
 *.db
 data/raw/
 data/processed/
-data/exports/
-.ipynb_checkpoints/
-ai/checkpoints/
-ai/artifacts/
-*.pkl
-*.joblib
 cache/
 .cache/
