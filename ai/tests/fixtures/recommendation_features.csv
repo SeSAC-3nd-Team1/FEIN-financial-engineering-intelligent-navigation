@@ -1,0 +1,5 @@
+trade_date,stock_code,stock_name,market_cap,momentum_120d,is_tradable,risk_eligible
+2026-08-26,005930,삼성전자,500000000000000,0.82,true,true
+2026-08-26,000660,SK하이닉스,200000000000000,0.76,true,true
+2026-08-26,035420,NAVER,40000000000000,0.71,true,true
+2026-08-26,035720,카카오,25000000000000,0.67,true,true

@@ -6,6 +6,7 @@ services:
       context: ./frontend
     environment:
       VITE_API_PROXY_TARGET: http://backend:8000
+      VITE_USE_MOCK_BACKTEST: ${VITE_USE_MOCK_BACKTEST:-false}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     volumes:
@@ -24,22 +25,99 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app@postgres:5432/app}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
+      AZURE_OPENAI_BACKTEST_EXPLANATION_DEPLOYMENT: ${AZURE_OPENAI_BACKTEST_EXPLANATION_DEPLOYMENT:-${AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT:-}}
+      AI_BACKTEST_EXPLANATION_TIMEOUT_SECONDS: ${AI_BACKTEST_EXPLANATION_TIMEOUT_SECONDS:-15}
+      AI_PROFILE_TIMEOUT_SECONDS: ${AI_PROFILE_TIMEOUT_SECONDS:-15}
+      AI_PROFILE_MODEL_VERSION: ${AI_PROFILE_MODEL_VERSION:-investor-profile-v1}
+      AI_PROFILE_PROMPT_VERSION: ${AI_PROFILE_PROMPT_VERSION:-v1}
+      AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT:-}
+      AI_RECOMMENDATION_TIMEOUT_SECONDS: ${AI_RECOMMENDATION_TIMEOUT_SECONDS:-15}
+      AI_RECOMMENDATION_MODEL_VERSION: ${AI_RECOMMENDATION_MODEL_VERSION:-strategy-recommender-v1}
+      AI_RECOMMENDATION_PROMPT_VERSION: ${AI_RECOMMENDATION_PROMPT_VERSION:-v1}
+      AI_RECOMMENDATION_DATASET_VERSION: ${AI_RECOMMENDATION_DATASET_VERSION:-financial-8y-v1}
+      AZURE_OPENAI_REBALANCING_DEPLOYMENT: ${AZURE_OPENAI_REBALANCING_DEPLOYMENT:-}
+      AI_REBALANCING_TIMEOUT_SECONDS: ${AI_REBALANCING_TIMEOUT_SECONDS:-15}
+      AI_REBALANCING_MODEL_VERSION: ${AI_REBALANCING_MODEL_VERSION:-rebalancing-v1}
+      AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${AZURE_OPENAI_COMPARISON_DEPLOYMENT:-}
+      AI_COMPARISON_TIMEOUT_SECONDS: ${AI_COMPARISON_TIMEOUT_SECONDS:-15}
+      AI_COMPARISON_MODEL_VERSION: ${AI_COMPARISON_MODEL_VERSION:-portfolio-comparison-v1}
+      AZURE_OPENAI_CHATBOT_ENDPOINT: ${AZURE_OPENAI_CHATBOT_ENDPOINT:-}
+      AZURE_OPENAI_CHATBOT_API_KEY: ${AZURE_OPENAI_CHATBOT_API_KEY:-}
+      AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${AZURE_OPENAI_CHATBOT_DEPLOYMENT:-}
+      AZURE_OPENAI_CHATBOT_API_VERSION: ${AZURE_OPENAI_CHATBOT_API_VERSION:-2024-10-21}
+      AI_CHATBOT_PROVIDER: ${AI_CHATBOT_PROVIDER:-foundry_orchestration}
+      FOUNDRY_PROJECT_ENDPOINT: ${FOUNDRY_PROJECT_ENDPOINT:-https://fein-agent.services.ai.azure.com/api/projects/proj-default}
+      FEIN_CHATBOT_ID: ${FEIN_CHATBOT_ID:-fein-web-chatbot}
+      CHATBOT_REGISTRY_JSON: ${CHATBOT_REGISTRY_JSON:-{"chatbots":[{"chatbot_id":"fein-web-chatbot","display_name":"FE!N Web Chatbot","provider":"foundry","source_agent_name":"MBGCoordinator","enabled":true,"allowed_context_keys":["screen","stock_code","strategy_id","verified_personal_summary"],"max_input_chars":4000,"max_response_chars":8000,"timeout_seconds":120}]}}
+      AI_CHATBOT_TIMEOUT_SECONDS: ${AI_CHATBOT_TIMEOUT_SECONDS:-120}
+      AI_CHATBOT_MODEL_VERSION: ${AI_CHATBOT_MODEL_VERSION:-chatbot-v1}
+      AI_CHATBOT_PROMPT_VERSION: ${AI_CHATBOT_PROMPT_VERSION:-v1}
+      AI_CHATBOT_RATE_LIMIT_PER_MINUTE: ${AI_CHATBOT_RATE_LIMIT_PER_MINUTE:-30}
+      AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS: ${AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS:-60}
+      FINCON_VER23_MODEL_PATH: ${FINCON_VER23_MODEL_PATH:-/models/fincon_ver23_model_fix1.py}
+      MBG_COORDINATOR_ENDPOINT: ${MBG_COORDINATOR_ENDPOINT:-https://fein-agent.services.ai.azure.com/api/projects/proj-default/agents/MBGCoordinator/endpoint/protocols/openai/responses}
+      MBG_COORDINATOR_AGENT_NAME: ${MBG_COORDINATOR_AGENT_NAME:-MBGCoordinator}
+      FINANCIAL_REPORT_AGENT_NAME: ${FINANCIAL_REPORT_AGENT_NAME:-FinancialReport}
+      NEWS_AGENT_NAME: ${NEWS_AGENT_NAME:-News}
+      MARKET_RESEARCH_AGENT_NAME: ${MARKET_RESEARCH_AGENT_NAME:-MarketResearch}
+      MACRO_AGENT_NAME: ${MACRO_AGENT_NAME:-Macro}
+      ASSET_MANAGER_AGENT_NAME: ${ASSET_MANAGER_AGENT_NAME:-AssetManager}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
+      LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
+      LOSS_AVOIDANCE_MODEL_PATH: ${LOSS_AVOIDANCE_MODEL_PATH:-/models/Algorithm(ver.2.4)_fix2.py}
+      MODEL_RECOMMENDATION_ALLOW_FALLBACK: ${MODEL_RECOMMENDATION_ALLOW_FALLBACK:-true}
+      MODEL_RECOMMENDATION_STALE_AFTER_DAYS: ${MODEL_RECOMMENDATION_STALE_AFTER_DAYS:-7}
+      STRATEGY_CATALOG_VERSION: ${STRATEGY_CATALOG_VERSION:-v2}
       KIS_APP_KEY: ${KIS_APP_KEY:-}
       KIS_APP_SECRET: ${KIS_APP_SECRET:-}
+      KIS_BASE_URL: ${KIS_BASE_URL:-https://openapi.koreainvestment.com:9443}
+      KIS_WEBSOCKET_URL: ${KIS_WEBSOCKET_URL:-ws://ops.koreainvestment.com:21000}
+      KIS_TIMEOUT_SECONDS: ${KIS_TIMEOUT_SECONDS:-3}
+      KIS_REST_PAGE_INTERVAL_SECONDS: ${KIS_REST_PAGE_INTERVAL_SECONDS:-0.5}
+      PRICE_CACHE_TTL_SECONDS: ${PRICE_CACHE_TTL_SECONDS:-5}
+      MINUTE_CANDLE_CACHE_TTL_SECONDS: ${MINUTE_CANDLE_CACHE_TTL_SECONDS:-15}
+      REALTIME_PRICE_CACHE_TTL_SECONDS: ${REALTIME_PRICE_CACHE_TTL_SECONDS:-30}
+      REALTIME_PRICE_STALE_SECONDS: ${REALTIME_PRICE_STALE_SECONDS:-10}
+      KIS_REALTIME_RECONNECT_MAX_SECONDS: ${KIS_REALTIME_RECONNECT_MAX_SECONDS:-30}
+      KIS_REALTIME_CLIENT_QUEUE_SIZE: ${KIS_REALTIME_CLIENT_QUEUE_SIZE:-100}
+      KIS_REALTIME_MAX_SYMBOLS_PER_CLIENT: ${KIS_REALTIME_MAX_SYMBOLS_PER_CLIENT:-20}
+      NAVER_API_HUB_CLIENT_ID: ${NAVER_API_HUB_CLIENT_ID:-}
+      NAVER_API_HUB_CLIENT_SECRET: ${NAVER_API_HUB_CLIENT_SECRET:-}
+      NAVER_NEWS_BASE_URL: ${NAVER_NEWS_BASE_URL:-https://naverapihub.apigw.ntruss.com}
+      NEWS_SEARCH_QUERY: ${NEWS_SEARCH_QUERY:-증시}
+      NEWS_CACHE_TTL_SECONDS: ${NEWS_CACHE_TTL_SECONDS:-300}
+      NEWS_REQUEST_TIMEOUT_SECONDS: ${NEWS_REQUEST_TIMEOUT_SECONDS:-5}
+      JWT_SECRET: ${JWT_SECRET:-local-development-only-change-me}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-60}
+      ACS_EMAIL_CONNECTION_STRING: ${ACS_EMAIL_CONNECTION_STRING:-}
+      ACS_EMAIL_SENDER_ADDRESS: ${ACS_EMAIL_SENDER_ADDRESS:-}
+      EMAIL_OTP_SECRET: ${EMAIL_OTP_SECRET:-}
+      EMAIL_OTP_TTL_SECONDS: ${EMAIL_OTP_TTL_SECONDS:-300}
+      EMAIL_OTP_MAX_ATTEMPTS: ${EMAIL_OTP_MAX_ATTEMPTS:-5}
+      EMAIL_OTP_RESEND_SECONDS: ${EMAIL_OTP_RESEND_SECONDS:-60}
+      EMAIL_OTP_HOURLY_LIMIT: ${EMAIL_OTP_HOURLY_LIMIT:-5}
+      EMAIL_OTP_IP_HOURLY_LIMIT: ${EMAIL_OTP_IP_HOURLY_LIMIT:-20}
+      EMAIL_VERIFICATION_TOKEN_TTL_SECONDS: ${EMAIL_VERIFICATION_TOKEN_TTL_SECONDS:-1800}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       WATCHFILES_FORCE_POLLING: "true"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+      - ./shared:/workspace/shared:ro
+      - ./output:/models:ro
+      - model_recommendation_artifacts:/model-artifacts:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -56,23 +134,174 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  postgres:
-    image: postgres:17-alpine
+  db-init:
+    build:
+      context: ./data
+      dockerfile: Dockerfile.db-init
+    profiles:
+      - migration
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-app}
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      SIGNUP_TERMS_VERSION: ${SIGNUP_TERMS_VERSION:-dev-20260823}
+      SIGNUP_TERMS_EFFECTIVE_AT: ${SIGNUP_TERMS_EFFECTIVE_AT:-2026-08-23T00:00:00+09:00}
+      SIGNUP_TERMS_CONTENT_BASE_URL: ${SIGNUP_TERMS_CONTENT_BASE_URL:-}
+      INVESTMENT_TERMS_VERSION: ${INVESTMENT_TERMS_VERSION:-dev-20260824}
+      INVESTMENT_TERMS_EFFECTIVE_AT: ${INVESTMENT_TERMS_EFFECTIVE_AT:-2026-08-24T00:00:00+09:00}
+      INVESTMENT_TERMS_CONTENT_BASE_URL: ${INVESTMENT_TERMS_CONTENT_BASE_URL:-}
+      DB_INIT_MAX_ATTEMPTS: ${DB_INIT_MAX_ATTEMPTS:-30}
+      DB_INIT_RETRY_SECONDS: ${DB_INIT_RETRY_SECONDS:-2}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-    restart: unless-stopped
+      - ./data:/app
+      - ./shared:/workspace/shared:ro
+    command: ["python", "-m", "scripts.init_local_db"]
+    restart: "no"
+
+  data:
+    build:
+      context: .
+      dockerfile: data/Dockerfile
+    profiles:
+      - data
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PYTHONPATH: /app:/workspace
+      DATA_GO_KR_API_KEY: ${DATA_GO_KR_API_KEY:-}
+      KRX_AUTH_KEY: ${KRX_AUTH_KEY:-}
+      KRX_BASE_URL: ${KRX_BASE_URL:-https://data-dbg.krx.co.kr/svc/apis}
+      KRX_TIMEOUT_SECONDS: ${KRX_TIMEOUT_SECONDS:-10}
+      KRX_MAX_CONCURRENCY: ${KRX_MAX_CONCURRENCY:-4}
+      OPENDART_API_KEY: ${OPENDART_API_KEY:-}
+      OPENDART_TIMEOUT_SECONDS: ${OPENDART_TIMEOUT_SECONDS:-10}
+      OPENDART_MAX_CONCURRENCY: ${OPENDART_MAX_CONCURRENCY:-1}
+      OPENDART_MIN_INTERVAL_SECONDS: ${OPENDART_MIN_INTERVAL_SECONDS:-0.25}
+      ECOS_API_KEY: ${ECOS_API_KEY:-}
+      ECOS_TIMEOUT_SECONDS: ${ECOS_TIMEOUT_SECONDS:-10}
+      ECOS_MAX_CONCURRENCY: ${ECOS_MAX_CONCURRENCY:-2}
+      AZURE_CONFIG_DIR: /root/.azure
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_CONTAINER_RAW: ${AZURE_STORAGE_CONTAINER_RAW:-raw}
+      AZURE_STORAGE_CONTAINER_PROCESSED: ${AZURE_STORAGE_CONTAINER_PROCESSED:-processed}
+      AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
+      BLOB_UPLOAD_MAX_CONCURRENCY: ${BLOB_UPLOAD_MAX_CONCURRENCY:-4}
+      MODEL_RAW_CHECKPOINT_EVERY: ${MODEL_RAW_CHECKPOINT_EVERY:-5}
+    volumes:
+      - ./data:/app
+      - ./shared:/workspace/shared:ro
+      - azure_cli_data:/root/.azure
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["sleep", "infinity"]
+
+  ai:
+    build:
+      context: ./ai
+    profiles:
+      - ai
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PYTHONPATH: /app:/workspace
+      AZURE_CONFIG_DIR: /root/.azure
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
+      LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
+      ALGORITHM_V24_PATH: /algorithm-output/Algorithm(ver.2.4)_fix2.py
+    volumes:
+      - ./ai:/app
+      - ./shared:/workspace/shared:ro
+      - ./output:/algorithm-output:ro
+      - model_recommendation_artifacts:/model-artifacts
+      - azure_cli_data:/root/.azure
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["sleep", "infinity"]
+
+  recommendation-generator:
+    build:
+      context: ./ai
+    profiles:
+      - ai
+    environment:
+      PYTHONPATH: /app
+      AZURE_CONFIG_DIR: /root/.azure
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
+      RISK_ADJUSTED_MOMENTUM_V2_OUTPUT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
+    volumes:
+      - ./ai:/app
+      - model_recommendation_artifacts:/model-artifacts
+      - azure_cli_data:/root/.azure
+    command:
+      - python
+      - -m
+      - inference.generate_risk_adjusted_momentum
+      - --model-version
+      - ${MODEL_FEATURE_VERSION:-2}
+      - --algorithm-version
+      - ${ALGORITHM_FEATURE_VERSION:-2}
+      - --master-version
+      - ${SECURITY_MASTER_FEATURE_VERSION:-1}
+    restart: "no"
+
+  loss-avoidance-generator:
+    build:
+      context: ./ai
+    profiles:
+      - ai
+    environment:
+      PYTHONPATH: /app
+      AZURE_CONFIG_DIR: /root/.azure
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
+      LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
+      ALGORITHM_V24_PATH: /algorithm-output/Algorithm(ver.2.4)_fix2.py
+    volumes:
+      - ./ai:/app
+      - ./output:/algorithm-output:ro
+      - model_recommendation_artifacts:/model-artifacts
+      - azure_cli_data:/root/.azure
+    command:
+      - python
+      - -m
+      - inference.generate_loss_avoidance_snapshot
+      - --algorithm-version
+      - ${ALGORITHM_FEATURE_VERSION:-2}
+      - --top-n
+      - ${LOSS_AVOIDANCE_TOP_N:-5}
+      - --universe-size
+      - ${LOSS_AVOIDANCE_UNIVERSE_SIZE:-20}
+    restart: "no"
+
+  loss-avoidance-rebalancer:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    profiles:
+      - ops
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
+      KIS_APP_KEY: ${KIS_APP_KEY:-}
+      KIS_APP_SECRET: ${KIS_APP_SECRET:-}
+      KIS_BASE_URL: ${KIS_BASE_URL:-https://openapi.koreainvestment.com:9443}
+      PYTHONPATH: /app:/ai:/workspace
+    volumes:
+      - model_recommendation_artifacts:/model-artifacts:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "scripts.run_loss_avoidance_rebalance"]
+    restart: "no"
 
   redis:
     image: redis:8-alpine
@@ -91,5 +320,6 @@ services:
 
 volumes:
   frontend_node_modules:
-  postgres_data:
   redis_data:
+  azure_cli_data:
+  model_recommendation_artifacts:

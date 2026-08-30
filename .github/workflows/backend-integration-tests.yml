@@ -1,0 +1,115 @@
+name: Backend Integration Tests
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "ai/**"
+      - "shared/**"
+      - "frontend/**"
+      - "data/db/**"
+      - "data/scripts/init_local_db.py"
+      - "data/scripts/seed_signup_terms.py"
+      - "compose.yaml"
+      - ".github/workflows/backend-integration-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Keep backend integration tests on the existing Azure runner. The runner
+    # provides Docker for PostgreSQL, Redis, and the production image build.
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/sesac
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-only-integration-secret
+      RUN_INTEGRATION: "1"
+      SIGNUP_TERMS_VERSION: ci-e2e
+      SIGNUP_TERMS_EFFECTIVE_AT: "2026-08-23T00:00:00+00:00"
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: sesac
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sesac"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            data/requirements.txt
+            data/requirements-db-init.txt
+            agent-orchestration/pyproject.toml
+
+      - name: Install dependencies
+
+        run: |
+          python -m pip install -r data/requirements.txt -r backend/requirements.txt
+          python -m pip install -e 'agent-orchestration[test]'
+
+      - name: Initialize schema and seed test terms twice
+        working-directory: data
+        run: |
+          python -m scripts.init_local_db
+          python -m scripts.init_local_db
+          alembic check
+
+      - name: Run Backend unit and E2E tests
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
+        run: pytest -q
+
+      - name: Run Live and Backend v2 target parity test
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
+        run: pytest ../ai/tests/test_live_backtest_target_parity.py -q
+
+      - name: Build production Backend image
+        run: docker build -f backend/Dockerfile.prod -t fein-backend-ci .
+
+      - name: Verify production Backend command has no reload
+        run: |
+          test "$(docker inspect --format '{{json .Config.Cmd}}' fein-backend-ci)" = '["uvicorn","app.main:app","--host","0.0.0.0","--port","8000"]'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build Frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build

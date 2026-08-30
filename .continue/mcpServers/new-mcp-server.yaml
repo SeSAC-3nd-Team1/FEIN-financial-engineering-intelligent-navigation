@@ -1,0 +1,27 @@
+name: New MCP server
+version: 0.0.1
+schema: v1
+
+mcpServers:
+  - name: GitHub
+    type: stdio
+    command: docker
+    args:
+      - run
+      - -i
+      - --rm
+      - -e
+      - GITHUB_PERSONAL_ACCESS_TOKEN
+      - ghcr.io/github/github-mcp-server
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${{ secrets.GITHUB_PERSONAL_ACCESS_TOKEN }}
+
+  - name: Notion
+    type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "mcp-remote@latest"
+      - "https://mcp.notion.com/mcp"
+      - "--transport"
+      - "http-only"

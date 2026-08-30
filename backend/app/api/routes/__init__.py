@@ -1,0 +1,33 @@
+from app.api.routes import (
+    accounts,
+    auth,
+    car_goal,
+    chat,
+    companies,
+    information,
+    investment,
+    market,
+    model_recommendations,
+    orders,
+    portfolio,
+    strategies,
+    strategy_recommendations,
+    trading_engine_fix1,
+)
+
+__all__ = [
+    "accounts",
+    "auth",
+    "car_goal",
+    "chat",
+    "companies",
+    "information",
+    "investment",
+    "market",
+    "model_recommendations",
+    "orders",
+    "portfolio",
+    "strategies",
+    "strategy_recommendations",
+    "trading_engine_fix1",
+]
