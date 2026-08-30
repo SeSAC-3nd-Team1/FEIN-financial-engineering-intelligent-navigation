@@ -1,6 +1,7 @@
 """가상 체결의 금액·수량·원장 원자성을 검증한다."""
 
 from contextlib import nullcontext
+from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
@@ -57,6 +58,12 @@ class FakeRepo:
 
     def position(self, *_args, **_kwargs):
         return self.current_position
+
+    class _MarketData:
+        def latest_price(self, _stock_code):
+            return None
+
+    market_data = _MarketData()
 
 
 def account(cash: str = "1000000") -> VirtualAccount:
@@ -173,3 +180,30 @@ def test_idempotent_retry_returns_existing_order_without_market_lookup() -> None
     svc.repo = FakeRepo(acc, existing_order=existing)
 
     assert svc.execute_market_order(1, payload) is existing
+
+
+def test_buy_uses_latest_krx_close_when_live_price_is_unavailable() -> None:
+    acc = account()
+    payload = request("BUY", 1)
+
+    class FailingMarket:
+        def get_price(self, _stock_code):
+            raise ServiceError("KIS_UNAVAILABLE", "현재 시장가격을 조회하지 못했습니다.", 503)
+
+    class LatestClose:
+        close_price = Decimal("70000")
+        trade_date = date(2026, 8, 28)
+
+    class MarketDataFallback:
+        def latest_price(self, _stock_code):
+            return LatestClose()
+
+    session = FakeSession()
+    svc = TradingService(session, FailingMarket())
+    svc.repo = FakeRepo(acc)
+    svc.market_repo = MarketDataFallback()
+
+    order = svc.execute_market_order(1, payload)
+
+    assert order.requested_price == Decimal("70000")
+    assert acc.cash_balance == Decimal("930000")
