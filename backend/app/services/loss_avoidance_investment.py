@@ -1,4 +1,4 @@
-"""Apply an Algorithm(ver.2.3) snapshot to the loss-avoidance strategy."""
+"""Apply an Algorithm(ver.2.4) snapshot to the loss-avoidance strategy."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def loss_avoidance_snapshot_service() -> ModelRecommendationService:
 
 
 class LossAvoidanceInvestmentService:
-    """Publish and execute only targets produced by Algorithm(ver.2.3)."""
+    """Publish and execute only targets produced by Algorithm(ver.2.4)."""
 
     strategy_id = "low"
 
@@ -58,14 +58,17 @@ class LossAvoidanceInvestmentService:
             )
 
         snapshot = self.snapshot_service.latest()
+        # 가입 시점에는 장 마감 후/주말에도 마지막으로 생성된 실제 모델
+        # 스냅샷을 포트폴리오에 등록할 수 있어야 한다. stale은 신규 계좌의
+        # 목표 등록을 막는 플래그가 아니라, 아래 rebalance에서 실시간 운용을
+        # 막는 안전장치로 사용한다.
         if (
             snapshot.source != "generated"
-            or snapshot.is_stale
-            or snapshot.model_version != "algorithm-v2.3"
+            or snapshot.model_version != "algorithm-v2.4-fix2"
         ):
             raise ServiceError(
                 "LOSS_AVOIDANCE_SNAPSHOT_NOT_APPLICABLE",
-                "최신 Algorithm(ver.2.3) 결과가 없어 포트폴리오에 적용할 수 없습니다.",
+                "Algorithm(ver.2.4)_fix2 결과가 없어 포트폴리오에 적용할 수 없습니다.",
                 409,
             )
         target_weights = {
@@ -88,7 +91,7 @@ class LossAvoidanceInvestmentService:
             )
 
         order_keys = {
-            stock_code: f"algorithm-v2.3-{snapshot.as_of.isoformat()}-{stock_code}"
+            stock_code: f"algorithm-v2.4-fix2-{snapshot.as_of.isoformat()}-{stock_code}"
             for stock_code in target_weights
         }
         existing_order_keys = set(
@@ -143,6 +146,64 @@ class LossAvoidanceInvestmentService:
             created,
             "APPLIED" if created else "ALREADY_APPLIED",
         )
+
+    def rebalance(self, user_id: int, account_id) -> ModelRecommendationApplyResponse:
+        """최신 fix2 목표와 현재 보유분의 차이를 매도 후 매수로 조정한다."""
+
+        account = self.repo.owned_account(account_id, user_id, lock=True)
+        if account is None:
+            raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
+        if account.selected_strategy_id != self.strategy_id:
+            raise ServiceError("LOSS_AVOIDANCE_STRATEGY_REQUIRED", "물림방지 계좌만 리밸런싱할 수 있습니다.", 409)
+        snapshot = self.snapshot_service.latest()
+        if snapshot.source != "generated" or snapshot.is_stale or snapshot.model_version != "algorithm-v2.4-fix2":
+            raise ServiceError("LOSS_AVOIDANCE_SNAPSHOT_NOT_APPLICABLE", "최신 Algorithm(ver.2.4)_fix2 결과가 없어 리밸런싱할 수 없습니다.", 409)
+        targets = {
+            item.symbol: Decimal(str(item.target_weight))
+            for item in snapshot.recommendations if item.target_weight > 0
+        }
+        if not targets or sum(targets.values(), Decimal("0")) > Decimal("0.95"):
+            raise ServiceError("INVALID_STRATEGY_TARGET_WEIGHTS", "물림방지 목표 주식 비중이 올바르지 않습니다.", 503)
+        self._publish_targets(snapshot.as_of, targets)
+        if account.operation_mode != "AUTO":
+            return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")
+
+        positions = self.repo.positions(account.id)
+        prices: dict[str, Decimal] = {}
+        current: dict[str, Decimal] = {}
+        for position in positions:
+            price, _, _ = self.trading_service.market.get_price(position.stock_code)
+            prices[position.stock_code] = Decimal(price)
+            current[position.stock_code] = Decimal(position.quantity) * Decimal(price)
+        total_assets = Decimal(account.cash_balance) + sum(current.values(), Decimal("0"))
+        if total_assets <= 0:
+            raise ServiceError("INVALID_PORTFOLIO_VALUE", "리밸런싱할 포트폴리오 가치가 없습니다.", 409)
+
+        created = 0
+        deltas = {
+            symbol: total_assets * targets.get(symbol, Decimal("0")) - current.get(symbol, Decimal("0"))
+            for symbol in set(current) | set(targets)
+        }
+        for side in ("SELL", "BUY"):
+            for symbol, delta in deltas.items():
+                if (side == "SELL" and delta >= 0) or (side == "BUY" and delta <= 0):
+                    continue
+                if symbol not in prices:
+                    price, _, _ = self.trading_service.market.get_price(symbol)
+                    prices[symbol] = Decimal(price)
+                quantity = (abs(delta) / prices[symbol]).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+                if quantity <= 0:
+                    continue
+                self.trading_service.execute_market_order(
+                    user_id,
+                    OrderCreateRequest(
+                        account_id=account.id, stock_code=symbol, side=side,
+                        quantity=quantity,
+                        idempotency_key=f"algorithm-v2.4-fix2-rebalance-{snapshot.as_of.isoformat()}-{symbol}-{side}",
+                    ),
+                )
+                created += 1
+        return self._response(account.id, snapshot.as_of, len(targets), created, "APPLIED" if created else "ALREADY_APPLIED")
 
     def _publish_targets(
         self, effective_from, target_weights: dict[str, Decimal]

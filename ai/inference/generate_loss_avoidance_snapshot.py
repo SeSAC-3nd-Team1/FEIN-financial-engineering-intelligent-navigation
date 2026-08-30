@@ -14,7 +14,7 @@ from data_access import FeatureStore, FeatureStoreConfig
 from inference.loss_avoidance_snapshot import (
     REQUIRED_COLUMNS,
     build_loss_avoidance_snapshot,
-    load_algorithm_v23,
+    load_algorithm_v24,
 )
 
 
@@ -25,7 +25,8 @@ def _read_algorithm_history(store: FeatureStore, version: str) -> pd.DataFrame:
     files = tuple(store.parquet_files("algorithm_ohlcv", version))
     if not files:
         raise RuntimeError("Azure Feature dataset has no algorithm_ohlcv Parquet files")
-    return pd.concat(
+    print(f"loss-avoidance: reading {len(files)} Azure OHLCV partitions", flush=True)
+    frame = pd.concat(
         [
             store.read_partition(
                 file.path,
@@ -36,6 +37,8 @@ def _read_algorithm_history(store: FeatureStore, version: str) -> pd.DataFrame:
         ],
         ignore_index=True,
     )
+    print(f"loss-avoidance: loaded {len(frame):,} OHLCV rows", flush=True)
+    return frame
 
 
 def _publish(snapshot, output_path: Path) -> None:
@@ -63,7 +66,7 @@ def _publish(snapshot, output_path: Path) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run Algorithm(ver.2.3) and publish a loss-avoidance snapshot."
+        description="Run Algorithm(ver.2.4)_fix2 and publish a loss-avoidance snapshot."
     )
     parser.add_argument("--algorithm-version", default="2")
     parser.add_argument("--top-n", type=int, default=5)
@@ -78,18 +81,19 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _parser().parse_args()
+    print("loss-avoidance: starting Algorithm(ver.2.4)_fix2", flush=True)
     snapshot = build_loss_avoidance_snapshot(
         _read_algorithm_history(
             FeatureStore(FeatureStoreConfig.from_env()), args.algorithm_version
         ),
-        algorithm=load_algorithm_v23(),
+        algorithm=load_algorithm_v24(),
         data_version=f"algorithm_ohlcv-v{args.algorithm_version.removeprefix('v')}",
         top_n=args.top_n,
         universe_size=args.universe_size,
     )
     _publish(snapshot, args.output)
     print(
-        f"exported {len(snapshot.recommendations)} Algorithm(ver.2.3) targets "
+        f"exported {len(snapshot.recommendations)} Algorithm(ver.2.4)_fix2 targets "
         f"for {snapshot.as_of} to {args.output}"
     )
     return 0

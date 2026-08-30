@@ -24,7 +24,7 @@ class ModelRecommendationService:
             "MODEL_RECOMMENDATION_ALLOW_FALLBACK", "true"
         ).strip().lower() in {"1", "true", "yes", "on"}
         self.stale_after_days = int(
-            os.getenv("MODEL_RECOMMENDATION_STALE_AFTER_DAYS", "3")
+            os.getenv("MODEL_RECOMMENDATION_STALE_AFTER_DAYS", "7")
         )
         if self.stale_after_days < 0:
             raise ValueError("MODEL_RECOMMENDATION_STALE_AFTER_DAYS cannot be negative")

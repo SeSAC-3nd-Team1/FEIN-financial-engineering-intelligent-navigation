@@ -1,4 +1,4 @@
-"""Run Algorithm(ver.2.3) and publish its portfolio snapshot for the Backend."""
+"""Run Algorithm(ver.2.4) and publish its portfolio snapshot for the Backend."""
 
 from __future__ import annotations
 
@@ -10,12 +10,13 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
+import time
 from types import ModuleType
 
 import numpy as np
 import pandas as pd
 
-ALGORITHM_FILENAME = "Algorithm(ver.2.3).py"
+ALGORITHM_FILENAME = "Algorithm(ver.2.4)_fix2.py"
 REQUIRED_COLUMNS = (
     "symbol",
     "Date",
@@ -26,6 +27,7 @@ REQUIRED_COLUMNS = (
     "Volume",
     "is_tradable",
 )
+MAX_MODEL_HISTORY_ROWS = 1500
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,7 @@ class LossAvoidanceSnapshot:
 def default_algorithm_path() -> Path:
     """Resolve the reference engine in a checkout or the AI container mount."""
 
-    configured = os.getenv("ALGORITHM_V23_PATH", "").strip()
+    configured = os.getenv("ALGORITHM_V24_PATH", "").strip()
     if configured:
         return Path(configured)
     repository_path = Path(__file__).resolve().parents[2] / "output" / ALGORITHM_FILENAME
@@ -66,16 +68,16 @@ def default_algorithm_path() -> Path:
     return Path("/algorithm-output") / ALGORITHM_FILENAME
 
 
-def load_algorithm_v23(path: str | Path | None = None) -> ModuleType:
-    """Load the team's source file without copying or rewriting the algorithm."""
+def load_algorithm_v24(path: str | Path | None = None) -> ModuleType:
+    """Load the team's v2.4 source file without copying or rewriting it."""
 
     source = Path(path) if path is not None else default_algorithm_path()
     if not source.is_file():
-        raise FileNotFoundError(f"Algorithm(ver.2.3) source not found: {source}")
-    module_name = "team_algorithm_v2_3"
+        raise FileNotFoundError(f"Algorithm(ver.2.4) source not found: {source}")
+    module_name = "team_algorithm_v2_4"
     spec = importlib.util.spec_from_file_location(module_name, source)
     if spec is None or spec.loader is None:
-        raise ImportError(f"Algorithm(ver.2.3) cannot be loaded: {source}")
+        raise ImportError(f"Algorithm(ver.2.4) cannot be loaded: {source}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
@@ -83,20 +85,20 @@ def load_algorithm_v23(path: str | Path | None = None) -> ModuleType:
 
 
 def _candidate_symbols(frame: pd.DataFrame, universe_size: int) -> list[str]:
-    latest_date = frame.loc[frame["is_tradable"], "Date"].max()
-    current = frame.loc[
-        frame["Date"].eq(latest_date) & frame["is_tradable"], "symbol"
-    ].astype(str)
-    liquidities: list[tuple[str, float]] = []
-    for symbol in current.drop_duplicates():
-        history = frame.loc[
-            frame["symbol"].astype(str).eq(symbol) & frame["is_tradable"]
-        ].sort_values("Date").tail(60)
-        liquidity = (history["Close"] * history["Volume"]).replace(
-            [np.inf, -np.inf], np.nan
-        ).median()
-        if pd.notna(liquidity) and float(liquidity) > 0:
-            liquidities.append((symbol, float(liquidity)))
+    tradable = frame.loc[frame["is_tradable"], ["symbol", "Date", "Close", "Volume"]]
+    latest_date = tradable["Date"].max()
+    recent_dates = tradable["Date"].drop_duplicates().nlargest(60)
+    recent = tradable.loc[tradable["Date"].isin(recent_dates)].copy()
+    recent["notional"] = (recent["Close"] * recent["Volume"]).replace(
+        [np.inf, -np.inf], np.nan
+    )
+    liquidity = recent.groupby("symbol")["notional"].median()
+    current = tradable.loc[tradable["Date"].eq(latest_date), "symbol"].drop_duplicates()
+    liquidities = [
+        (str(symbol), float(liquidity[symbol]))
+        for symbol in current
+        if symbol in liquidity and pd.notna(liquidity[symbol]) and float(liquidity[symbol]) > 0
+    ]
     liquidities.sort(key=lambda item: (-item[1], item[0]))
     return [symbol for symbol, _ in liquidities[:universe_size]]
 
@@ -109,10 +111,10 @@ def build_loss_avoidance_snapshot(
     top_n: int = 5,
     universe_size: int = 20,
 ) -> LossAvoidanceSnapshot:
-    """Evaluate liquid symbols with Algorithm(ver.2.3) and adapt its weights.
+    """Evaluate liquid symbols with Algorithm(ver.2.4) and adapt its weights.
 
     The liquidity rule only defines the executable universe. Signal, regime, risk
-    state, and exposure all come from Algorithm(ver.2.3). The portfolio adapter
+    state, and exposure all come from Algorithm(ver.2.4). The portfolio adapter
     preserves the engine's gross exposure and divides it by positive engine weights.
     """
 
@@ -127,18 +129,23 @@ def build_loss_avoidance_snapshot(
     data["Date"] = pd.to_datetime(data["Date"], errors="raise")
     data["is_tradable"] = data["is_tradable"].fillna(False).astype(bool)
     if data.empty or not data["is_tradable"].any():
-        raise ValueError("no tradable Algorithm(ver.2.3) input rows are available")
+        raise ValueError("no tradable Algorithm(ver.2.4) input rows are available")
 
     candidates: list[dict[str, object]] = []
-    for symbol in _candidate_symbols(data, universe_size):
+    symbols = _candidate_symbols(data, universe_size)
+    started = time.monotonic()
+    print(f"loss-avoidance: evaluating {len(symbols)} liquid symbols", flush=True)
+    for index, symbol in enumerate(symbols, start=1):
         history = data.loc[
             data["symbol"].eq(symbol) & data["is_tradable"],
             ["Date", "Open", "High", "Low", "Close", "Volume"],
-        ].sort_values("Date")
+        ].sort_values("Date").tail(MAX_MODEL_HISTORY_ROWS)
         if len(history) < 254:
+            print(f"loss-avoidance: [{index}/{len(symbols)}] {symbol} skipped (history={len(history)})", flush=True)
             continue
         result = algorithm.run_backtest(history, algorithm.Config())
         if result.decisions.empty:
+            print(f"loss-avoidance: [{index}/{len(symbols)}] {symbol} skipped (no decisions)", flush=True)
             continue
         decision = result.decisions.iloc[-1]
         target = float(np.clip(float(decision["target_weight"]), 0.0, 0.95))
@@ -156,8 +163,13 @@ def build_loss_avoidance_snapshot(
                 "risk_reason": str(decision["risk_reason"]),
             }
         )
+        print(
+            f"loss-avoidance: [{index}/{len(symbols)}] {symbol} evaluated "
+            f"({time.monotonic() - started:.1f}s)",
+            flush=True,
+        )
     if not candidates:
-        raise ValueError("Algorithm(ver.2.3) produced no investable targets")
+        raise ValueError("Algorithm(ver.2.4) produced no investable targets")
 
     candidates.sort(
         key=lambda item: (-float(item["score"]), str(item["symbol"]))
@@ -186,7 +198,7 @@ def build_loss_avoidance_snapshot(
             rank=rank,
             target_weight=rounded[rank - 1],
             reason=(
-                f"Algorithm(ver.2.3) {item['regime']} regime / "
+                f"Algorithm(ver.2.4)_fix2 {item['regime']} regime / "
                 f"risk={item['risk_reason']}"
             ),
         )
@@ -196,7 +208,7 @@ def build_loss_avoidance_snapshot(
     return LossAvoidanceSnapshot(
         as_of=as_of,
         generated_at=datetime.now(timezone.utc).isoformat(),
-        model_version="algorithm-v2.3",
+        model_version="algorithm-v2.4-fix2",
         data_version=data_version,
         status="ready",
         market_regime=market_regime,

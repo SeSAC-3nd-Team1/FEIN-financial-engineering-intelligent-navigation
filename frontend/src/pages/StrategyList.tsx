@@ -1,14 +1,16 @@
-import { useRef, useState } from 'react';
-import { Clock, Info } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import Header from '../components/Header';
 import { STRATEGY_PRODUCT_CARDS } from '../data/strategyProducts';
-import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
 
 interface Props {
-    userName: string;
+  userName: string;
   onNavigate: (s: Screen) => void;
-  /** 물림방지 전략 카드 → Coming Soon 상세(실 Model/API 미연결, TODO) */
+  /** 온보딩(회원가입 → 투자성향 확인) 직후 곧장 이 화면으로 넘어온 경우에만 true — Header
+   *  "투자전략"으로 들어온 공용 진입에는 전달되지 않는다. 추천이 아니라 "확인을 완료했다"는
+   *  안내일 뿐이라, 특정 카드를 강조하거나 순서를 바꾸지 않는다. */
+  showOnboardingNotice?: boolean;
+  /** 물림방지 전략 카드 → 실제 `low` 전략 상세 및 백테스트 */
   onSelectLossAvoidance: () => void;
   /** 방탄 F4 전략집 카드 → F4 4개 전략 선택 화면 */
   onSelectF4: () => void;
@@ -27,11 +29,8 @@ interface Props {
  * Detail로 보내지 않는다(STOP CONDITION: 이번 단계에서 canonical strategy id를 새로 정하지 않음).
  */
 export default function StrategyList({
-  userName, onNavigate, onSelectLossAvoidance, onSelectF4, onSelectPersonalizedPreview,
+  userName, onNavigate, showOnboardingNotice, onSelectLossAvoidance, onSelectF4, onSelectPersonalizedPreview,
 }: Props) {
-  const investorType = useAuthStore((s) => s.investorType);
-  const investorDescription = useAuthStore((s) => s.investorDescription);
-
   const handleSelect = (key: (typeof STRATEGY_PRODUCT_CARDS)[number]['key']) => {
     if (key === 'loss-avoidance') onSelectLossAvoidance();
     else if (key === 'f4-collection') onSelectF4();
@@ -54,17 +53,16 @@ export default function StrategyList({
             </p>
           </section>
 
-                    {investorType && (
-            <section className="flex flex-col gap-5 pb-6">
-              <span className="text-base font-semibold text-muted">투자자 정보 확인 · 완료</span>
-              <h1 className="text-[44px] font-bold leading-[62px] tracking-[-0.035em]">
-                투자성향을 확인했어요
-              </h1>
-              <div className="flex items-center gap-2.5">
-                <span className="rounded-full bg-lime px-5 py-2.5 text-[22px] font-bold text-navy">{investorType}이에요</span>
-                <InvestorTypeInfo type={investorType} description={investorDescription ?? ''} />
-              </div>
-            </section>
+          {/* 온보딩(회원가입 → 투자성향 확인) 직후에만 보이는 짧은 안내 — 추천이 아니라 "확인을
+             완료했다"는 사실만 전달한다. 카드 강조/순서 변경은 절대 하지 않는다. */}
+          {showOnboardingNotice && (
+            <div className="flex items-start gap-3 rounded-[16px] bg-[#F8FCEE] px-6 py-4">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-lime text-xs font-bold text-navy">✓</span>
+              <p className="text-[15px] leading-6 text-[#3F4A43]">
+                투자성향 확인을 완료했어요.<br />
+                아래 전략의 특징과 난이도를 비교해 나에게 맞는 전략을 선택해보세요.
+              </p>
+            </div>
           )}
 
           <div className="grid grid-cols-3 gap-6">
@@ -119,52 +117,8 @@ export default function StrategyList({
               </button>
             ))}
           </div>
-                </div>
+        </div>
       </main>
     </div>
-  );
-}
-
-/** 투자유형 설명은 hover·tap·키보드 focus 모두에서 확인할 수 있다. */
-function InvestorTypeInfo({ type, description }: { type: string; description: string }) {
-  const [hoverCapable] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches,
-  );
-  const [open, setOpen] = useState(false);
-  const pointerActivated = useRef(false);
-  const markPointer = () => { pointerActivated.current = true; };
-
-  return (
-    <span className="relative inline-flex">
-      <button
-        type="button"
-        aria-label={`${type} 설명 보기`}
-        aria-expanded={open}
-        onMouseDown={markPointer}
-        onTouchStart={markPointer}
-        onMouseEnter={() => hoverCapable && setOpen(true)}
-        onMouseLeave={() => hoverCapable && setOpen(false)}
-        onFocus={() => {
-          if (pointerActivated.current) { pointerActivated.current = false; return; }
-          setOpen(true);
-        }}
-        onBlur={() => setOpen(false)}
-        onClick={() => {
-          if (hoverCapable) { setOpen(true); return; }
-          setOpen((value) => !value);
-        }}
-        className="flex h-8 w-8 items-center justify-center rounded-full text-subtle hover:text-navy"
-      >
-        <Info size={22} />
-      </button>
-      {open && (
-        <div
-          role="tooltip"
-          className="absolute left-0 top-full z-10 mt-2 w-[280px] rounded-[14px] bg-navy px-5 py-4 text-[15px] leading-6 text-white shadow-[0_8px_24px_rgba(24,36,58,0.25)]"
-        >
-          {description}
-        </div>
-      )}
-    </span>
   );
 }

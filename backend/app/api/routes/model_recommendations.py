@@ -86,3 +86,17 @@ def apply_latest_loss_avoidance_recommendation(
     ),
 ) -> ModelRecommendationApplyResponse:
     return service.apply(user.id, payload.account_id)
+
+
+@router.post(
+    "/loss-avoidance/latest/rebalance",
+    response_model=ModelRecommendationApplyResponse,
+)
+def rebalance_latest_loss_avoidance_recommendation(
+    payload: ModelRecommendationApplyRequest,
+    user: User = Depends(current_user),
+    service: LossAvoidanceInvestmentService = Depends(
+        get_loss_avoidance_investment_service
+    ),
+) -> ModelRecommendationApplyResponse:
+    return service.rebalance(user.id, payload.account_id)

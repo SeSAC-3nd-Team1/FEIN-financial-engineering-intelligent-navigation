@@ -450,7 +450,7 @@ export interface ModelRecommendationSnapshotResponse {
 
 export interface ModelRecommendationApplyResponse {
   account_id: string;
-  strategy_id: "momentum";
+  strategy_id: "momentum" | "low";
   as_of: string;
   target_count: number;
   orders_created: number;
@@ -1086,12 +1086,53 @@ export function getLatestModelRecommendationsApi(
   );
 }
 
+/** 물림방지 화면에서 사용하는 Algorithm(ver.2.4)_fix2 최신 추천 스냅샷. */
+export function getLatestLossAvoidanceRecommendationApi(
+  token: string,
+): Promise<ModelRecommendationSnapshotResponse> {
+  return request<ModelRecommendationSnapshotResponse>(
+    "/model-recommendations/loss-avoidance/latest",
+    {},
+    token,
+  );
+}
+
 export function applyLatestModelRecommendationsApi(
   accountId: string,
   token: string,
 ): Promise<ModelRecommendationApplyResponse> {
   return request<ModelRecommendationApplyResponse>(
     "/model-recommendations/latest/apply",
+    {
+      method: "POST",
+      body: JSON.stringify({ account_id: accountId }),
+    },
+    token,
+  );
+}
+
+/** 정도영 Algorithm(ver.2.4)_fix2 스냅샷을 물림방지 계좌의 목표 비중에 적용한다. */
+export function applyLatestLossAvoidanceRecommendationApi(
+  accountId: string,
+  token: string,
+): Promise<ModelRecommendationApplyResponse> {
+  return request<ModelRecommendationApplyResponse>(
+    "/model-recommendations/loss-avoidance/latest/apply",
+    {
+      method: "POST",
+      body: JSON.stringify({ account_id: accountId }),
+    },
+    token,
+  );
+}
+
+/** 최신 fix2 목표 비중과 현재 보유분을 실제 주문으로 조정한다. */
+export function rebalanceLatestLossAvoidanceRecommendationApi(
+  accountId: string,
+  token: string,
+): Promise<ModelRecommendationApplyResponse> {
+  return request<ModelRecommendationApplyResponse>(
+    "/model-recommendations/loss-avoidance/latest/rebalance",
     {
       method: "POST",
       body: JSON.stringify({ account_id: accountId }),

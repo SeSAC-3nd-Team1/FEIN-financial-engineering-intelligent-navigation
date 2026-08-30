@@ -46,10 +46,12 @@ import {
 import {
   analyzeInvestorProfileApi,
   ApiError,
+  applyLatestLossAvoidanceRecommendationApi,
   applyLatestModelRecommendationsApi,
   createAdditionalInvestmentApi,
   createWithdrawalApi,
   getMyAccountApi,
+  getLatestLossAvoidanceRecommendationApi,
     getStrategiesApi,
   sendEmailVerificationApi,
   selectStrategyApi,
@@ -59,6 +61,7 @@ import {
   type SignupPayload,
   type StrategyRecommendationItemResponse,
   type StrategyResponse,
+  type ModelRecommendationSnapshotResponse,
 } from "./lib/backendApi";
 import {
   buildInvestorAnswerPayload,
@@ -357,6 +360,8 @@ export default function App() {
   const [investmentAgreements, setInvestmentAgreements] = useState<
     SignupPayload["agreements"]
   >([]);
+  const [lossAvoidanceSnapshot, setLossAvoidanceSnapshot] =
+    useState<ModelRecommendationSnapshotResponse | null>(null);
   const register = useAuthStore((s) => s.register);
   const initialize = useAuthStore((s) => s.initialize);
   const authenticatedUser = useAuthStore((s) => s.user);
@@ -955,6 +960,15 @@ export default function App() {
       );
     }
     if (latestAuth.investorProfileCompleted) {
+      if (strategyId === "low") {
+        const token = latestAuth.accessToken;
+        if (!token) throw new Error("로그인이 만료됐어요. 다시 로그인해주세요.");
+        const snapshot = await getLatestLossAvoidanceRecommendationApi(token);
+        if (snapshot.status !== "ready" || snapshot.recommendations.length === 0) {
+          throw new Error("물림방지 모델 추천 결과를 준비하지 못했어요. 잠시 후 다시 시도해주세요.");
+        }
+        setLossAvoidanceSnapshot(snapshot);
+      }
       const move = historyMode === "replace" ? replaceScreen : pushScreen;
       move("investor-check", contextOverrides);
     } else {
@@ -1021,7 +1035,21 @@ export default function App() {
     if (!accessToken || !mode) {
       throw new Error("로그인이 필요합니다.");
     }
-    await ensureAccount(accessToken, strategyId, toAccountOperationMode(mode));
+    const account = await ensureAccount(
+      accessToken,
+      strategyId,
+      toAccountOperationMode(mode),
+    );
+    if (strategyId === "low") {
+      // 신규 투자와 동일하게, 전략 변경도 실제 Algorithm(ver.2.4)_fix2 결과를
+      // 게시한 뒤 포트폴리오로 이동한다.
+      await applyLatestLossAvoidanceRecommendationApi(account.id, accessToken);
+      await ensureAccount(
+        accessToken,
+        strategyId,
+        toAccountOperationMode(mode),
+      );
+    }
     setAccountActiveStrategy(mode, strategyId);
     setActiveMode(mode);
     navigate("portfolio", { replace: true });
@@ -1320,14 +1348,22 @@ export default function App() {
         />
       )}
 
-            {screen === "strategy-list" && (
+      {screen === "strategy-list" && (
         <StrategyList
           userName={userName}
           onNavigate={navigate}
-
-          onSelectLossAvoidance={() =>
-            pushScreen("strategy-coming-soon-loss-avoidance")
-          }
+          showOnboardingNotice={justFinishedInvestorProfile}
+          onSelectLossAvoidance={() => {
+            // 물림방지는 canonical `low` 전략으로 연결한다. 카드에서 별도
+            // placeholder를 거치면 실제 백테스트·투자 시작 계약이 끊기므로,
+            // 카탈로그가 로드된 동일한 StrategyDetail을 사용한다.
+            setStrategyId("low");
+            setStrategyDetailBackTarget("strategy-list");
+            pushScreen("strategy", {
+              strategyId: "low",
+              strategyDetailBackTarget: "strategy-list",
+            });
+          }}
           onSelectF4={() => pushScreen("strategy-f4")}
           onSelectPersonalizedPreview={() => pushScreen("strategy-preview")}
         />
@@ -1429,6 +1465,8 @@ export default function App() {
         <StartInvesting
           userName={userName}
           strategyName={strategy.name}
+          strategyId={strategy.id}
+          modelRecommendations={lossAvoidanceSnapshot}
           onNavigate={navigate}
           onStart={enterInvestmentFlow}
           onSelectStock={(code) => {
@@ -1575,6 +1613,13 @@ export default function App() {
               // 모델 추천 적용 직전에 현재 계좌의 전략을 서버에 명시적으로 확정한다.
               await selectStrategyApi(account.id, strategyId, accessToken);
               await applyLatestModelRecommendationsApi(account.id, accessToken);
+              await ensureAccount(accessToken, strategyId, operationMode);
+            } else if (strategyId === "low") {
+              // 물림방지는 정도영 Algorithm(ver.2.4)_fix2의 최신 생성 스냅샷만
+              // 적용한다. 실패 시 포트폴리오로 이동하지 않아 빈/목업 포트폴리오를
+              // 실제 모델 결과처럼 보여주지 않는다.
+              await selectStrategyApi(account.id, strategyId, accessToken);
+              await applyLatestLossAvoidanceRecommendationApi(account.id, accessToken);
               await ensureAccount(accessToken, strategyId, operationMode);
             }
             setActiveMode(investmentMode);
@@ -1859,6 +1904,7 @@ export default function App() {
           userName={userName}
           onAccountMissingAction={() => pushScreen("account-setup", { accountSetupMode: activeMode ?? "manual" })}
           strategy={portfolioStrategy}
+          isAutoMode={activeMode === "auto"}
           strategies={strategyCatalog}
           onStrategyChange={setStrategyId}
           onNavigate={navigate}
