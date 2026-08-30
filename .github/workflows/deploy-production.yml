@@ -361,16 +361,16 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/ai:${{ github.workspace }}
         run: |
           set -euo pipefail
-          # Use the Python 3.13 virtualenv directly.  A symlink from
-          # /usr/local/bin/python does not make Python discover pyvenv.cfg,
-          # which can otherwise load Ubuntu's incompatible system pip.
-          export PATH="/opt/fein-python/bin:${PATH}"
-          python --version
-          python -m pip --version
-          python -m pip install --upgrade pip
-          python -m pip install -r ai/requirements.txt
+          # Build an isolated venv in the runner workspace.  The VM's shared
+          # venv may be root-owned, so installing into it would fail for the
+          # runner service account and leave artifact generation incomplete.
+          python -m venv .deploy-venv
+          .deploy-venv/bin/python --version
+          .deploy-venv/bin/python -m pip --version
+          .deploy-venv/bin/python -m pip install --upgrade pip
+          .deploy-venv/bin/python -m pip install -r ai/requirements.txt
           mkdir -p .deploy-artifacts
-          python -m inference.generate_risk_adjusted_momentum \
+          .deploy-venv/bin/python -m inference.generate_risk_adjusted_momentum \
             --model-version 2 \
             --algorithm-version 2 \
             --master-version 1 \
