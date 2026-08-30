@@ -1,6 +1,9 @@
 name: Deploy production
 
 on:
+  # The workflow is currently maintained on develop rather than the default
+  # main branch. Use the merge commit push as the authoritative production
+  # deployment trigger so GitHub loads this workflow from develop reliably.
   push:
     branches:
       - develop
@@ -11,8 +14,10 @@ permissions:
   id-token: write
 
 concurrency:
-  group: production-deployment
-  cancel-in-progress: false
+  # Keep only one production deployment active and let the newest deploy
+  # replace stale runs from an unavailable runner.
+  group: production-deployment-v3
+  cancel-in-progress: true
 
 env:
   IMAGE_TAG: ${{ github.sha }}
@@ -28,23 +33,131 @@ env:
   AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT }}
   AZURE_OPENAI_CHATBOT_ENDPOINT: ${{ vars.AZURE_OPENAI_CHATBOT_ENDPOINT || 'https://fein-chatbot.openai.azure.com/' }}
   AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHATBOT_DEPLOYMENT || 'gpt-5.6-luna' }}
-  FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
-  FOUNDRY_MODEL_DEPLOYMENT_NAME: ${{ vars.FOUNDRY_MODEL_DEPLOYMENT_NAME }}
+  FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT || 'https://fein-agent.services.ai.azure.com/api/projects/proj-default' }}
+  FOUNDRY_MODEL_DEPLOYMENT_NAME: ${{ vars.FOUNDRY_MODEL_DEPLOYMENT_NAME || 'gpt-5.6-luna' }}
   MBG_COORDINATOR_AGENT_NAME: ${{ vars.MBG_COORDINATOR_AGENT_NAME || 'MBGCoordinator' }}
   FINANCIAL_REPORT_AGENT_NAME: ${{ vars.FINANCIAL_REPORT_AGENT_NAME || 'FinancialReport' }}
   NEWS_AGENT_NAME: ${{ vars.NEWS_AGENT_NAME || 'News' }}
   MARKET_RESEARCH_AGENT_NAME: ${{ vars.MARKET_RESEARCH_AGENT_NAME || 'MarketResearch' }}
   MACRO_AGENT_NAME: ${{ vars.MACRO_AGENT_NAME || 'Macro' }}
   ASSET_MANAGER_AGENT_NAME: ${{ vars.ASSET_MANAGER_AGENT_NAME || 'AssetManager' }}
-  CHATBOT_REGISTRY_JSON: ${{ vars.CHATBOT_REGISTRY_JSON }}
+  CHATBOT_REGISTRY_JSON: ${{ vars.CHATBOT_REGISTRY_JSON || '{"chatbots":[{"chatbot_id":"fein-web-chatbot","display_name":"FE!N Web Chatbot","provider":"foundry","source_agent_name":"MBGCoordinator","enabled":true,"allowed_context_keys":["screen","stock_code","strategy_id","verified_personal_summary"],"max_input_chars":4000,"max_response_chars":8000,"timeout_seconds":120}]}' }}
   FEIN_CHATBOT_ID: ${{ vars.FEIN_CHATBOT_ID || 'fein-web-chatbot' }}
 
 jobs:
-  deploy:
-    # The v2 artifact generator needs more memory than Azure Cloud Shell.
-    # Register the Azure runner with the `azure-large` label on a host with
-    # at least 16 GiB RAM before running Production Deploy.
+  detect-changes:
+    name: Detect deployment scope
     runs-on: [self-hosted, Linux, X64, azure-large]
+    outputs:
+      frontend_only: ${{ steps.scope.outputs.frontend_only }}
+      full_deploy: ${{ steps.scope.outputs.full_deploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Determine changed services
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "frontend_only=false" >> "${GITHUB_OUTPUT}"
+            echo "full_deploy=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Changed files:\n%s\n' "${changed_files}"
+          frontend_only=true
+          while IFS= read -r file; do
+            [[ -z "${file}" ]] && continue
+            if [[ "${file}" != frontend/* ]]; then
+              frontend_only=false
+              break
+            fi
+          done <<< "${changed_files}"
+
+          if [[ "${frontend_only}" == "true" && -n "${changed_files}" ]]; then
+            echo "frontend_only=true" >> "${GITHUB_OUTPUT}"
+            echo "full_deploy=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "frontend_only=false" >> "${GITHUB_OUTPUT}"
+            echo "full_deploy=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+  frontend-only-deploy:
+    name: Deploy frontend only
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend_only == 'true'
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    timeout-minutes: 20
+    environment:
+      name: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve production ACR
+        env:
+          CONFIGURED_ACR_NAME: ${{ vars.ACR_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${CONFIGURED_ACR_NAME}" ]] && az acr show --name "${CONFIGURED_ACR_NAME}" --output none 2>/dev/null; then
+            resolved_acr="${CONFIGURED_ACR_NAME}"
+          else
+            current_image="$(az containerapp show --name "${FRONTEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.template.containers[0].image' --output tsv)"
+            resolved_acr="${current_image%%.azurecr.io/*}"
+            resolved_acr="${resolved_acr##*/}"
+          fi
+          [[ -n "${resolved_acr}" ]] || { echo 'Could not resolve production ACR.' >&2; exit 1; }
+          echo "ACR_NAME=${resolved_acr}" >> "${GITHUB_ENV}"
+
+      - name: Build and push frontend image
+        run: |
+          az acr build \
+            --registry "${ACR_NAME}" \
+            --image "fein-frontend:${IMAGE_TAG}" \
+            --file frontend/Dockerfile.prod \
+            ./frontend
+
+      - name: Deploy frontend Container App
+        run: |
+          set -euo pipefail
+          backend_fqdn="$(az containerapp show \
+            --name "${{ vars.BACKEND_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)"
+          [[ -n "${backend_fqdn}" ]] || { echo 'Backend Container App ingress FQDN is missing.' >&2; exit 1; }
+          az containerapp update \
+            --name "${{ vars.FRONTEND_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${ACR_NAME}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
+            --set-env-vars \
+              "BACKEND_UPSTREAM=https://${backend_fqdn}" \
+              "BACKEND_HOST=${backend_fqdn}" \
+            --output none
+
+  deploy:
+    name: Full production deploy
+    needs: detect-changes
+    if: needs.detect-changes.outputs.full_deploy == 'true'
+    # Run on the Azure VM's self-hosted runner. This avoids GitHub-hosted
+    # Actions billing and provides the memory required by artifact generation.
+    # The runner must be online and carry all four labels below.
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    timeout-minutes: 60
     environment:
       name: production
 
@@ -408,7 +521,8 @@ jobs:
         env:
           AZURE_STORAGE_ACCOUNT_NAME: stfeindata
           AZURE_STORAGE_CONTAINER_FEATURES: features
-          PYTHONPATH: ${{ github.workspace }}/ai:${{ github.workspace }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
         run: |
           set -euo pipefail
           # Build an isolated venv in the runner workspace.  The VM's shared
@@ -418,7 +532,7 @@ jobs:
           .deploy-venv/bin/python --version
           .deploy-venv/bin/python -m pip --version
           .deploy-venv/bin/python -m pip install --upgrade pip
-          .deploy-venv/bin/python -m pip install -r ai/requirements.txt
+          .deploy-venv/bin/python -m pip install -r ai/requirements.txt -r backend/requirements.txt
           mkdir -p .deploy-artifacts
           .deploy-venv/bin/python -m inference.generate_risk_adjusted_momentum \
             --model-version 2 \
@@ -426,6 +540,14 @@ jobs:
             --master-version 1 \
             --output .deploy-artifacts/risk-adjusted-momentum-v2.json
           test -s .deploy-artifacts/risk-adjusted-momentum-v2.json
+          .deploy-venv/bin/python -m inference.generate_loss_avoidance_snapshot \
+            --algorithm-version 2 \
+            --top-n "${LOSS_AVOIDANCE_TOP_N:-5}" \
+            --universe-size "${LOSS_AVOIDANCE_UNIVERSE_SIZE:-20}" \
+            --output .deploy-artifacts/loss_avoidance_snapshot.json
+          test -s .deploy-artifacts/loss_avoidance_snapshot.json
+          .deploy-venv/bin/python backend/scripts/generate_backtest_artifact.py .deploy-artifacts/backtest-results.json
+          test -s .deploy-artifacts/backtest-results.json
 
       - name: Build and push frontend image
         run: |
@@ -566,7 +688,7 @@ jobs:
             ANALYSIS_MODE=analysis_only
             MODEL_RECOMMENDATION_SNAPSHOT_PATH=/model-artifacts/risk-adjusted-momentum-v2.json
             MODEL_RECOMMENDATION_ALLOW_FALLBACK=false
-            MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3
+            MODEL_RECOMMENDATION_STALE_AFTER_DAYS=7
           )
 
           set_secret_env() {
@@ -624,15 +746,7 @@ jobs:
           set_plain_env CHATBOT_REGISTRY_JSON "${CHATBOT_REGISTRY_JSON}"
           set_plain_env FEIN_CHATBOT_ID "${FEIN_CHATBOT_ID}"
 
-          # Foundry chatbot configuration is optional for the core investment
-          # product.  When it is configured, validate it; otherwise preserve
-          # the existing Container App environment and allow backtest,
-          # recommendation, and trading flows to deploy independently.
-          if [[ -n "${FOUNDRY_PROJECT_ENDPOINT}" && -n "${CHATBOT_REGISTRY_JSON}" && -n "${FEIN_CHATBOT_ID}" ]]; then
-            python -c 'import json, os; registry = json.loads(os.environ["CHATBOT_REGISTRY_JSON"]); chatbots = registry.get("chatbots", []); assert any(item.get("chatbot_id") == os.environ["FEIN_CHATBOT_ID"] and item.get("enabled") is True for item in chatbots), "CHATBOT_REGISTRY_JSON does not enable FEIN_CHATBOT_ID"'
-          else
-            echo "Foundry chatbot configuration is absent; preserving existing chatbot settings and continuing core deployment."
-          fi
+          python -c 'import json, os; registry = json.loads(os.environ["CHATBOT_REGISTRY_JSON"]); chatbots = registry.get("chatbots", []); assert any(item.get("chatbot_id") == os.environ["FEIN_CHATBOT_ID"] and item.get("enabled") is True for item in chatbots), "CHATBOT_REGISTRY_JSON does not enable FEIN_CHATBOT_ID"'
 
           if (( ${#secret_args[@]} > 0 )); then
             az containerapp secret set \

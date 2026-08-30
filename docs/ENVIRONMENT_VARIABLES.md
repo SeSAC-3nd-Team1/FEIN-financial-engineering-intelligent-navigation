@@ -192,4 +192,4 @@ TTL, timeout, cache, API version 같은 비민감 운영 기본값은 workflow�
 
 `MODEL_RECOMMENDATION_SNAPSHOT_PATH`, `LOSS_AVOIDANCE_SNAPSHOT_PATH`는 실제 모델 artifact가 Container App에서 읽을 수 있도록 volume/mount 또는 이미지 포함 경로가 준비된 뒤 설정한다. Production deploy는 Azure Feature Store에서 생성한 v2 artifact를 Backend image의 `/model-artifacts`에 포함하고 `MODEL_RECOMMENDATION_SNAPSHOT_PATH=/model-artifacts/risk-adjusted-momentum-v2.json`을 설정한다. 경로만 환경변수로 추가하고 실제 파일을 제공하는 단계가 없는 구성은 사용하지 않는다.
 
-Production에서는 저장소의 시연용 snapshot이 실제 결과처럼 노출되지 않도록 `MODEL_RECOMMENDATION_ALLOW_FALLBACK=false`를 강제한다. 실제 generated snapshot이 없거나 stale하면 모델 추천 API가 명시적으로 unavailable 상태를 반환한다. `MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3`도 Production workflow에서 명시적으로 유지한다.
+Production에서는 저장소의 시연용 snapshot이 실제 결과처럼 노출되지 않도록 `MODEL_RECOMMENDATION_ALLOW_FALLBACK=false`를 강제한다. 실제 generated snapshot이 없거나 stale하면 모델 추천 API가 명시적으로 unavailable 상태를 반환한다. `MODEL_RECOMMENDATION_STALE_AFTER_DAYS=7`을 기본 운영 기준으로 사용한다.

@@ -72,8 +72,9 @@ services:
       ASSET_MANAGER_AGENT_NAME: ${ASSET_MANAGER_AGENT_NAME:-AssetManager}
       MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
       LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
+      LOSS_AVOIDANCE_MODEL_PATH: ${LOSS_AVOIDANCE_MODEL_PATH:-/models/Algorithm(ver.2.4)_fix2.py}
       MODEL_RECOMMENDATION_ALLOW_FALLBACK: ${MODEL_RECOMMENDATION_ALLOW_FALLBACK:-true}
-      MODEL_RECOMMENDATION_STALE_AFTER_DAYS: ${MODEL_RECOMMENDATION_STALE_AFTER_DAYS:-3}
+      MODEL_RECOMMENDATION_STALE_AFTER_DAYS: ${MODEL_RECOMMENDATION_STALE_AFTER_DAYS:-7}
       STRATEGY_CATALOG_VERSION: ${STRATEGY_CATALOG_VERSION:-v2}
       KIS_APP_KEY: ${KIS_APP_KEY:-}
       KIS_APP_SECRET: ${KIS_APP_SECRET:-}
@@ -209,7 +210,7 @@ services:
       AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
       MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${MODEL_RECOMMENDATION_SNAPSHOT_PATH:-/model-artifacts/risk-adjusted-momentum-v2.json}
       LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
-      ALGORITHM_V23_PATH: /algorithm-output/Algorithm(ver.2.3).py
+      ALGORITHM_V24_PATH: /algorithm-output/Algorithm(ver.2.4)_fix2.py
     volumes:
       - ./ai:/app
       - ./shared:/workspace/shared:ro
@@ -260,7 +261,7 @@ services:
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_CONTAINER_FEATURES: ${AZURE_STORAGE_CONTAINER_FEATURES:-features}
       LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
-      ALGORITHM_V23_PATH: /algorithm-output/Algorithm(ver.2.3).py
+      ALGORITHM_V24_PATH: /algorithm-output/Algorithm(ver.2.4)_fix2.py
     volumes:
       - ./ai:/app
       - ./output:/algorithm-output:ro
@@ -276,6 +277,28 @@ services:
       - ${LOSS_AVOIDANCE_TOP_N:-5}
       - --universe-size
       - ${LOSS_AVOIDANCE_UNIVERSE_SIZE:-20}
+    restart: "no"
+
+  loss-avoidance-rebalancer:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    profiles:
+      - ops
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      LOSS_AVOIDANCE_SNAPSHOT_PATH: ${LOSS_AVOIDANCE_SNAPSHOT_PATH:-/model-artifacts/loss_avoidance_snapshot.json}
+      KIS_APP_KEY: ${KIS_APP_KEY:-}
+      KIS_APP_SECRET: ${KIS_APP_SECRET:-}
+      KIS_BASE_URL: ${KIS_BASE_URL:-https://openapi.koreainvestment.com:9443}
+      PYTHONPATH: /app:/ai:/workspace
+    volumes:
+      - model_recommendation_artifacts:/model-artifacts:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "scripts.run_loss_avoidance_rebalance"]
     restart: "no"
 
   redis:

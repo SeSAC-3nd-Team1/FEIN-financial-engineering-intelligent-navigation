@@ -134,6 +134,16 @@ def test_available_range_uses_warmup_and_common_stock_index_end_date() -> None:
     assert result.max_date == date(2026, 8, 18)
 
 
+def test_momentum_decision_dates_include_initial_and_prior_quarter_close() -> None:
+    dates = [date(2026, 1, 2), date(2026, 3, 31), date(2026, 4, 1), date(2026, 6, 30), date(2026, 7, 1)]
+
+    assert BacktestService._momentum_decision_dates(dates) == [
+        date(2026, 1, 2),
+        date(2026, 3, 31),
+        date(2026, 6, 30),
+    ]
+
+
 def test_backtest_uses_historical_strategy_prices_and_real_kospi() -> None:
     result = BacktestService(FakeRepository()).run(request())
 

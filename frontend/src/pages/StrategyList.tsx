@@ -10,7 +10,7 @@ interface Props {
    *  "투자전략"으로 들어온 공용 진입에는 전달되지 않는다. 추천이 아니라 "확인을 완료했다"는
    *  안내일 뿐이라, 특정 카드를 강조하거나 순서를 바꾸지 않는다. */
   showOnboardingNotice?: boolean;
-  /** 물림방지 전략 카드 → Coming Soon 상세(실 Model/API 미연결, TODO) */
+  /** 물림방지 전략 카드 → 실제 `low` 전략 상세 및 백테스트 */
   onSelectLossAvoidance: () => void;
   /** 방탄 F4 전략집 카드 → F4 4개 전략 선택 화면 */
   onSelectF4: () => void;

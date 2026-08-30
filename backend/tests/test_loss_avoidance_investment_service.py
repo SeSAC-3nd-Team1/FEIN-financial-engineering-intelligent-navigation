@@ -41,11 +41,15 @@ class FakeTrading:
 
 
 class FakeSnapshot:
-    def __init__(self, model_version: str = "algorithm-v2.3") -> None:
+    def __init__(
+        self,
+        model_version: str = "algorithm-v2.4-fix2",
+        is_stale: bool = False,
+    ) -> None:
         self.value = SimpleNamespace(
             as_of=date(2026, 8, 28),
             source="generated",
-            is_stale=False,
+            is_stale=is_stale,
             model_version=model_version,
             recommendations=[
                 SimpleNamespace(symbol="005930", target_weight=0.4),
@@ -57,7 +61,7 @@ class FakeSnapshot:
         return self.value
 
 
-def make_service(model_version: str = "algorithm-v2.3"):
+def make_service(model_version: str = "algorithm-v2.4-fix2"):
     account = SimpleNamespace(
         id=uuid4(),
         selected_strategy_id="low",
@@ -98,3 +102,14 @@ def test_non_algorithm_snapshot_is_rejected() -> None:
 
     assert raised.value.code == "LOSS_AVOIDANCE_SNAPSHOT_NOT_APPLICABLE"
     assert trading.requests == []
+
+
+def test_stale_generated_snapshot_can_seed_an_evening_signup() -> None:
+    service, session, trading, account = make_service()
+    service.snapshot_service = FakeSnapshot(is_stale=True)
+
+    response = service.apply(7, account.id)
+
+    assert response.status == "APPLIED"
+    assert len(session.targets) == 2
+    assert len(trading.requests) == 2

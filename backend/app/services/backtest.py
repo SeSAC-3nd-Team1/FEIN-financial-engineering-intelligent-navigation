@@ -4,7 +4,10 @@ from collections import defaultdict
 from itertools import chain, groupby
 from datetime import date, timedelta
 import gc
+import json
 import math
+import os
+from pathlib import Path
 from statistics import fmean, pstdev
 
 import pandas as pd
@@ -24,6 +27,7 @@ from app.repositories.backtest import (
     StockPricePoint,
 )
 from app.schemas.api import BacktestAvailableRangeResponse, BacktestRunRequest, BacktestRunResponse
+from app.services.loss_avoidance_backtest import run_loss_avoidance_backtest
 
 
 # v2 needs 273 trading days for the 12M/skip-1M return and 156 completed
@@ -83,10 +87,23 @@ class BacktestService:
         self.repository = repository
 
     def available_range(self, strategy_id: str | None = None) -> BacktestAvailableRangeResponse:
+        snapshot = self._snapshot()
+        if snapshot is not None and (strategy_id in {None, "momentum"}):
+            periods = list(snapshot.get("periods", {}).values())
+            if periods:
+                return BacktestAvailableRangeResponse.model_validate({
+                    "minDate": min(period["period"]["startDate"] for period in periods),
+                    "maxDate": max(period["period"]["endDate"] for period in periods),
+                })
         stock_min, stock_max, index_min, index_max = self.repository.available_dates(min_stocks=PORTFOLIO_SIZE)
         if None in {stock_min, stock_max, index_min, index_max}:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "백테스트 기간 정보를 찾을 수 없습니다.")
-        lookback_days = V2_LOOKBACK_DAYS if strategy_id == "momentum" else LOOKBACK_DAYS
+        # Algorithm v2.4 fix2는 종목별 최소 학습기간이 길어 일반 factor보다
+        # 넉넉한 warm-up 구간을 공개 범위에도 반영한다.
+        lookback_days = (
+            1500 if strategy_id == "low" else
+            V2_LOOKBACK_DAYS if strategy_id == "momentum" else LOOKBACK_DAYS
+        )
         min_date = max(stock_min + timedelta(days=lookback_days), index_min)
         max_date = min(stock_max, index_max)
         if min_date >= max_date:
@@ -94,6 +111,11 @@ class BacktestService:
         return BacktestAvailableRangeResponse.model_validate({"minDate": min_date, "maxDate": max_date})
 
     def run(self, request: BacktestRunRequest) -> BacktestRunResponse:
+        snapshot = self._snapshot()
+        if snapshot is not None and request.strategy_id == "momentum":
+            cached = snapshot.get("periods", {}).get(request.period_id)
+            if cached is not None:
+                return BacktestRunResponse.model_validate(cached)
         if request.period_id == "custom":
             raise ServiceError(
                 "BACKTEST_CUSTOM_PERIOD_DISABLED",
@@ -104,16 +126,26 @@ class BacktestService:
         if strategy is None:
             raise NotFoundError("STRATEGY_NOT_FOUND", "활성 투자 전략을 찾을 수 없습니다.")
         factor = str((strategy.rule_config or {}).get("factor", ""))
-        if factor not in {"low_volatility", "momentum", "value"}:
+        is_loss_avoidance = getattr(strategy, "engine_key", "") == "algorithm_v2_4_fix2"
+        if not is_loss_avoidance and factor not in {"low_volatility", "momentum", "value"}:
             raise ServiceError("BACKTEST_STRATEGY_UNAVAILABLE", "지원하지 않는 전략 규칙입니다.", 422)
 
-        lookback_days = V2_LOOKBACK_DAYS if factor == "momentum" else LOOKBACK_DAYS
-        if factor == "momentum":
-            # Keep every code observed in the period so rank() can rebuild the
-            # top-100 investable universe at each point in time.
-            universe = self.repository.stock_codes(
-                request.start_date - timedelta(days=lookback_days), request.end_date
-            )
+        lookback_days = 1500 if is_loss_avoidance else (V2_LOOKBACK_DAYS if factor == "momentum" else LOOKBACK_DAYS)
+        benchmark = self.repository.kospi_prices(request.start_date, request.end_date)
+        if len(benchmark) < 2:
+            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "KOSPI 기준지수 데이터가 부족합니다.")
+
+        if factor == "momentum" and not is_loss_avoidance:
+            # Ranking first narrows the expensive warm-up feature calculation
+            # to the stocks that can actually enter a quarterly top-100
+            # cross-section. Fall back for test doubles and old repositories.
+            decision_dates = self._momentum_decision_dates([point.trade_date for point in benchmark])
+            if hasattr(self.repository, "momentum_decision_stock_codes"):
+                universe = self.repository.momentum_decision_stock_codes(decision_dates)
+            else:
+                universe = self.repository.stock_codes(
+                    request.start_date - timedelta(days=lookback_days), request.end_date
+                )
         else:
             universe = self.repository.universe_codes(request.start_date)
         if len(universe) < PORTFOLIO_SIZE:
@@ -121,12 +153,9 @@ class BacktestService:
         warmup_start = request.start_date - timedelta(days=lookback_days)
         price_points = (
             self.repository.stock_price_stream(universe, warmup_start, request.end_date)
-            if factor == "momentum" and hasattr(self.repository, "stock_price_stream")
+            if factor == "momentum" and not is_loss_avoidance and hasattr(self.repository, "stock_price_stream")
             else self.repository.stock_prices(universe, warmup_start, request.end_date)
         )
-        benchmark = self.repository.kospi_prices(request.start_date, request.end_date)
-        if len(benchmark) < 2:
-            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "KOSPI 기준지수 데이터가 부족합니다.")
 
         financial_points: list[PointInTimeFinancial] = []
         if factor == "value":
@@ -138,7 +167,12 @@ class BacktestService:
                 )
 
         dates = [point.trade_date for point in benchmark]
-        if factor == "momentum":
+        if is_loss_avoidance:
+            strategy_values = run_loss_avoidance_backtest(
+                list(price_points), dates,
+                max_symbols=int(os.getenv("LOSS_AVOIDANCE_BACKTEST_SYMBOLS", "20")),
+            )
+        elif factor == "momentum":
             # stock_price_stream is a single-pass iterator.  Do not consume it
             # while building legacy maps before the v2 simulator reads it.
             strategy_values = self._simulate_risk_adjusted_momentum_v2(price_points, dates)
@@ -181,6 +215,14 @@ class BacktestService:
                 "mdd": benchmark_metrics["mdd"],
             },
         })
+
+    @staticmethod
+    def _snapshot() -> dict[str, object] | None:
+        path = Path(os.getenv("BACKTEST_SNAPSHOT_PATH", "/model-artifacts/backtest-results.json"))
+        try:
+            return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+        except (OSError, json.JSONDecodeError):
+            return None
 
     @staticmethod
     def _price_map(points: list[StockPricePoint]) -> dict[str, dict[date, float]]:
@@ -291,8 +333,10 @@ class BacktestService:
         """Run quarterly v2 targets with drift, using the AI factor source of truth.
 
         Targets are decided with rows through the decision close and become active
-        on the next available benchmark trading day.  Unsafe/missing observations
-        fail closed instead of inventing a return.
+        on the next available benchmark trading day. Missing observations and
+        unsafe corporate-action rows carry the holding value forward for that
+        day; the simulation never invents a price return or aborts the whole
+        report because one listed stock was suspended.
         """
         model = RiskAdjustedMomentumModel()
         features = BacktestService._build_v2_features(points, model)
@@ -305,6 +349,14 @@ class BacktestService:
         # every historical feature row.
         price_matrix.columns = price_matrix.columns.map(str)
         safe_matrix.columns = safe_matrix.columns.map(str)
+        # A suspended/delisted stock may have no row on a benchmark trading
+        # date. Forward-filling only the already observed adjusted close lets
+        # the next real observation capture the full move, while the missing
+        # day itself contributes a flat return. This matches the legacy
+        # simulator's suspension handling and keeps one bad row from making
+        # every preset unavailable.
+        observed_price_matrix = price_matrix
+        price_matrix = price_matrix.ffill()
         ordered_dates = [pd.Timestamp(day) for day in dates]
         values = [1.0]
         # The initial decision is made at the requested start close; its target
@@ -343,9 +395,23 @@ class BacktestService:
                     safe = safe_matrix.loc[trade_date, symbols]
                 except KeyError as exc:
                     raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "보유 종목 가격 관측치가 없습니다.") from exc
-                if current.isna().any() or previous.isna().any() or not safe.eq(True).all():
-                    raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "기업행위 또는 결측 가격으로 v2 백테스트를 중단했습니다.")
-                closing = {symbol: weight * float(current[symbol] / previous[symbol]) for symbol, weight in weights.items()}
+                closing = {}
+                for symbol, weight in weights.items():
+                    current_price = current[symbol]
+                    previous_price = previous[symbol]
+                    observed_price = observed_price_matrix.loc[trade_date, symbol]
+                    # No observed history yet: keep the position unchanged.
+                    # An unsafe event is deliberately flat for the event day;
+                    # the following observed close starts a new return period.
+                    if (
+                        pd.isna(current_price)
+                        or pd.isna(previous_price)
+                        or pd.isna(observed_price)
+                        or not bool(safe.get(symbol, False))
+                    ):
+                        closing[symbol] = weight
+                    else:
+                        closing[symbol] = weight * float(current_price / previous_price)
                 total = (1.0 - sum(weights.values())) + sum(closing.values())
                 if total <= 0 or not math.isfinite(total):
                     raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "모멘텀 v2 포트폴리오 가치가 유효하지 않습니다.")
@@ -354,6 +420,20 @@ class BacktestService:
             else:
                 values.append(values[-1])
         return values
+
+    @staticmethod
+    def _momentum_decision_dates(dates: list[date]) -> list[date]:
+        """Return only dates at which the quarterly v2 target is decided."""
+        if not dates:
+            return []
+        decisions = [dates[0]]
+        previous_bucket = BacktestService._rebalance_bucket(dates[0], "QUARTERLY")
+        for index, trade_date in enumerate(dates[1:], start=1):
+            bucket = BacktestService._rebalance_bucket(trade_date, "QUARTERLY")
+            if bucket != previous_bucket:
+                decisions.append(dates[index - 1])
+                previous_bucket = bucket
+        return decisions
 
     @staticmethod
     def _build_v2_features(

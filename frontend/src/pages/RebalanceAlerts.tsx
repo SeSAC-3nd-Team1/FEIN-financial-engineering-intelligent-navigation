@@ -4,6 +4,8 @@ import Header from "../components/Header";
 import { buildDetailedPortfolioHoldings } from "../lib/portfolioModel";
 import { useTradingData } from "../hooks/useTradingData";
 import type { StrategyResponse } from "../lib/backendApi";
+import { rebalanceLatestLossAvoidanceRecommendationApi } from "../lib/backendApi";
+import { toAccountOperationMode } from "../data/fees";
 import { useAuthStore } from "../store/authStore";
 import { getDisplayAlerts } from "../lib/rebalancing";
 import { won } from "../lib/validation";
@@ -102,6 +104,10 @@ function RebalanceAlertsContent({
         decision,
         idempotency_key: idempotencyKey,
       });
+      if (decision === "ACCEPTED" && strategy.id === "low") {
+        await rebalanceLatestLossAvoidanceRecommendationApi(account.id, token);
+        await useTradingStore.getState().refresh(token, toAccountOperationMode(isAutoMode ? "auto" : "manual"));
+      }
     } catch (error) {
       setDecisionError(
         error instanceof Error ? error.message : "판단을 저장하지 못했습니다.",
