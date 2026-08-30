@@ -91,6 +91,56 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Resolve production ACR
+        env:
+          CONFIGURED_ACR_NAME: ${{ vars.ACR_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
+        run: |
+          set -euo pipefail
+
+          # ACR names are subscription-scoped; requiring the configured
+          # resource group can reject a valid registry after infrastructure
+          # resources are moved between resource groups.
+          if [[ -n "${CONFIGURED_ACR_NAME}" ]] && az acr show \
+            --name "${CONFIGURED_ACR_NAME}" \
+            --output none 2>/dev/null; then
+            resolved_acr="${CONFIGURED_ACR_NAME}"
+          else
+            # Existing Container Apps retain the registry login server even
+            # when the GitHub variable is stale. Use it as the next source of
+            # truth, then verify that registry exists in the active
+            # subscription before using it.
+            current_image="$(az containerapp show \
+              --name "${FRONTEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query 'properties.template.containers[0].image' \
+              --output tsv)"
+            current_registry="${current_image%%.azurecr.io/*}"
+            if [[ "${current_registry}" != "${current_image}" ]] && \
+              az acr show --name "${current_registry##*/}" --output none 2>/dev/null; then
+              resolved_acr="${current_registry##*/}"
+            else
+              mapfile -t subscription_acrs < <(az acr list \
+                --query '[].name' \
+                --output tsv)
+              if (( ${#subscription_acrs[@]} != 1 )); then
+                echo "Configured ACR '${CONFIGURED_ACR_NAME:-<unset>}' was not found in the active subscription." >&2
+                printf 'Existing frontend image: %s\n' "${current_image:-<none>}" >&2
+                printf 'Expected exactly one subscription ACR; found: %s\n' \
+                  "${subscription_acrs[*]:-<none>}" >&2
+                exit 1
+              fi
+              resolved_acr="${subscription_acrs[0]}"
+            fi
+            if [[ -z "${resolved_acr}" ]]; then
+              exit 1
+            fi
+          fi
+
+          echo "ACR_NAME=${resolved_acr}" >> "${GITHUB_ENV}"
+          echo "Resolved production ACR: ${resolved_acr}"
+
       - name: Ensure internal Redis Container App
         id: redis
         env:
@@ -380,7 +430,7 @@ jobs:
       - name: Build and push frontend image
         run: |
           az acr build \
-            --registry "${{ vars.ACR_NAME }}" \
+            --registry "${ACR_NAME}" \
             --image "fein-frontend:${IMAGE_TAG}" \
             --file frontend/Dockerfile.prod \
             ./frontend
@@ -388,7 +438,7 @@ jobs:
       - name: Build backend image
         run: |
           az acr build \
-            --registry "${{ vars.ACR_NAME }}" \
+            --registry "${ACR_NAME}" \
             --image "fein-backend:${IMAGE_TAG}" \
             --file backend/Dockerfile.prod \
             .
@@ -396,7 +446,7 @@ jobs:
       - name: Verify FINCON model in backend image
         run: |
           az acr run \
-            --registry "${{ vars.ACR_NAME }}" \
+            --registry "${ACR_NAME}" \
             --cmd "\$Registry/fein-backend:${IMAGE_TAG} python -c \"from app.trading_engine.model_loader_fix1 import load_model_module_fix1; module = load_model_module_fix1(); assert module.MODEL_VERSION == 'fincon-ver23-v1-fix1'\"" \
             /dev/null
 
@@ -414,7 +464,7 @@ jobs:
           az containerapp update \
             --name "${{ vars.FRONTEND_APP_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --image "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
+            --image "${ACR_NAME}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
             --set-env-vars \
               "BACKEND_UPSTREAM=https://${backend_fqdn}" \
               "BACKEND_HOST=${backend_fqdn}" \
@@ -595,7 +645,7 @@ jobs:
           az containerapp update \
             --name "${BACKEND_APP_NAME}" \
             --resource-group "${RESOURCE_GROUP}" \
-            --image "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
+            --image "${ACR_NAME}.azurecr.io/fein-backend:${IMAGE_TAG}" \
             --cpu 2.0 \
             --memory 4Gi \
             --min-replicas 1 \
