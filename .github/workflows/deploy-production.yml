@@ -281,7 +281,8 @@ jobs:
             --revision "${ready_revision}" \
             --query properties.template.containers[0] \
             --output json | jq \
-              --arg image "${ACR_NAME}.azurecr.io/fein-backend:${IMAGE_TAG}" '
+              --arg image "${ACR_NAME}.azurecr.io/fein-backend:${IMAGE_TAG}" \
+              --arg chatbot_registry '{"chatbots":[{"chatbot_id":"fein-web-chatbot","display_name":"FE!N Web Chatbot","provider":"foundry","source_agent_name":"MBGCoordinator","enabled":true,"allowed_context_keys":["screen","stock_code","strategy_id","verified_personal_summary"],"max_input_chars":4000,"max_response_chars":8000,"timeout_seconds":120}]}' '
                 .image = $image
                 | (.env //= [])
                 | .env |= map(if .secretRef then {name, secretRef} else {name, value} end)
@@ -290,11 +291,35 @@ jobs:
                       .name != "MODEL_RECOMMENDATION_SNAPSHOT_PATH"
                       and .name != "MODEL_RECOMMENDATION_ALLOW_FALLBACK"
                       and .name != "MODEL_RECOMMENDATION_STALE_AFTER_DAYS"
+                      and .name != "AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT"
+                      and .name != "AZURE_OPENAI_REBALANCING_DEPLOYMENT"
+                      and .name != "AZURE_OPENAI_COMPARISON_DEPLOYMENT"
+                      and .name != "AZURE_OPENAI_BACKTEST_EXPLANATION_DEPLOYMENT"
+                      and .name != "FOUNDRY_PROJECT_ENDPOINT"
+                      and .name != "FOUNDRY_MODEL_DEPLOYMENT_NAME"
+                      and .name != "CHATBOT_REGISTRY_JSON"
+                      and .name != "AI_CHATBOT_PROVIDER"
+                      and .name != "AGENT_PROTOCOL"
+                      and .name != "AGENT_CLIENT_BACKEND"
+                      and .name != "ALLOW_PREVIEW_A2A"
+                      and .name != "ANALYSIS_MODE"
                     ))
                     + [
                         {"name": "MODEL_RECOMMENDATION_SNAPSHOT_PATH", "value": "/model-artifacts/risk-adjusted-momentum-v2.json"},
                         {"name": "MODEL_RECOMMENDATION_ALLOW_FALLBACK", "value": "false"},
-                        {"name": "MODEL_RECOMMENDATION_STALE_AFTER_DAYS", "value": "7"}
+                        {"name": "MODEL_RECOMMENDATION_STALE_AFTER_DAYS", "value": "7"},
+                        {"name": "AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT", "value": "gpt-5.6-luna"},
+                        {"name": "AZURE_OPENAI_REBALANCING_DEPLOYMENT", "value": "gpt-5.6-luna"},
+                        {"name": "AZURE_OPENAI_COMPARISON_DEPLOYMENT", "value": "gpt-5.6-luna"},
+                        {"name": "AZURE_OPENAI_BACKTEST_EXPLANATION_DEPLOYMENT", "value": "gpt-5.6-luna"},
+                        {"name": "FOUNDRY_PROJECT_ENDPOINT", "value": "https://fein-agent.services.ai.azure.com/api/projects/proj-default"},
+                        {"name": "FOUNDRY_MODEL_DEPLOYMENT_NAME", "value": "gpt-5.6-luna"},
+                        {"name": "CHATBOT_REGISTRY_JSON", "value": $chatbot_registry},
+                        {"name": "AI_CHATBOT_PROVIDER", "value": "foundry_orchestration"},
+                        {"name": "AGENT_PROTOCOL", "value": "responses"},
+                        {"name": "AGENT_CLIENT_BACKEND", "value": "foundry_sdk"},
+                        {"name": "ALLOW_PREVIEW_A2A", "value": "false"},
+                        {"name": "ANALYSIS_MODE", "value": "analysis_only"}
                       ]
                   )
                 | (.resources //= {})
