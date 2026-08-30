@@ -1320,11 +1320,11 @@ export default function App() {
         />
       )}
 
-      {screen === "strategy-list" && (
+            {screen === "strategy-list" && (
         <StrategyList
           userName={userName}
           onNavigate={navigate}
-          showOnboardingNotice={justFinishedInvestorProfile}
+
           onSelectLossAvoidance={() =>
             pushScreen("strategy-coming-soon-loss-avoidance")
           }
