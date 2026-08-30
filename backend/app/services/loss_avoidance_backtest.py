@@ -57,7 +57,21 @@ def run_loss_avoidance_backtest(
     for symbol in list(grouped)[:max_symbols]:
         rows = []
         for point in sorted(grouped[symbol], key=lambda item: item.trade_date):
-            if None in (point.open_price, point.high_price, point.low_price) or point.volume is None:
+            prices = (
+                point.open_price,
+                point.high_price,
+                point.low_price,
+                point.close,
+            )
+            if (
+                any(value is None or value <= 0 for value in prices)
+                or point.volume is None
+                or point.volume < 0
+            ):
+                # The team model intentionally rejects invalid OHLCV. Raw
+                # feature partitions can contain zero placeholders, so filter
+                # those rows at the adapter boundary instead of weakening the
+                # model's validation contract.
                 continue
             rows.append({
                 "Date": pd.Timestamp(point.trade_date),

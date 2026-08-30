@@ -8,6 +8,7 @@ import {
   ApiError,
   getPortfolioComparisonApi,
   rebalanceLatestLossAvoidanceRecommendationApi,
+  rebalanceLatestModelRecommendationsApi,
   type PortfolioComparisonResponse,
   type PortfolioHistoryPeriod,
   type StrategyResponse,
@@ -252,8 +253,12 @@ function PortfolioDetailContent({
         decision,
         idempotency_key: idempotencyKey,
       });
-      if (decision === "ACCEPTED" && strategy.id === "low") {
-        await rebalanceLatestLossAvoidanceRecommendationApi(account.id, token);
+      if (decision === "ACCEPTED") {
+        if (strategy.id === "low") {
+          await rebalanceLatestLossAvoidanceRecommendationApi(account.id, token);
+        } else if (strategy.id === "momentum") {
+          await rebalanceLatestModelRecommendationsApi(account.id, token);
+        }
         await useTradingStore.getState().refresh(token, toAccountOperationMode(isAutoMode ? "auto" : "manual"));
       }
     } catch (error) {

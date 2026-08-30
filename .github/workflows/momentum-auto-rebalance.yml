@@ -1,0 +1,72 @@
+name: Momentum Auto Rebalance
+
+on:
+  schedule:
+    # KRX 장 마감 이후 평일 19:00 KST에 최신 모멘텀 snapshot을 만들고
+    # 공식 분기말이면 AUTO 계좌를 내부 DB에서 리밸런싱한다.
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: momentum-auto-rebalance
+  cancel-in-progress: false
+
+jobs:
+  generate-and-rebalance:
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      KIS_BASE_URL: ${{ vars.KIS_BASE_URL || 'https://openapi.koreainvestment.com:9443' }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME || 'stfeindata' }}
+      AZURE_STORAGE_CONTAINER_FEATURES: ${{ vars.AZURE_STORAGE_CONTAINER_FEATURES || 'features' }}
+      PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
+      MODEL_RECOMMENDATION_SNAPSHOT_PATH: ${{ github.workspace }}/.deploy-artifacts/risk-adjusted-momentum-v2.json
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate configuration
+        run: |
+          set -euo pipefail
+          for name in DATABASE_URL REDIS_URL KIS_APP_KEY KIS_APP_SECRET AZURE_STORAGE_ACCOUNT_NAME; do
+            [[ -n "${!name:-}" ]] || { echo "${name} is required." >&2; exit 1; }
+          done
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            ai/requirements.txt
+            backend/requirements.txt
+
+      - name: Generate current momentum snapshot
+        run: |
+          set -euo pipefail
+          python -m pip install -r ai/requirements.txt -r backend/requirements.txt
+          mkdir -p .deploy-artifacts
+          python -m inference.generate_risk_adjusted_momentum \
+            --model-version 2 --algorithm-version 2 --master-version 1 \
+            --output "${MODEL_RECOMMENDATION_SNAPSHOT_PATH}"
+          test -s "${MODEL_RECOMMENDATION_SNAPSHOT_PATH}"
+
+      - name: Rebalance internal PostgreSQL accounts
+        working-directory: backend
+        run: python -m scripts.run_auto_model_rebalance --strategy momentum

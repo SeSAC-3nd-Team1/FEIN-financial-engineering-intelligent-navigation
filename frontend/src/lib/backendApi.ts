@@ -1144,6 +1144,21 @@ export function applyLatestModelRecommendationsApi(
   );
 }
 
+/** 최신 모멘텀 목표 비중과 현재 보유분을 실제 주문으로 조정한다. */
+export function rebalanceLatestModelRecommendationsApi(
+  accountId: string,
+  token: string,
+): Promise<ModelRecommendationApplyResponse> {
+  return request<ModelRecommendationApplyResponse>(
+    "/model-recommendations/latest/rebalance",
+    {
+      method: "POST",
+      body: JSON.stringify({ account_id: accountId }),
+    },
+    token,
+  );
+}
+
 /** 정도영 Algorithm(ver.2.4)_fix2 스냅샷을 물림방지 계좌의 목표 비중에 적용한다. */
 export function applyLatestLossAvoidanceRecommendationApi(
   accountId: string,

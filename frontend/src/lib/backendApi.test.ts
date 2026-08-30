@@ -6,6 +6,7 @@ import {
   depositAccountCashApi,
   getLatestModelRecommendationsApi,
   startInvestmentApi,
+  rebalanceLatestModelRecommendationsApi,
   type ModelRecommendationSnapshotResponse,
   type StrategyRecommendationResponse,
 } from "./backendApi";
@@ -117,6 +118,32 @@ describe("strategy recommendation API", () => {
     ).resolves.toEqual(applied);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/model-recommendations/latest/apply",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ account_id: "account-1" }),
+      }),
+    );
+  });
+
+  it("선택 계좌에 최신 모멘텀 리밸런싱을 요청한다", async () => {
+    const applied = {
+      account_id: "account-1",
+      strategy_id: "momentum",
+      as_of: "2026-09-30",
+      target_count: 5,
+      orders_created: 3,
+      status: "APPLIED",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(applied)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      rebalanceLatestModelRecommendationsApi("account-1", "token-a"),
+    ).resolves.toEqual(applied);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/model-recommendations/latest/rebalance",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ account_id: "account-1" }),
