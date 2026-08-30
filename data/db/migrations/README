@@ -1,0 +1,5 @@
+Single-database Alembic configuration for the Data service.
+
+Run from /app in the Data container:
+
+    alembic upgrade head

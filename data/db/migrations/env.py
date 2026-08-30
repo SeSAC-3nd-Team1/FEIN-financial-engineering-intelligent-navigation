@@ -1,0 +1,73 @@
+"""애플리케이션과 동일한 ``DATABASE_URL``을 사용하는 Alembic runtime 설정이다."""
+
+from logging.config import fileConfig
+
+from alembic import context
+from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import Connection
+
+from db.base import Base
+from db.connection.session import get_database_url
+from db import models  # noqa: F401 - ORM metadata 등록을 위해 import
+
+
+config = context.config
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+# Alembic config parser가 '%'를 interpolation 문자로 처리하므로 URL 안의 '%'를 escape한다.
+config.set_main_option("sqlalchemy.url", get_database_url().replace("%", "%%"))
+target_metadata = Base.metadata
+
+
+def run_migrations_offline() -> None:
+    """DB 연결 없이 SQL script 생성용 offline migration context를 실행한다."""
+
+    context.configure(
+        url=config.get_main_option("sqlalchemy.url"),
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+        include_schemas=True,
+        compare_type=True,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def do_run_migrations(connection: Connection) -> None:
+    """호출자가 제공하거나 Alembic이 생성한 연결에서 migration을 실행한다."""
+
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_schemas=True,
+        compare_type=True,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online() -> None:
+    """실제 PostgreSQL 연결에서 transaction 단위로 migration을 실행한다."""
+
+    external_connection = config.attributes.get("connection")
+    if external_connection is not None:
+        # 공용 DB 초기화는 advisory lock을 잡은 동일 연결을 전달해 동시 DDL을 막는다.
+        do_run_migrations(external_connection)
+        return
+
+    # 독립 실행 migration은 장시간 유지되는 application pool이 필요하지 않으므로 NullPool을 사용한다.
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section, {}),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+    with connectable.connect() as connection:
+        do_run_migrations(connection)
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()

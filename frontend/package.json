@@ -5,19 +5,28 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "npm run check:colors && tsc -b && vite build",
+    "test": "vitest run",
+    "preview": "vite preview",
+    "check:colors": "node scripts/check-raw-colors.mjs"
   },
   "dependencies": {
+    "lucide-react": "^0.460.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "recharts": "^2.15.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.5",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
     "typescript": "7.0.2",
-    "vite": "8.2.1"
+    "vite": "8.2.1",
+    "vitest": "^3.2.4"
   }
 }
