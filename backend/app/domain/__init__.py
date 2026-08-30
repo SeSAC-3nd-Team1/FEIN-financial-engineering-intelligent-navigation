@@ -1,1 +1,0 @@
-"""Business domain definitions."""
