@@ -327,8 +327,8 @@ export default function App() {
     useState<Screen>(persistedNav.postDiagnosisTarget ?? "risk-result");
   const [riskNotice, setRiskNotice] = useState<string | undefined>(undefined);
   const [riskErrorCode, setRiskErrorCode] = useState<string | null>(null);
-  // 온보딩 흐름에서 RiskResult를 skip하고 곧장 StrategyList로 넘어온 직후에만 true — StrategyList가
-  // 상단에 짧은 안내 문구를 보여줄지 판단하는 용도. strategy-list를 벗어나면 아래 effect가 초기화한다.
+  // 투자성향 진단을 전략 목록으로 마친 직후에만 true — StrategyList가 상단에 짧은 안내 문구를
+  // 보여줄지 판단하는 용도. strategy-list를 벗어나면 아래 effect가 초기화한다.
   const [justFinishedInvestorProfile, setJustFinishedInvestorProfile] =
     useState(false);
   // 투자자 정보 확인(risk) 완료 버튼을 누른 뒤 백엔드 분석 응답을 기다리는 동안 true — 이 결과가
@@ -1257,9 +1257,9 @@ export default function App() {
               })),
             });
             setEmailVerification(null);
-            // Strategy recommendation model 연결 전까지 onboarding flow에서 RiskResult를
-            // 일시적으로 skip. 향후 추천 모델 연결 시 재활성화 예정.
-            startInvestorProfile("strategy-list", undefined, "replace");
+            // 가입 직후에는 방금 저장한 투자성향 결과를 먼저 보여준다.
+            // 결과 화면의 CTA에서 사용자가 전략 목록으로 이어갈 수 있다.
+            startInvestorProfile("risk-result", undefined, "replace");
           }}
           onBack={() => goBackOrTo("signup-2")}
           userName={userName}
@@ -1309,8 +1309,6 @@ export default function App() {
               );
               setRiskNotice(undefined);
               setRiskErrorCode(null);
-              // Strategy recommendation model 연결 전까지 onboarding flow에서 RiskResult를
-              // 일시적으로 skip. 향후 추천 모델 연결 시 재활성화 예정.
               if (postDiagnosisTarget === "strategy-list") {
                 setJustFinishedInvestorProfile(true);
               }
