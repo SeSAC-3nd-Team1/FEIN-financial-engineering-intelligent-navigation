@@ -46,10 +46,11 @@ jobs:
   deploy:
     # The push trigger fires only for commits that land on develop. The
     # concurrency group below also serializes manual retries with deployments.
-    # The v2 artifact generator needs more memory than Azure Cloud Shell.
-    # Register the Azure runner with the `azure-large` label on a host with
-    # at least 16 GiB RAM before running Production Deploy.
-    runs-on: [self-hosted, Linux, X64, azure-large]
+    # Use a GitHub-hosted runner so deployment cannot remain queued behind an
+    # unavailable azure-large self-hosted runner. Azure CLI, Python, jq, and
+    # Docker are available on ubuntu-latest.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     environment:
       name: production
 
