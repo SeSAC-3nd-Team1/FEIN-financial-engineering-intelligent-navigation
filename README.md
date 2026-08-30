@@ -1,4 +1,108 @@
-# SeSAC 3차 프로젝트 1팀
+# FEIN — 쉽고 안전하게 시작하는 투자
+
+SeSAC 3차 프로젝트 1팀이 만든 금융·가상투자 서비스입니다. FEIN은 투자성향을 확인하고, 여러 투자전략을 비교한 뒤, 실제 시장 데이터를 참고해 가상투자로 투자 과정을 경험할 수 있도록 돕습니다.
+
+처음 투자를 시작하는 사용자가 “무엇을 사야 하는가”보다 먼저 “나에게 어떤 투자 방식이 맞는가”를 이해하도록 하는 것을 목표로 합니다. 투자성향 분석, 전략별 백테스트, 가상계좌, 포트폴리오 분석, 종목 정보와 금융 콘텐츠를 하나의 흐름으로 제공합니다.
+
+## 주요 사용자 흐름
+
+```text
+회원가입
+  → 투자성향 진단
+  → 투자유형 결과 확인
+  → 투자전략 비교 및 선택
+  → 가상계좌 준비·입금
+  → 가상 매수·매도
+  → 포트폴리오·수익률·거래내역 확인
+```
+
+## 주요 기능
+
+- 회원가입, 이메일 인증, 약관 동의, JWT 로그인 및 사용자 상태 복원
+- 8개 문항 기반 투자성향 진단과 5단계 투자유형 결과 제공
+- 모멘텀·물림방지 등 투자전략 소개, 백테스트와 전략별 투자 시작 흐름
+- AUTO / SEMI_AUTO 운용방식별 가상계좌 관리
+- 실제 KIS 현재가와 KRX 시세 이력을 참고하는 가상 매수·매도
+- 포트폴리오 요약, 보유 비중, 손익·수익률, 자산 변화, 종목별 기여도
+- 체결 거래내역과 투자금 입금·출금 흐름
+- 종목 상세 시세, 기간별 차트, 시가총액·PER·PBR·ROE 등 기업 지표
+- KRX·OpenDART 기반 기업 설명 및 금융상식·시장정보 콘텐츠
+- 리밸런싱 제안과 투자 판단을 돕는 AI/분석 기능
+- 데이터가 없거나 외부 API가 실패한 경우 임의의 투자 수치를 표시하지 않는 빈 상태·오류 안내
+
+## 기술 스택
+
+| 영역 | 기술 |
+| --- | --- |
+| Frontend | React, TypeScript, Vite, Tailwind CSS, Recharts, Zustand |
+| Backend | Python 3.13, FastAPI, SQLAlchemy, Alembic |
+| Data / AI | Python, Azure Blob Storage, Parquet, Feature Pipeline |
+| Database | Azure Database for PostgreSQL Flexible Server |
+| Cache | Redis |
+| Market data | KIS 현재가, KRX 일별 시세, OpenDART 기업·재무 정보 |
+| Infrastructure | Docker Compose, Azure Container Apps, GitHub Actions |
+
+## 시스템 개요
+
+```text
+React Frontend
+      │ REST API / JWT
+      ▼
+FastAPI Backend ── Redis cache
+      │
+      ├── Azure PostgreSQL
+      │     ├── 회원·약관
+      │     ├── 투자성향·전략
+      │     └── 가상계좌·주문·체결·원장
+      ├── KIS: 현재가 조회
+      ├── KRX / OpenDART: 시세·기업·재무 데이터
+      └── Azure Blob: Raw / Processed / Features 금융 데이터
+```
+
+가상투자의 계좌·주문·체결·현금 원장은 내부 PostgreSQL에서 관리하며, KIS는 현재가를 제공하는 시장 데이터 공급자로 사용합니다. 브라우저가 외부 금융 API를 직접 호출하지 않도록 모든 연동은 Backend를 거칩니다.
+
+## 데이터 및 장애 대응 원칙
+
+- 실제 계좌 데이터가 있으면 실제 포트폴리오·체결·수익률을 표시합니다.
+- 데이터가 없는 신규 계좌와 API 조회 실패를 구분해 표시합니다.
+- 운영 화면에서 임의의 mock 투자금·수익률·거래내역으로 실제 데이터를 대체하지 않습니다.
+- 실시간 시세와 과거 데이터에는 출처와 기준 시각을 함께 관리합니다.
+- 주문은 idempotency key와 원장 정합성을 기준으로 처리해 중복 체결을 방지합니다.
+- Mock 백테스트와 데모 계정은 개발·시연 환경에서만 명시적으로 활성화합니다.
+
+## 프로젝트 구조
+
+```text
+.
+├── frontend/          # React 기반 사용자 화면
+├── backend/            # FastAPI API·도메인·서비스·외부 연동
+├── data/               # 금융 데이터 수집·정제·Feature 파이프라인
+├── ai/                 # 모델 학습·평가·추론 환경
+├── agent-orchestration/ # 분석 에이전트 오케스트레이터
+├── infra/              # Azure 인프라·배포·보안 설정
+├── docs/               # API·DB·데이터·운영 명세
+├── compose.yaml        # 공통 Docker Compose 개발환경
+└── .env.example        # 환경변수 예시
+```
+
+## 빠른 시작
+
+```bash
+git clone https://github.com/SeSAC-3nd-Team1/SeSAC-3nd-Team1-project.git
+cd SeSAC-3nd-Team1-project
+git switch develop
+cp .env.example .env
+docker compose up -d
+```
+
+Windows PowerShell에서는 다음을 사용합니다.
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d
+```
+
+`.env`에는 팀 공용 Azure PostgreSQL 접속 정보와 필요한 외부 API 키를 설정해야 합니다. 서비스 주소와 전체 개발·테스트 절차는 아래 [Development setup](#development-setup)과 [문서 목록](docs/README.md)을 참고하세요.
 
 Docker Compose 기반의 공통 개발환경입니다. 일반 개발·시연용 서비스 DB는 팀 공용 **Azure Database for PostgreSQL Flexible Server 1개**만 사용합니다. 로컬 PostgreSQL fallback은 제공하지 않습니다.
 
