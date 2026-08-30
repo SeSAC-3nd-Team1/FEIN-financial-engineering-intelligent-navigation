@@ -135,7 +135,16 @@ def seed_existing(session, password: str) -> tuple[User, VirtualAccount, bool]:
         session.add(Position(account_id=account.id, stock_code=code, quantity=quantity, average_price=price, realized_profit=Decimal("0")))
         session.add(CashLedger(account_id=account.id, transaction_type="BUY", amount=-amount, balance_after=cash - amount, reference_type="ORDER", reference_id=str(order.id), created_at=started_at))
         cash -= amount
-        session.add(StrategyTargetWeight(strategy_id="low", stock_code=code, target_weight=weight, effective_from=snapshot.as_of))
+        existing_target = session.scalar(select(StrategyTargetWeight).where(
+            StrategyTargetWeight.strategy_id == "low",
+            StrategyTargetWeight.stock_code == code,
+            StrategyTargetWeight.effective_from == snapshot.as_of,
+        ))
+        if existing_target is None:
+            session.add(StrategyTargetWeight(
+                strategy_id="low", stock_code=code, target_weight=weight,
+                effective_from=snapshot.as_of,
+            ))
     for trade_date, value in zip(trading_dates, curve):
         assets = (INITIAL_CASH * Decimal(str(value))).quantize(Decimal("0.01"))
         session.add(PortfolioSnapshot(account_id=account.id, snapshot_date=trade_date, cash_balance=(assets * Decimal("0.05")).quantize(Decimal("0.01")), total_purchase_amount=INITIAL_CASH * Decimal("0.95"), total_evaluation_amount=(assets * Decimal("0.95")).quantize(Decimal("0.01")), total_assets=assets, unrealized_profit=assets - INITIAL_CASH, realized_profit=Decimal("0"), return_rate=(Decimal(str(value)) - Decimal("1")).quantize(Decimal("0.000001"))))

@@ -618,7 +618,7 @@ class PortfolioService:
         )
         validate_target_weights(
             targets,
-            allow_cash_buffer=account.selected_strategy_id == "momentum",
+            allow_cash_buffer=account.selected_strategy_id in {"momentum", "low"},
         )
         for stock_code in targets:
             if stock_code not in stock_names:

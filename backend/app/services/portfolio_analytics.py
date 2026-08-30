@@ -247,7 +247,7 @@ class PortfolioAnalyticsService:
         )
         validate_target_weights(
             targets,
-            allow_cash_buffer=account.selected_strategy_id == "momentum",
+            allow_cash_buffer=account.selected_strategy_id in {"momentum", "low"},
         )
         target_weight = targets.get(stock_code)
         axes = [
