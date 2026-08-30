@@ -77,13 +77,6 @@ class MomentumInvestmentService:
                 "모멘텀 목표 주식 비중 합계는 0.95여야 합니다(현금 0.05 포함).",
                 503,
             )
-        self._publish_targets(snapshot.as_of, target_weights)
-
-        if account.operation_mode != "AUTO":
-            return self._response(
-                account.id, snapshot.as_of, len(target_weights), 0, "PROPOSAL_ONLY"
-            )
-
         order_keys = {
             stock_code: f"momentum-{snapshot.as_of.isoformat()}-{stock_code}"
             for stock_code in target_weights
@@ -102,6 +95,22 @@ class MomentumInvestmentService:
             )
             or 0
         )
+        # A newly created empty account may encounter a target row left by the
+        # demo seed or an older model artifact for the same as_of date. The
+        # generated snapshot is authoritative for the first application. Once
+        # an account has positions or orders, keep the conflict guard so a
+        # changed model cannot silently rewrite an active portfolio's target.
+        self._publish_targets(
+            snapshot.as_of,
+            target_weights,
+            replace_existing=position_count == 0 and not existing_order_keys,
+        )
+
+        if account.operation_mode != "AUTO":
+            return self._response(
+                account.id, snapshot.as_of, len(target_weights), 0, "PROPOSAL_ONLY"
+            )
+
         # 기존 수동/과거 포트폴리오는 자동으로 덮어쓰지 않는다. 다만 현재 스냅샷 주문이
         # 일부 체결된 재시도라면 같은 멱등성 키를 기준으로 남은 주문만 이어서 처리한다.
         if position_count > 0 and not existing_order_keys:
@@ -286,6 +295,8 @@ class MomentumInvestmentService:
         self,
         effective_from,
         target_weights: dict[str, Decimal],
+        *,
+        replace_existing: bool = False,
     ) -> None:
         existing = list(
             self.session.scalars(
@@ -298,6 +309,23 @@ class MomentumInvestmentService:
         if existing:
             current = {row.stock_code: Decimal(row.target_weight) for row in existing}
             if current != target_weights:
+                if replace_existing:
+                    for row in existing:
+                        self.session.delete(row)
+                    self.session.flush()
+                    self.session.add_all(
+                        [
+                            StrategyTargetWeight(
+                                strategy_id="momentum",
+                                stock_code=stock_code,
+                                target_weight=weight,
+                                effective_from=effective_from,
+                            )
+                            for stock_code, weight in target_weights.items()
+                        ]
+                    )
+                    self.session.commit()
+                    return
                 raise ServiceError(
                     "MODEL_TARGET_VERSION_CONFLICT",
                     "같은 기준일의 모멘텀 목표 비중이 이미 다르게 저장되어 있습니다.",
