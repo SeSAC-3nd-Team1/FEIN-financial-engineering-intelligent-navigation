@@ -517,37 +517,25 @@ jobs:
           echo "Core backend integrations are configured: ACS Email, KIS, Redis, PostgreSQL."
           echo "NAVER news and Azure OpenAI features are optional at deployment time and are enabled only when their credentials are configured."
 
-      - name: Generate v2 recommendation artifact for Backend image
+      - name: Download production model artifacts
         env:
           AZURE_STORAGE_ACCOUNT_NAME: stfeindata
-          AZURE_STORAGE_CONTAINER_FEATURES: features
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
+          AZURE_STORAGE_CONTAINER_MODEL_ARTIFACTS: features
         run: |
           set -euo pipefail
-          # Build an isolated venv in the runner workspace.  The VM's shared
-          # venv may be root-owned, so installing into it would fail for the
-          # runner service account and leave artifact generation incomplete.
-          python -m venv .deploy-venv
-          .deploy-venv/bin/python --version
-          .deploy-venv/bin/python -m pip --version
-          .deploy-venv/bin/python -m pip install --upgrade pip
-          .deploy-venv/bin/python -m pip install -r ai/requirements.txt -r backend/requirements.txt
           mkdir -p .deploy-artifacts
-          .deploy-venv/bin/python -m inference.generate_risk_adjusted_momentum \
-            --model-version 2 \
-            --algorithm-version 2 \
-            --master-version 1 \
-            --output .deploy-artifacts/risk-adjusted-momentum-v2.json
-          test -s .deploy-artifacts/risk-adjusted-momentum-v2.json
-          .deploy-venv/bin/python -m inference.generate_loss_avoidance_snapshot \
-            --algorithm-version 2 \
-            --top-n "${LOSS_AVOIDANCE_TOP_N:-5}" \
-            --universe-size "${LOSS_AVOIDANCE_UNIVERSE_SIZE:-20}" \
-            --output .deploy-artifacts/loss_avoidance_snapshot.json
-          test -s .deploy-artifacts/loss_avoidance_snapshot.json
-          .deploy-venv/bin/python backend/scripts/generate_backtest_artifact.py .deploy-artifacts/backtest-results.json
-          test -s .deploy-artifacts/backtest-results.json
+          for artifact in risk-adjusted-momentum-v2.json loss_avoidance_snapshot.json backtest-results.json; do
+            az storage blob download \
+              --auth-mode login \
+              --account-name "${AZURE_STORAGE_ACCOUNT_NAME}" \
+              --container-name "${AZURE_STORAGE_CONTAINER_MODEL_ARTIFACTS}" \
+              --name "model-artifacts/production/${artifact}" \
+              --file ".deploy-artifacts/${artifact}" \
+              --no-progress \
+              --output none
+            test -s ".deploy-artifacts/${artifact}"
+          done
+          python -c 'import json, pathlib; required={"risk-adjusted-momentum-v2.json":("recommendations",), "loss_avoidance_snapshot.json":("recommendations","model_version"), "backtest-results.json":("strategies",)}; [((p:=pathlib.Path(".deploy-artifacts")/name), json.loads(p.read_text(encoding="utf-8"))) for name in required]; payload=json.loads(pathlib.Path(".deploy-artifacts/backtest-results.json").read_text(encoding="utf-8")); assert {"momentum","low"}.issubset(payload["strategies"]), "backtest artifact must contain momentum and low"; loss=json.loads(pathlib.Path(".deploy-artifacts/loss_avoidance_snapshot.json").read_text(encoding="utf-8")); assert loss["model_version"] == "algorithm-v2.4-fix2", "unexpected loss avoidance model version"'
 
       - name: Build and push frontend image
         run: |

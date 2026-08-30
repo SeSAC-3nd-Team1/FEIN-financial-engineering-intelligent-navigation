@@ -1,0 +1,72 @@
+name: Generate Production Model Artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-model-artifacts
+  cancel-in-progress: false
+
+jobs:
+  generate-and-upload:
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    timeout-minutes: 180
+    env:
+      AZURE_STORAGE_ACCOUNT_NAME: stfeindata
+      AZURE_STORAGE_CONTAINER_FEATURES: features
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install model dependencies
+        run: |
+          set -euo pipefail
+          python -m venv .model-artifact-venv
+          .model-artifact-venv/bin/python -m pip install --upgrade pip
+          .model-artifact-venv/bin/python -m pip install -r ai/requirements.txt -r backend/requirements.txt
+
+      - name: Generate production artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p .deploy-artifacts
+          .model-artifact-venv/bin/python -m inference.generate_risk_adjusted_momentum \
+            --model-version 2 --algorithm-version 2 --master-version 1 \
+            --output .deploy-artifacts/risk-adjusted-momentum-v2.json
+          .model-artifact-venv/bin/python -m inference.generate_loss_avoidance_snapshot \
+            --algorithm-version 2 --top-n 5 --universe-size 20 \
+            --output .deploy-artifacts/loss_avoidance_snapshot.json
+          .model-artifact-venv/bin/python backend/scripts/generate_backtest_artifact.py \
+            .deploy-artifacts/backtest-results.json
+          test -s .deploy-artifacts/risk-adjusted-momentum-v2.json
+          test -s .deploy-artifacts/loss_avoidance_snapshot.json
+          test -s .deploy-artifacts/backtest-results.json
+          .model-artifact-venv/bin/python -c 'import json, pathlib; loss=json.loads(pathlib.Path(".deploy-artifacts/loss_avoidance_snapshot.json").read_text()); backtest=json.loads(pathlib.Path(".deploy-artifacts/backtest-results.json").read_text()); assert loss["model_version"] == "algorithm-v2.4-fix2"; assert {"momentum","low"}.issubset(backtest["strategies"])'
+
+      - name: Upload production artifacts to Azure Blob
+        run: |
+          set -euo pipefail
+          for artifact in risk-adjusted-momentum-v2.json loss_avoidance_snapshot.json backtest-results.json; do
+            az storage blob upload \
+              --auth-mode login \
+              --account-name "${AZURE_STORAGE_ACCOUNT_NAME}" \
+              --container-name "${AZURE_STORAGE_CONTAINER_FEATURES}" \
+              --name "model-artifacts/production/${artifact}" \
+              --file ".deploy-artifacts/${artifact}" \
+              --overwrite true \
+              --no-progress \
+              --output none
+          done
