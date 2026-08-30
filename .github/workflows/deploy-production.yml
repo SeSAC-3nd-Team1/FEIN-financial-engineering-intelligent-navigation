@@ -45,7 +45,114 @@ env:
   FEIN_CHATBOT_ID: ${{ vars.FEIN_CHATBOT_ID || 'fein-web-chatbot' }}
 
 jobs:
+  detect-changes:
+    name: Detect deployment scope
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    outputs:
+      frontend_only: ${{ steps.scope.outputs.frontend_only }}
+      full_deploy: ${{ steps.scope.outputs.full_deploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Determine changed services
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "frontend_only=false" >> "${GITHUB_OUTPUT}"
+            echo "full_deploy=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Changed files:\n%s\n' "${changed_files}"
+          frontend_only=true
+          while IFS= read -r file; do
+            [[ -z "${file}" ]] && continue
+            if [[ "${file}" != frontend/* ]]; then
+              frontend_only=false
+              break
+            fi
+          done <<< "${changed_files}"
+
+          if [[ "${frontend_only}" == "true" && -n "${changed_files}" ]]; then
+            echo "frontend_only=true" >> "${GITHUB_OUTPUT}"
+            echo "full_deploy=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "frontend_only=false" >> "${GITHUB_OUTPUT}"
+            echo "full_deploy=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+  frontend-only-deploy:
+    name: Deploy frontend only
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend_only == 'true'
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    timeout-minutes: 20
+    environment:
+      name: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve production ACR
+        env:
+          CONFIGURED_ACR_NAME: ${{ vars.ACR_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${CONFIGURED_ACR_NAME}" ]] && az acr show --name "${CONFIGURED_ACR_NAME}" --output none 2>/dev/null; then
+            resolved_acr="${CONFIGURED_ACR_NAME}"
+          else
+            current_image="$(az containerapp show --name "${FRONTEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query 'properties.template.containers[0].image' --output tsv)"
+            resolved_acr="${current_image%%.azurecr.io/*}"
+            resolved_acr="${resolved_acr##*/}"
+          fi
+          [[ -n "${resolved_acr}" ]] || { echo 'Could not resolve production ACR.' >&2; exit 1; }
+          echo "ACR_NAME=${resolved_acr}" >> "${GITHUB_ENV}"
+
+      - name: Build and push frontend image
+        run: |
+          az acr build \
+            --registry "${ACR_NAME}" \
+            --image "fein-frontend:${IMAGE_TAG}" \
+            --file frontend/Dockerfile.prod \
+            ./frontend
+
+      - name: Deploy frontend Container App
+        run: |
+          set -euo pipefail
+          backend_fqdn="$(az containerapp show \
+            --name "${{ vars.BACKEND_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)"
+          [[ -n "${backend_fqdn}" ]] || { echo 'Backend Container App ingress FQDN is missing.' >&2; exit 1; }
+          az containerapp update \
+            --name "${{ vars.FRONTEND_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${ACR_NAME}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
+            --set-env-vars \
+              "BACKEND_UPSTREAM=https://${backend_fqdn}" \
+              "BACKEND_HOST=${backend_fqdn}" \
+            --output none
+
   deploy:
+    name: Full production deploy
+    needs: detect-changes
+    if: needs.detect-changes.outputs.full_deploy == 'true'
     # Run on the Azure VM's self-hosted runner. This avoids GitHub-hosted
     # Actions billing and provides the memory required by artifact generation.
     # The runner must be online and carry all four labels below.
