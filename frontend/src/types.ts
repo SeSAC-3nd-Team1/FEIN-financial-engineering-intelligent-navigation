@@ -15,9 +15,8 @@ export type Screen =
   | "strategy-list"
   | "strategy"
   | "start"
-  // 물·방·개 전략 체계(UI/IA 개편) — strategy-list 카드에서만 진입. 모멘텀은 실제 canonical
-  // 전략에 연결돼 있어 'strategy' 화면(StrategyDetail)을 그대로 쓰고, 물림방지만 아직 실 Model/API
-  // 미연결이라 별도 placeholder 화면(strategy-coming-soon-loss-avoidance)이 필요하다.
+  // 물·방·개 전략 체계(UI/IA 개편) — strategy-list 카드에서만 진입. 물림방지와 모멘텀은
+  // 실제 canonical 전략에 연결돼 있어 'strategy' 화면(StrategyDetail)을 함께 사용한다.
   | "strategy-f4"
   | "strategy-coming-soon-loss-avoidance"
   | "strategy-preview"

@@ -7,6 +7,7 @@ import { useTradingData } from "../hooks/useTradingData";
 import {
   ApiError,
   getPortfolioComparisonApi,
+  rebalanceLatestLossAvoidanceRecommendationApi,
   type PortfolioComparisonResponse,
   type PortfolioHistoryPeriod,
   type StrategyResponse,
@@ -47,6 +48,7 @@ interface Props {
   onAccountMissingAction?: () => void;
   /** 상단 "돌아가기" — PowerBI 컨테이너만 있는 `/portfolio` 로 되돌아간다 */
   onBack: () => void;
+  isAutoMode: boolean;
 }
 
 /** 거래 유형별 배지 색 */
@@ -94,6 +96,7 @@ function PortfolioDetailContent({
   onOpenRebalanceAlerts,
   onRediagnose,
   onBack,
+  isAutoMode,
 }: Props) {
   const token = useAuthStore((state) => state.accessToken);
   const logout = useAuthStore((state) => state.logout);
@@ -249,6 +252,10 @@ function PortfolioDetailContent({
         decision,
         idempotency_key: idempotencyKey,
       });
+      if (decision === "ACCEPTED" && strategy.id === "low") {
+        await rebalanceLatestLossAvoidanceRecommendationApi(account.id, token);
+        await useTradingStore.getState().refresh(token, toAccountOperationMode(isAutoMode ? "auto" : "manual"));
+      }
     } catch (error) {
       setDecisionError(
         error instanceof Error ? error.message : "판단을 저장하지 못했습니다.",

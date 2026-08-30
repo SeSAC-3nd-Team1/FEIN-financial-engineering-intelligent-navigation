@@ -540,6 +540,12 @@ jobs:
             --master-version 1 \
             --output .deploy-artifacts/risk-adjusted-momentum-v2.json
           test -s .deploy-artifacts/risk-adjusted-momentum-v2.json
+          .deploy-venv/bin/python -m inference.generate_loss_avoidance_snapshot \
+            --algorithm-version 2 \
+            --top-n "${LOSS_AVOIDANCE_TOP_N:-5}" \
+            --universe-size "${LOSS_AVOIDANCE_UNIVERSE_SIZE:-20}" \
+            --output .deploy-artifacts/loss_avoidance_snapshot.json
+          test -s .deploy-artifacts/loss_avoidance_snapshot.json
           .deploy-venv/bin/python backend/scripts/generate_backtest_artifact.py .deploy-artifacts/backtest-results.json
           test -s .deploy-artifacts/backtest-results.json
 
@@ -682,7 +688,7 @@ jobs:
             ANALYSIS_MODE=analysis_only
             MODEL_RECOMMENDATION_SNAPSHOT_PATH=/model-artifacts/risk-adjusted-momentum-v2.json
             MODEL_RECOMMENDATION_ALLOW_FALLBACK=false
-            MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3
+            MODEL_RECOMMENDATION_STALE_AFTER_DAYS=7
           )
 
           set_secret_env() {
