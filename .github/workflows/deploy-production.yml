@@ -14,8 +14,10 @@ permissions:
   id-token: write
 
 concurrency:
-  group: production-deployment
-  cancel-in-progress: false
+  # Versioned group releases new deployments from stale runs created by the
+  # old self-hosted runner configuration. Newer deploys supersede older ones.
+  group: production-deployment-v2
+  cancel-in-progress: true
 
 env:
   IMAGE_TAG: ${{ github.sha }}
