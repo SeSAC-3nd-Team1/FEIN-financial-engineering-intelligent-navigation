@@ -1,4 +1,7 @@
+import CarGoalProgress from '../components/CarGoalProgress';
 import Header from '../components/Header';
+import { useCarGoal } from '../hooks/useCarGoal';
+import { won } from '../lib/validation';
 import { useAuthStore } from '../store/authStore';
 import type { Screen } from '../types';
 
@@ -24,43 +27,72 @@ export default function Home({ userName, onNavigate }: Props) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
 
   return (
-    <div className="min-h-screen bg-canvas">
+    // Portfolio.tsx와 같은 패턴 — 뷰포트가 넉넉하면 한 화면(h-screen)에 다 담기도록 아래 flex
+    // 트리를 가용 높이에 맞춰 나누고, 화면이 작아 다 안 들어가면 페이지 자체가 스크롤된다.
+    <div className="flex h-screen flex-col overflow-y-auto bg-canvas">
       <Header active="home" userName={userName} onNavigate={onNavigate} guestCta={{ label: '시작하기', onClick: () => onNavigate('start-signup') }} />
       {isLoggedIn
-        ? <LoggedInHome userName={userName} onNavigate={onNavigate} />
+        ? <LoggedInHome userName={userName} />
         : <LoggedOutHome onNavigate={onNavigate} />}
     </div>
   );
 }
 
-/** 로그인 Home — Hero(환영 문구 + 캐릭터) + CTA 2개뿐인 단순 Navigation Hub */
-function LoggedInHome({ userName, onNavigate }: { userName: string; onNavigate: (s: Screen) => void }) {
+/** 로그인 Home은 스크롤 없이 한 화면(뷰포트)에 들어와야 한다. 좌우 2칼 구성(인사말 카드 | 목표
+ *  차량 카드)은 성격이 다른 두 덩어리를 억지로 나란히 붙여놓은 것처럼 어색해 보여 걷어냈다 —
+ *  대신 인사말은 카드/테두리 없이 캔버스 배경 위에 가볍게 얹고(물방개+문구를 가로로 묶어 세로
+ *  공간을 아낀다), 그 아래 목표 차량 카드 하나만 이어지는 단일 세로 흐름으로 바꿨다. Portfolio.tsx와
+ *  같은 방식으로 목표 차량 카드가 남는 세로 공간을 flex-1로 채워서(min-h-0 없이는 넘칠 때 부모를
+ *  밀어낸다), 카드 아래 빈 캔버스가 그냥 남지 않고 화면 전체를 쓴다. */
+function LoggedInHome({ userName }: { userName: string }) {
+  // 훅을 여기서 한 번만 불러 인사말 줄 요약과 아래 CarGoalProgress 카드에 같은 값을 내려준다.
+  const carGoal = useCarGoal();
+  const showSummary = carGoal.status === 'ready' && carGoal.grade !== null;
+
   return (
-    <main className="flex flex-col items-center pb-24">
-      <section className="flex w-[1312px] flex-col items-center gap-8 px-16 pb-24 pt-24 text-center">
-        <div className="flex flex-col items-center gap-4">
-          <h1 className="text-[40px] font-bold leading-[56px] tracking-[-0.035em]">
-            {userName}님, 오늘은 무엇을 알아볼까요?
-          </h1>
-          <p className="max-w-[480px] text-xl leading-[34px] text-muted">
-            물방개와 함께 투자 전략부터<br />시장 이야기까지 쉽게 살펴보세요.
-          </p>
+    <main className="flex min-h-0 flex-1 flex-col items-center px-16 pb-8 pt-8">
+      {/* Portfolio/PortfolioAuto의 "한 화면" 메인 컨텐츠 폭(max-w-[1040px])과 통일한다. */}
+      <div className="flex min-h-0 w-full max-w-[1040px] flex-1 flex-col gap-7">
+        {/* 인사말 줄도 아래 목표 차량 카드처럼 폭 전체를 쓴다 — 왼쪽 물방개+문구, 오른쪽 끝에는
+            내비게이션 버튼(헤더에 이미 있어 중복이었다) 대신 목표/현재 투자 금액을 한눈에
+            보여준다 — 아래 카드로 스크롤/시선 이동 없이도 바로 확인 가능하게 한다. */}
+        <div className="flex w-full shrink-0 items-center justify-between gap-6">
+          <div className="flex items-center gap-6">
+            <img src="/character-recommend.png" alt="물방개" className="h-24 w-auto shrink-0 object-contain" />
+            <div className="flex flex-col gap-1.5">
+              <h1 className="text-[26px] font-bold leading-9 tracking-[-0.02em]">
+                {userName}님, 오늘도 목표 차량을 향해 달려볼까요?
+              </h1>
+              <p className="text-[15px] text-muted">
+                물방개와 함께 투자 전략부터 시장 이야기까지 쉽게 살펴보세요.
+              </p>
+            </div>
+          </div>
+
+          {showSummary && (
+            <div className="flex shrink-0 items-center gap-8">
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="text-[13px] text-muted">목표 금액</span>
+                <span className="text-xl font-bold tracking-[-0.02em]">{won(carGoal.goalAmount)}</span>
+              </div>
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="text-[13px] text-muted">현재 투자 금액</span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xl font-bold tracking-[-0.02em] text-navy">{won(carGoal.currentAmount)}</span>
+                  {/* Portfolio.tsx "나의 투자"와 같은 방식(return_rate, 상승 text-up/하락 text-down)으로
+                      수익률을 함께 보여준다 — 화면마다 표기가 다르면 같은 계좌 정보를 다르게 읽을 수 있다. */}
+                  <span className={`text-sm font-bold ${carGoal.returnPct >= 0 ? 'text-up' : 'text-down'}`}>
+                    {carGoal.returnPct >= 0 ? '+' : ''}
+                    {carGoal.returnPct.toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <img src="/character-recommend.png" alt="물방개" className="h-[220px] w-auto object-contain" />
-
-        <div className="flex items-center gap-4 pt-2">
-          <button onClick={() => onNavigate('strategy-list')} className="rounded-field bg-lime px-9 py-5 text-[19px] font-bold text-navy">
-            투자 전략 살펴보기 →
-          </button>
-          <button
-            onClick={() => onNavigate('information')}
-            className="rounded-field px-8 py-5 text-[17px] font-semibold text-navy shadow-[0_0_0_1px_#E5E9E3_inset] transition-shadow hover:shadow-[0_0_0_1px_#C9D1C4_inset]"
-          >
-            오늘의 인사이트 보기 →
-          </button>
-        </div>
-      </section>
+        <CarGoalProgress {...carGoal} />
+      </div>
     </main>
   );
 }

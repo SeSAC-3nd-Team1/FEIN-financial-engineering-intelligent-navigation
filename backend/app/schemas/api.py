@@ -18,6 +18,7 @@ from pydantic import (
 from app.core.config import settings
 
 OperationMode = Literal["AUTO", "SEMI_AUTO"]
+CarGrade = Literal["INEX", "HIGHEND"]
 
 
 class AgreementRequest(BaseModel):
@@ -181,6 +182,24 @@ class AccountResponse(BaseModel):
     def normalize_legacy_principal(cls, value):
         # 마이그레이션 전 객체를 직접 만드는 단위 테스트와 순차 배포 중 응답도 0원으로 수렴시킨다.
         return Decimal("0") if value is None else value
+
+
+class CarGoalUpsertRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    car_grade: CarGrade
+    # 프런트 StartInvesting류 금액 입력과 동일하게 상한을 둔다 — 계정 단위로 영구 저장되는 값이라
+    # 클라이언트 검증만 믿지 않고 서버에도 같은 상한을 건다.
+    goal_amount: Decimal = Field(ge=0, le=Decimal("2000000000"))
+    # current_amount는 요청으로 받지 않는다 — 실제 투자 금액은 클라이언트가 주장하는 값이 아니라
+    # 서버가 활성 계좌의 포트폴리오를 직접 조회해 계산한 값만 신뢰해야 한다(PR #257 리뷰).
+
+
+class CarGoalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    car_grade: CarGrade
+    goal_amount: Decimal
+    current_amount: Decimal
+    updated_at: datetime
 
 
 class AccountCashDepositRequest(BaseModel):

@@ -23,6 +23,7 @@ from app.models.entities import (
     Term,
     User,
     UserAgreement,
+    UserCarGoal,
     VirtualAccount,
 )
 from app.models.market_data import MarketIndex, MarketStock, MarketStockPrice
@@ -55,5 +56,6 @@ __all__ = [
     "Term",
     "User",
     "UserAgreement",
+    "UserCarGoal",
     "VirtualAccount",
 ]
