@@ -29,7 +29,10 @@ concurrency:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    # Historical backfills are long-running and must use the same self-hosted
+    # Azure runner used by production deployment, so they do not depend on
+    # GitHub-hosted runner billing or a separate network path to PostgreSQL.
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 360
     env:
       AZURE_STORAGE_ACCOUNT_NAME: stfeindata

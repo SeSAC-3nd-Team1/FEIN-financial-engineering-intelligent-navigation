@@ -4,7 +4,10 @@ from collections import defaultdict
 from itertools import chain, groupby
 from datetime import date, timedelta
 import gc
+import json
 import math
+import os
+from pathlib import Path
 from statistics import fmean, pstdev
 
 import pandas as pd
@@ -83,6 +86,14 @@ class BacktestService:
         self.repository = repository
 
     def available_range(self, strategy_id: str | None = None) -> BacktestAvailableRangeResponse:
+        snapshot = self._snapshot()
+        if snapshot is not None and (strategy_id in {None, "momentum"}):
+            periods = list(snapshot.get("periods", {}).values())
+            if periods:
+                return BacktestAvailableRangeResponse.model_validate({
+                    "minDate": min(period["period"]["startDate"] for period in periods),
+                    "maxDate": max(period["period"]["endDate"] for period in periods),
+                })
         stock_min, stock_max, index_min, index_max = self.repository.available_dates(min_stocks=PORTFOLIO_SIZE)
         if None in {stock_min, stock_max, index_min, index_max}:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "백테스트 기간 정보를 찾을 수 없습니다.")
@@ -94,6 +105,11 @@ class BacktestService:
         return BacktestAvailableRangeResponse.model_validate({"minDate": min_date, "maxDate": max_date})
 
     def run(self, request: BacktestRunRequest) -> BacktestRunResponse:
+        snapshot = self._snapshot()
+        if snapshot is not None and request.strategy_id == "momentum":
+            cached = snapshot.get("periods", {}).get(request.period_id)
+            if cached is not None:
+                return BacktestRunResponse.model_validate(cached)
         if request.period_id == "custom":
             raise ServiceError(
                 "BACKTEST_CUSTOM_PERIOD_DISABLED",
@@ -187,6 +203,14 @@ class BacktestService:
                 "mdd": benchmark_metrics["mdd"],
             },
         })
+
+    @staticmethod
+    def _snapshot() -> dict[str, object] | None:
+        path = Path(os.getenv("BACKTEST_SNAPSHOT_PATH", "/model-artifacts/backtest-results.json"))
+        try:
+            return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+        except (OSError, json.JSONDecodeError):
+            return None
 
     @staticmethod
     def _price_map(points: list[StockPricePoint]) -> dict[str, dict[date, float]]:
