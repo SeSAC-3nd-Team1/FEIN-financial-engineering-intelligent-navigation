@@ -4,8 +4,7 @@ import type { TooltipProps } from 'recharts';
 import Header from '../components/Header';
 import TermTooltip from '../components/TermTooltip';
 import { fetchAiExplanation, getBacktestAvailableRange, runBacktest, USE_MOCK_BACKTEST } from '../data/backtestApi';
-import type { BacktestAvailableRange } from '../data/backtestApi';
-import { getRecommendedPeriods, validateCustomPeriod } from '../data/backtestPeriods';
+import { getRecommendedPeriods } from '../data/backtestPeriods';
 import type { StrategyRecommendationItemResponse, StrategyResponse } from '../lib/backendApi';
 import { won } from '../lib/validation';
 import { useTradingData } from '../hooks/useTradingData';
@@ -21,7 +20,7 @@ interface Props {
   userName: string;
   onNavigate: (s: Screen) => void;
   onBack: () => void;
-  onStart: () => void;
+  onStart: () => void | Promise<void>;
   /** 백테스트의 잠긴 기간/직접 설정(Inline Login CTA)에서 로그인 화면으로 보낼 때 사용 —
    * 로그인 후 Portfolio가 아니라 이 화면으로 복귀시키기 위해 App.tsx가 별도로 처리한다 */
   onRequestLoginForBacktest: () => void;
@@ -97,6 +96,16 @@ export default function StrategyDetail({
   const [changeConfirmOpen, setChangeConfirmOpen] = useState(false);
   const [changeSubmitting, setChangeSubmitting] = useState(false);
   const [changeError, setChangeError] = useState('');
+  const [startError, setStartError] = useState('');
+
+  const startInvesting = async () => {
+    setStartError('');
+    try {
+      await onStart();
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : '투자 시작을 준비하지 못했어요. 잠시 후 다시 시도해주세요.');
+    }
+  };
 
   // 실제 계좌 전략 변경 API 호출까지 기다린 뒤에만 모달을 닫는다 — 성공 시 이동(Portfolio)은
   // App.tsx의 onConfirmStrategyChange 구현이 처리하고, 실패하면 모달에 에러를 보여주고 계속 띄워둔다.
@@ -113,20 +122,11 @@ export default function StrategyDetail({
       setChangeSubmitting(false);
     }
   };
-  // 백테스트 "결과"는 공개, "다른 기간으로 바꿔보는" interaction만 로그인 필요 — 잠긴 상태에서
-  // 다른 기간/직접 설정을 시도하면 즉시 로그인으로 보내지 않고 이 inline 안내를 먼저 보여준다.
+  // MVP에서는 사전 계산된 추천 기간만 제공한다.
   const [showBacktestLoginLock, setShowBacktestLoginLock] = useState(false);
-  const [availableRange, setAvailableRange] = useState<BacktestAvailableRange | null>(null);
   const [periods, setPeriods] = useState<BacktestPeriod[]>([]);
 
-  const [periodMode, setPeriodMode] = useState<'preset' | 'custom'>('preset');
   const [presetPeriodId, setPresetPeriodId] = useState('');
-  const [customPeriod, setCustomPeriod] = useState<{ startDate: string; endDate: string } | null>(null);
-
-  const [customPanelOpen, setCustomPanelOpen] = useState(false);
-  const [draftStart, setDraftStart] = useState('');
-  const [draftEnd, setDraftEnd] = useState('');
-  const [customError, setCustomError] = useState<string | null>(null);
 
   const [retryToken, setRetryToken] = useState(0);
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -139,23 +139,19 @@ export default function StrategyDetail({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  // 추천 기간 또는 직접 설정 중 지금 적용된 기간 하나 — 두 모드가 항상 이 값 하나로 합쳐진다
+  // 선택한 preset 기간만 백테스트에 전달한다.
   const activePeriod: BacktestPeriod | null = useMemo(() => {
-    if (periodMode === 'custom' && customPeriod) {
-      return { id: 'custom', label: '직접 설정', startDate: customPeriod.startDate, endDate: customPeriod.endDate, description: '' };
-    }
     return periods.find((p) => p.id === presetPeriodId) ?? periods[0] ?? null;
-  }, [periodMode, customPeriod, presetPeriodId, periods]);
+  }, [presetPeriodId, periods]);
 
   useEffect(() => {
     let cancelled = false;
     setResultLoading(true);
     setResultError(null);
-    getBacktestAvailableRange()
+    getBacktestAvailableRange(strategy.id)
       .then((range) => {
         if (cancelled) return;
         const recommended = getRecommendedPeriods(range);
-        setAvailableRange(range);
         setPeriods(recommended);
         setPresetPeriodId((current) => recommended.some((period) => period.id === current) ? current : recommended[0].id);
       })
@@ -166,31 +162,17 @@ export default function StrategyDetail({
         }
       });
     return () => { cancelled = true; };
-  }, [retryToken]);
+  }, [retryToken, strategy.id]);
 
   // 전략이 바뀌면(다른 strategyId로 재진입) 기간 선택은 추천 기간 기본값으로 되돌린다
   useEffect(() => {
     if (periods.length === 0) return;
-    setPeriodMode('preset');
     setPresetPeriodId(periods[0].id);
-    setCustomPeriod(null);
-    setCustomPanelOpen(false);
   }, [strategyId, periods]);
 
   const selectPreset = (id: string) => {
     if (!isLoggedIn && id !== presetPeriodId) { setShowBacktestLoginLock(true); return; }
-    setPeriodMode('preset');
     setPresetPeriodId(id);
-    setCustomPanelOpen(false);
-  };
-
-  const applyCustomPeriod = () => {
-    if (!availableRange) return;
-    const err = validateCustomPeriod(draftStart, draftEnd, availableRange);
-    if (err) { setCustomError(err); return; }
-    setCustomError(null);
-    setCustomPeriod({ startDate: draftStart, endDate: draftEnd });
-    setPeriodMode('custom');
   };
 
   // 기간이 바뀌면 이전 결과와 AI 설명을 함께 리셋하고 새로 받아온다 — 전략은 그대로 둔다.
@@ -294,7 +276,8 @@ export default function StrategyDetail({
             </section>
           )}
 
-          <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
+                    <section className="flex flex-col gap-7 rounded-card bg-surface p-12">
+            {USE_MOCK_BACKTEST && <DemoModeBanner />}
             <div className="flex flex-col gap-2.5">
               <h2 className="text-[26px] font-bold tracking-[-0.025em]">시장이 흔들릴 때, 이 전략은 어땠을까요?</h2>
               <p className="text-[17px] text-muted">
@@ -310,7 +293,7 @@ export default function StrategyDetail({
                     key={p.id}
                     onClick={() => selectPreset(p.id)}
                     className={`group relative flex items-center gap-1.5 rounded-full px-6 py-3.5 text-[17px] font-semibold ${
-                      periodMode === 'preset' && p.id === presetPeriodId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
+                      p.id === presetPeriodId ? 'bg-lime text-navy' : 'bg-[#F4F6F1] text-muted'
                     }`}
                   >
                     {p.label}
@@ -323,7 +306,7 @@ export default function StrategyDetail({
             <p className="text-[15px] leading-6 text-muted">
               {activePeriod && <>
                 {activePeriod.label} · {fmtDate(activePeriod.startDate)} — {fmtDate(activePeriod.endDate)}
-                {periodMode === 'preset' && activePeriod.description && <><br />{activePeriod.description}</>}
+                {activePeriod.description && <><br />{activePeriod.description}</>}
               </>}
             </p>
 
@@ -344,45 +327,6 @@ export default function StrategyDetail({
               </div>
             )}
 
-            <button
-              onClick={() => {
-                if (!isLoggedIn) { setShowBacktestLoginLock(true); return; }
-                setCustomPanelOpen((o) => !o);
-              }}
-              className="group relative inline-flex w-fit items-center gap-1.5 self-start text-[15px] font-semibold text-navy underline"
-            >
-              원하는 기간이 있나요? 직접 설정 →
-              {!isLoggedIn && <LoginLockBadge />}
-            </button>
-
-            {customPanelOpen && (
-              <div className="flex flex-col gap-3.5 rounded-[16px] bg-[#F8F9F6] p-7">
-                <span className="text-[15px] font-bold">직접 기간 설정</span>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="date"
-                    value={draftStart}
-                    min={availableRange?.minDate}
-                    max={availableRange?.maxDate}
-                    onChange={(e) => setDraftStart(e.target.value)}
-                    className="rounded-field bg-surface px-4 py-3 text-[15px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
-                  />
-                  <span className="text-muted">→</span>
-                  <input
-                    type="date"
-                    value={draftEnd}
-                    min={availableRange?.minDate}
-                    max={availableRange?.maxDate}
-                    onChange={(e) => setDraftEnd(e.target.value)}
-                    className="rounded-field bg-surface px-4 py-3 text-[15px] shadow-[0_0_0_1px_#E5E9E3_inset] outline-none focus:shadow-[0_0_0_2px_#C6F04D_inset]"
-                  />
-                </div>
-                {customError && <span className="text-sm text-up">{customError}</span>}
-                <button onClick={applyCustomPeriod} className="self-start rounded-field bg-lime px-7 py-3.5 text-[15px] font-bold text-navy">
-                  이 기간으로 확인하기
-                </button>
-              </div>
-            )}
           </section>
 
           {resultLoading && (
@@ -523,9 +467,10 @@ export default function StrategyDetail({
             <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-8">
               <span className="text-2xl font-bold tracking-[-0.025em] text-white">이 전략이 마음에 드시나요?</span>
               <div className="flex shrink-0 flex-col items-end gap-2.5">
-                <button onClick={onStart} className="rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
+                <button onClick={() => void startInvesting()} className="rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
                   이 전략으로 시작하기 →
                 </button>
+                {startError && <p className="mt-3 text-sm text-up">{startError}</p>}
                 {/* "시작하기"가 곧바로 주문 체결이 아니라는 걸 CTA 바로 옆에서 명확히 알려준다 —
                    다음 화면(약관/계좌)을 거치는 동안 실제 편입 종목/전략 구성을 먼저 보여준다.
                    neutral-muted(#B9C2BA)는 navy 배경에서 너무 흐려 보여, 한 단계 밝은 neutral-100로 올림. */}
@@ -567,14 +512,9 @@ export default function StrategyDetail({
               >
                 이 전략으로 변경하기 →
               </button>
-            </section>
+                        </section>
           )}
 
-          {USE_MOCK_BACKTEST && (
-            <p className="text-sm leading-[22px] text-subtle">
-              ※ 현재 백테스트 결과는 화면 구현을 위한 예시 데이터이며 실제 투자 성과를 나타내지 않습니다.
-            </p>
-          )}
           <p className="text-sm leading-[22px] text-subtle">
             ※ 백테스트 결과는 과거 데이터 기반 예시이며 미래 수익을 보장하지 않습니다.
           </p>
@@ -656,6 +596,18 @@ function StrategyChangeModal({
  * hover가 걸리면(desktop) CSS group-hover로만 tooltip을 보여주는 순수 장식 요소라 자체 클릭 핸들러는
  * 없다 — 실제 클릭 시 안내는 이미 구현된 Inline Login CTA(showBacktestLoginLock)가 담당한다.
  */
+function DemoModeBanner() {
+  return (
+    <div
+      role="status"
+      className="flex items-center gap-3 rounded-[16px] border-2 border-dashed border-warn bg-warn-soft-2 px-6 py-4 text-[15px] font-bold text-status-amber-text"
+    >
+      <span className="rounded-full bg-warn px-3 py-1 text-xs font-extrabold text-white">DEMO</span>
+      <span>개발용 예시 백테스트입니다. 실제 투자 성과나 미래 수익을 나타내지 않습니다.</span>
+    </div>
+  );
+}
+
 function LoginLockBadge() {
   return (
     <>

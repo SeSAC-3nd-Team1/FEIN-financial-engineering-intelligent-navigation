@@ -33,6 +33,7 @@ from app.schemas.api import (
     RebalancingProposalResponse,
 )
 from app.services.market import MarketService
+from app.services.rebalancing_identity import proposal_key
 
 HISTORY_DAYS = {"1M": 31, "3M": 93, "1Y": 366}
 KST = timezone(timedelta(hours=9))
@@ -71,6 +72,9 @@ def calculate_rebalancing(
     current_weights: dict[str, Decimal],
     target_weights: dict[str, Decimal],
     stock_names: dict[str, str | None],
+    *,
+    strategy_id: str | None = None,
+    baseline_date: date | None = None,
 ) -> list[RebalancingProposalResponse]:
     """명시적으로 저장된 목표 비중만 사용해 금액 기준 조정안을 계산한다."""
 
@@ -87,6 +91,16 @@ def calculate_rebalancing(
             continue
         proposals.append(
             RebalancingProposalResponse(
+                proposal_key=proposal_key(
+                    strategy_id,
+                    stock_code,
+                    "SELL" if diff > 0 else "BUY",
+                    current,
+                    target,
+                    diff,
+                    (total_assets * abs(diff) / 100).quantize(Decimal("0.01")),
+                    baseline_date or date.today(),
+                ),
                 stock_code=stock_code,
                 stock_name=stock_names.get(stock_code),
                 current_weight=current,
@@ -516,9 +530,7 @@ class PortfolioService:
         if principal_value is None:
             principal_value = getattr(account, "initial_cash", Decimal("0"))
         invested_principal = Decimal(principal_value).quantize(Decimal("0.01"))
-        valuation_profit = (total_assets - invested_principal).quantize(
-            Decimal("0.01")
-        )
+        valuation_profit = (total_assets - invested_principal).quantize(Decimal("0.01"))
         withdrawable_amount = (
             Decimal(account.cash_balance)
             + sum(
@@ -605,7 +617,17 @@ class PortfolioService:
                 stock = self.market_repo.stock(stock_code)
                 stock_names[stock_code] = stock.stock_name if stock else None
         proposals = (
-            calculate_rebalancing(total_assets, current_weights, targets, stock_names)
+            calculate_rebalancing(
+                total_assets,
+                current_weights,
+                targets,
+                stock_names,
+                strategy_id=account.selected_strategy_id,
+                baseline_date=max(
+                    (position.price_as_of.date() for position in rows),
+                    default=effective_on,
+                ),
+            )
             if targets
             else []
         )

@@ -13,6 +13,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from shared.momentum_features import add_momentum_features
 
 
 def load_processed_operation(
@@ -100,12 +101,12 @@ def compute_stock_features(frame: pd.DataFrame) -> pd.DataFrame:
         .sort_values(["stock_code", "trade_date"])
         .reset_index(drop=True)
     )
+    data = add_momentum_features(data)
     grouped = data.groupby("stock_code", sort=False)
     close = grouped["close_price"]
     volume = grouped["volume"]
 
-    data["return_1d"] = close.pct_change(fill_method=None)
-    for horizon in (5, 20, 60, 120):
+    for horizon in (5, 20, 60):
         data[f"momentum_{horizon}d"] = (
             data["close_price"] / close.shift(horizon) - 1.0
         )
@@ -120,20 +121,9 @@ def compute_stock_features(frame: pd.DataFrame) -> pd.DataFrame:
     data["volatility_20d"] = grouped["return_1d"].transform(
         lambda values: values.rolling(20, min_periods=20).std() * math.sqrt(252)
     )
-    data["volatility_60d"] = grouped["return_1d"].transform(
-        lambda values: values.rolling(60, min_periods=60).std() * math.sqrt(252)
-    )
     data["volume_sma_20d"] = volume.transform(
         lambda values: values.rolling(20, min_periods=20).mean()
     )
-    data["volume_ratio_20d"] = data["volume"] / data["volume_sma_20d"].replace(
-        0, np.nan
-    )
-
-    if "trading_value" in data:
-        data["trading_value_sma_20d"] = grouped["trading_value"].transform(
-            lambda values: values.rolling(20, min_periods=20).mean()
-        )
     if "market_cap" in data:
         data["log_market_cap"] = np.log(
             data["market_cap"].where(data["market_cap"] > 0)

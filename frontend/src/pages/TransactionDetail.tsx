@@ -2,7 +2,10 @@ import { useMemo } from 'react';
 import Header from '../components/Header';
 import { getDisplayTransactions } from '../lib/transactions';
 import { useTradingData } from '../hooks/useTradingData';
+import PortfolioDataState from '../components/PortfolioDataState';
+import { useTradingRetry } from '../hooks/useTradingRetry';
 import { useTradingStore } from '../store/tradingStore';
+import { useAuthStore } from '../store/authStore';
 import type { Screen, TransactionRecord } from '../types';
 
 interface Props {
@@ -28,18 +31,30 @@ const BACK_LABEL: Partial<Record<Screen, string>> = {
   'portfolio-detail': '포트폴리오 상세로 돌아가기',
 };
 
-/** `/transactions/:id` — 거래 1건 상세. 실 체결(executions)이 있으면 그걸, 없으면 목업으로 대체한다. */
+/** `/transactions/:id` — 백엔드 체결 내역에서 거래 1건을 표시한다. */
 export default function TransactionDetail({ transactionId, backTarget, userName, onNavigate, onBack }: Props) {
+    const token = useAuthStore((state) => state.accessToken);
   useTradingData();
   const executions = useTradingStore((state) => state.executions);
-  // 계좌 자체가 없다고 "확인된" 상태(404)일 때만 목업을 쓴다. account !== null 은 로딩 직후/조회
-  // 실패 상태에서 account 가 아직 null이라 실계좌 사용자에게도 mock 거래내역이 노출될 수 있다.
+  const loading = useTradingStore((state) => state.isLoading);
   const accountMissing = useTradingStore((state) => state.accountMissing);
-  const transactions = useMemo(() => getDisplayTransactions(executions, !accountMissing), [executions, accountMissing]);
+  const error = useTradingStore((state) => state.error);
+  const retry = useTradingRetry();
+  const transactions = useMemo(() => getDisplayTransactions(executions), [executions]);
+
   const t = transactions.find((item) => item.id === transactionId);
   const backLabel = BACK_LABEL[backTarget] ?? '이전으로 돌아가기';
 
   return (
+    <PortfolioDataState
+      userName={userName}
+      onNavigate={onNavigate}
+            authRequired={!token}
+      loading={loading}
+      accountMissing={accountMissing}
+      error={error}
+      onRetry={retry}
+    >
     <div className="min-h-screen bg-canvas">
       <Header active="portfolio" userName={userName} onNavigate={onNavigate} />
 
@@ -69,9 +84,10 @@ export default function TransactionDetail({ transactionId, backTarget, userName,
               </section>
             </>
           )}
-        </div>
+                </div>
       </main>
     </div>
+    </PortfolioDataState>
   );
 }
 

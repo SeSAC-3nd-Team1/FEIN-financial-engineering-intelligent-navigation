@@ -2,6 +2,8 @@
 
 import copy
 import json
+import re
+import time
 from typing import Any, Protocol
 from uuid import UUID
 from urllib.parse import quote
@@ -10,6 +12,7 @@ import httpx
 
 from pydantic import ValidationError
 
+from app.core.chat_observability import observe_provider_request, observe_tool
 from app.core.errors import ServiceError
 from app.schemas.chat import ChatAgentResult, ChatHistoryMessage, ChatScreenContext
 from app.services.chat_tools import (
@@ -21,25 +24,138 @@ from app.services.chat_tools import (
 )
 
 # Requests that must be refused before any provider call.
+# Whitespace and punctuation variants are normalized before matching. Keep these
+# patterns broad enough to cover polite/direct forms without using a full LLM
+# classifier in the request path.
 SAFETY_REFUSAL_PATTERNS = (
-    "무조건 수익",
-    "수익 보장",
-    "원금 보장",
-    "지금 사",
-    "지금 매수",
-    "지금 팔",
-    "지금 매도",
+    "무조건수익",
+    "손실없",
+    "확정수익",
+    "지금사",
+    "지금매수",
+    "지금팔",
+    "지금매도",
     "매수해",
     "매도해",
-    "몇 퍼센트 오를",
+    "매수하세요",
+    "매도하세요",
+    "매수권",
+    "매도권",
+    "매수를권",
+    "매도를권",
+    "매수추천",
+    "매도추천",
+    "매수를추천",
+    "매도를추천",
+    "이전지시를무시",
+    "앞선지시를무시",
+    "몇퍼센트오를",
+    "내일오를",
     "목표주가",
-    "이전 지시 무시",
-    "앞선 지시 무시",
-    "시스템 프롬프트",
-    "시스템 프롬프트 공개",
-    "내부 정책",
-    "api key",
-    "api_key",
+    "목표가격",
+    "이전지시무시",
+    "앞선지시무시",
+    "시스템프롬프트",
+    "내부정책",
+    "apikey",
+    "api키",
+    "비밀정보",
+)
+
+OUT_OF_SCOPE_PATTERNS = (
+    "오늘저녁메뉴",
+    "저녁메뉴추천",
+    "레시피알려",
+    "요리법알려",
+    "코드작성",
+    "코딩해",
+    "파이썬코드",
+    "파이썬으로코드",
+    "번역해줘",
+    "시를써줘",
+    "노래가사",
+    "농담해줘",
+    "정치이야기",
+    "정치얘기",
+    "정치에대해",
+    "서울날씨",
+    "날씨알려",
+    "영화추천",
+    "영화알려",
+    "축구결과",
+    "축구경기",
+)
+
+FINANCE_SCOPE_TERMS = (
+    "금융",
+    "주식",
+    "투자",
+    "포트폴리오",
+    "종목",
+    "주가",
+    "수익률",
+    "etf",
+    "per",
+    "pbr",
+    "roe",
+    "매수",
+    "매도",
+    "계좌",
+    "전략",
+    "금융시장",
+    "주식시장",
+)
+
+TRADE_HOW_TO_RE = re.compile(
+    r"^(?:etf|주식|종목|펀드)(?:은|는|을|를)?"
+    r"(?:"
+    r"어디서(?:사|매수|매도)(?:나요|하나요|세요)"
+    r"|"
+    r"어떻게(?:사나요|매수하나요|매도하나요|사는법|매수하는법|매도하는법|매수방법|매도방법)"
+    r")$"
+)
+GUARANTEE_RE = re.compile(
+    r"(?:수익|원금)(?:은|는|이|가|을|를)?[0-9가-힣]{0,8}" r"보장(?:은|는|이|가|을|를)?"
+)
+GUARANTEE_QUESTION_RE = re.compile(
+    r"^(?:[0-9가-힣]{0,8})(?:인가요|인지|여부|되나요|알려줘|알려주세요)"
+)
+TRADE_ADVICE_RES = (
+    re.compile(
+        r"(?:[가-힣0-9]{2,}|이종목|이주식|해당종목)(?:을|를|은|는)?(?:사|파)(?:세요|는게좋|는것이좋|는편이좋)"
+    ),
+    re.compile(
+        r"(?:[가-힣0-9]{2,}|이종목|이주식|해당종목)(?:을|를|은|는)?(?:매수|매도|매입)(?:를|을)?(?:추천|권장|권유)"
+    ),
+    re.compile(
+        r"(?:[가-힣0-9]{2,}|이종목|이주식|해당종목)(?:을|를|은|는)?비중(?:을|를)?(?:늘리|줄이)(?:는게좋|는것이좋|는편이좋)"
+    ),
+)
+NEGATIVE_SUFFIXES = (
+    "하지않",
+    "하지못",
+    "되지않",
+    "될수없",
+    "할수없",
+    "아니",
+    "을하지않",
+    "이하지않",
+    "은하지않",
+    "는하지않",
+    "을되지않",
+    "이되지않",
+    "은되지않",
+    "는되지않",
+)
+
+MODEL_OUTPUT_SAFETY_PATTERNS = SAFETY_REFUSAL_PATTERNS
+POLICY_PATTERNS = (
+    "이전지시무시",
+    "앞선지시무시",
+    "시스템프롬프트",
+    "내부정책",
+    "apikey",
+    "api키",
     "비밀정보",
 )
 
@@ -159,6 +275,7 @@ SYSTEM_PROMPT = """당신은 FE!N의 금융 학습 도우미 '물방개'입니�
 7. suggested_questions는 현재 답변과 관련된 짧은 후속 질문만 최대 3개 제안하세요.
 8. 조회 숫자와 계좌 정보는 반드시 Tool 결과에 있는 값만 사용하고, 결과에 없는 값은 추측하지 마세요.
 9. Tool이 반환하지 않은 내부 식별자, 계좌 UUID, 사용자 식별자를 답변에 포함하지 마세요.
+10. 금융 개념·투자 일반 원칙·FE!N 서비스 사용법과 무관한 질문에는 답하지 말고 status=NEEDS_CLARIFICATION으로 금융 질문을 유도하세요.
 """
 
 
@@ -213,22 +330,52 @@ class AzureOpenAIChatAgentClient:
         self.client = client
 
     @staticmethod
-    def _safety_response(message: str) -> ChatAgentResult | None:
-        normalized = " ".join(message.lower().split())
-        if not any(pattern in normalized for pattern in SAFETY_REFUSAL_PATTERNS):
+    def _normalize_for_safety(value: str) -> str:
+        return re.sub(r"[^0-9a-z가-힣]+", "", value.lower())
+
+    @staticmethod
+    def _is_negated_safety_suffix(suffix: str) -> bool:
+        return suffix.startswith(NEGATIVE_SUFFIXES)
+
+    @staticmethod
+    def _has_unsafe_guarantee(normalized: str) -> bool:
+        for match in GUARANTEE_RE.finditer(normalized):
+            suffix = normalized[match.end() :]
+            if GUARANTEE_QUESTION_RE.match(suffix):
+                continue
+            if re.match(
+                r"^(?:[0-9가-힣]{0,8})(?:" + "|".join(NEGATIVE_SUFFIXES) + r")",
+                suffix,
+            ):
+                continue
+            return True
+        return False
+
+    @staticmethod
+    def _has_trade_advice(normalized: str) -> bool:
+        if TRADE_HOW_TO_RE.search(normalized):
+            return False
+        return any(pattern.search(normalized) for pattern in TRADE_ADVICE_RES)
+
+    @classmethod
+    def _contains_safety_pattern(cls, normalized: str) -> bool:
+        if cls._has_unsafe_guarantee(normalized) or cls._has_trade_advice(normalized):
+            return True
+        for pattern in SAFETY_REFUSAL_PATTERNS:
+            start = 0
+            while (index := normalized.find(pattern, start)) >= 0:
+                suffix = normalized[index + len(pattern) :]
+                if not cls._is_negated_safety_suffix(suffix):
+                    return True
+                start = index + len(pattern)
+        return False
+
+    @classmethod
+    def _safety_response(cls, message: str) -> ChatAgentResult | None:
+        normalized = cls._normalize_for_safety(message)
+        if not cls._contains_safety_pattern(normalized):
             return None
-        is_policy_request = any(
-            pattern in normalized
-            for pattern in (
-                "이전 지시 무시",
-                "앞선 지시 무시",
-                "시스템 프롬프트",
-                "내부 정책",
-                "api key",
-                "api_key",
-                "비밀정보",
-            )
-        )
+        is_policy_request = any(pattern in normalized for pattern in POLICY_PATTERNS)
         return ChatAgentResult(
             status="REFUSED",
             text=(
@@ -240,6 +387,88 @@ class AzureOpenAIChatAgentClient:
             caution="최종 투자 결정과 책임은 사용자에게 있으며, 과거 성과가 미래 수익을 보장하지 않습니다.",
             suggested_questions=["PER과 PBR을 비교해줘", "분산투자 원칙을 알려줘"],
         )
+
+    @classmethod
+    def _out_of_scope_response(cls, message: str) -> ChatAgentResult | None:
+        normalized = cls._normalize_for_safety(message)
+        if any(term in normalized for term in FINANCE_SCOPE_TERMS):
+            return None
+        if not any(pattern in normalized for pattern in OUT_OF_SCOPE_PATTERNS):
+            return None
+        return ChatAgentResult(
+            status="NEEDS_CLARIFICATION",
+            text=(
+                "저는 FE!N의 금융 개념과 투자 서비스 사용법을 설명하는 도우미예요. "
+                "주식·투자·포트폴리오 또는 이 화면에 대해 질문해 주세요."
+            ),
+            caution="개인적인 투자 판단이나 수익을 보장하는 답변은 제공하지 않아요.",
+            suggested_questions=[
+                "PER이 무엇인가요?",
+                "이 화면에서 무엇을 볼 수 있나요?",
+            ],
+        )
+
+    @classmethod
+    def _sanitize_history(
+        cls, history: list[ChatHistoryMessage]
+    ) -> list[ChatHistoryMessage]:
+        """Drop unsafe user turns instead of poisoning all later questions."""
+        sanitized: list[ChatHistoryMessage] = []
+        skip_next_assistant = False
+        for item in history[-10:]:
+            if cls._safety_response(item.content):
+                skip_next_assistant = item.role == "user"
+                continue
+            if item.role == "assistant" and skip_next_assistant:
+                skip_next_assistant = False
+                continue
+            skip_next_assistant = False
+            sanitized.append(item)
+        return sanitized
+
+    @classmethod
+    def _sanitize_model_result(cls, result: ChatAgentResult) -> ChatAgentResult:
+        exposed = " ".join(
+            part
+            for part in (
+                result.text,
+                result.caution or "",
+                *result.suggested_questions,
+            )
+            if part
+        )
+        normalized = cls._normalize_for_safety(exposed)
+        if cls._contains_safety_pattern(normalized):
+            matched_pattern = next(
+                (
+                    pattern
+                    for pattern in MODEL_OUTPUT_SAFETY_PATTERNS
+                    if pattern in normalized
+                    and not cls._is_negated_safety_suffix(
+                        normalized[normalized.find(pattern) + len(pattern) :]
+                    )
+                ),
+                "지금매수",
+            )
+            refusal = (
+                "시스템 프롬프트 공개"
+                if matched_pattern in POLICY_PATTERNS
+                else "지금 매수해"
+            )
+            return cls._safety_response(refusal) or result
+        return result
+
+    @classmethod
+    def _guard_request(
+        cls, message: str, history: list[ChatHistoryMessage]
+    ) -> ChatAgentResult | None:
+        safety_response = cls._safety_response(message)
+        if safety_response is not None:
+            return safety_response
+        out_of_scope_response = cls._out_of_scope_response(message)
+        if out_of_scope_response is not None:
+            return out_of_scope_response
+        return None
 
     @staticmethod
     def _local_response(
@@ -309,7 +538,7 @@ class AzureOpenAIChatAgentClient:
                 ),
             }
         ]
-        messages.extend(item.model_dump() for item in history[-10:])
+        messages.extend(item.model_dump() for item in self._sanitize_history(history))
         messages.append({"role": "user", "content": message})
         body = {
             "messages": messages,
@@ -413,9 +642,9 @@ class AzureOpenAIChatAgentClient:
         max_tool_calls: int = 3,
     ) -> ChatAgentResult:
         """허용된 읽기 Tool만 최대 횟수 안에서 호출하고 최종 JSON 응답을 검증한다."""
-        safety_response = self._safety_response(message)
-        if safety_response is not None:
-            return safety_response
+        guarded_response = self._guard_request(message, history)
+        if guarded_response is not None:
+            return guarded_response
         local_response = self._local_response(message, context)
         if local_response is not None:
             return local_response
@@ -427,25 +656,53 @@ class AzureOpenAIChatAgentClient:
         calls_used = 0
         try:
             while calls_used <= max_tool_calls:
-                response = await request.post(
-                    self._request_url(),
-                    params=(
-                        {}
-                        if self._is_foundry_project_endpoint()
-                        else {"api-version": self.api_version}
-                    ),
-                    headers={
-                        "api-key": self.api_key,
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        **self._request_body(message, history, context),
-                        "messages": messages,
-                        "tools": tools,
-                        "tool_choice": "auto",
-                    },
-                )
-                response.raise_for_status()
+                provider_started_at = time.perf_counter()
+                try:
+                    response = await request.post(
+                        self._request_url(),
+                        params=(
+                            {}
+                            if self._is_foundry_project_endpoint()
+                            else {"api-version": self.api_version}
+                        ),
+                        headers={
+                            "api-key": self.api_key,
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            **self._request_body(message, history, context),
+                            "messages": messages,
+                            "tools": tools,
+                            "tool_choice": "auto",
+                        },
+                    )
+                    response.raise_for_status()
+                except httpx.TimeoutException:
+                    observe_provider_request(
+                        outcome="timeout",
+                        elapsed_ms=(time.perf_counter() - provider_started_at) * 1000,
+                    )
+                    raise
+                except httpx.HTTPStatusError as exc:
+                    observe_provider_request(
+                        outcome="http_error",
+                        elapsed_ms=(time.perf_counter() - provider_started_at) * 1000,
+                        status_code=exc.response.status_code,
+                    )
+                    raise
+                except httpx.RequestError:
+                    observe_provider_request(
+                        outcome="request_error",
+                        elapsed_ms=(time.perf_counter() - provider_started_at) * 1000,
+                    )
+                    raise
+                else:
+                    observe_provider_request(
+                        outcome="success",
+                        elapsed_ms=(time.perf_counter() - provider_started_at) * 1000,
+                        status_code=response.status_code,
+                        usage=response.json().get("usage"),
+                    )
                 assistant = response.json()["choices"][0]["message"]
                 if not isinstance(assistant, dict):
                     raise ServiceError(
@@ -464,7 +721,9 @@ class AzureOpenAIChatAgentClient:
                     content = assistant.get("content")
                     if assistant.get("refusal") or not isinstance(content, str):
                         raise ValueError("model did not return content")
-                    return ChatAgentResult.model_validate_json(content)
+                    return self._sanitize_model_result(
+                        ChatAgentResult.model_validate_json(content)
+                    )
                 calls_used += len(tool_calls)
                 if calls_used > max_tool_calls:
                     raise ServiceError(
@@ -508,12 +767,26 @@ class AzureOpenAIChatAgentClient:
                             "물방개의 Tool 인자가 올바르지 않습니다.",
                             502,
                         )
-                    result = self._execute_tool(
-                        name,
-                        arguments,
-                        session=session,
-                        user_id=user_id,
-                        account_id=account_id,
+                    tool_started_at = time.perf_counter()
+                    try:
+                        result = self._execute_tool(
+                            name,
+                            arguments,
+                            session=session,
+                            user_id=user_id,
+                            account_id=account_id,
+                        )
+                    except Exception:
+                        observe_tool(
+                            name=name,
+                            outcome="error",
+                            elapsed_ms=(time.perf_counter() - tool_started_at) * 1000,
+                        )
+                        raise
+                    observe_tool(
+                        name=name,
+                        outcome="success",
+                        elapsed_ms=(time.perf_counter() - tool_started_at) * 1000,
                     )
                     messages.append(
                         {
@@ -569,11 +842,11 @@ class AzureOpenAIChatAgentClient:
         history: list[ChatHistoryMessage],
         context: ChatScreenContext,
     ) -> ChatAgentResult:
-        safety_response = self._safety_response(message)
-        if safety_response is not None:
-            return safety_response
-
+        guarded_response = self._guard_request(message, history)
+        if guarded_response is not None:
+            return guarded_response
         local_response = self._local_response(message, context)
+
         if local_response is not None:
             return local_response
 
@@ -637,7 +910,9 @@ class AzureOpenAIChatAgentClient:
             content = provider_message.get("content")
             if provider_message.get("refusal") or not isinstance(content, str):
                 raise ValueError("model did not return content")
-            return ChatAgentResult.model_validate_json(content)
+            return self._sanitize_model_result(
+                ChatAgentResult.model_validate_json(content)
+            )
         except (
             ValueError,
             KeyError,

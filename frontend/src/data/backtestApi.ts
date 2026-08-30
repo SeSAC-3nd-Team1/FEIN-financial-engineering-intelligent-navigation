@@ -16,6 +16,10 @@ export const API_BASE = '/api/v1/backtest';
  */
 export const USE_MOCK_BACKTEST = import.meta.env.VITE_USE_MOCK_BACKTEST === 'true';
 
+if (import.meta.env.PROD && USE_MOCK_BACKTEST) {
+  throw new Error('Mock backtest is disabled in production.');
+}
+
 export interface BacktestAvailableRange {
   minDate: string;
   maxDate: string;
@@ -32,7 +36,9 @@ async function get<T>(path: string): Promise<T> {
 
 async function request<T>(path: string, body: unknown): Promise<T> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 15_000);
+  // Momentum v2 uses a multi-year point-in-time universe and can legitimately
+  // take longer than a normal API request on a cold production replica.
+  const timer = setTimeout(() => ctrl.abort(), 180_000);
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
@@ -66,9 +72,9 @@ export function runBacktest(
   });
 }
 
-export function getBacktestAvailableRange(): Promise<BacktestAvailableRange> {
+export function getBacktestAvailableRange(strategyId?: string): Promise<BacktestAvailableRange> {
   if (USE_MOCK_BACKTEST) return Promise.resolve(MOCK_AVAILABLE_RANGE);
-  return get<BacktestAvailableRange>('/available-range');
+  return get<BacktestAvailableRange>(`/available-range${strategyId ? `?strategyId=${encodeURIComponent(strategyId)}` : ''}`);
 }
 
 const fmtShort = (iso: string) => `${iso.slice(0, 4)}.${iso.slice(5, 7)}`;

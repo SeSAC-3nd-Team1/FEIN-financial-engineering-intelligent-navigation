@@ -124,7 +124,6 @@ export interface FundOperationResponse {
   trades: FundTradeResponse[];
 }
 
-
 export interface InvestmentTermResponse extends SignupTerm {
   content_reference: string | null;
 }
@@ -248,6 +247,7 @@ export interface PortfolioContributionResponse {
 }
 
 export interface RebalancingProposalResponse {
+  proposal_key: string;
   stock_code: string;
   stock_name: string | null;
   current_weight: DecimalString;
@@ -271,13 +271,12 @@ export interface PortfolioResponse {
   contributions: PortfolioContributionResponse[];
   strategy_targets_available: boolean;
   rebalancing_proposals: RebalancingProposalResponse[];
-    positions: PositionResponse[];
+  positions: PositionResponse[];
   invested_principal?: DecimalString;
   valuation_profit?: DecimalString;
   withdrawable_amount?: DecimalString;
   settlement_mode?: "VIRTUAL";
 }
-
 
 export type PortfolioHistoryPeriod = "1M" | "3M" | "1Y" | "ALL";
 
@@ -321,6 +320,7 @@ export interface StockEvaluationResponse {
 export interface RebalancingDecisionResponse {
   id: string;
   account_id: string;
+  proposal_key: string;
   strategy_id: string | null;
   stock_code: string;
   stock_name: string | null;
@@ -348,6 +348,7 @@ export interface RebalancingDecisionHistoryResponse {
 export interface RebalancingDecisionCreateRequest {
   account_id: string;
   stock_code: string;
+  proposal_key: string;
   decision: "ACCEPTED" | "HELD";
   idempotency_key: string;
 }
@@ -377,6 +378,7 @@ export interface ExecutionResponse {
   id: number;
   order_id: string;
   stock_code: string;
+  stock_name: string | null;
   side: "BUY" | "SELL";
   quantity: DecimalString;
   execution_price: DecimalString;
@@ -515,10 +517,11 @@ async function request<T>(
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   let response: Response;
-    try {
+  try {
     response = await fetch(`${API_BASE}${path}`, { ...init, headers });
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    if (error instanceof DOMException && error.name === "AbortError")
+      throw error;
     throw new ApiError(
       "NETWORK_ERROR",
       "서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.",

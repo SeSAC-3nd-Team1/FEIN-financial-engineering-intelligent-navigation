@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "backend/**"
+      - "ai/**"
+      - "shared/**"
       - "frontend/**"
       - "data/db/**"
       - "data/scripts/init_local_db.py"
@@ -63,9 +65,13 @@ jobs:
             backend/requirements.txt
             data/requirements.txt
             data/requirements-db-init.txt
+            agent-orchestration/pyproject.toml
 
       - name: Install dependencies
-        run: python -m pip install -r data/requirements.txt -r backend/requirements.txt
+
+        run: |
+          python -m pip install -r data/requirements.txt -r backend/requirements.txt
+          python -m pip install -e 'agent-orchestration[test]'
 
       - name: Initialize schema and seed test terms twice
         working-directory: data
@@ -76,7 +82,22 @@ jobs:
 
       - name: Run Backend unit and E2E tests
         working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
         run: pytest -q
+
+      - name: Run Live and Backend v2 target parity test
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
+        run: pytest ../ai/tests/test_live_backtest_target_parity.py -q
+
+      - name: Build production Backend image
+        run: docker build -f backend/Dockerfile.prod -t fein-backend-ci .
+
+      - name: Verify production Backend command has no reload
+        run: |
+          test "$(docker inspect --format '{{json .Config.Cmd}}' fein-backend-ci)" = '["uvicorn","app.main:app","--host","0.0.0.0","--port","8000"]'
 
       - name: Set up Node
         uses: actions/setup-node@v4

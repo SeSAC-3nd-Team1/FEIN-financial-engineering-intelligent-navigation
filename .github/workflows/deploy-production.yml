@@ -16,17 +16,73 @@ concurrency:
 
 env:
   IMAGE_TAG: ${{ github.sha }}
+  REDIS_APP_NAME: ca-redis-fein-vnet
+  KEY_VAULT_NAME: ${{ vars.KEY_VAULT_NAME || 'kv-fein' }}
+  ACS_EMAIL_KV_SECRET: ${{ vars.ACS_EMAIL_KV_SECRET || 'email-service-key' }}
+  KIS_APP_KEY_KV_SECRET: ${{ vars.KIS_APP_KEY_KV_SECRET || 'kis-app-key' }}
+  KIS_APP_SECRET_KV_SECRET: ${{ vars.KIS_APP_SECRET_KV_SECRET || 'kis-app-secret' }}
+  ACS_EMAIL_SENDER_ADDRESS: ${{ vars.ACS_EMAIL_SENDER_ADDRESS || 'DoNotReply@5160acac-2538-427a-8d6c-ff0e9a748e3b.azurecomm.net' }}
+  AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT || 'https://fndr-fein.openai.azure.com/' }}
+  AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT: ${{ vars.AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT }}
+  AZURE_OPENAI_REBALANCING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_REBALANCING_DEPLOYMENT }}
+  AZURE_OPENAI_COMPARISON_DEPLOYMENT: ${{ vars.AZURE_OPENAI_COMPARISON_DEPLOYMENT }}
+  AZURE_OPENAI_CHATBOT_ENDPOINT: ${{ vars.AZURE_OPENAI_CHATBOT_ENDPOINT || 'https://fein-chatbot.openai.azure.com/' }}
+  AZURE_OPENAI_CHATBOT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHATBOT_DEPLOYMENT || 'gpt-5.6-luna' }}
+  FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
+  FOUNDRY_MODEL_DEPLOYMENT_NAME: ${{ vars.FOUNDRY_MODEL_DEPLOYMENT_NAME }}
+  MBG_COORDINATOR_AGENT_NAME: ${{ vars.MBG_COORDINATOR_AGENT_NAME || 'MBGCoordinator' }}
+  FINANCIAL_REPORT_AGENT_NAME: ${{ vars.FINANCIAL_REPORT_AGENT_NAME || 'FinancialReport' }}
+  NEWS_AGENT_NAME: ${{ vars.NEWS_AGENT_NAME || 'News' }}
+  MARKET_RESEARCH_AGENT_NAME: ${{ vars.MARKET_RESEARCH_AGENT_NAME || 'MarketResearch' }}
+  MACRO_AGENT_NAME: ${{ vars.MACRO_AGENT_NAME || 'Macro' }}
+  ASSET_MANAGER_AGENT_NAME: ${{ vars.ASSET_MANAGER_AGENT_NAME || 'AssetManager' }}
+  CHATBOT_REGISTRY_JSON: ${{ vars.CHATBOT_REGISTRY_JSON }}
+  FEIN_CHATBOT_ID: ${{ vars.FEIN_CHATBOT_ID || 'fein-web-chatbot' }}
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-
+    # The v2 artifact generator needs more memory than Azure Cloud Shell.
+    # Register the Azure runner with the `azure-large` label on a host with
+    # at least 16 GiB RAM before running Production Deploy.
+    runs-on: [self-hosted, Linux, X64, azure-large]
     environment:
       name: production
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate bootstrap configuration
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          required=(
+            ACR_NAME
+            AZURE_RESOURCE_GROUP
+            FRONTEND_APP_NAME
+            BACKEND_APP_NAME
+            AZURE_CLIENT_ID
+            AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID
+            DATABASE_URL
+            ACS_EMAIL_SENDER_ADDRESS
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name:-}" ]] || missing+=("${name}")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing bootstrap configuration: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
 
       - name: Azure login
         uses: azure/login@v2
@@ -35,42 +91,630 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Login to Azure Container Registry
+      - name: Resolve production ACR
+        env:
+          CONFIGURED_ACR_NAME: ${{ vars.ACR_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
         run: |
-          az acr login --name "${{ vars.ACR_NAME }}"
+          set -euo pipefail
 
-      - name: Build frontend image
+          # ACR names are subscription-scoped; requiring the configured
+          # resource group can reject a valid registry after infrastructure
+          # resources are moved between resource groups.
+          if [[ -n "${CONFIGURED_ACR_NAME}" ]] && az acr show \
+            --name "${CONFIGURED_ACR_NAME}" \
+            --output none 2>/dev/null; then
+            resolved_acr="${CONFIGURED_ACR_NAME}"
+          else
+            # Existing Container Apps retain the registry login server even
+            # when the GitHub variable is stale. Use it as the next source of
+            # truth, then verify that registry exists in the active
+            # subscription before using it.
+            current_image="$(az containerapp show \
+              --name "${FRONTEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query 'properties.template.containers[0].image' \
+              --output tsv)"
+            current_registry="${current_image%%.azurecr.io/*}"
+            if [[ "${current_registry}" != "${current_image}" ]] && \
+              az acr show --name "${current_registry##*/}" --output none 2>/dev/null; then
+              resolved_acr="${current_registry##*/}"
+            else
+              mapfile -t subscription_acrs < <(az acr list \
+                --query '[].name' \
+                --output tsv)
+              if (( ${#subscription_acrs[@]} != 1 )); then
+                echo "Configured ACR '${CONFIGURED_ACR_NAME:-<unset>}' was not found in the active subscription." >&2
+                printf 'Existing frontend image: %s\n' "${current_image:-<none>}" >&2
+                printf 'Expected exactly one subscription ACR; found: %s\n' \
+                  "${subscription_acrs[*]:-<none>}" >&2
+                exit 1
+              fi
+              resolved_acr="${subscription_acrs[0]}"
+            fi
+            if [[ -z "${resolved_acr}" ]]; then
+              exit 1
+            fi
+          fi
+
+          echo "ACR_NAME=${resolved_acr}" >> "${GITHUB_ENV}"
+          echo "Resolved production ACR: ${resolved_acr}"
+
+      - name: Ensure internal Redis Container App
+        id: redis
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
         run: |
-          docker build \
-            -t "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
+          set -euo pipefail
+
+          environment_id="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query properties.managedEnvironmentId \
+            --output tsv)"
+
+          [[ -n "${environment_id}" ]] || {
+            echo "Backend Container App managed environment could not be resolved." >&2
+            exit 1
+          }
+
+          environment_name="${environment_id##*/}"
+
+          if az containerapp show \
+            --name "${REDIS_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --output none 2>/dev/null; then
+            redis_environment_id="$(az containerapp show \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query properties.managedEnvironmentId \
+              --output tsv)"
+
+            [[ -n "${redis_environment_id}" ]] || {
+              echo "Existing Redis Container App managed environment could not be resolved." >&2
+              exit 1
+            }
+
+            if [[ "${redis_environment_id,,}" != "${environment_id,,}" ]]; then
+              echo "Existing Redis Container App is in a different Container Apps Environment." >&2
+              echo "Backend environment: ${environment_id}" >&2
+              echo "Redis environment: ${redis_environment_id}" >&2
+              exit 1
+            fi
+
+            echo "Reusing existing internal Redis Container App: ${REDIS_APP_NAME}"
+            az containerapp update \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --min-replicas 1 \
+              --max-replicas 1 \
+              --output none
+          else
+            echo "Creating internal Redis Container App: ${REDIS_APP_NAME}"
+            az containerapp create \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --environment "${environment_name}" \
+              --image redis:7-alpine \
+              --cpu 0.25 \
+              --memory 0.5Gi \
+              --min-replicas 1 \
+              --max-replicas 1 \
+              --output none
+          fi
+
+          az containerapp ingress enable \
+            --name "${REDIS_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --type internal \
+            --target-port 6379 \
+            --exposed-port 6379 \
+            --transport tcp \
+            --output none
+
+          latest_revision=""
+          ready_revision=""
+          for attempt in $(seq 1 30); do
+            latest_revision="$(az containerapp show \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query properties.latestRevisionName \
+              --output tsv)"
+            ready_revision="$(az containerapp show \
+              --name "${REDIS_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query properties.latestReadyRevisionName \
+              --output tsv)"
+
+            if [[ -n "${latest_revision}" && "${latest_revision}" == "${ready_revision}" ]]; then
+              echo "Redis ready revision: ${ready_revision}"
+              break
+            fi
+
+            if [[ "${attempt}" == "30" ]]; then
+              echo "Redis latest revision did not become ready." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          echo "url=redis://${REDIS_APP_NAME}:6379/0" >> "${GITHUB_OUTPUT}"
+
+      - name: Configure core production secrets
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+          GH_ACS_EMAIL_CONNECTION_STRING: ${{ secrets.ACS_EMAIL_CONNECTION_STRING }}
+          GH_KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+          GH_KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+        run: |
+          set -euo pipefail
+
+          has_app_secret() {
+            local secret_name="$1"
+            local count
+            count="$(az containerapp secret list \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query "length([?name=='${secret_name}'])" \
+              --output tsv)"
+            [[ "${count}" != "0" ]]
+          }
+
+          need_key_vault=false
+          core_secret_args=()
+
+          if [[ -n "${GH_ACS_EMAIL_CONNECTION_STRING}" ]]; then
+            core_secret_args+=("acs-email=${GH_ACS_EMAIL_CONNECTION_STRING}")
+          elif has_app_secret acs-email; then
+            echo "Reusing existing Container App secret: acs-email"
+          else
+            need_key_vault=true
+            core_secret_args+=("acs-email=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${ACS_EMAIL_KV_SECRET},identityref:system")
+          fi
+
+          if [[ -n "${GH_KIS_APP_KEY}" ]]; then
+            core_secret_args+=("kis-key=${GH_KIS_APP_KEY}")
+          elif has_app_secret kis-key; then
+            echo "Reusing existing Container App secret: kis-key"
+          else
+            need_key_vault=true
+            core_secret_args+=("kis-key=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${KIS_APP_KEY_KV_SECRET},identityref:system")
+          fi
+
+          if [[ -n "${GH_KIS_APP_SECRET}" ]]; then
+            core_secret_args+=("kis-secret=${GH_KIS_APP_SECRET}")
+          elif has_app_secret kis-secret; then
+            echo "Reusing existing Container App secret: kis-secret"
+          else
+            need_key_vault=true
+            core_secret_args+=("kis-secret=keyvaultref:https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${KIS_APP_SECRET_KV_SECRET},identityref:system")
+          fi
+
+          az containerapp identity assign \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --system-assigned \
+              --output none
+
+          if [[ "${need_key_vault}" == "true" ]]; then
+            az containerapp identity assign \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --system-assigned \
+              --output none
+
+            principal_id="$(az containerapp show \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query identity.principalId \
+              --output tsv)"
+            [[ -n "${principal_id}" ]] || {
+              echo "Backend managed identity principalId could not be resolved." >&2
+              exit 1
+            }
+
+            if ! vault_id="$(az keyvault show \
+              --name "${KEY_VAULT_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query id \
+              --output tsv 2>/dev/null)"; then
+              echo "Required core Container App secret is missing and the deployment identity cannot read Key Vault ${KEY_VAULT_NAME}." >&2
+              echo "Run the one-time production Key Vault bootstrap from an authorized private-network operator environment, then retry deployment." >&2
+              exit 1
+            fi
+            [[ -n "${vault_id}" ]] || {
+              echo "Key Vault ${KEY_VAULT_NAME} could not be resolved." >&2
+              exit 1
+            }
+
+            rbac_enabled="$(az keyvault show \
+              --name "${KEY_VAULT_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query properties.enableRbacAuthorization \
+              --output tsv)"
+
+            if [[ "${rbac_enabled,,}" == "true" ]]; then
+              role_count="$(az role assignment list \
+                --assignee-object-id "${principal_id}" \
+                --scope "${vault_id}" \
+                --role "Key Vault Secrets User" \
+                --query 'length(@)' \
+                --output tsv 2>/dev/null || echo 0)"
+              if [[ "${role_count}" == "0" ]]; then
+                if ! az role assignment create \
+                  --assignee-object-id "${principal_id}" \
+                  --assignee-principal-type ServicePrincipal \
+                  --role "Key Vault Secrets User" \
+                  --scope "${vault_id}" \
+                  --output none; then
+                  echo "Failed to grant Backend managed identity Key Vault Secrets User on ${KEY_VAULT_NAME}." >&2
+                  echo "The deployment identity needs permission to create this role assignment, or the role must be assigned once in Azure." >&2
+                  exit 1
+                fi
+              fi
+            else
+              if ! az keyvault set-policy \
+                --name "${KEY_VAULT_NAME}" \
+                --resource-group "${RESOURCE_GROUP}" \
+                --object-id "${principal_id}" \
+                --secret-permissions get list \
+                --output none; then
+                echo "Failed to grant Backend managed identity Key Vault secret access policy." >&2
+                exit 1
+              fi
+            fi
+          fi
+
+          if (( ${#core_secret_args[@]} > 0 )); then
+            az containerapp secret set \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --secrets "${core_secret_args[@]}" \
+              --output none
+            echo "Updated required core Container App secrets without exposing secret values."
+          else
+            echo "All required core Container App secrets already exist; Key Vault management access is not required for this deployment."
+          fi
+
+      - name: Validate core backend integration configuration
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+        run: |
+          set -euo pipefail
+          required_app_secrets=(acs-email kis-key kis-secret)
+          missing=()
+          for secret_name in "${required_app_secrets[@]}"; do
+            count="$(az containerapp secret list \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query "length([?name=='${secret_name}'])" \
+              --output tsv)"
+            [[ "${count}" != "0" ]] || missing+=("${secret_name}")
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing core Container App secrets: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+          echo "Core backend integrations are configured: ACS Email, KIS, Redis, PostgreSQL."
+          echo "NAVER news and Azure OpenAI features are optional at deployment time and are enabled only when their credentials are configured."
+
+      - name: Generate v2 recommendation artifact for Backend image
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: stfeindata
+          AZURE_STORAGE_CONTAINER_FEATURES: features
+          PYTHONPATH: ${{ github.workspace }}/ai:${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          # Build an isolated venv in the runner workspace.  The VM's shared
+          # venv may be root-owned, so installing into it would fail for the
+          # runner service account and leave artifact generation incomplete.
+          python -m venv .deploy-venv
+          .deploy-venv/bin/python --version
+          .deploy-venv/bin/python -m pip --version
+          .deploy-venv/bin/python -m pip install --upgrade pip
+          .deploy-venv/bin/python -m pip install -r ai/requirements.txt
+          mkdir -p .deploy-artifacts
+          .deploy-venv/bin/python -m inference.generate_risk_adjusted_momentum \
+            --model-version 2 \
+            --algorithm-version 2 \
+            --master-version 1 \
+            --output .deploy-artifacts/risk-adjusted-momentum-v2.json
+          test -s .deploy-artifacts/risk-adjusted-momentum-v2.json
+
+      - name: Build and push frontend image
+        run: |
+          az acr build \
+            --registry "${ACR_NAME}" \
+            --image "fein-frontend:${IMAGE_TAG}" \
+            --file frontend/Dockerfile.prod \
             ./frontend
-
-      - name: Push frontend image
-        run: |
-          docker push \
-            "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}"
 
       - name: Build backend image
         run: |
-          docker build \
-            -t "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}" \
-            ./backend
+          az acr build \
+            --registry "${ACR_NAME}" \
+            --image "fein-backend:${IMAGE_TAG}" \
+            --file backend/Dockerfile.prod \
+            .
 
-      - name: Push backend image
+      - name: Verify FINCON model in backend image
         run: |
-          docker push \
-            "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}"
+          az acr run \
+            --registry "${ACR_NAME}" \
+            --cmd "\$Registry/fein-backend:${IMAGE_TAG} env DATABASE_URL=postgresql://artifact-check:artifact-check@127.0.0.1:5432/artifact_check python -c \"from app.trading_engine.model_loader_fix1 import load_model_module_fix1; module = load_model_module_fix1(); assert module.MODEL_VERSION == 'fincon-ver23-v1-fix1'\"" \
+            /dev/null
 
       - name: Deploy frontend Container App
         run: |
+          backend_fqdn="$(az containerapp show \
+            --name "${{ vars.BACKEND_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)"
+          [[ -n "${backend_fqdn}" ]] || {
+            echo "Backend Container App ingress FQDN is missing." >&2
+            exit 1
+          }
           az containerapp update \
             --name "${{ vars.FRONTEND_APP_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --image "${{ vars.ACR_NAME }}.azurecr.io/fein-frontend:${IMAGE_TAG}"
+            --image "${ACR_NAME}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
+            --set-env-vars \
+              "BACKEND_UPSTREAM=https://${backend_fqdn}" \
+              "BACKEND_HOST=${backend_fqdn}" \
+            --output none
 
-      - name: Deploy backend Container App
+      - name: Resolve production frontend origin
+        id: frontend-origin
         run: |
-          az containerapp update \
-            --name "${{ vars.BACKEND_APP_NAME }}" \
+          set -euo pipefail
+          frontend_fqdn="$(az containerapp show \
+            --name "${{ vars.FRONTEND_APP_NAME }}" \
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-            --image "${{ vars.ACR_NAME }}.azurecr.io/fein-backend:${IMAGE_TAG}"
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)"
+          [[ -n "${frontend_fqdn}" ]] || {
+            echo "Frontend Container App ingress FQDN is missing." >&2
+            exit 1
+          }
+          echo "origin=https://${frontend_fqdn}" >> "${GITHUB_OUTPUT}"
+
+      - name: Deploy backend with production configuration
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+          FRONTEND_ORIGIN: ${{ steps.frontend-origin.outputs.origin }}
+          PRODUCTION_REDIS_URL: ${{ steps.redis.outputs.url }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          EMAIL_OTP_SECRET: ${{ secrets.EMAIL_OTP_SECRET }}
+          NAVER_API_HUB_CLIENT_ID: ${{ secrets.NAVER_API_HUB_CLIENT_ID }}
+          NAVER_API_HUB_CLIENT_SECRET: ${{ secrets.NAVER_API_HUB_CLIENT_SECRET }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_CHATBOT_API_KEY: ${{ secrets.AZURE_OPENAI_CHATBOT_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          has_existing_env() {
+            local name="$1"
+            local count
+            count="$(az containerapp show \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query "length(properties.template.containers[0].env[?name=='${name}'])" \
+              --output tsv)"
+            [[ "${count}" != "0" ]]
+          }
+
+          secret_args=()
+          env_args=(
+            DB_CONNECT_TIMEOUT_SECONDS=5
+            REDIS_URL="${PRODUCTION_REDIS_URL}"
+            ACCESS_TOKEN_MINUTES=60
+            CORS_ORIGINS="${FRONTEND_ORIGIN}"
+            ACS_EMAIL_CONNECTION_STRING=secretref:acs-email
+            ACS_EMAIL_SENDER_ADDRESS="${ACS_EMAIL_SENDER_ADDRESS}"
+            KIS_APP_KEY=secretref:kis-key
+            KIS_APP_SECRET=secretref:kis-secret
+            EMAIL_OTP_TTL_SECONDS=300
+            EMAIL_OTP_MAX_ATTEMPTS=5
+            EMAIL_OTP_RESEND_SECONDS=60
+            EMAIL_OTP_HOURLY_LIMIT=5
+            EMAIL_OTP_IP_HOURLY_LIMIT=20
+            EMAIL_VERIFICATION_TOKEN_TTL_SECONDS=1800
+            KIS_BASE_URL=https://openapi.koreainvestment.com:9443
+            KIS_WEBSOCKET_URL=ws://ops.koreainvestment.com:21000
+            KIS_TIMEOUT_SECONDS=3
+            KIS_REST_PAGE_INTERVAL_SECONDS=0.5
+            PRICE_CACHE_TTL_SECONDS=5
+            MINUTE_CANDLE_CACHE_TTL_SECONDS=15
+            REALTIME_PRICE_CACHE_TTL_SECONDS=30
+            REALTIME_PRICE_STALE_SECONDS=10
+            KIS_REALTIME_RECONNECT_MAX_SECONDS=30
+            KIS_REALTIME_CLIENT_QUEUE_SIZE=100
+            KIS_REALTIME_MAX_SYMBOLS_PER_CLIENT=20
+            NAVER_NEWS_BASE_URL=https://naverapihub.apigw.ntruss.com
+            NEWS_SEARCH_QUERY=증시
+            NEWS_CACHE_TTL_SECONDS=300
+            NEWS_REQUEST_TIMEOUT_SECONDS=5
+            AZURE_OPENAI_API_VERSION=2024-10-21
+            AI_RECOMMENDATION_TIMEOUT_SECONDS=15
+            AI_RECOMMENDATION_MODEL_VERSION=strategy-recommender-v1
+            AI_RECOMMENDATION_PROMPT_VERSION=v1
+            AI_RECOMMENDATION_DATASET_VERSION=financial-8y-v1
+            AI_REBALANCING_TIMEOUT_SECONDS=15
+            AI_REBALANCING_MODEL_VERSION=rebalancing-v1
+            AI_COMPARISON_TIMEOUT_SECONDS=15
+            AI_COMPARISON_MODEL_VERSION=portfolio-comparison-v1
+            STRATEGY_CATALOG_VERSION=v2
+            AZURE_OPENAI_CHATBOT_API_VERSION=2024-10-21
+            AI_CHATBOT_TIMEOUT_SECONDS=30
+            AI_CHATBOT_MODEL_VERSION=chatbot-v1
+            AI_CHATBOT_PROMPT_VERSION=v1
+            AI_CHATBOT_RATE_LIMIT_PER_MINUTE=30
+            AI_CHATBOT_RATE_LIMIT_WINDOW_SECONDS=60
+            AI_CHATBOT_PROVIDER=foundry_orchestration
+            AGENT_PROTOCOL=responses
+            AGENT_CLIENT_BACKEND=foundry_sdk
+            ALLOW_PREVIEW_A2A=false
+            ANALYSIS_MODE=analysis_only
+            MODEL_RECOMMENDATION_SNAPSHOT_PATH=/model-artifacts/risk-adjusted-momentum-v2.json
+            MODEL_RECOMMENDATION_ALLOW_FALLBACK=false
+            MODEL_RECOMMENDATION_STALE_AFTER_DAYS=3
+          )
+
+          set_secret_env() {
+            local env_name="$1"
+            local secret_name="$2"
+            local value="$3"
+            if [[ -n "${value}" ]]; then
+              secret_args+=("${secret_name}=${value}")
+              env_args+=("${env_name}=secretref:${secret_name}")
+            fi
+          }
+
+          set_plain_env() {
+            local env_name="$1"
+            local value="$2"
+            if [[ -n "${value}" ]]; then
+              env_args+=("${env_name}=${value}")
+            fi
+          }
+
+          set_secret_env DATABASE_URL database-url "${DATABASE_URL}"
+          set_secret_env NAVER_API_HUB_CLIENT_ID naver-id "${NAVER_API_HUB_CLIENT_ID}"
+          set_secret_env NAVER_API_HUB_CLIENT_SECRET naver-secret "${NAVER_API_HUB_CLIENT_SECRET}"
+          set_secret_env AZURE_OPENAI_API_KEY aoai-key "${AZURE_OPENAI_API_KEY}"
+          set_secret_env AZURE_OPENAI_CHATBOT_API_KEY aoai-chat-key "${AZURE_OPENAI_CHATBOT_API_KEY}"
+
+          if [[ -n "${JWT_SECRET}" ]]; then
+            set_secret_env JWT_SECRET jwt-secret "${JWT_SECRET}"
+          elif ! has_existing_env JWT_SECRET; then
+            generated_jwt="$(openssl rand -hex 64)"
+            set_secret_env JWT_SECRET jwt-secret "${generated_jwt}"
+          fi
+
+          if [[ -n "${EMAIL_OTP_SECRET}" ]]; then
+            set_secret_env EMAIL_OTP_SECRET email-otp-secret "${EMAIL_OTP_SECRET}"
+          elif ! has_existing_env EMAIL_OTP_SECRET; then
+            generated_otp="$(openssl rand -hex 64)"
+            set_secret_env EMAIL_OTP_SECRET email-otp-secret "${generated_otp}"
+          fi
+
+          set_plain_env AZURE_OPENAI_ENDPOINT "${AZURE_OPENAI_ENDPOINT}"
+          set_plain_env AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT "${AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT}"
+          set_plain_env AZURE_OPENAI_REBALANCING_DEPLOYMENT "${AZURE_OPENAI_REBALANCING_DEPLOYMENT}"
+          set_plain_env AZURE_OPENAI_COMPARISON_DEPLOYMENT "${AZURE_OPENAI_COMPARISON_DEPLOYMENT}"
+          set_plain_env AZURE_OPENAI_CHATBOT_ENDPOINT "${AZURE_OPENAI_CHATBOT_ENDPOINT}"
+          set_plain_env AZURE_OPENAI_CHATBOT_DEPLOYMENT "${AZURE_OPENAI_CHATBOT_DEPLOYMENT}"
+          set_plain_env FOUNDRY_PROJECT_ENDPOINT "${FOUNDRY_PROJECT_ENDPOINT}"
+          set_plain_env FOUNDRY_MODEL_DEPLOYMENT_NAME "${FOUNDRY_MODEL_DEPLOYMENT_NAME}"
+          set_plain_env MBG_COORDINATOR_AGENT_NAME "${MBG_COORDINATOR_AGENT_NAME}"
+          set_plain_env FINANCIAL_REPORT_AGENT_NAME "${FINANCIAL_REPORT_AGENT_NAME}"
+          set_plain_env NEWS_AGENT_NAME "${NEWS_AGENT_NAME}"
+          set_plain_env MARKET_RESEARCH_AGENT_NAME "${MARKET_RESEARCH_AGENT_NAME}"
+          set_plain_env MACRO_AGENT_NAME "${MACRO_AGENT_NAME}"
+          set_plain_env ASSET_MANAGER_AGENT_NAME "${ASSET_MANAGER_AGENT_NAME}"
+          set_plain_env CHATBOT_REGISTRY_JSON "${CHATBOT_REGISTRY_JSON}"
+          set_plain_env FEIN_CHATBOT_ID "${FEIN_CHATBOT_ID}"
+
+          # Foundry chatbot configuration is optional for the core investment
+          # product.  When it is configured, validate it; otherwise preserve
+          # the existing Container App environment and allow backtest,
+          # recommendation, and trading flows to deploy independently.
+          if [[ -n "${FOUNDRY_PROJECT_ENDPOINT}" && -n "${CHATBOT_REGISTRY_JSON}" && -n "${FEIN_CHATBOT_ID}" ]]; then
+            python -c 'import json, os; registry = json.loads(os.environ["CHATBOT_REGISTRY_JSON"]); chatbots = registry.get("chatbots", []); assert any(item.get("chatbot_id") == os.environ["FEIN_CHATBOT_ID"] and item.get("enabled") is True for item in chatbots), "CHATBOT_REGISTRY_JSON does not enable FEIN_CHATBOT_ID"'
+          else
+            echo "Foundry chatbot configuration is absent; preserving existing chatbot settings and continuing core deployment."
+          fi
+
+          if (( ${#secret_args[@]} > 0 )); then
+            az containerapp secret set \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --secrets "${secret_args[@]}" \
+              --output none
+          fi
+
+          az containerapp update \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --image "${ACR_NAME}.azurecr.io/fein-backend:${IMAGE_TAG}" \
+            --cpu 2.0 \
+            --memory 4Gi \
+            --min-replicas 1 \
+            --set-env-vars "${env_args[@]}" \
+            --output none
+
+          # The existing Container App was created with TCP probes on port 80,
+          # while the Backend listens on the ingress target port 8000. Preserve
+          # the current container configuration and update every TCP probe by
+          # probe shape, instead of relying on a particular array ordering.
+          backend_id="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query id \
+            --output tsv)"
+          backend_container="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query properties.template.containers[0] \
+            --output json | jq '
+              (.env //= [])
+              | .env |= map(if .secretRef then {name, secretRef} else {name, value} end)
+              | (.resources //= {})
+              | .resources.cpu = 2.0
+              | .resources.memory = "4Gi"
+              | .probes |= map(if .tcpSocket then .tcpSocket.port = 8000 else . end)
+            ')"
+          backend_payload="$(jq -cn \
+            --argjson container "${backend_container}" \
+            '{properties: {template: {containers: [$container]}}}')"
+          az rest \
+            --method PATCH \
+            --url "${backend_id}?api-version=2024-03-01" \
+            --headers Content-Type=application/json \
+            --body "${backend_payload}" \
+            --output none
+
+      - name: Verify deployed Container App revisions
+        run: |
+          set -euo pipefail
+          wait_for_latest_revision() {
+            local app_name="$1"
+            local label="$2"
+            local require_running="${3:-false}"
+            local latest_revision=""
+            local ready_revision=""
+            local health_state=""
+            local running_state=""
+            local replicas=""
+            for attempt in $(seq 1 30); do
+              latest_revision="$(az containerapp show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --query properties.latestRevisionName --output tsv)"
+              ready_revision="$(az containerapp show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --query properties.latestReadyRevisionName --output tsv)"
+              if [[ -n "${latest_revision}" ]]; then
+                health_state="$(az containerapp revision show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --revision "${latest_revision}" --query properties.healthState --output tsv 2>/dev/null || true)"
+                running_state="$(az containerapp revision show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --revision "${latest_revision}" --query properties.runningState --output tsv 2>/dev/null || true)"
+                replicas="$(az containerapp revision show --name "${app_name}" --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --revision "${latest_revision}" --query properties.replicas --output tsv 2>/dev/null || true)"
+              fi
+              if [[ -n "${latest_revision}" && "${latest_revision}" == "${ready_revision}" && "${health_state}" == "Healthy" ]] \
+                && [[ "${require_running}" != "true" || ( ( "${running_state}" == "Running" || "${running_state}" == "RunningAtMaxScale" ) && "${replicas:-0}" -ge 1 ) ]]; then
+                echo "${label} ready revision: ${ready_revision}"
+                return 0
+              fi
+              echo "${label} revision not ready yet (attempt ${attempt}/30, latest=${latest_revision:-none}, ready=${ready_revision:-none}, health=${health_state:-unknown}, running=${running_state:-unknown}, replicas=${replicas:-0})"
+              sleep 10
+            done
+            echo "${label} latest revision did not become ready." >&2
+            echo "latest=${latest_revision:-none}, ready=${ready_revision:-none}, health=${health_state:-unknown}, running=${running_state:-unknown}, replicas=${replicas:-0}" >&2
+            return 1
+          }
+          wait_for_latest_revision "${REDIS_APP_NAME}" "Redis" true
+          wait_for_latest_revision "${{ vars.FRONTEND_APP_NAME }}" "Frontend"
+          wait_for_latest_revision "${{ vars.BACKEND_APP_NAME }}" "Backend" true

@@ -11,7 +11,6 @@ from sqlalchemy import Engine, inspect, text
 
 from db.connection import build_engine
 
-
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_MIGRATION_INTEGRATION") != "1",
     reason="RUN_MIGRATION_INTEGRATION=1 required",
@@ -21,7 +20,7 @@ DATA_ROOT = Path(__file__).resolve().parents[1]
 PRE_STRATEGY_REVISION = "20260827_0024"
 SKIPPED_STRATEGY_REVISION = "20260828_0025"
 DRIFTED_REVISION = "20260828_0026"
-HEAD_REVISION = "20260828_0029"
+HEAD_REVISION = "20260829_0033"
 STRATEGY_COLUMNS = {
     "product_group",
     "availability_status",
@@ -55,6 +54,56 @@ def _current_revision(engine: Engine) -> str:
         revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
     assert isinstance(revision, str)
     return revision
+
+
+def test_existing_user_car_goals_schema_is_validated(
+    migration_database: tuple[Config, Engine],
+) -> None:
+    """0029는 기존 테이블을 재사용하되 계약 불일치를 조용히 통과시키지 않는다."""
+
+    config, engine = migration_database
+    command.downgrade(config, DRIFTED_REVISION)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("""
+                CREATE TABLE user_car_goals (
+                    user_id BIGINT PRIMARY KEY,
+                    car_grade VARCHAR(20) NOT NULL,
+                    goal_amount NUMERIC(20, 2) NOT NULL,
+                    current_amount NUMERIC(20, 2) NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    CONSTRAINT ck_user_car_goals_car_grade_values
+                        CHECK (car_grade IN ('INEX', 'HIGHEND')),
+                    CONSTRAINT ck_user_car_goals_goal_amount_nonnegative
+                        CHECK (goal_amount >= 0),
+                    CONSTRAINT ck_user_car_goals_current_amount_nonnegative
+                        CHECK (current_amount >= 0),
+                    CONSTRAINT fk_user_car_goals_user_id_users
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+                )
+            """))
+
+        command.upgrade(config, HEAD_REVISION)
+        assert _current_revision(engine) == HEAD_REVISION
+        assert inspect(engine).has_table("user_car_goals")
+
+        command.downgrade(config, DRIFTED_REVISION)
+        with engine.begin() as connection:
+            connection.execute(text("DROP TABLE IF EXISTS user_car_goals"))
+            connection.execute(text("""
+                CREATE TABLE user_car_goals (
+                    user_id BIGINT PRIMARY KEY,
+                    car_grade VARCHAR(20) NOT NULL
+                )
+            """))
+
+        with pytest.raises(RuntimeError, match="user_car_goals schema mismatch"):
+            command.upgrade(config, HEAD_REVISION)
+        assert _current_revision(engine) == DRIFTED_REVISION
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("DROP TABLE IF EXISTS user_car_goals"))
+        command.upgrade(config, HEAD_REVISION)
 
 
 def test_reconciliation_repairs_revision_only_strategy_migration(
@@ -107,29 +156,47 @@ def test_reconciliation_repairs_revision_only_strategy_migration(
     assert assessment_columns["risk_score"]["nullable"] is True
     assessment_constraints = {
         constraint["name"]
-        for constraint in strategy_inspector.get_check_constraints("investor_profile_assessments")
+        for constraint in strategy_inspector.get_check_constraints(
+            "investor_profile_assessments"
+        )
     }
     assert "ck_investor_profile_assessments_risk_score_range" in assessment_constraints
 
     with engine.connect() as connection:
-        momentum = connection.execute(
-            text(
-                """
+        momentum = connection.execute(text("""
                 SELECT product_group, availability_status, engine_key, display_order
                 FROM strategies
                 WHERE id = 'momentum'
-                """
-            )
-        ).mappings().one()
+                """)).mappings().one()
         strategy_ids = set(connection.scalars(text("SELECT id FROM strategies")))
 
     assert dict(momentum) == {
         "product_group": "BANG",
         "availability_status": "AVAILABLE",
-        "engine_key": "price_momentum_v1",
+        "engine_key": "risk_adjusted_momentum_v2",
         "display_order": 10,
     }
     assert {"low", "value", "momentum", "stat_arb", "event_driven"} <= strategy_ids
+
+    run_columns = {
+        column["name"]: column
+        for column in inspect(engine).get_columns("momentum_rebalance_runs")
+    }
+    assert run_columns["status"]["nullable"] is False
+    assert run_columns["status"]["default"] == "'RUNNING'::character varying"
+    run_constraints = {
+        constraint["name"]
+        for constraint in inspect(engine).get_unique_constraints("momentum_rebalance_runs")
+    }
+    assert "uq_momentum_rebalance_runs_account_quarter" in run_constraints
+    run_checks = {
+        constraint["name"]
+        for constraint in inspect(engine).get_check_constraints("momentum_rebalance_runs")
+    }
+    assert {
+        "ck_momentum_rebalance_runs_quarter",
+        "ck_momentum_rebalance_runs_status",
+    } <= run_checks
 
     # 복구 후 ORM metadata와 새 DB schema 사이에 추가 DDL 차이가 없어야 한다.
     command.check(config)

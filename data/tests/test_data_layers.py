@@ -51,3 +51,38 @@ def test_price_features_do_not_leak_rolling_values_across_stocks() -> None:
     assert bbb.loc[19, "sma_20d"] == pytest.approx(209.5)
     assert aaa.loc[20, "momentum_20d"] == pytest.approx(0.2)
     assert bbb.loc[20, "momentum_20d"] == pytest.approx(0.1)
+
+
+@pytest.mark.parametrize("observations, ready", [(119, False), (120, False), (121, True)])
+def test_history_120d_ready_requires_current_and_120th_prior_observation(
+    observations: int, ready: bool
+) -> None:
+    frame = pd.DataFrame(
+        {
+            "stock_code": "AAA",
+            "trade_date": pd.date_range("2025-01-01", periods=observations, freq="D"),
+            "close_price": range(100, 100 + observations),
+            "volume": [1000] * observations,
+        }
+    )
+
+    result = compute_stock_features(frame)
+
+    assert bool(result.iloc[-1]["history_120d_ready"]) is ready
+
+
+def test_history_120d_ready_matches_shift_semantics_with_intermediate_gap() -> None:
+    observations = 121
+    frame = pd.DataFrame(
+        {
+            "stock_code": "AAA",
+            "trade_date": pd.date_range("2025-01-01", periods=observations, freq="D"),
+            "close_price": [100.0] * observations,
+            "volume": [1000] * observations,
+        }
+    )
+    frame.loc[60, "close_price"] = None
+
+    result = compute_stock_features(frame)
+
+    assert bool(result.iloc[-1]["history_120d_ready"]) is True
