@@ -108,12 +108,21 @@ class BacktestService:
             raise ServiceError("BACKTEST_STRATEGY_UNAVAILABLE", "지원하지 않는 전략 규칙입니다.", 422)
 
         lookback_days = V2_LOOKBACK_DAYS if factor == "momentum" else LOOKBACK_DAYS
+        benchmark = self.repository.kospi_prices(request.start_date, request.end_date)
+        if len(benchmark) < 2:
+            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "KOSPI 기준지수 데이터가 부족합니다.")
+
         if factor == "momentum":
-            # Keep every code observed in the period so rank() can rebuild the
-            # top-100 investable universe at each point in time.
-            universe = self.repository.stock_codes(
-                request.start_date - timedelta(days=lookback_days), request.end_date
-            )
+            # Ranking first narrows the expensive warm-up feature calculation
+            # to the stocks that can actually enter a quarterly top-100
+            # cross-section. Fall back for test doubles and old repositories.
+            decision_dates = self._momentum_decision_dates([point.trade_date for point in benchmark])
+            if hasattr(self.repository, "momentum_decision_stock_codes"):
+                universe = self.repository.momentum_decision_stock_codes(decision_dates)
+            else:
+                universe = self.repository.stock_codes(
+                    request.start_date - timedelta(days=lookback_days), request.end_date
+                )
         else:
             universe = self.repository.universe_codes(request.start_date)
         if len(universe) < PORTFOLIO_SIZE:
@@ -124,9 +133,6 @@ class BacktestService:
             if factor == "momentum" and hasattr(self.repository, "stock_price_stream")
             else self.repository.stock_prices(universe, warmup_start, request.end_date)
         )
-        benchmark = self.repository.kospi_prices(request.start_date, request.end_date)
-        if len(benchmark) < 2:
-            raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "KOSPI 기준지수 데이터가 부족합니다.")
 
         financial_points: list[PointInTimeFinancial] = []
         if factor == "value":
@@ -354,6 +360,20 @@ class BacktestService:
             else:
                 values.append(values[-1])
         return values
+
+    @staticmethod
+    def _momentum_decision_dates(dates: list[date]) -> list[date]:
+        """Return only dates at which the quarterly v2 target is decided."""
+        if not dates:
+            return []
+        decisions = [dates[0]]
+        previous_bucket = BacktestService._rebalance_bucket(dates[0], "QUARTERLY")
+        for index, trade_date in enumerate(dates[1:], start=1):
+            bucket = BacktestService._rebalance_bucket(trade_date, "QUARTERLY")
+            if bucket != previous_bucket:
+                decisions.append(dates[index - 1])
+                previous_bucket = bucket
+        return decisions
 
     @staticmethod
     def _build_v2_features(
