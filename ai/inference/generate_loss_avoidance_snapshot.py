@@ -13,7 +13,9 @@ import pandas as pd
 from data_access import FeatureStore, FeatureStoreConfig
 from inference.loss_avoidance_snapshot import (
     REQUIRED_COLUMNS,
+        SECURITY_MASTER_COLUMNS,
     build_loss_avoidance_snapshot,
+
     load_algorithm_v24,
 )
 
@@ -39,6 +41,19 @@ def _read_algorithm_history(store: FeatureStore, version: str) -> pd.DataFrame:
     )
     print(f"loss-avoidance: loaded {len(frame):,} OHLCV rows", flush=True)
     return frame
+
+
+def _read_security_master(store: FeatureStore, version: str) -> pd.DataFrame:
+    files = tuple(store.parquet_files("security_master_latest", version))
+    if not files:
+        raise RuntimeError("Azure Feature dataset has no security_master_latest Parquet files")
+    return pd.concat(
+        [
+            store.read_partition(file.path, columns=SECURITY_MASTER_COLUMNS, etag=file.etag)
+            for file in files
+        ],
+        ignore_index=True,
+    )
 
 
 def _publish(snapshot, output_path: Path) -> None:
@@ -69,6 +84,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Run Algorithm(ver.2.4)_fix2 and publish a loss-avoidance snapshot."
     )
     parser.add_argument("--algorithm-version", default="2")
+    parser.add_argument("--security-master-version", default=os.getenv("SECURITY_MASTER_VERSION", "2"))
     parser.add_argument("--top-n", type=int, default=5)
     parser.add_argument("--universe-size", type=int, default=20)
     parser.add_argument(
@@ -81,15 +97,18 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _parser().parse_args()
+
     print("loss-avoidance: starting Algorithm(ver.2.4)_fix2", flush=True)
+
+    store = FeatureStore(FeatureStoreConfig.from_env())
+
     snapshot = build_loss_avoidance_snapshot(
-        _read_algorithm_history(
-            FeatureStore(FeatureStoreConfig.from_env()), args.algorithm_version
-        ),
+        _read_algorithm_history(store, args.algorithm_version),
         algorithm=load_algorithm_v24(),
         data_version=f"algorithm_ohlcv-v{args.algorithm_version.removeprefix('v')}",
         top_n=args.top_n,
         universe_size=args.universe_size,
+        security_master=_read_security_master(store, args.security_master_version),
     )
     _publish(snapshot, args.output)
     print(

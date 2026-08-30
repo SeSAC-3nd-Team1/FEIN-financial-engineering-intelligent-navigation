@@ -14,7 +14,9 @@ from app.models import Order, Position, StrategyTargetWeight
 from app.repositories import TradingRepository
 from app.schemas.api import ModelRecommendationApplyResponse, OrderCreateRequest
 from app.services.model_recommendation import ModelRecommendationService
+from app.services.portfolio import validate_target_weights
 from app.services.trading import TradingService
+
 
 
 DEFAULT_LOSS_AVOIDANCE_SNAPSHOT_PATH = Path(
@@ -76,13 +78,8 @@ class LossAvoidanceInvestmentService:
             for item in snapshot.recommendations
             if item.target_weight > 0
         }
-        total_weight = sum(target_weights.values(), Decimal("0"))
-        if not target_weights or total_weight <= 0 or total_weight > Decimal("0.95"):
-            raise ServiceError(
-                "INVALID_STRATEGY_TARGET_WEIGHTS",
-                "물림방지 목표 주식 비중 합계는 0보다 크고 0.95 이하여야 합니다.",
-                503,
-            )
+        validate_target_weights(target_weights, allow_cash_buffer=True)
+
         self._publish_targets(snapshot.as_of, target_weights)
 
         if account.operation_mode != "AUTO":
@@ -162,8 +159,8 @@ class LossAvoidanceInvestmentService:
             item.symbol: Decimal(str(item.target_weight))
             for item in snapshot.recommendations if item.target_weight > 0
         }
-        if not targets or sum(targets.values(), Decimal("0")) > Decimal("0.95"):
-            raise ServiceError("INVALID_STRATEGY_TARGET_WEIGHTS", "물림방지 목표 주식 비중이 올바르지 않습니다.", 503)
+        validate_target_weights(targets, allow_cash_buffer=True)
+
         self._publish_targets(snapshot.as_of, targets)
         if account.operation_mode != "AUTO":
             return self._response(account.id, snapshot.as_of, len(targets), 0, "PROPOSAL_ONLY")

@@ -53,21 +53,37 @@ export default function StartInvesting({ userName, strategyName, strategyId, mod
     : ALL_HOLDINGS;
   const topHoldings = displayedHoldings.slice(0, 4);
   const restHoldings = displayedHoldings.slice(4);
+  const modelHasCashBuffer = strategyId === 'low' && Boolean(modelRecommendations);
 
-  /** 04는 전략 목표 비중으로 새로 담는다 — 도넛 차트는 대표 4종목 + 기타 합계, 5조각 그대로 유지 */
+  /** 모델 추천은 주식 95%와 현금 대기 5%를 분리해 표시한다. */
   const slices = useMemo(() => {
     const top = topHoldings.map((h) => ({ name: h.name, pct: displayPct(h) }));
-    const restPct = Math.round((100 - top.reduce((a, h) => a + h.pct, 0)) * 10) / 10;
-    return [...top, { name: `기타 ${restHoldings.length}개 종목`, pct: restPct }];
-  }, [topHoldings, restHoldings]);
-  const otherLabel = slices[4];
+    const stockRemainder = Math.max(
+      0,
+      Math.round((100 - top.reduce((a, h) => a + h.pct, 0) - (modelHasCashBuffer ? 5 : 0)) * 10) / 10,
+    );
+    const remainder = restHoldings.length > 0 && stockRemainder > 0
+      ? [{ name: `기타 ${restHoldings.length}개 종목`, pct: stockRemainder }]
+      : [];
+    return modelHasCashBuffer
+      ? [...top, ...remainder, { name: '현금 대기', pct: 5 }]
+      : [...top, ...remainder];
+  }, [modelHasCashBuffer, topHoldings, restHoldings]);
+  const otherIndex = topHoldings.length;
+  const cashIndex = slices.length - 1;
+  const otherLabel = slices[otherIndex];
 
-  // 도넛은 5조각(대표4 + 기타)까지만 있으므로, 나머지 16종목 중 하나를 선택해도 "기타" 조각이 강조된다
-  const donutActiveIndex = selection.kind === 'holding' && selection.index < 4 ? selection.index : 4;
+  const donutActiveIndex = selection.kind === 'other'
+    ? otherIndex
+    : selection.index < topHoldings.length
+      ? selection.index
+      : modelHasCashBuffer && selection.index === displayedHoldings.length
+        ? cashIndex
+        : otherIndex;
 
   const sel = selection.kind === 'other'
-    ? { name: otherLabel.name, pct: otherLabel.pct, why: '한 종목에 쏠리지 않도록 나머지를 고르게 나눠 담았어요.' }
-    : { name: displayedHoldings[selection.index]?.name ?? '추천 종목', pct: displayedHoldings[selection.index] ? displayPct(displayedHoldings[selection.index]) : 0, why: displayedHoldings[selection.index]?.why ?? '모델이 시장 상황을 분석해 추천한 종목이에요.' };
+    ? { name: otherLabel?.name ?? '기타 종목', pct: otherLabel?.pct ?? 0, why: '한 종목에 쏠리지 않도록 나머지를 고르게 나눠 담았어요.' }
+    : { name: displayedHoldings[selection.index]?.name ?? (modelHasCashBuffer ? '현금 대기' : '추천 종목'), pct: displayedHoldings[selection.index] ? displayPct(displayedHoldings[selection.index]) : 5, why: displayedHoldings[selection.index]?.why ?? '모델 추천 주식에 바로 투자하지 않고 현금으로 대기해요.' };
 
   const commitCustom = () => {
     const n = parseInt(custom ?? '', 10);
@@ -157,11 +173,17 @@ export default function StartInvesting({ userName, strategyName, strategyId, mod
                       endAngle={-270}
                       paddingAngle={1.5}
                       stroke="none"
-                      onClick={(_, i) => setSelection(i === 4 ? { kind: 'other' } : { kind: 'holding', index: i })}
+                      onClick={(_, i) => setSelection(
+                        modelHasCashBuffer && i === cashIndex
+                          ? { kind: 'holding', index: displayedHoldings.length }
+                          : i === otherIndex
+                            ? { kind: 'other' }
+                            : { kind: 'holding', index: i },
+                      )}
                     >
                       {slices.map((_, i) => (
                         /* 선택된 조각만 라임 — 나머지는 네이비 계열 */
-                        <Cell key={i} fill={i === donutActiveIndex ? '#C6F04D' : SHADES[i]} cursor="pointer" />
+                        <Cell key={i} fill={i === donutActiveIndex ? '#C6F04D' : (SHADES[i] ?? '#C3CBC4')} cursor="pointer" />
                       ))}
                     </Pie>
                   </PieChart>
@@ -188,15 +210,26 @@ export default function StartInvesting({ userName, strategyName, strategyId, mod
                   />
                 ))}
 
-                {/* "기타 N개 종목" — 개별 기업이 아니라 나머지 합계 Summary Row라 Chevron이 없다 */}
-                <StockRow
-                  name={otherLabel.name}
-                  pct={otherLabel.pct}
-                  amountWon={won((amount * otherLabel.pct) / 100)}
-                  dotColor={donutActiveIndex === 4 ? '#C6F04D' : SHADES[4]}
-                  selected={selection.kind === 'other'}
-                  onSelect={() => setSelection({ kind: 'other' })}
-                />
+                {otherLabel && restHoldings.length > 0 && (
+                  <StockRow
+                    name={otherLabel.name}
+                    pct={otherLabel.pct}
+                    amountWon={won((amount * otherLabel.pct) / 100)}
+                    dotColor={donutActiveIndex === otherIndex ? '#C6F04D' : SHADES[4]}
+                    selected={selection.kind === 'other'}
+                    onSelect={() => setSelection({ kind: 'other' })}
+                  />
+                )}
+                {modelHasCashBuffer && (
+                  <StockRow
+                    name="현금 대기"
+                    pct={5}
+                    amountWon={won(amount * 0.05)}
+                    dotColor={donutActiveIndex === cashIndex ? '#C6F04D' : '#C3CBC4'}
+                    selected={selection.kind === 'holding' && selection.index === displayedHoldings.length}
+                    onSelect={() => setSelection({ kind: 'holding', index: displayedHoldings.length })}
+                  />
+                )}
 
                 <button
                   onClick={() => setRestExpanded((v) => !v)}

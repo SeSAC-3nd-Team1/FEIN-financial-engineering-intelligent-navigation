@@ -58,12 +58,21 @@ def test_algorithm_snapshot_uses_engine_outputs_and_preserves_exposure() -> None
         data_version="algorithm_ohlcv-v2",
         top_n=2,
         universe_size=2,
+        security_master=pd.DataFrame(
+            {
+                "stock_code": ["005930", "000660"],
+                "stock_name": ["삼성전자", "SK하이닉스"],
+            }
+        ),
     )
 
     assert snapshot.model_version == "algorithm-v2.4-fix2"
     assert snapshot.source == "generated"
     assert [item.symbol for item in snapshot.recommendations] == ["005930", "000660"]
+    assert [item.stock_name for item in snapshot.recommendations] == ["삼성전자", "SK하이닉스"]
+
     assert sum(item.target_weight for item in snapshot.recommendations) == 0.7
+
     assert all("Algorithm(ver.2.4)_fix2" in item.reason for item in snapshot.recommendations)
 
 
