@@ -408,7 +408,8 @@ jobs:
         env:
           AZURE_STORAGE_ACCOUNT_NAME: stfeindata
           AZURE_STORAGE_CONTAINER_FEATURES: features
-          PYTHONPATH: ${{ github.workspace }}/ai:${{ github.workspace }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/ai:${{ github.workspace }}
         run: |
           set -euo pipefail
           # Build an isolated venv in the runner workspace.  The VM's shared
@@ -418,7 +419,7 @@ jobs:
           .deploy-venv/bin/python --version
           .deploy-venv/bin/python -m pip --version
           .deploy-venv/bin/python -m pip install --upgrade pip
-          .deploy-venv/bin/python -m pip install -r ai/requirements.txt
+          .deploy-venv/bin/python -m pip install -r ai/requirements.txt -r backend/requirements.txt
           mkdir -p .deploy-artifacts
           .deploy-venv/bin/python -m inference.generate_risk_adjusted_momentum \
             --model-version 2 \
@@ -426,6 +427,8 @@ jobs:
             --master-version 1 \
             --output .deploy-artifacts/risk-adjusted-momentum-v2.json
           test -s .deploy-artifacts/risk-adjusted-momentum-v2.json
+          .deploy-venv/bin/python backend/scripts/generate_backtest_artifact.py .deploy-artifacts/backtest-results.json
+          test -s .deploy-artifacts/backtest-results.json
 
       - name: Build and push frontend image
         run: |
