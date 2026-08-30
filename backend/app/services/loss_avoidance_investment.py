@@ -111,7 +111,13 @@ class LossAvoidanceInvestmentService:
             )
 
         created = 0
-        starting_assets = Decimal(account.initial_cash)
+        # Use the confirmed invested principal rather than a stale demo
+        # initial_cash value when calculating the first virtual orders.
+        starting_assets = Decimal(
+            getattr(account, "invested_principal", Decimal("0"))
+        )
+        if starting_assets <= 0:
+            starting_assets = Decimal(account.initial_cash)
         if starting_assets <= 0:
             starting_assets = Decimal(account.cash_balance)
         for stock_code, target_weight in target_weights.items():

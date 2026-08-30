@@ -119,7 +119,14 @@ class MomentumInvestmentService:
             )
 
         created = 0
-        starting_assets = Decimal(account.initial_cash)
+        # The onboarding amount is tracked as invested_principal. initial_cash
+        # may belong to an older/demo account and can be larger than the amount
+        # the user just confirmed on the investment-start screen.
+        starting_assets = Decimal(
+            getattr(account, "invested_principal", Decimal("0"))
+        )
+        if starting_assets <= 0:
+            starting_assets = Decimal(account.initial_cash)
         if starting_assets <= 0:
             starting_assets = Decimal(account.cash_balance)
         for stock_code, target_weight in target_weights.items():
