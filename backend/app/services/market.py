@@ -90,10 +90,17 @@ class MarketService:
                         int(payload["volume"])
                         if payload.get("volume") is not None
                         else None
-                    ),
+                                        ),
                     as_of=datetime.fromisoformat(payload["as_of"]),
                     source="REDIS",
+
+                    per=self._optional_decimal(payload.get("per")),
+                    pbr=self._optional_decimal(payload.get("pbr")),
+                    eps=self._optional_decimal(payload.get("eps")),
+                    bps=self._optional_decimal(payload.get("bps")),
+                    roe=self._optional_decimal(payload.get("roe")),
                 )
+
         except (redis.RedisError, ValueError, KeyError, TypeError):
             logger.warning("Redis price cache unavailable stock_code=%s", stock_code)
 
@@ -123,18 +130,33 @@ class MarketService:
                             str(quote.change_rate)
                             if quote.change_rate is not None
                             else None
-                        ),
+                                                ),
                         "volume": quote.volume,
                         "as_of": quote.as_of.isoformat(),
+
+                        "per": str(quote.per) if quote.per is not None else None,
+                        "pbr": str(quote.pbr) if quote.pbr is not None else None,
+                        "eps": str(quote.eps) if quote.eps is not None else None,
+                        "bps": str(quote.bps) if quote.bps is not None else None,
+                        "roe": str(quote.roe) if quote.roe is not None else None,
                     }
+
                 ),
             )
         except redis.RedisError:
             logger.warning("Redis price cache write failed stock_code=%s", stock_code)
         return quote
 
+    @staticmethod
+    def _optional_decimal(value: object) -> Decimal | None:
+        if value in (None, ""):
+            return None
+        result = Decimal(str(value))
+        return result if result.is_finite() else None
+
     def get_price(self, stock_code: str) -> tuple[Decimal, datetime, str]:
         quote = self.get_quote(stock_code)
+
         return quote.price, quote.as_of, quote.source.removesuffix("_REST")
 
     def get_minute_candles(
@@ -255,6 +277,24 @@ class StockMarketService:
         market_cap = daily.market_cap if daily else None
         net_income = financial.net_income if financial else None
         total_equity = financial.total_equity if financial else None
+        live_quote = None
+        try:
+            live_quote = self.live_market.get_quote(stock_code)
+        except Exception as exc:
+            logger.info(
+                "Latest KIS metrics unavailable stock_code=%s error=%s",
+                stock_code,
+                type(exc).__name__,
+            )
+        per = live_quote.per if live_quote and live_quote.per is not None else _positive_ratio(market_cap, net_income)
+
+        pbr = live_quote.pbr if live_quote and live_quote.pbr is not None else _positive_ratio(market_cap, total_equity)
+        roe = live_quote.roe if live_quote and live_quote.roe is not None else _positive_ratio(net_income, total_equity, Decimal("100"))
+        per_source = "KIS" if live_quote and live_quote.per is not None else ("OpenDART" if per is not None else None)
+        pbr_source = "KIS" if live_quote and live_quote.pbr is not None else ("OpenDART" if pbr is not None else None)
+        roe_source = "KIS" if live_quote and live_quote.roe is not None else ("OpenDART" if roe is not None else None)
+
+
         description_parts: list[str] = []
         if company:
             description_parts.append(
@@ -278,25 +318,36 @@ class StockMarketService:
             listed_shares=stock.listed_shares,
             security_type=stock.security_type,
             description=" ".join(description_parts) or None,
-            price=None,
-            previous_close=None,
-            change_amount=None,
-            change_rate=None,
-            volume=None,
+                        price=live_quote.price if live_quote else None,
+            previous_close=live_quote.previous_close if live_quote else None,
+            change_amount=live_quote.change_amount if live_quote else None,
+            change_rate=live_quote.change_rate if live_quote else None,
+            volume=live_quote.volume if live_quote else None,
+
             market_cap=market_cap,
-            per=_positive_ratio(market_cap, net_income),
-            pbr=_positive_ratio(market_cap, total_equity),
-            roe=_positive_ratio(net_income, total_equity, Decimal("100")),
+                                                per=per,
+            pbr=pbr,
+            roe=roe,
             dividend_yield=dividend_yield,
+
             financial_year=financial.business_year if financial else None,
-            as_of=(
-                datetime.combine(daily.as_of, time.min, tzinfo=UTC) if daily else None
+                        as_of=(
+                live_quote.as_of
+                if live_quote
+                else (datetime.combine(daily.as_of, time.min, tzinfo=UTC) if daily else None)
             ),
+
             sources={
-                "price": None,
+                                                                "price": live_quote.source if live_quote else None,
+
+
                 "market": daily.source if daily else stock.source,
-                "financial": "OpenDART" if financial else None,
+                                "financial": "OpenDART" if financial else None,
+                "per": per_source,
+                "pbr": pbr_source,
+                "roe": roe_source,
                 "dividend": dividend.source if dividend else None,
+
                 "dividend_price": dividend_price_source,
             },
         )

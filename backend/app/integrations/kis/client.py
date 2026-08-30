@@ -104,10 +104,17 @@ class KisClient:
                     price=price,
                     previous_close=previous_close,
                     change_amount=change_amount,
-                    change_rate=self._optional_decimal(output.get("prdy_ctrt")),
+                                        change_rate=self._optional_decimal(output.get("prdy_ctrt")),
                     volume=self._optional_int(output.get("acml_vol")),
+
                     as_of=datetime.now(UTC),
+                    per=self._optional_decimal(output.get("per")),
+                    pbr=self._optional_decimal(output.get("pbr")),
+                    eps=self._optional_decimal(output.get("eps")),
+                    bps=self._optional_decimal(output.get("bps")),
+                    roe=self._optional_decimal(output.get("roe")),
                 )
+
             except ServiceError:
                 raise
             except (httpx.HTTPError, InvalidOperation, ValueError, KeyError, TypeError) as exc:

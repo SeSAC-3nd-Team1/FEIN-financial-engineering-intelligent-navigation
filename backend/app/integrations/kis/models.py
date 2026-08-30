@@ -20,13 +20,27 @@ class CurrentQuote:
     volume: int | None
     as_of: datetime
     source: str = "KIS_REST"
+    per: Decimal | None = None
+    pbr: Decimal | None = None
+    eps: Decimal | None = None
+    bps: Decimal | None = None
+    roe: Decimal | None = None
 
     def __post_init__(self) -> None:
         if not STOCK_CODE_PATTERN.fullmatch(self.stock_code):
             raise ValueError("invalid stock code")
         if not self.price.is_finite() or self.price <= 0:
             raise ValueError("price must be a positive finite number")
-        for value in (self.previous_close, self.change_amount, self.change_rate):
+        for value in (
+            self.previous_close,
+            self.change_amount,
+            self.change_rate,
+            self.per,
+            self.pbr,
+            self.eps,
+            self.bps,
+            self.roe,
+        ):
             if value is not None and not value.is_finite():
                 raise ValueError("quote values must be finite")
         if self.previous_close is not None and self.previous_close <= 0:
@@ -35,6 +49,9 @@ class CurrentQuote:
             raise ValueError("volume must not be negative")
         if self.as_of.tzinfo is None:
             raise ValueError("quote timestamp must include timezone information")
+
+
+
 
 
 @dataclass(frozen=True)
