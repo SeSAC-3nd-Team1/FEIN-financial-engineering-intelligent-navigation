@@ -51,6 +51,13 @@ jobs:
           while IFS= read -r file; do
             [[ -z "${file}" ]] && continue
             case "${file}" in
+              .github/workflows/deploy-production.yml)
+                # Deployment configuration changes must deploy both services;
+                # otherwise a workflow-only fix can be merged successfully
+                # while the running Container Apps keep the old config.
+                frontend=true
+                backend=true
+                ;;
               frontend/*)
                 frontend=true
                 ;;
