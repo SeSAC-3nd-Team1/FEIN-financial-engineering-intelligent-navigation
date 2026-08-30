@@ -123,19 +123,27 @@ def validate_target_weights(
     total = sum(target_weights.values(), Decimal("0"))
     if not target_weights:
         return
-    valid_total = (
-        total == Decimal("0.95") if allow_cash_buffer else total == Decimal("1")
-    )
-    if not valid_total:
-        message = (
-            "현금 버퍼를 사용하는 전략의 주식 목표 비중 합계는 0.95여야 합니다."
-            if allow_cash_buffer
-            else "전략 목표 비중 합계가 1이 아닙니다."
+    if any(weight <= 0 or weight > Decimal("1") for weight in target_weights.values()):
+        raise ServiceError(
+            "INVALID_STRATEGY_TARGET_WEIGHTS",
+            "전략 목표 비중은 0보다 크고 1 이하여야 합니다.",
+            503,
         )
+    if allow_cash_buffer:
+        valid_total = Decimal("0") < total <= Decimal("0.95")
+        message = "현금 버퍼를 사용하는 전략의 주식 목표 비중 합계는 0보다 크고 0.95 이하여야 합니다."
+    else:
+        valid_total = total == Decimal("1")
+        message = "전략 목표 비중 합계가 1이 아닙니다."
+    if not valid_total:
         raise ServiceError("INVALID_STRATEGY_TARGET_WEIGHTS", message, 503)
 
 
+
+
+
 def build_history_points(
+
     snapshots: list, indices: list
 ) -> list[PortfolioHistoryPointResponse]:
     """실제 snapshot 날짜에 맞춰 포트폴리오와 직전 KOSPI 수익률을 정규화한다."""

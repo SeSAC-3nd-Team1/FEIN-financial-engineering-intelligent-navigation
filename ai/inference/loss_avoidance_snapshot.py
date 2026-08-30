@@ -28,6 +28,7 @@ REQUIRED_COLUMNS = (
     "is_tradable",
 )
 MAX_MODEL_HISTORY_ROWS = 1500
+SECURITY_MASTER_COLUMNS = ("stock_code", "stock_name")
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,7 @@ def build_loss_avoidance_snapshot(
     data_version: str,
     top_n: int = 5,
     universe_size: int = 20,
+    security_master: pd.DataFrame | None = None,
 ) -> LossAvoidanceSnapshot:
     """Evaluate liquid symbols with Algorithm(ver.2.4) and adapt its weights.
 
@@ -128,11 +130,14 @@ def build_loss_avoidance_snapshot(
     data["symbol"] = data["symbol"].astype("string").str.strip().str.zfill(6)
     data["Date"] = pd.to_datetime(data["Date"], errors="raise")
     data["is_tradable"] = data["is_tradable"].fillna(False).astype(bool)
+
     if data.empty or not data["is_tradable"].any():
         raise ValueError("no tradable Algorithm(ver.2.4) input rows are available")
 
     candidates: list[dict[str, object]] = []
+
     symbols = _candidate_symbols(data, universe_size)
+
     started = time.monotonic()
     print(f"loss-avoidance: evaluating {len(symbols)} liquid symbols", flush=True)
     for index, symbol in enumerate(symbols, start=1):
@@ -141,11 +146,9 @@ def build_loss_avoidance_snapshot(
             ["Date", "Open", "High", "Low", "Close", "Volume"],
         ].sort_values("Date").tail(MAX_MODEL_HISTORY_ROWS)
         if len(history) < 254:
-            print(f"loss-avoidance: [{index}/{len(symbols)}] {symbol} skipped (history={len(history)})", flush=True)
             continue
         result = algorithm.run_backtest(history, algorithm.Config())
         if result.decisions.empty:
-            print(f"loss-avoidance: [{index}/{len(symbols)}] {symbol} skipped (no decisions)", flush=True)
             continue
         decision = result.decisions.iloc[-1]
         target = float(np.clip(float(decision["target_weight"]), 0.0, 0.95))
@@ -153,16 +156,14 @@ def build_loss_avoidance_snapshot(
         mu_net = float(decision["mu_net"])
         if not math.isfinite(target) or target <= 0:
             continue
-        candidates.append(
-            {
-                "symbol": symbol,
-                "as_of": pd.Timestamp(result.decisions.index[-1]),
-                "raw_target": target,
-                "score": mu_net / math.sqrt(variance),
-                "regime": str(decision["engine_regime"]),
-                "risk_reason": str(decision["risk_reason"]),
-            }
-        )
+        candidates.append({
+            "symbol": symbol,
+            "as_of": pd.Timestamp(result.decisions.index[-1]),
+            "raw_target": target,
+            "score": mu_net / math.sqrt(variance),
+            "regime": str(decision["engine_regime"]),
+            "risk_reason": str(decision["risk_reason"]),
+        })
         print(
             f"loss-avoidance: [{index}/{len(symbols)}] {symbol} evaluated "
             f"({time.monotonic() - started:.1f}s)",
@@ -171,39 +172,44 @@ def build_loss_avoidance_snapshot(
     if not candidates:
         raise ValueError("Algorithm(ver.2.4) produced no investable targets")
 
-    candidates.sort(
-        key=lambda item: (-float(item["score"]), str(item["symbol"]))
-    )
+    candidates.sort(key=lambda item: (-float(item["score"]), str(item["symbol"])))
     selected = candidates[:top_n]
+    names: dict[str, str] = {}
+    if security_master is not None:
+        required_master = set(SECURITY_MASTER_COLUMNS) - set(security_master.columns)
+        if required_master:
+            raise ValueError(f"security master columns missing: {sorted(required_master)}")
+        master = security_master.loc[:, list(SECURITY_MASTER_COLUMNS)].copy()
+        master["stock_code"] = master["stock_code"].astype("string").str.strip().str.zfill(6)
+        master["stock_name"] = master["stock_name"].astype("string").str.strip()
+        names = {
+            str(row.stock_code): str(row.stock_name)
+            for row in master.itertuples(index=False)
+            if row.stock_name and row.stock_name != "<NA>"
+        }
     gross_exposure = min(0.95, max(float(item["raw_target"]) for item in selected))
     denominator = sum(float(item["raw_target"]) for item in selected)
     weights = [gross_exposure * float(item["raw_target"]) / denominator for item in selected]
-    # Decimal conversion in the Backend expects an exact maximum of 0.95. Keep the
-    # rounded residual on the final symbol so the JSON weights remain deterministic.
     rounded = [round(weight, 8) for weight in weights]
     rounded[-1] = round(gross_exposure - sum(rounded[:-1]), 8)
 
     regimes = Counter(str(item["regime"]) for item in selected)
     dominant_regime = regimes.most_common(1)[0][0]
-    market_regime = {
-        "bull": "risk_on",
-        "bear": "risk_off",
-        "sideways": "neutral",
-    }.get(dominant_regime, "neutral")
+    market_regime = {"bull": "risk_on", "bear": "risk_off", "sideways": "neutral"}.get(
+        dominant_regime, "neutral"
+    )
     items = tuple(
         LossAvoidanceItem(
             symbol=str(item["symbol"]),
-            stock_name=None,
+            stock_name=names.get(str(item["symbol"])),
             score=round(float(item["score"]), 8),
             rank=rank,
             target_weight=rounded[rank - 1],
-            reason=(
-                f"Algorithm(ver.2.4)_fix2 {item['regime']} regime / "
-                f"risk={item['risk_reason']}"
-            ),
+            reason=f"Algorithm(ver.2.4)_fix2 {item['regime']} regime / risk={item['risk_reason']}",
         )
         for rank, item in enumerate(selected, start=1)
     )
+
     as_of = min(pd.Timestamp(item["as_of"]) for item in selected).date().isoformat()
     return LossAvoidanceSnapshot(
         as_of=as_of,

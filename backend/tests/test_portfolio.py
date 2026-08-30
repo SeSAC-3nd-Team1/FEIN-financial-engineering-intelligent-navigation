@@ -121,12 +121,19 @@ def test_target_weights_allow_explicit_cash_buffer() -> None:
     )
 
 
-def test_cash_buffer_requires_exactly_five_percent_cash() -> None:
+def test_cash_buffer_allows_variable_residual_cash() -> None:
+    validate_target_weights(
+        {"005930": Decimal("0.40"), "000660": Decimal("0.40")},
+        allow_cash_buffer=True,
+    )
+
+def test_cash_buffer_rejects_more_than_five_percent_cash() -> None:
     with pytest.raises(ServiceError) as error:
         validate_target_weights(
-            {"005930": Decimal("0.40"), "000660": Decimal("0.40")},
+            {"005930": Decimal("0.50"), "000660": Decimal("0.46")},
             allow_cash_buffer=True,
         )
+
 
     assert error.value.code == "INVALID_STRATEGY_TARGET_WEIGHTS"
 
