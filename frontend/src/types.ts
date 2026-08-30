@@ -219,8 +219,9 @@ export interface BacktestAiContext {
   volatility: number;
   sharpe: number | null;
   benchmarkName: string;
-  benchmarkReturn: number;
+    benchmarkReturn: number;
   benchmarkMdd: number;
+  benchmarkDifference: number;
 }
 
 export interface BacktestAiExplanation {

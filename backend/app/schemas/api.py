@@ -365,6 +365,47 @@ class BacktestRunResponse(BaseModel):
     )
 
 
+class BacktestAiInput(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    strategy_name: str = Field(alias="strategyName", min_length=1, max_length=100)
+    period_type: Literal["preset", "custom"] = Field(alias="periodType")
+    period_id: str = Field(alias="periodId", min_length=1, max_length=50)
+    period_label: str = Field(alias="periodLabel", min_length=1, max_length=100)
+    period_description: str = Field(alias="periodDescription", max_length=500)
+    start_date: date = Field(alias="startDate")
+    end_date: date = Field(alias="endDate")
+    cumulative_return: float = Field(alias="cumulativeReturn")
+    cagr: float
+    mdd: float
+    volatility: float
+    sharpe: float | None
+    benchmark_name: str = Field(alias="benchmarkName", min_length=1, max_length=100)
+    benchmark_return: float = Field(alias="benchmarkReturn")
+    benchmark_mdd: float = Field(alias="benchmarkMdd")
+    benchmark_difference: float = Field(alias="benchmarkDifference")
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "BacktestAiInput":
+        if self.start_date >= self.end_date:
+            raise ValueError("startDate must be before endDate")
+        return self
+
+
+class BacktestAiGeneratedText(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    headline: str = Field(min_length=1, max_length=200)
+    overview: str = Field(min_length=1, max_length=500)
+    caution: str = Field(min_length=1, max_length=500)
+
+
+class BacktestAiExplanationResponse(BacktestAiGeneratedText):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    generated_at: datetime = Field(alias="generatedAt")
+
+
 class StrategySelectRequest(BaseModel):
     strategy_id: str
 

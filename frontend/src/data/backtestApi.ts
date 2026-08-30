@@ -34,11 +34,13 @@ async function get<T>(path: string): Promise<T> {
   return await response.json() as T;
 }
 
-async function request<T>(path: string, body: unknown): Promise<T> {
+async function request<T>(path: string, body: unknown, timeoutMs = 180_000, signal?: AbortSignal): Promise<T> {
   const ctrl = new AbortController();
+  const abort = () => ctrl.abort();
+  signal?.addEventListener('abort', abort, { once: true });
   // Momentum v2 uses a multi-year point-in-time universe and can legitimately
   // take longer than a normal API request on a cold production replica.
-  const timer = setTimeout(() => ctrl.abort(), 180_000);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
@@ -50,9 +52,10 @@ async function request<T>(path: string, body: unknown): Promise<T> {
       const payload = await response.json().catch(() => null) as { message?: string } | null;
       throw new Error(payload?.message ?? `서버가 ${response.status} 응답을 보냈어요. 잠시 후 다시 시도해주세요.`);
     }
-    return await response.json() as T;
+        return await response.json() as T;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
   }
 }
 
@@ -77,19 +80,9 @@ export function getBacktestAvailableRange(strategyId?: string): Promise<Backtest
   return get<BacktestAvailableRange>(`/available-range${strategyId ? `?strategyId=${encodeURIComponent(strategyId)}` : ''}`);
 }
 
-const fmtShort = (iso: string) => `${iso.slice(0, 4)}.${iso.slice(5, 7)}`;
-
-function periodOpening(ctx: BacktestAiContext): string {
-  if (ctx.periodType === 'custom') {
-    return `선택한 ${fmtShort(ctx.startDate)}~${fmtShort(ctx.endDate)} 기간에는`;
-  }
-  return `${ctx.periodLabel} 기간에는`;
-}
-
-/** 실제 백테스트 숫자만 문장으로 옮기는 로컬 설명이며 별도 AI 점수를 생성하지 않는다. */
-export function fetchAiExplanation(ctx: BacktestAiContext): Promise<BacktestAiExplanation> {
-  const opening = periodOpening(ctx);
-  const difference = Math.round((ctx.cumulativeReturn - ctx.benchmarkReturn) * 10) / 10;
+/** Azure 장애 시에도 백테스트 화면을 유지하기 위한 결정적 fallback. */
+export function getFallbackAiExplanation(ctx: BacktestAiContext): BacktestAiExplanation {
+  const difference = ctx.benchmarkDifference;
   const headline = difference > 0
     ? `${ctx.benchmarkName}보다 ${Math.abs(difference)}%p 높은 성과였어요`
     : difference < 0
@@ -99,10 +92,14 @@ export function fetchAiExplanation(ctx: BacktestAiContext): Promise<BacktestAiEx
     ? `${ctx.benchmarkName}보다 ${Math.abs(difference)}%p 높았어요.`
     : `${ctx.benchmarkName}보다 ${Math.abs(difference)}%p 낮았어요.`;
   const sharpe = ctx.sharpe == null ? '' : ` 샤프 지수는 ${ctx.sharpe}였어요.`;
-  return Promise.resolve({
+  return {
     headline,
-    overview: `${opening} ${ctx.strategyName}은 누적 ${ctx.cumulativeReturn}%를 기록했고, ${comparison}`,
+    overview: `${ctx.periodLabel} 동안 ${ctx.strategyName}은 누적 ${ctx.cumulativeReturn}%를 기록했고, ${comparison}`,
     caution: `이 기간 최대 낙폭은 ${ctx.mdd}%, 연환산 변동성은 ${ctx.volatility}%였어요.${sharpe}`,
     generatedAt: new Date().toISOString(),
-  });
+  };
+}
+
+export function fetchAiExplanation(ctx: BacktestAiContext, signal?: AbortSignal): Promise<BacktestAiExplanation> {
+  return request<BacktestAiExplanation>('/explain', ctx, 15_000, signal);
 }

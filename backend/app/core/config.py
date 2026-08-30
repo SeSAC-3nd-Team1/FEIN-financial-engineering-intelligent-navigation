@@ -38,6 +38,13 @@ class Settings:
     azure_openai_endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
     azure_openai_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
     azure_openai_api_version: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
+    azure_openai_backtest_explanation_deployment: str = os.getenv(
+        "AZURE_OPENAI_BACKTEST_EXPLANATION_DEPLOYMENT",
+        "",
+    )
+    ai_backtest_explanation_timeout_seconds: float = float(
+        os.getenv("AI_BACKTEST_EXPLANATION_TIMEOUT_SECONDS", "15")
+    )
 
     azure_openai_chatbot_endpoint: str = os.getenv("AZURE_OPENAI_CHATBOT_ENDPOINT", "")
 
