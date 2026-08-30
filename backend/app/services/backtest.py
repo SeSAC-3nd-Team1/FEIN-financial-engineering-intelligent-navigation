@@ -27,6 +27,7 @@ from app.repositories.backtest import (
     StockPricePoint,
 )
 from app.schemas.api import BacktestAvailableRangeResponse, BacktestRunRequest, BacktestRunResponse
+from app.services.loss_avoidance_backtest import run_loss_avoidance_backtest
 
 
 # v2 needs 273 trading days for the 12M/skip-1M return and 156 completed
@@ -97,7 +98,12 @@ class BacktestService:
         stock_min, stock_max, index_min, index_max = self.repository.available_dates(min_stocks=PORTFOLIO_SIZE)
         if None in {stock_min, stock_max, index_min, index_max}:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "백테스트 기간 정보를 찾을 수 없습니다.")
-        lookback_days = V2_LOOKBACK_DAYS if strategy_id == "momentum" else LOOKBACK_DAYS
+        # Algorithm v2.4 fix2는 종목별 최소 학습기간이 길어 일반 factor보다
+        # 넉넉한 warm-up 구간을 공개 범위에도 반영한다.
+        lookback_days = (
+            1500 if strategy_id == "low" else
+            V2_LOOKBACK_DAYS if strategy_id == "momentum" else LOOKBACK_DAYS
+        )
         min_date = max(stock_min + timedelta(days=lookback_days), index_min)
         max_date = min(stock_max, index_max)
         if min_date >= max_date:
@@ -120,15 +126,16 @@ class BacktestService:
         if strategy is None:
             raise NotFoundError("STRATEGY_NOT_FOUND", "활성 투자 전략을 찾을 수 없습니다.")
         factor = str((strategy.rule_config or {}).get("factor", ""))
-        if factor not in {"low_volatility", "momentum", "value"}:
+        is_loss_avoidance = getattr(strategy, "engine_key", "") == "algorithm_v2_4_fix2"
+        if not is_loss_avoidance and factor not in {"low_volatility", "momentum", "value"}:
             raise ServiceError("BACKTEST_STRATEGY_UNAVAILABLE", "지원하지 않는 전략 규칙입니다.", 422)
 
-        lookback_days = V2_LOOKBACK_DAYS if factor == "momentum" else LOOKBACK_DAYS
+        lookback_days = 1500 if is_loss_avoidance else (V2_LOOKBACK_DAYS if factor == "momentum" else LOOKBACK_DAYS)
         benchmark = self.repository.kospi_prices(request.start_date, request.end_date)
         if len(benchmark) < 2:
             raise NotFoundError("BACKTEST_DATA_UNAVAILABLE", "KOSPI 기준지수 데이터가 부족합니다.")
 
-        if factor == "momentum":
+        if factor == "momentum" and not is_loss_avoidance:
             # Ranking first narrows the expensive warm-up feature calculation
             # to the stocks that can actually enter a quarterly top-100
             # cross-section. Fall back for test doubles and old repositories.
@@ -146,7 +153,7 @@ class BacktestService:
         warmup_start = request.start_date - timedelta(days=lookback_days)
         price_points = (
             self.repository.stock_price_stream(universe, warmup_start, request.end_date)
-            if factor == "momentum" and hasattr(self.repository, "stock_price_stream")
+            if factor == "momentum" and not is_loss_avoidance and hasattr(self.repository, "stock_price_stream")
             else self.repository.stock_prices(universe, warmup_start, request.end_date)
         )
 
@@ -160,7 +167,12 @@ class BacktestService:
                 )
 
         dates = [point.trade_date for point in benchmark]
-        if factor == "momentum":
+        if is_loss_avoidance:
+            strategy_values = run_loss_avoidance_backtest(
+                list(price_points), dates,
+                max_symbols=int(os.getenv("LOSS_AVOIDANCE_BACKTEST_SYMBOLS", "20")),
+            )
+        elif factor == "momentum":
             # stock_price_stream is a single-pass iterator.  Do not consume it
             # while building legacy maps before the v2 simulator reads it.
             strategy_values = self._simulate_risk_adjusted_momentum_v2(price_points, dates)

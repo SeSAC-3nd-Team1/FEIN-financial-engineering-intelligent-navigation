@@ -114,9 +114,8 @@ export const F4_COLLECTION_INTRO = {
  * TODO(Mock/실제 Model contract 확정 후): canonical strategy id가 정해지면 이 화면 대신 기존
  * StrategyDetail(실 backtest 연동)로 교체한다.
  *
- * 모멘텀은 F4 MVP 대상이 되면서 canonical 백엔드 `momentum` 전략에 실제로 연결됐고(App.tsx의
- * onSelectAvailableStrategy 구현), StrategyDetail로 바로 이동하므로 더 이상 이 placeholder가
- * 필요 없어 항목을 제거했다 — 지금은 물림방지만 실제 연동 전이라 이 placeholder를 쓴다.
+ * 물림방지와 모멘텀은 모두 canonical 백엔드 전략에 실제로 연결됐으므로 이 placeholder는
+ * 기존 저장된 화면 상태를 안전하게 읽기 위한 호환 코드로만 남겨둔다.
  */
 export const COMING_SOON_COPY = {
   'loss-avoidance': {

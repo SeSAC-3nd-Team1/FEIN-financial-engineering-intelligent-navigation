@@ -5,7 +5,7 @@ import pandas as pd
 
 from inference.loss_avoidance_snapshot import (
     build_loss_avoidance_snapshot,
-    load_algorithm_v23,
+    load_algorithm_v24,
 )
 
 
@@ -60,17 +60,17 @@ def test_algorithm_snapshot_uses_engine_outputs_and_preserves_exposure() -> None
         universe_size=2,
     )
 
-    assert snapshot.model_version == "algorithm-v2.3"
+    assert snapshot.model_version == "algorithm-v2.4-fix2"
     assert snapshot.source == "generated"
     assert [item.symbol for item in snapshot.recommendations] == ["005930", "000660"]
     assert sum(item.target_weight for item in snapshot.recommendations) == 0.7
-    assert all("Algorithm(ver.2.3)" in item.reason for item in snapshot.recommendations)
+    assert all("Algorithm(ver.2.4)_fix2" in item.reason for item in snapshot.recommendations)
 
 
 def test_team_algorithm_source_is_loaded_without_copying() -> None:
-    source = Path(__file__).resolve().parents[2] / "output" / "Algorithm(ver.2.3).py"
+    source = Path(__file__).resolve().parents[2] / "output" / "Algorithm(ver.2.4)_fix2.py"
 
-    algorithm = load_algorithm_v23(source)
+    algorithm = load_algorithm_v24(source)
 
     assert algorithm.Config().min_train_rows == 252
     assert callable(algorithm.run_backtest)

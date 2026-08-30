@@ -8,6 +8,7 @@ import { estimateAnnualFee, type OperationMode } from '../data/fees';
 import { OPERATING_MODE_ORDER, OPERATING_MODES } from '../data/operatingModes';
 import { won } from '../lib/validation';
 import type { Holding, Screen } from '../types';
+import type { ModelRecommendationSnapshotResponse } from '../lib/backendApi';
 
 interface Props {
   userName: string;
@@ -17,6 +18,8 @@ interface Props {
   /** "이대로 시작하기" — 선택한 금액/운용방식을 넘기면 App.tsx가 사용자 준비 상태에 맞는 다음 단계로 라우팅한다 */
   onStart: (amount: number, mode: OperationMode) => void;
   onSelectStock: (stockCode: string) => void;
+  strategyId: string;
+  modelRecommendations?: ModelRecommendationSnapshotResponse | null;
 }
 
 const PRESETS = [100_000, 500_000, 1_000_000, 5_000_000];
@@ -27,8 +30,9 @@ const displayPct = (h: Holding) => h.target ?? h.pct;
 
 /** row 선택 상태 — 대표 4종목/나머지 16종목은 ALL_HOLDINGS 인덱스로, 집계 행("기타 N개 종목")은 별도로 구분 */
 type Selection = { kind: 'holding'; index: number } | { kind: 'other' };
+type DisplayedHolding = Holding & { code?: string };
 
-export default function StartInvesting({ userName, strategyName, onNavigate, onStart, onSelectStock }: Props) {
+export default function StartInvesting({ userName, strategyName, strategyId, modelRecommendations, onNavigate, onStart, onSelectStock }: Props) {
   const [amount, setAmount] = useState(1_000_000);
   const [custom, setCustom] = useState<string | null>(null); // null = 직접 입력 꺼짐
   const [selection, setSelection] = useState<Selection>({ kind: 'holding', index: 0 });
@@ -36,15 +40,26 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
   // 기본값은 "자동으로 운용" — 처음 투자하는 사용자에게 이 방식을 우선 추천하는 정책
   const [mode, setMode] = useState<OperationMode>('auto');
 
-  const topHoldings = ALL_HOLDINGS.slice(0, 4);
-  const restHoldings = ALL_HOLDINGS.slice(4);
+  const displayedHoldings: DisplayedHolding[] = strategyId === 'low' && modelRecommendations
+    ? modelRecommendations.recommendations.map((item) => ({
+      name: item.stock_name ?? item.symbol,
+      sector: '모델 추천',
+      pct: item.target_weight * 100,
+      target: item.target_weight * 100,
+      chg: null,
+      why: item.reason,
+      code: item.symbol,
+    }))
+    : ALL_HOLDINGS;
+  const topHoldings = displayedHoldings.slice(0, 4);
+  const restHoldings = displayedHoldings.slice(4);
 
   /** 04는 전략 목표 비중으로 새로 담는다 — 도넛 차트는 대표 4종목 + 기타 합계, 5조각 그대로 유지 */
   const slices = useMemo(() => {
     const top = topHoldings.map((h) => ({ name: h.name, pct: displayPct(h) }));
     const restPct = Math.round((100 - top.reduce((a, h) => a + h.pct, 0)) * 10) / 10;
     return [...top, { name: `기타 ${restHoldings.length}개 종목`, pct: restPct }];
-  }, []);
+  }, [topHoldings, restHoldings]);
   const otherLabel = slices[4];
 
   // 도넛은 5조각(대표4 + 기타)까지만 있으므로, 나머지 16종목 중 하나를 선택해도 "기타" 조각이 강조된다
@@ -52,7 +67,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
 
   const sel = selection.kind === 'other'
     ? { name: otherLabel.name, pct: otherLabel.pct, why: '한 종목에 쏠리지 않도록 나머지를 고르게 나눠 담았어요.' }
-    : { name: ALL_HOLDINGS[selection.index].name, pct: displayPct(ALL_HOLDINGS[selection.index]), why: ALL_HOLDINGS[selection.index].why };
+    : { name: displayedHoldings[selection.index]?.name ?? '추천 종목', pct: displayedHoldings[selection.index] ? displayPct(displayedHoldings[selection.index]) : 0, why: displayedHoldings[selection.index]?.why ?? '모델이 시장 상황을 분석해 추천한 종목이에요.' };
 
   const commitCustom = () => {
     const n = parseInt(custom ?? '', 10);
@@ -155,7 +170,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                   <span className="text-[32px] font-bold tracking-[-0.035em]">
                     {(amount / 10000).toLocaleString('ko-KR')}만원
                   </span>
-                  <span className="text-base text-muted">{ALL_HOLDINGS.length}개 종목</span>
+                  <span className="text-base text-muted">{displayedHoldings.length}개 종목</span>
                 </div>
               </div>
 
@@ -169,7 +184,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                     dotColor={i === donutActiveIndex ? '#C6F04D' : SHADES[i]}
                     selected={selection.kind === 'holding' && selection.index === i}
                     onSelect={() => setSelection({ kind: 'holding', index: i })}
-                    onOpenDetail={() => onSelectStock(STOCK_INFO[h.name].code)}
+                    onOpenDetail={() => onSelectStock(h.code ?? STOCK_INFO[h.name]?.code ?? h.name)}
                   />
                 ))}
 
@@ -203,7 +218,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
                           dotColor={selection.kind === 'holding' && selection.index === index ? '#C6F04D' : SHADES[4]}
                           selected={selection.kind === 'holding' && selection.index === index}
                           onSelect={() => setSelection({ kind: 'holding', index })}
-                          onOpenDetail={() => onSelectStock(STOCK_INFO[h.name].code)}
+                          onOpenDetail={() => onSelectStock(h.code ?? STOCK_INFO[h.name]?.code ?? h.name)}
                         />
                       );
                     })}
@@ -246,7 +261,7 @@ export default function StartInvesting({ userName, strategyName, onNavigate, onS
 
           <section className="flex items-center justify-between gap-8 rounded-card bg-navy px-12 py-11">
             <div className="flex flex-col gap-2.5">
-              <span className="text-[17px] text-[#B9C2BA]">{strategyName} · {ALL_HOLDINGS.length}개 종목 · {OPERATING_MODES[mode].label}</span>
+              <span className="text-[17px] text-[#B9C2BA]">{strategyName} · {displayedHoldings.length}개 종목 · {OPERATING_MODES[mode].label}</span>
               <span className="text-[32px] font-bold tracking-[-0.03em] text-white">{won(amount)}</span>
             </div>
             <button onClick={() => onStart(amount, mode)} className="shrink-0 rounded-field bg-lime px-9 py-5 text-lg font-bold text-navy">
