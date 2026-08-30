@@ -1,11 +1,13 @@
 """사람과 모델 주문이 공통으로 사용하는 내부 가상 체결 service."""
 
+from datetime import UTC, datetime, time
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ServiceError
 from app.models import CashLedger, Execution, Order, Position
+from app.repositories.market_data import MarketDataRepository
 from app.repositories import TradingRepository
 from app.schemas.api import OrderCreateRequest
 from app.services.market import MarketService
@@ -18,6 +20,7 @@ class TradingService:
     def __init__(self, session: Session, market: MarketService | None = None) -> None:
         self.session = session
         self.repo = TradingRepository(session)
+        self.market_repo = MarketDataRepository(session)
         self.market = market or MarketService()
 
     def execute_market_order(self, user_id: int, request: OrderCreateRequest) -> Order:
@@ -32,7 +35,7 @@ class TradingService:
 
         # 외부 가격 조회 전에 소유권과 멱등 재시도를 처리한다. 조회 transaction도 먼저 종료한다.
         self.session.rollback()
-        price, _, _ = self.market.get_price(request.stock_code)
+        price, _, _ = self._get_execution_price(request.stock_code)
         try:
             account = self.repo.owned_account(request.account_id, user_id, lock=True)
             if not account:
@@ -46,6 +49,26 @@ class TradingService:
             self.session.rollback()
             raise
         return order
+
+    def _get_execution_price(self, stock_code: str) -> tuple[Decimal, datetime, str]:
+        """Use the latest KRX close when live KIS price is temporarily unavailable.
+
+        This service executes virtual orders, so a recent persisted close is a
+        safe deterministic price fallback for the demo/runtime path. If no
+        persisted price exists, preserve the original provider error.
+        """
+
+        try:
+            return self.market.get_price(stock_code)
+        except ServiceError:
+            latest = self.market_repo.latest_price(stock_code)
+            if latest is None or latest.close_price is None or latest.close_price <= 0:
+                raise
+            return (
+                Decimal(latest.close_price),
+                datetime.combine(latest.trade_date, time.min, tzinfo=UTC),
+                "KRX_CLOSE",
+            )
 
     def execute_locked_market_order(
         self,
