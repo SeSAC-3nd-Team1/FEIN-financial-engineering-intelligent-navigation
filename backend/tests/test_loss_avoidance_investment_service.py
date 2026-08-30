@@ -113,3 +113,18 @@ def test_stale_generated_snapshot_can_seed_an_evening_signup() -> None:
     assert response.status == "APPLIED"
     assert len(session.targets) == 2
     assert len(trading.requests) == 2
+
+
+def test_explicit_rebalance_executes_for_semi_auto_account() -> None:
+    service, session, trading, account = make_service()
+    account.operation_mode = "SEMI_AUTO"
+    service.repo = SimpleNamespace(
+        owned_account=lambda *_args, **_kwargs: account,
+        positions=lambda _account_id: [],
+    )
+
+    response = service.rebalance(7, account.id)
+
+    assert response.status == "APPLIED"
+    assert response.orders_created == 2
+    assert len(trading.requests) == 2

@@ -88,7 +88,10 @@ class FundOperationService:
             )
         validate_target_weights(
             target_weights,
-            allow_cash_buffer=strategy_id == "momentum",
+            # Both model strategies reserve 5% as cash. Without this flag the
+            # validator requires the stock rows to sum to 1.00 and rejects the
+            # valid 0.95 target published by the loss-avoidance model.
+            allow_cash_buffer=strategy_id in {"momentum", "low"},
         )
         current_positions = [
             position for position in self.repo.positions(account.id) if position.quantity > 0
