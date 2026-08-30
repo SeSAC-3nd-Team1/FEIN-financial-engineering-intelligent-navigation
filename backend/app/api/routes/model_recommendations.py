@@ -60,7 +60,7 @@ def rebalance_latest_model_recommendation(
     user: User = Depends(current_user),
     service: MomentumInvestmentService = Depends(get_momentum_investment_service),
 ) -> ModelRecommendationApplyResponse:
-    """Execute only a safe v2 quarterly target against an existing AUTO account."""
+    """Execute a safe v2 quarterly target after explicit user approval."""
     return service.rebalance(user.id, payload.account_id)
 
 

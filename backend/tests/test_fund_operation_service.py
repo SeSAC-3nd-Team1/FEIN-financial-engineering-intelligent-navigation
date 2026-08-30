@@ -159,7 +159,9 @@ def test_additional_investment_buys_only_new_money_by_target_weight() -> None:
     ]
     service, session, account, positions = build_service(
         positions=positions,
-        targets={"005930": Decimal("0.60"), "000660": Decimal("0.40")},
+        # Model strategies reserve 5% as cash; stock targets therefore sum to
+        # 0.95 rather than 1.00.
+        targets={"005930": Decimal("0.57"), "000660": Decimal("0.38")},
     )
 
     response = service.add_investment(
@@ -172,16 +174,16 @@ def test_additional_investment_buys_only_new_money_by_target_weight() -> None:
     assert response.settlement_mode == "VIRTUAL"
     assert account.invested_principal == Decimal("2000.00")
     assert {trade.stock_code: trade.transaction_amount for trade in response.trades} == {
-        "000660": Decimal("400.00"),
-        "005930": Decimal("600.00"),
+        "000660": Decimal("380.00"),
+        "005930": Decimal("570.00"),
     }
-    assert next(item for item in positions if item.stock_code == "005930").quantity == Decimal("11.00000000")
+    assert next(item for item in positions if item.stock_code == "005930").quantity == Decimal("10.70000000")
     assert session.commits == 1
 
 
 def test_additional_investment_rejects_strategy_changed_during_price_lookup() -> None:
     service, session, account, _ = build_service(
-        targets={"005930": Decimal("1")}
+        targets={"005930": Decimal("0.95")}
     )
     original_owned_account = service.repo.owned_account
 
@@ -280,7 +282,7 @@ def test_fund_operation_idempotency_key_rejects_different_request() -> None:
 
 def test_multi_stock_operation_rolls_back_as_one_unit_on_order_failure() -> None:
     service, session, account, _ = build_service(
-        targets={"005930": Decimal("0.50"), "000660": Decimal("0.50")}
+        targets={"005930": Decimal("0.475"), "000660": Decimal("0.475")}
     )
     original = service.trading.execute_locked_market_order
     calls = 0
