@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { margin: 0; background: #FAFBF8; color: #17211C;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
+  -webkit-font-smoothing: antialiased; }
+a { color: #18243A; text-decoration: none; }
+a:hover { color: #3F5222; }

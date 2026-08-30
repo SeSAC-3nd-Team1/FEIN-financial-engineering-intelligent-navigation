@@ -1,0 +1,251 @@
+"""가상계좌 생성, 전략 선택과 활성 운용방식 전환 service."""
+
+from datetime import UTC, datetime
+from decimal import Decimal
+from uuid import UUID, uuid4
+
+from sqlalchemy.orm import Session
+
+from app.core.errors import NotFoundError, ServiceError
+from app.models import AccountCashDeposit, CashLedger, VirtualAccount
+from app.repositories import TradingRepository
+from app.schemas.api import (
+    AccountCashDepositRequest,
+    AccountCashDepositResponse,
+    OperationMode,
+    OperationModeChangeNoticeResponse,
+    OperationModeSwitchResponse,
+)
+
+
+OPERATION_MODE_LABELS: dict[OperationMode, str] = {
+    "AUTO": "자동으로 운용",
+    "SEMI_AUTO": "확인하고 실행",
+}
+
+
+class AccountService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.repo = TradingRepository(session)
+
+    def create(self, user_id: int, account_name: str, operation_mode: OperationMode) -> VirtualAccount:
+        try:
+            existing = self.repo.account_for_user(user_id, operation_mode)
+            if existing:
+                raise ServiceError("ACCOUNT_ALREADY_EXISTS", "해당 운용방식의 가상계좌가 이미 존재합니다.", 409)
+            account = VirtualAccount(
+                user_id=user_id,
+                account_name=account_name,
+                operation_mode=operation_mode,
+                initial_cash=Decimal("0"),
+                cash_balance=Decimal("0"),
+                invested_principal=Decimal("0"),
+                status="ACTIVE",
+            )
+            self.session.add(account)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        return account
+
+    def get_mine(self, user_id: int, operation_mode: OperationMode) -> VirtualAccount:
+        account = self.repo.account_for_user(user_id, operation_mode)
+        if not account:
+            raise NotFoundError("ACCOUNT_NOT_FOUND", "가상계좌를 찾을 수 없습니다.")
+        return account
+
+    def get_all_mine(self, user_id: int) -> list[VirtualAccount]:
+        return self.repo.accounts_for_user(user_id)
+
+    def deposit_cash(
+        self,
+        user_id: int,
+        account_id: UUID,
+        request: AccountCashDepositRequest,
+    ) -> AccountCashDepositResponse:
+        """전략을 선택하지 않은 계좌에도 가상 현금을 멱등하게 입금한다."""
+
+        try:
+            account = self.repo.owned_account(account_id, user_id, lock=True)
+            if account is None:
+                raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
+            if account.status != "ACTIVE":
+                raise ServiceError(
+                    "ACCOUNT_NOT_ACTIVE",
+                    "사용할 수 없는 가상계좌입니다.",
+                    409,
+                )
+
+            existing = self.repo.account_cash_deposit_by_idempotency(
+                account.id,
+                request.idempotency_key,
+            )
+            if existing is not None:
+                if Decimal(existing.amount) != Decimal(request.amount):
+                    raise ServiceError(
+                        "DEPOSIT_IDEMPOTENCY_CONFLICT",
+                        "같은 멱등성 키를 다른 입금 요청에 사용할 수 없습니다.",
+                        409,
+                    )
+                self.session.commit()
+                return AccountCashDepositResponse(
+                    deposit_id=existing.id,
+                    account=account,
+                    amount=existing.amount,
+                    balance_after=existing.balance_after,
+                )
+
+            amount = Decimal(request.amount).quantize(Decimal("0.01"))
+            balance_after = (Decimal(account.cash_balance) + amount).quantize(
+                Decimal("0.01")
+            )
+            current_principal = Decimal(
+                account.invested_principal
+                if account.invested_principal is not None
+                else account.initial_cash
+            )
+            deposit = AccountCashDeposit(
+                id=uuid4(),
+                account_id=account.id,
+                amount=amount,
+                balance_after=balance_after,
+                status="COMPLETED",
+                idempotency_key=request.idempotency_key,
+                completed_at=datetime.now(UTC),
+            )
+            account.cash_balance = balance_after
+            if Decimal(account.initial_cash) == 0:
+                account.initial_cash = amount
+            account.invested_principal = (current_principal + amount).quantize(
+                Decimal("0.01")
+            )
+            self.session.add(deposit)
+            self.session.add(
+                CashLedger(
+                    account_id=account.id,
+                    transaction_type="DEPOSIT",
+                    amount=amount,
+                    balance_after=balance_after,
+                    reference_type="ACCOUNT_CASH_DEPOSIT",
+                    reference_id=str(deposit.id),
+                )
+            )
+            self.session.commit()
+            self.session.refresh(account)
+            self.session.refresh(deposit)
+            return AccountCashDepositResponse(
+                deposit_id=deposit.id,
+                account=account,
+                amount=deposit.amount,
+                balance_after=deposit.balance_after,
+            )
+        except Exception:
+            self.session.rollback()
+            raise
+
+    def switch_active_operation_mode(
+        self,
+        user_id: int,
+        operation_mode: OperationMode,
+    ) -> OperationModeSwitchResponse:
+        """운용방식별 계좌를 보존한 채 현재 활성 계좌 선택만 변경한다."""
+
+        try:
+            user = self.repo.user(user_id, lock=True)
+            if user is None:
+                raise NotFoundError("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.")
+            # 이 요청은 계좌를 수정하지 않는다. User 잠금 뒤 계좌까지 잠그면 온보딩 완료의
+            # InvestmentOnboarding -> VirtualAccount -> User 순서와 교차해 deadlock이 날 수 있다.
+            account = self.repo.account_for_user(user_id, operation_mode)
+            if account is None:
+                raise ServiceError(
+                    "OPERATION_MODE_ACCOUNT_NOT_READY",
+                    "해당 운용방식의 가상계좌가 없습니다. 먼저 투자 시작을 완료해 주세요.",
+                    409,
+                )
+            onboarding = self.repo.completed_onboarding_for_user_mode(
+                user_id,
+                operation_mode,
+            )
+            if onboarding is None or onboarding.account_id != account.id:
+                raise ServiceError(
+                    "OPERATION_MODE_ACCOUNT_NOT_READY",
+                    "해당 운용방식의 투자 시작을 먼저 완료해 주세요.",
+                    409,
+                )
+            if account.status != "ACTIVE":
+                raise ServiceError(
+                    "OPERATION_MODE_ACCOUNT_NOT_ACTIVE",
+                    "해당 운용방식의 가상계좌를 사용할 수 없습니다.",
+                    409,
+                )
+
+            previous = user.active_operation_mode
+            changed = previous != operation_mode
+            if changed:
+                user.active_operation_mode = operation_mode
+                user.operation_mode_changed_at = datetime.now(UTC)
+                self.session.commit()
+                self.session.refresh(user)
+
+            return OperationModeSwitchResponse(
+                previous_operation_mode=previous,
+                operation_mode=operation_mode,
+                changed=changed,
+                changed_at=user.operation_mode_changed_at,
+                account=account,
+                notice=self._operation_mode_notice(previous, operation_mode, changed),
+            )
+        except Exception:
+            self.session.rollback()
+            raise
+
+    @staticmethod
+    def _operation_mode_notice(
+        previous: OperationMode | None,
+        operation_mode: OperationMode,
+        changed: bool,
+    ) -> OperationModeChangeNoticeResponse:
+        target_label = OPERATION_MODE_LABELS[operation_mode]
+        if not changed:
+            return OperationModeChangeNoticeResponse(
+                code="OPERATION_MODE_UNCHANGED",
+                title="현재 운용방식이에요",
+                message=f"이미 {target_label} 계좌를 사용 중이에요.",
+            )
+        if previous is None:
+            message = f"{target_label} 계좌를 현재 운용방식으로 설정했어요."
+        else:
+            previous_label = OPERATION_MODE_LABELS[previous]
+            message = (
+                f"{previous_label} 계좌에서 {target_label} 계좌로 전환했어요. "
+                "각 계좌의 자산과 거래내역은 이동하지 않고 그대로 유지됩니다."
+            )
+        return OperationModeChangeNoticeResponse(
+            code="OPERATION_MODE_CHANGED",
+            title="운용방식이 변경됐어요",
+            message=message,
+        )
+
+    def select_strategy(self, user_id: int, account_id, strategy_id: str) -> VirtualAccount:
+        try:
+            account = self.repo.owned_account(account_id, user_id, lock=True)
+            if not account:
+                raise NotFoundError("ACCOUNT_NOT_FOUND", "계좌를 찾을 수 없습니다.")
+            strategy = self.repo.strategy(strategy_id)
+            if not strategy or not strategy.is_active:
+                raise NotFoundError("STRATEGY_NOT_FOUND", "전략을 찾을 수 없습니다.")
+            if strategy.availability_status != "AVAILABLE":
+                raise ServiceError(
+                    "STRATEGY_NOT_AVAILABLE",
+                    "아직 테스트 중인 전략은 선택할 수 없습니다.",
+                    409,
+                )
+            account.selected_strategy_id = strategy_id
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        return account

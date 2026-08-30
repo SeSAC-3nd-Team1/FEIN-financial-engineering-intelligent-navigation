@@ -1,0 +1,101 @@
+{
+  "generated_at": "2026-08-26T03:29:08.000564+00:00",
+  "requested_range": {
+    "start": "2018-01-01",
+    "end": "2026-08-26"
+  },
+  "schema_version": "2",
+  "feature_version": "2",
+  "selected_sources": [
+    "krx",
+    "ecos",
+    "opendart"
+  ],
+  "datasets": {
+    "model_stock_daily": {
+      "layer": "features",
+      "status": "training_ready",
+      "rows": 5238800,
+      "min_date": "2018-01-02",
+      "max_date": "2026-08-25",
+      "path": "model_stock_daily/version=v2/"
+    },
+    "market_index_daily": {
+      "layer": "features",
+      "status": "training_ready",
+      "rows": 260621,
+      "min_date": "2018-01-02",
+      "max_date": "2026-08-25",
+      "path": "market_index_daily/version=v2/"
+    },
+    "macro_daily": {
+      "layer": "features",
+      "status": "training_ready_pit_conservative",
+      "rows": 2129,
+      "min_date": "2018-01-02",
+      "max_date": "2026-08-25",
+      "path": "macro_daily/version=v2/",
+      "point_in_time_policy": "available_at <= feature date; CPI available from observation month + 2 months"
+    },
+    "opendart_disclosures": {
+      "layer": "processed",
+      "status": "event_ready",
+      "rows": 941084,
+      "path": "opendart_disclosures/operation=disclosure_market/schema=v2/"
+    },
+    "opendart_financial_accounts": {
+      "layer": "processed",
+      "status": "research_only_until_receipt_linkage",
+      "rows": 2074575,
+      "path": "opendart_financial_accounts/operation=financial_multi/schema=v2/",
+      "point_in_time_join_ready": false
+    }
+  },
+  "audits": {
+    "krx": {
+      "status": "ok",
+      "requested_start": "2018-01-01",
+      "requested_end": "2026-08-26",
+      "actual_start": "2018-01-02",
+      "actual_end": "2026-08-25"
+    },
+    "ecos": {
+      "schema_version": "2",
+      "feature_version": "2",
+      "quality_manifests": {
+        "base_rate": 1,
+        "usd_krw": 1,
+        "cpi": 1,
+        "treasury_3y": 1,
+        "treasury_10y": 1
+      },
+      "macro_daily_objects": 104,
+      "feature_manifest": "_manifests/ecos/version=v2/manifest.json",
+      "status": "ok",
+      "actual_start": "2018-01-02",
+      "actual_end": "2026-08-25"
+    },
+    "opendart": {
+      "status": "ok",
+      "schema_version": "2",
+      "requested_start": "2018-01-01",
+      "requested_end": "2026-08-26",
+      "financial_rows": 2074575,
+      "disclosure_rows": 941084,
+      "disclosure_months": 104,
+      "financial_point_in_time_join_ready": false
+    }
+  },
+  "excluded_no_2018_coverage": [
+    "foreign_institutional_flow",
+    "vix_vkospi",
+    "sox_overseas_sector_index",
+    "sp500_nasdaq",
+    "historical_transaction_cost_and_spread"
+  ],
+  "safety": {
+    "opendart_financial_price_join": "blocked_until_receipt_linkage",
+    "corporate_action_adjusted_price": "not_available",
+    "target_columns_are_not_model_inputs": true
+  }
+}

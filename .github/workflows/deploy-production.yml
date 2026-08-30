@@ -1,0 +1,418 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-deployment-v4
+  cancel-in-progress: true
+
+env:
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  detect-changes:
+    name: Detect deployment scope
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    outputs:
+      frontend: ${{ steps.scope.outputs.frontend }}
+      backend: ${{ steps.scope.outputs.backend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine changed services
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "frontend=true" >> "${GITHUB_OUTPUT}"
+            echo "backend=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Changed files:\n%s\n' "${changed_files}"
+
+          frontend=false
+          backend=false
+
+          while IFS= read -r file; do
+            [[ -z "${file}" ]] && continue
+            case "${file}" in
+              .github/workflows/deploy-production.yml)
+                # Deployment configuration changes must deploy both services;
+                # otherwise a workflow-only fix can be merged successfully
+                # while the running Container Apps keep the old config.
+                frontend=true
+                backend=true
+                ;;
+              frontend/*)
+                frontend=true
+                ;;
+              backend/*|ai/*|agent-orchestration/*|shared/*|output/*|data/db/*|.dockerignore)
+                backend=true
+                ;;
+            esac
+          done <<< "${changed_files}"
+
+          echo "frontend=${frontend}" >> "${GITHUB_OUTPUT}"
+          echo "backend=${backend}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${frontend}" == "false" && "${backend}" == "false" ]]; then
+            echo "No runtime service changes detected; production deploy is skipped."
+          fi
+
+  frontend-deploy:
+    name: Deploy frontend
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    timeout-minutes: 20
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve production ACR
+        env:
+          CONFIGURED_ACR_NAME: ${{ vars.ACR_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${CONFIGURED_ACR_NAME}" ]] && az acr show --name "${CONFIGURED_ACR_NAME}" --output none 2>/dev/null; then
+            resolved_acr="${CONFIGURED_ACR_NAME}"
+          else
+            current_image="$(az containerapp show \
+              --name "${FRONTEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query 'properties.template.containers[0].image' \
+              --output tsv)"
+            current_registry="${current_image%%.azurecr.io/*}"
+            resolved_acr="${current_registry##*/}"
+          fi
+          [[ -n "${resolved_acr}" ]] || { echo "Could not resolve production ACR." >&2; exit 1; }
+          echo "ACR_NAME=${resolved_acr}" >> "${GITHUB_ENV}"
+
+      - name: Build and push frontend image
+        run: |
+          az acr build \
+            --registry "${ACR_NAME}" \
+            --image "fein-frontend:${IMAGE_TAG}" \
+            --file frontend/Dockerfile.prod \
+            ./frontend
+
+      - name: Deploy frontend Container App
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          backend_fqdn="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)"
+          [[ -n "${backend_fqdn}" ]] || { echo "Backend Container App ingress FQDN is missing." >&2; exit 1; }
+
+          az containerapp update \
+            --name "${FRONTEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --image "${ACR_NAME}.azurecr.io/fein-frontend:${IMAGE_TAG}" \
+            --set-env-vars \
+              "BACKEND_UPSTREAM=https://${backend_fqdn}" \
+              "BACKEND_HOST=${backend_fqdn}" \
+            --output none
+
+      - name: Verify frontend revision
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            latest="$(az containerapp show --name "${FRONTEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query properties.latestRevisionName --output tsv)"
+            ready="$(az containerapp show --name "${FRONTEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query properties.latestReadyRevisionName --output tsv)"
+            health="$(az containerapp revision show --name "${FRONTEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --revision "${latest}" --query properties.healthState --output tsv 2>/dev/null || true)"
+            if [[ -n "${latest}" && "${latest}" == "${ready}" && "${health}" == "Healthy" ]]; then
+              echo "Frontend ready revision: ${ready}"
+              exit 0
+            fi
+            echo "Frontend revision not ready yet (attempt ${attempt}/30, latest=${latest:-none}, ready=${ready:-none}, health=${health:-unknown})"
+            sleep 10
+          done
+          echo "Frontend latest revision did not become ready." >&2
+          exit 1
+
+  backend-deploy:
+    name: Deploy backend
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: [self-hosted, Linux, X64, azure-large]
+    timeout-minutes: 30
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve production ACR
+        env:
+          CONFIGURED_ACR_NAME: ${{ vars.ACR_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${CONFIGURED_ACR_NAME}" ]] && az acr show --name "${CONFIGURED_ACR_NAME}" --output none 2>/dev/null; then
+            resolved_acr="${CONFIGURED_ACR_NAME}"
+          else
+            current_image="$(az containerapp show \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --query 'properties.template.containers[0].image' \
+              --output tsv)"
+            current_registry="${current_image%%.azurecr.io/*}"
+            resolved_acr="${current_registry##*/}"
+          fi
+          [[ -n "${resolved_acr}" ]] || { echo "Could not resolve production ACR." >&2; exit 1; }
+          echo "ACR_NAME=${resolved_acr}" >> "${GITHUB_ENV}"
+
+      - name: Download production model artifacts
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: stfeindata
+          AZURE_STORAGE_CONTAINER_MODEL_ARTIFACTS: features
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .deploy-artifacts
+          for artifact in risk-adjusted-momentum-v2.json loss_avoidance_snapshot.json backtest-results.json; do
+            az storage blob download \
+              --auth-mode login \
+              --account-name "${AZURE_STORAGE_ACCOUNT_NAME}" \
+              --container-name "${AZURE_STORAGE_CONTAINER_MODEL_ARTIFACTS}" \
+              --name "model-artifacts/production/${artifact}" \
+              --file ".deploy-artifacts/${artifact}" \
+              --no-progress \
+              --output none
+            test -s ".deploy-artifacts/${artifact}"
+          done
+
+          python -c 'import json, pathlib; payload=json.loads(pathlib.Path(".deploy-artifacts/backtest-results.json").read_text()); assert {"momentum","low"}.issubset(payload["strategies"]); loss=json.loads(pathlib.Path(".deploy-artifacts/loss_avoidance_snapshot.json").read_text()); assert loss["model_version"] == "algorithm-v2.4-fix2"'
+
+      - name: Build backend image
+        run: |
+          az acr build \
+            --registry "${ACR_NAME}" \
+            --image "fein-backend:${IMAGE_TAG}" \
+            --file backend/Dockerfile.prod \
+            .
+
+      - name: Verify FINCON model in backend image
+        run: |
+          az acr run \
+            --registry "${ACR_NAME}" \
+            --cmd "\$Registry/fein-backend:${IMAGE_TAG} env DATABASE_URL=postgresql://artifact-check:artifact-check@127.0.0.1:5432/artifact_check python -c \"from app.trading_engine.model_loader_fix1 import load_model_module_fix1; module = load_model_module_fix1(); assert module.MODEL_VERSION == 'fincon-ver23-v1-fix1'\"" \
+            /dev/null
+
+      - name: Deploy backend from last known-good revision
+        id: backend-deploy
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          previous_latest="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query properties.latestRevisionName \
+            --output tsv)"
+          ready_revision="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query properties.latestReadyRevisionName \
+            --output tsv)"
+
+          [[ -n "${ready_revision}" ]] || {
+            echo "No known-good Backend revision is available." >&2
+            exit 1
+          }
+
+          echo "Using known-good Backend revision as template: ${ready_revision}"
+          echo "Previous latest revision: ${previous_latest:-none}"
+
+          backend_id="$(az containerapp show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query id \
+            --output tsv)"
+
+          backend_container="$(az containerapp revision show \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --revision "${ready_revision}" \
+            --query properties.template.containers[0] \
+            --output json | jq \
+              --arg image "${ACR_NAME}.azurecr.io/fein-backend:${IMAGE_TAG}" \
+              --arg chatbot_registry '{"chatbots":[{"chatbot_id":"fein-web-chatbot","display_name":"FE!N Web Chatbot","provider":"foundry","source_agent_name":"MBGCoordinator","enabled":true,"allowed_context_keys":["screen","stock_code","strategy_id","verified_personal_summary"],"max_input_chars":4000,"max_response_chars":8000,"timeout_seconds":120}]}' '
+                .image = $image
+                | (.env //= [])
+                | .env |= map(if .secretRef then {name, secretRef} else {name, value} end)
+                | .env |= (
+                    map(select(
+                      .name != "MODEL_RECOMMENDATION_SNAPSHOT_PATH"
+                      and .name != "MODEL_RECOMMENDATION_ALLOW_FALLBACK"
+                      and .name != "MODEL_RECOMMENDATION_STALE_AFTER_DAYS"
+                      and .name != "AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT"
+                      and .name != "AZURE_OPENAI_REBALANCING_DEPLOYMENT"
+                      and .name != "AZURE_OPENAI_COMPARISON_DEPLOYMENT"
+                      and .name != "AZURE_OPENAI_BACKTEST_EXPLANATION_DEPLOYMENT"
+                      and .name != "FOUNDRY_PROJECT_ENDPOINT"
+                      and .name != "FOUNDRY_MODEL_DEPLOYMENT_NAME"
+                      and .name != "CHATBOT_REGISTRY_JSON"
+                      and .name != "AI_CHATBOT_PROVIDER"
+                      and .name != "AGENT_PROTOCOL"
+                      and .name != "AGENT_CLIENT_BACKEND"
+                      and .name != "ALLOW_PREVIEW_A2A"
+                      and .name != "ANALYSIS_MODE"
+                    ))
+                    + [
+                        {"name": "MODEL_RECOMMENDATION_SNAPSHOT_PATH", "value": "/model-artifacts/risk-adjusted-momentum-v2.json"},
+                        {"name": "MODEL_RECOMMENDATION_ALLOW_FALLBACK", "value": "false"},
+                        {"name": "MODEL_RECOMMENDATION_STALE_AFTER_DAYS", "value": "7"},
+                        {"name": "AZURE_OPENAI_RECOMMENDATION_DEPLOYMENT", "value": "gpt-5.6-luna"},
+                        {"name": "AZURE_OPENAI_REBALANCING_DEPLOYMENT", "value": "gpt-5.6-luna"},
+                        {"name": "AZURE_OPENAI_COMPARISON_DEPLOYMENT", "value": "gpt-5.6-luna"},
+                        {"name": "AZURE_OPENAI_BACKTEST_EXPLANATION_DEPLOYMENT", "value": "gpt-5.6-luna"},
+                        {"name": "FOUNDRY_PROJECT_ENDPOINT", "value": "https://fein-agent.services.ai.azure.com/api/projects/proj-default"},
+                        {"name": "FOUNDRY_MODEL_DEPLOYMENT_NAME", "value": "gpt-5.6-luna"},
+                        {"name": "CHATBOT_REGISTRY_JSON", "value": $chatbot_registry},
+                        {"name": "AI_CHATBOT_PROVIDER", "value": "azure_openai"},
+                        {"name": "AGENT_PROTOCOL", "value": "responses"},
+                        {"name": "AGENT_CLIENT_BACKEND", "value": "foundry_sdk"},
+                        {"name": "ALLOW_PREVIEW_A2A", "value": "false"},
+                        {"name": "ANALYSIS_MODE", "value": "analysis_only"}
+                      ]
+                  )
+                | (.resources //= {})
+                | .resources.cpu = 2.0
+                | .resources.memory = "4Gi"
+                | if (.probes // null) != null
+                  then .probes |= map(if .tcpSocket then .tcpSocket.port = 8000 else . end)
+                  else .
+                  end
+              ')"
+
+          backend_payload="$(jq -cn \
+            --argjson container "${backend_container}" \
+            '{properties: {template: {containers: [$container]}}}')"
+
+          az rest \
+            --method PATCH \
+            --url "${backend_id}?api-version=2024-03-01" \
+            --headers Content-Type=application/json \
+            --body "${backend_payload}" \
+            --output none
+
+          echo "previous_latest=${previous_latest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify backend revision
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+          PREVIOUS_LATEST: ${{ steps.backend-deploy.outputs.previous_latest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest=""
+          ready=""
+          health=""
+          running=""
+          replicas="0"
+
+          for attempt in $(seq 1 20); do
+            latest="$(az containerapp show --name "${BACKEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query properties.latestRevisionName --output tsv)"
+            ready="$(az containerapp show --name "${BACKEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query properties.latestReadyRevisionName --output tsv)"
+            health="$(az containerapp revision show --name "${BACKEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --revision "${latest}" --query properties.healthState --output tsv 2>/dev/null || true)"
+            running="$(az containerapp revision show --name "${BACKEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --revision "${latest}" --query properties.runningState --output tsv 2>/dev/null || true)"
+            replicas="$(az containerapp revision show --name "${BACKEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --revision "${latest}" --query properties.replicas --output tsv 2>/dev/null || true)"
+
+            if [[ -n "${latest}" && "${latest}" != "${PREVIOUS_LATEST}" && "${latest}" == "${ready}" && "${health}" == "Healthy" ]] \
+              && [[ ("${running}" == "Running" || "${running}" == "RunningAtMaxScale") && "${replicas:-0}" -ge 1 ]]; then
+              echo "Backend ready revision: ${ready}"
+              exit 0
+            fi
+
+            echo "Backend revision not ready yet (attempt ${attempt}/20, latest=${latest:-none}, ready=${ready:-none}, health=${health:-unknown}, running=${running:-unknown}, replicas=${replicas:-0})"
+            sleep 10
+          done
+
+          echo "Backend latest revision did not become ready." >&2
+          echo "latest=${latest:-none}, ready=${ready:-none}, health=${health:-unknown}, running=${running:-unknown}, replicas=${replicas:-0}" >&2
+
+          echo "--- Backend revision list ---" >&2
+          az containerapp revision list \
+            --name "${BACKEND_APP_NAME}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --query '[].{name:name,active:properties.active,health:properties.healthState,running:properties.runningState,replicas:properties.replicas,created:properties.createdTime}' \
+            --output table >&2 || true
+
+          if [[ -n "${latest}" ]]; then
+            echo "--- Backend system logs ---" >&2
+            az containerapp logs show \
+              --name "${BACKEND_APP_NAME}" \
+              --resource-group "${RESOURCE_GROUP}" \
+              --revision "${latest}" \
+              --type system \
+              --tail 100 >&2 || true
+
+            container_name="$(az containerapp revision show --name "${BACKEND_APP_NAME}" --resource-group "${RESOURCE_GROUP}" --revision "${latest}" --query properties.template.containers[0].name --output tsv 2>/dev/null || true)"
+            if [[ -n "${container_name}" ]]; then
+              echo "--- Backend console logs ---" >&2
+              az containerapp logs show \
+                --name "${BACKEND_APP_NAME}" \
+                --resource-group "${RESOURCE_GROUP}" \
+                --revision "${latest}" \
+                --container "${container_name}" \
+                --type console \
+                --tail 100 >&2 || true
+            fi
+          fi
+
+          exit 1

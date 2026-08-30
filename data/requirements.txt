@@ -1,0 +1,13 @@
+alembic==1.16.5
+azure-identity==1.25.3
+azure-storage-blob==12.30.0
+ipykernel==7.3.0
+numpy==2.3.3
+pandas==2.3.2
+psycopg[binary]==3.2.9
+pyarrow==21.0.0
+pytest==8.4.2
+python-dotenv==1.1.1
+redis==6.4.0
+requests==2.32.5
+SQLAlchemy==2.0.43
