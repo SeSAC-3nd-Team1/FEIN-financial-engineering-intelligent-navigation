@@ -12,7 +12,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Temporarily disabled for the final demo. Production deploys keep using the
+  # already-published Azure Blob artifacts and do not regenerate them.
   generate-and-upload:
+    if: ${{ false }}
     runs-on: [self-hosted, Linux, X64, azure-large]
     timeout-minutes: 180
     env:
