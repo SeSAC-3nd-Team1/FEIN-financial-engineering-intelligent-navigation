@@ -15,7 +15,9 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Use the existing Azure VM runner so CI is not blocked by GitHub-hosted
+    # runner billing limits. It has Docker for the PostgreSQL service below.
+    runs-on: [self-hosted, Linux, X64, azure-large]
     timeout-minutes: 15
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/sesac
