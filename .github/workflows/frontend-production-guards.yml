@@ -12,7 +12,9 @@ permissions:
 
 jobs:
   production-build-guards:
-    runs-on: ubuntu-latest
+    # Reuse the existing Azure runner to avoid GitHub-hosted runner billing
+    # limits while retaining Docker-based production image checks.
+    runs-on: [self-hosted, Linux, X64, azure-large]
     timeout-minutes: 10
 
     steps:

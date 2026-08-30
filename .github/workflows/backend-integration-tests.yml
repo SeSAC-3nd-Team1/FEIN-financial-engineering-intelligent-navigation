@@ -19,7 +19,9 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Keep backend integration tests on the existing Azure runner. The runner
+    # provides Docker for PostgreSQL, Redis, and the production image build.
+    runs-on: [self-hosted, Linux, X64, azure-large]
     timeout-minutes: 15
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/sesac
